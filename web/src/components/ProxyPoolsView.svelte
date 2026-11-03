@@ -1529,6 +1529,7 @@
     <Modal
       isOpen={showVercelBulkModal}
       title="Vercel Bulk"
+      size="3xl"
       onClose={closeVercelBulkModal}
     >
       <div class="flex flex-col gap-4">
@@ -1555,8 +1556,8 @@
             disabled={bulkVercelDeploying}
             placeholder={"team-a|vcp_xxxxxxxx...\nteam-b|vcp_yyyyyyyy...\nvcp_zzzzzzzz..."}
             spellcheck="false"
-            rows={8}
-            class="min-h-[160px] w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
+            rows={10}
+            class="min-h-[220px] w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
           ></textarea>
         </div>
 
@@ -1741,6 +1742,7 @@
     <Modal
       isOpen={showCloudflareBulkModal}
       title="CF Bulk"
+      size="3xl"
       onClose={closeCloudflareBulkModal}
     >
       <div class="flex flex-col gap-4">
@@ -1767,8 +1769,8 @@
             disabled={bulkCloudflareDeploying}
             placeholder={"email@example.com|account-id|api-token\nteam-account|account-id|api-token"}
             spellcheck="false"
-            rows={8}
-            class="min-h-[160px] w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
+            rows={10}
+            class="min-h-[220px] w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
           ></textarea>
         </div>
 
