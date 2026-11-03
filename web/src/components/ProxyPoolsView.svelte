@@ -1373,7 +1373,7 @@
       >
         <span class="material-symbols-outlined text-[16px] {activeViewTab === 'groups' ? 'text-primary' : ''}">folder_special</span>
         <span>Proxy Groups</span>
-        <span class="rounded-full px-2 py-0.5 text-[10px] {activeViewTab === 'groups' ? 'bg-primary/10 text-primary font-semibold' : 'bg-surface-3 text-text-muted'}">{availableGroups.length}</span>
+        <span class="rounded-full px-2 py-0.5 text-[10px] {activeViewTab === 'groups' ? 'bg-primary/10 text-primary font-semibold' : 'bg-surface-3 text-text-muted'}">{groupSummaries.length}</span>
       </button>
 
       <button
