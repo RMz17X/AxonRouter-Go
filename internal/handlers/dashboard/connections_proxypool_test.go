@@ -74,6 +74,20 @@ func TestHandleUpdateConnection_ProxyPoolBinding(t *testing.T) {
 		t.Errorf("binding changed after a rejected update: %v", data["proxyPoolId"])
 	}
 
+	// Smart targets (type:cloudflare, group:dedicated) are accepted.
+	if rec := put(`{"proxyPoolId":"type:cloudflare"}`); rec.Code != http.StatusOK {
+		t.Fatalf("bind type:cloudflare status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if data = readConnectionData(t, repo, connID); data["proxyPoolId"] != "type:cloudflare" {
+		t.Errorf("top-level proxyPoolId = %v, want type:cloudflare", data["proxyPoolId"])
+	}
+	if rec := put(`{"proxyPoolId":"group:dedicated"}`); rec.Code != http.StatusOK {
+		t.Fatalf("bind group:dedicated status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if data = readConnectionData(t, repo, connID); data["proxyPoolId"] != "group:dedicated" {
+		t.Errorf("top-level proxyPoolId = %v, want group:dedicated", data["proxyPoolId"])
+	}
+
 	// Unbind via each accepted sentinel.
 	for _, body := range []string{`{"proxyPoolId":null}`, `{"proxyPoolId":""}`, `{"proxyPoolId":"__none__"}`} {
 		if rec := put(body); rec.Code != http.StatusOK {

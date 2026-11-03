@@ -328,7 +328,7 @@ func sanitizeProviderConnection(c *models.ProviderConnection) map[string]any {
 		// badges (⏱), quota/rate-limit panels, model assignment. Secret
 		// keys (apiKey/accessToken/refreshToken/authToken/...) stay dropped.
 		"backoffLevel", "rateLimitedUntil", "rateLimit", "rateLimitsByModel",
-		"freebuffModel", "assignedModel", "freebucks",
+		"freebuffModel", "assignedModel", "freebucks", "proxyPoolId",
 	} {
 		if v, ok := data[f]; ok && v != nil {
 			if f == "lastError" {
@@ -737,10 +737,17 @@ func (h *DashboardHandler) HandleUpdateConnection(w http.ResponseWriter, r *http
 			unbindProxyPool = true
 		}
 		if proxyPoolID != "" {
-			pool, perr := h.Repo.GetProxyPool(proxyPoolID)
-			if perr != nil || pool == nil {
-				handlerutil.WriteJSONError(w, http.StatusBadRequest, "Proxy pool not found")
-				return
+			isTarget := strings.HasPrefix(proxyPoolID, "type:") ||
+				strings.HasPrefix(proxyPoolID, "group:")
+			if !isTarget {
+				pool, perr := h.Repo.GetProxyPool(proxyPoolID)
+				if perr != nil || pool == nil {
+					candidates := h.Repo.ActivePoolsByTarget(proxyPoolID)
+					if len(candidates) == 0 {
+						handlerutil.WriteJSONError(w, http.StatusBadRequest, "Proxy pool not found")
+						return
+					}
+				}
 			}
 		}
 	}

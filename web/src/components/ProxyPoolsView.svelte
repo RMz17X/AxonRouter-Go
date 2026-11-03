@@ -221,7 +221,8 @@
   let groupSummaries = $derived.by<GroupSummary[]>(() => {
     const groups = new Map<string, ProxyPool[]>()
     for (const p of proxyPools) {
-      const g = (p.group || '').trim() || 'Default'
+      const g = (p.group || '').trim()
+      if (!g) continue
       if (!groups.has(g)) groups.set(g, [])
       groups.get(g)!.push(p)
     }
@@ -1232,12 +1233,12 @@
 {/snippet}
 
 {#if loading}
-  <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:gap-6 sm:px-0">
+  <div class="flex w-full flex-col gap-4 px-1 sm:gap-6 sm:px-0">
     <div class="h-20 rounded-[14px] bg-surface border border-border-subtle animate-pulse"></div>
     <div class="h-64 rounded-[14px] bg-surface border border-border-subtle animate-pulse"></div>
   </div>
 {:else}
-  <div class="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:gap-6 sm:px-0">
+  <div class="flex w-full flex-col gap-4 px-1 sm:gap-6 sm:px-0">
     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div class="min-w-0">
         <h1 class="text-xl font-semibold sm:text-2xl">Proxy Pools</h1>
@@ -1777,34 +1778,51 @@
           </div>
         </Card>
 
-        <!-- Group Cards Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {#each groupSummaries as grp (grp.name)}
-            <div class="rounded-xl border border-border bg-surface p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-primary/40 transition-colors">
-              <div class="space-y-3">
-                <!-- Header -->
-                <div class="flex items-start justify-between gap-2">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="material-symbols-outlined text-primary text-[22px]">folder_open</span>
-                    <div>
-                      <h3 class="text-sm font-semibold text-text-main truncate">
-                        {grp.name === 'Default' ? 'Default (Ungrouped)' : grp.name}
-                      </h3>
-                      <p class="text-[11px] text-text-muted">Target ID: <span class="font-mono text-text-main font-medium">{grp.name === 'Default' ? 'none' : `group:${grp.name}`}</span></p>
+        {#if groupSummaries.length === 0}
+          <div class="rounded-xl border border-dashed border-border bg-surface p-12 text-center flex flex-col items-center justify-center gap-3">
+            <div class="size-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+              <span class="material-symbols-outlined text-[24px]">folder_off</span>
+            </div>
+            <div>
+              <h3 class="text-sm font-semibold text-text-main">No Custom Proxy Groups</h3>
+              <p class="text-xs text-text-muted mt-1 max-w-sm mx-auto">
+                All {proxyPools.length} proxies are currently ungrouped. Group proxy nodes (e.g. "dc", "residential", "fast") to enable smart dynamic balancing and automatic failover in connection bindings.
+              </p>
+            </div>
+            <Button size="sm" onclick={() => openCreateModal('single')}>
+              <span class="material-symbols-outlined text-[16px]">add</span>
+              Create Proxy in Group
+            </Button>
+          </div>
+        {:else}
+          <!-- Group Cards Grid -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {#each groupSummaries as grp (grp.name)}
+              <div class="rounded-xl border border-border bg-surface p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-primary/40 transition-colors">
+                <div class="space-y-3">
+                  <!-- Header -->
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="material-symbols-outlined text-primary text-[22px]">folder_open</span>
+                      <div>
+                        <h3 class="text-sm font-semibold text-text-main truncate">
+                          {grp.name}
+                        </h3>
+                        <p class="text-[11px] text-text-muted">Target ID: <span class="font-mono text-text-main font-medium">group:{grp.name}</span></p>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                      {#if grp.inCooldownCount > 0}
+                        <span class="rounded bg-red-500/15 border border-red-500/30 text-red-500 px-2 py-0.5 text-[11px] font-semibold animate-pulse">
+                          {grp.inCooldownCount} in cooldown
+                        </span>
+                      {:else}
+                        <span class="rounded bg-emerald-500/10 text-emerald-500 px-2 py-0.5 text-[11px] font-medium">
+                          All Healthy
+                        </span>
+                      {/if}
                     </div>
                   </div>
-                  <div class="flex items-center gap-1.5 shrink-0">
-                    {#if grp.inCooldownCount > 0}
-                      <span class="rounded bg-red-500/15 border border-red-500/30 text-red-500 px-2 py-0.5 text-[11px] font-semibold animate-pulse">
-                        {grp.inCooldownCount} in cooldown
-                      </span>
-                    {:else}
-                      <span class="rounded bg-emerald-500/10 text-emerald-500 px-2 py-0.5 text-[11px] font-medium">
-                        All Healthy
-                      </span>
-                    {/if}
-                  </div>
-                </div>
 
                 <!-- Metrics bar -->
                 <div class="grid grid-cols-3 gap-2 py-2 px-3 rounded-lg bg-surface-2 border border-border/50 text-center">
@@ -1898,6 +1916,7 @@
             </div>
           {/each}
         </div>
+        {/if}
       </div>
     {:else if activeViewTab === 'fitness'}
       <div class="flex flex-col gap-4">
