@@ -42,6 +42,26 @@
   const NONE_PROXY_POOL_VALUE = '__none__'
   const BULK_PLACEHOLDER = 'name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named'
 
+  const availableProxyGroups = $derived.by(() => {
+    const set = new Set<string>()
+    for (const p of proxyPools) {
+      if (p.group && p.group.trim()) {
+        set.add(p.group.trim())
+      }
+    }
+    return Array.from(set).sort()
+  })
+
+  const availableProxyTypes = $derived.by(() => {
+    const set = new Set<string>()
+    for (const p of proxyPools) {
+      if (p.type && p.type.trim()) {
+        set.add(p.type.trim())
+      }
+    }
+    return Array.from(set).sort()
+  })
+
   // Field styling mirrors upstream shared Input/Select (bg-surface-2, rounded 10px).
   const labelCls = 'block text-sm font-medium text-text-main mb-1.5'
   const inputCls =
@@ -984,9 +1004,25 @@
                   class={selectCls}
                 >
                   <option value={NONE_PROXY_POOL_VALUE}>None</option>
-                  {#each proxyPools as pool (pool.id)}
-                    <option value={pool.id}>{pool.name}</option>
-                  {/each}
+                  {#if availableProxyGroups.length > 0}
+                    <optgroup label="Proxy Groups (Smart Fitness)">
+                      {#each availableProxyGroups as grp}
+                        <option value="group:{grp}">Group: {grp} ({proxyPools.filter((p) => p.group === grp && p.isActive).length} active)</option>
+                      {/each}
+                    </optgroup>
+                  {/if}
+                  {#if availableProxyTypes.length > 0}
+                    <optgroup label="Proxy Types (Smart Fitness)">
+                      {#each availableProxyTypes as typ}
+                        <option value="type:{typ}">Type: {typ} ({proxyPools.filter((p) => p.type === typ && p.isActive).length} active)</option>
+                      {/each}
+                    </optgroup>
+                  {/if}
+                  <optgroup label="Individual Pools">
+                    {#each proxyPools as pool (pool.id)}
+                      <option value={pool.id}>{pool.name}{pool.group ? ` [${pool.group}]` : ''}</option>
+                    {/each}
+                  </optgroup>
                 </select>
                 <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-text-muted">
                   <span class="material-symbols-outlined text-[20px]">expand_more</span>

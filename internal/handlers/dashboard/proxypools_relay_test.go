@@ -28,8 +28,10 @@ func TestTestRelayPool(t *testing.T) {
 
 	var gotTarget, gotPath string
 	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotTarget = r.Header.Get("x-relay-target")
-		gotPath = r.Header.Get("x-relay-path")
+		if gotTarget == "" {
+			gotTarget = r.Header.Get("x-relay-target")
+			gotPath = r.Header.Get("x-relay-path")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"ok":true}`))
 	}))

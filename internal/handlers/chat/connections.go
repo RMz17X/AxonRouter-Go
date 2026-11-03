@@ -540,6 +540,7 @@ func (h *ChatHandler) applyProviderProxyPool(connData *ConnectionData, provider 
 	if connData == nil {
 		return
 	}
+	connData.Provider = provider
 	excluded := excludedFrom(excludePools)
 	if connData.ProxyPoolID != "" {
 		if !excluded[connData.ProxyPoolID] {

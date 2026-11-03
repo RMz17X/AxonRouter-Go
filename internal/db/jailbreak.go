@@ -11,8 +11,15 @@ import (
 	"time"
 )
 
+// ChatTurn represents a single scripted turn injected as fake conversation history.
+type ChatTurn struct {
+	Role    string `json:"role"`    // "user" or "assistant"
+	Content string `json:"content"` // prompt content
+}
+
 // JailbreakDoc is the agents.md-style injection document: one system prompt
-// prepended to every request routed through a model whose toggle is on.
+// prepended or appended to every request routed through a model whose toggle is on,
+// or a multi-turn chat script injected before the user message.
 // geminiSafety additionally switches the Gemini-native safety filters off via
 // the official safetySettings field, from the same switch.
 type JailbreakDoc struct {
@@ -20,6 +27,12 @@ type JailbreakDoc struct {
 	Name         string `json:"name,omitempty"`
 	Prompt       string `json:"prompt"`
 	GeminiSafety bool   `json:"geminiSafety"`
+	// Mode decides between "single" (default system prompt) and "chat" (scripted fake history turns).
+	Mode string `json:"mode,omitempty"`
+	// Position determines injection placement: "prepend" (default) or "append".
+	Position string `json:"position,omitempty"`
+	// Turns holds the scripted conversation turns when Mode == "chat".
+	Turns []ChatTurn `json:"turns,omitempty"`
 	// Source is the .md file the prompt was uploaded from, kept for display so
 	// the operator can tell an uploaded agents.md from something typed inline.
 	Source string `json:"source,omitempty"`
@@ -46,6 +59,17 @@ type JailbreakDoc struct {
 	// an operator finds the preset they just edited in a long library.
 	CreatedAt string `json:"createdAt,omitempty"`
 	UpdatedAt string `json:"updatedAt,omitempty"`
+}
+
+// HasContent reports whether the preset contains prompt content or turns.
+func (d *JailbreakDoc) HasContent() bool {
+	if d == nil {
+		return false
+	}
+	if d.Mode == "chat" {
+		return len(d.Turns) > 0
+	}
+	return d.Prompt != ""
 }
 
 // JailbreakModelConfig holds the binding between a model and a preset.
@@ -81,7 +105,7 @@ func (r *Repo) SaveJailbreakDoc(d *JailbreakDoc) error {
 func (r *Repo) GetJailbreakPreset(id string) (*JailbreakDoc, error) {
 	if id == "" || id == "default" {
 		doc, err := r.getJailbreakDocByKey(jailbreakDocKey)
-		if err == nil && doc.Prompt != "" {
+		if err == nil && doc.HasContent() {
 			doc.ID = "default"
 			if doc.Name == "" {
 				doc.Name = "Default"
@@ -89,14 +113,14 @@ func (r *Repo) GetJailbreakPreset(id string) (*JailbreakDoc, error) {
 			return doc, nil
 		}
 		doc, err = r.getJailbreakDocByKey(jailbreakDocPrefix + "default")
-		if err == nil && doc.Prompt != "" {
+		if err == nil && doc.HasContent() {
 			doc.ID = "default"
 			if doc.Name == "" {
 				doc.Name = "Default"
 			}
 			return doc, nil
 		}
-		return &JailbreakDoc{ID: "default", Name: "Default"}, nil
+		return &JailbreakDoc{ID: "default", Name: "Default", Mode: "single", Position: "prepend", Turns: []ChatTurn{}}, nil
 	}
 
 	doc, err := r.getJailbreakDocByKey(jailbreakDocPrefix + id)
@@ -114,7 +138,7 @@ func (r *Repo) getJailbreakDocByKey(key string) (*JailbreakDoc, error) {
 		jailbreakScope, key,
 	).Scan(&raw)
 	if err == sql.ErrNoRows {
-		return &JailbreakDoc{}, nil
+		return &JailbreakDoc{Mode: "single", Position: "prepend", Turns: []ChatTurn{}}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -123,6 +147,15 @@ func (r *Repo) getJailbreakDocByKey(key string) (*JailbreakDoc, error) {
 	if err := json.Unmarshal([]byte(raw), &d); err != nil {
 		return nil, fmt.Errorf("parse jailbreak doc %s: %w", key, err)
 	}
+	if d.Mode == "" {
+		d.Mode = "single"
+	}
+	if d.Position == "" {
+		d.Position = "prepend"
+	}
+	if d.Turns == nil {
+		d.Turns = []ChatTurn{}
+	}
 	return &d, nil
 }
 
@@ -130,6 +163,15 @@ func (r *Repo) getJailbreakDocByKey(key string) (*JailbreakDoc, error) {
 func (r *Repo) SaveJailbreakPreset(d *JailbreakDoc) error {
 	if d == nil {
 		return fmt.Errorf("nil jailbreak doc")
+	}
+	if d.Mode == "" {
+		d.Mode = "single"
+	}
+	if d.Position == "" {
+		d.Position = "prepend"
+	}
+	if d.Turns == nil {
+		d.Turns = []ChatTurn{}
 	}
 	// Timestamps are store-owned: a caller that sends none gets "now", and an
 	// existing preset keeps its original CreatedAt so "newest" stays truthful.

@@ -27,6 +27,43 @@ export function proxyBadgeInfo(
 ): ProxyBadgeInfo {
   const psd = (conn.providerSpecificData as Record<string, unknown> | undefined) || {}
   const poolId = typeof psd.proxyPoolId === 'string' && psd.proxyPoolId ? psd.proxyPoolId : null
+
+  if (poolId) {
+    if (poolId.startsWith('group:')) {
+      const grp = poolId.slice(6)
+      const activeCount = pools.filter((p) => p.group === grp && p.isActive).length
+      return {
+        hasAnyProxy: true,
+        variant: activeCount > 0 ? 'success' : 'error',
+        displayText: `Group: ${grp}${activeCount > 0 ? ` (${activeCount})` : ' (inactive)'}`,
+        maskedProxyUrl: `Smart Group: ${grp}`,
+        noProxyText: ''
+      }
+    }
+    if (poolId.startsWith('type:')) {
+      const typ = poolId.slice(5)
+      const activeCount = pools.filter((p) => p.type === typ && p.isActive).length
+      return {
+        hasAnyProxy: true,
+        variant: activeCount > 0 ? 'success' : 'error',
+        displayText: `Type: ${typ}${activeCount > 0 ? ` (${activeCount})` : ' (inactive)'}`,
+        maskedProxyUrl: `Smart Type: ${typ}`,
+        noProxyText: ''
+      }
+    }
+    const matchingGroupPools = pools.filter((p) => p.group === poolId)
+    if (matchingGroupPools.length > 0) {
+      const activeCount = matchingGroupPools.filter((p) => p.isActive).length
+      return {
+        hasAnyProxy: true,
+        variant: activeCount > 0 ? 'success' : 'error',
+        displayText: `Group: ${poolId}${activeCount > 0 ? ` (${activeCount})` : ' (inactive)'}`,
+        maskedProxyUrl: `Smart Group: ${poolId}`,
+        noProxyText: ''
+      }
+    }
+  }
+
   const pool = poolId ? pools.find((p) => p.id === poolId) || null : null
 
   const legacyUrl = typeof psd.connectionProxyUrl === 'string' ? psd.connectionProxyUrl : ''

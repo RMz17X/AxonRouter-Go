@@ -450,6 +450,26 @@
   let proxyPools = $state<ProxyPool[]>([])
   let activeProxyPools = $derived(proxyPools.filter((p) => p.isActive))
 
+  let availableProxyGroups = $derived.by(() => {
+    const set = new Set<string>()
+    for (const p of proxyPools) {
+      if (p.group && p.group.trim()) {
+        set.add(p.group.trim())
+      }
+    }
+    return Array.from(set).sort()
+  })
+
+  let availableProxyTypes = $derived.by(() => {
+    const set = new Set<string>()
+    for (const p of proxyPools) {
+      if (p.type && p.type.trim()) {
+        set.add(p.type.trim())
+      }
+    }
+    return Array.from(set).sort()
+  })
+
   // Selection state
   let selectedConnIds = $state<string[]>([])
   let isAllSelected = $derived(
@@ -3484,9 +3504,25 @@
           class="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm text-text-main focus:outline-none focus:border-primary disabled:opacity-50 cursor-pointer"
         >
           <option value="none">None (direct)</option>
-          {#each activeProxyPools as pool}
-            <option value={pool.id}>{pool.name}</option>
-          {/each}
+          {#if availableProxyGroups.length > 0}
+            <optgroup label="Proxy Groups (Smart Fitness)">
+              {#each availableProxyGroups as grp}
+                <option value="group:{grp}">Group: {grp} ({proxyPools.filter((p) => p.group === grp && p.isActive).length} active)</option>
+              {/each}
+            </optgroup>
+          {/if}
+          {#if availableProxyTypes.length > 0}
+            <optgroup label="Proxy Types (Smart Fitness)">
+              {#each availableProxyTypes as typ}
+                <option value="type:{typ}">Type: {typ} ({proxyPools.filter((p) => p.type === typ && p.isActive).length} active)</option>
+              {/each}
+            </optgroup>
+          {/if}
+          <optgroup label="Individual Pools">
+            {#each activeProxyPools as pool}
+              <option value={pool.id}>{pool.name}{pool.group ? ` [${pool.group}]` : ''}</option>
+            {/each}
+          </optgroup>
         </select>
         {#if freeRotateStrategy !== 'none'}
           <p class="text-xs text-text-muted">
@@ -4053,13 +4089,54 @@
                             >
                               None
                             </button>
+                            {#if availableProxyGroups.length > 0}
+                              <div class="px-3 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-t border-border mt-1 pt-1">
+                                Proxy Groups
+                              </div>
+                              {#each availableProxyGroups as grp}
+                                {@const activeCount = proxyPools.filter((p) => p.group === grp && p.isActive).length}
+                                <button
+                                  type="button"
+                                  onclick={() => assignProxyPool(conn, `group:${grp}`)}
+                                  class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors cursor-pointer {assignedPoolId === `group:${grp}` || assignedPoolId === grp ? 'text-primary font-medium' : 'text-text-main'}"
+                                >
+                                  <div class="flex items-center gap-1.5 truncate">
+                                    <span class="material-symbols-outlined text-[14px] text-primary">folder</span>
+                                    <span class="truncate">{grp}</span>
+                                  </div>
+                                  <span class="text-[10px] text-text-muted shrink-0">({activeCount})</span>
+                                </button>
+                              {/each}
+                            {/if}
+                            {#if availableProxyTypes.length > 0}
+                              <div class="px-3 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-t border-border mt-1 pt-1">
+                                Proxy Types
+                              </div>
+                              {#each availableProxyTypes as typ}
+                                {@const activeCount = proxyPools.filter((p) => p.type === typ && p.isActive).length}
+                                <button
+                                  type="button"
+                                  onclick={() => assignProxyPool(conn, `type:${typ}`)}
+                                  class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors cursor-pointer {assignedPoolId === `type:${typ}` ? 'text-primary font-medium' : 'text-text-main'}"
+                                >
+                                  <div class="flex items-center gap-1.5 truncate">
+                                    <span class="material-symbols-outlined text-[14px]">category</span>
+                                    <span class="capitalize truncate">{typ}</span>
+                                  </div>
+                                  <span class="text-[10px] text-text-muted shrink-0">({activeCount})</span>
+                                </button>
+                              {/each}
+                            {/if}
+                            <div class="px-3 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-t border-border mt-1 pt-1">
+                              Individual Pools
+                            </div>
                             {#each proxyPools as pool}
                               <button
                                 type="button"
                                 onclick={() => assignProxyPool(conn, pool.id)}
                                 class="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors cursor-pointer {assignedPoolId === pool.id ? 'text-primary font-medium' : 'text-text-main'}"
                               >
-                                <span class="truncate">{pool.name}</span>
+                                <span class="truncate">{pool.name}{pool.group ? ` [${pool.group}]` : ''}</span>
                                 {#if !pool.isActive}
                                   <span class="text-[10px] text-text-muted shrink-0">(inactive)</span>
                                 {/if}
@@ -5310,6 +5387,58 @@
             <div class="text-[11px] text-text-muted">Remove proxy pool from connections</div>
           </div>
         </button>
+
+        {#if availableProxyGroups.length > 0}
+          <div class="pt-2 pb-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+            Proxy Groups (Smart Fitness & Balancing)
+          </div>
+          {#each availableProxyGroups as grp}
+            {@const count = proxyPools.filter((p) => p.group === grp && p.isActive).length}
+            <button
+              type="button"
+              onclick={() => handleApplyProxyPool(`group:${grp}`)}
+              disabled={isApplyingProxy || count === 0}
+              class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-primary text-lg">folder_special</span>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-medium text-text-main flex items-center justify-between gap-2">
+                  <span>Group: {grp}</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">{count} active pools</span>
+                </div>
+                <div class="text-[11px] text-text-muted">Dynamic smart scoring + failover within group</div>
+              </div>
+            </button>
+          {/each}
+        {/if}
+
+        {#if availableProxyTypes.length > 0}
+          <div class="pt-2 pb-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+            Proxy Types (Smart Fitness & Balancing)
+          </div>
+          {#each availableProxyTypes as typ}
+            {@const count = proxyPools.filter((p) => p.type === typ && p.isActive).length}
+            <button
+              type="button"
+              onclick={() => handleApplyProxyPool(`type:${typ}`)}
+              disabled={isApplyingProxy || count === 0}
+              class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left border border-border hover:bg-surface-2 transition-colors disabled:opacity-50 cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-text-muted text-lg">category</span>
+              <div class="min-w-0 flex-1">
+                <div class="text-xs font-medium text-text-main flex items-center justify-between gap-2">
+                  <span class="capitalize">Type: {typ}</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-surface-3 text-text-muted">{count} active pools</span>
+                </div>
+                <div class="text-[11px] text-text-muted">Dynamic smart scoring across all {typ} proxies</div>
+              </div>
+            </button>
+          {/each}
+        {/if}
+
+        <div class="pt-2 pb-1 text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+          Individual Pools
+        </div>
 
         <input
           type="search"

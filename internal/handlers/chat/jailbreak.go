@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"strings"
 
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/log"
@@ -23,7 +24,7 @@ func (h *ChatHandler) resolveJailbreak(ids ...string) *db.JailbreakDoc {
 		log.Warn("jailbreak", "doc lookup failed", "ids", ids, "error", err)
 		return nil
 	}
-	if doc == nil || doc.Prompt == "" {
+	if doc == nil || !doc.HasContent() {
 		return nil
 	}
 	return doc
@@ -43,9 +44,15 @@ func (h *ChatHandler) applyJailbreak(ctx context.Context, body map[string]any, r
 	if doc == nil {
 		return ctx
 	}
-	prependSystemPrompt(body, doc.Prompt)
-	log.Info("jailbreak", "applied", "model", requestedModel,
-		"prompt_bytes", len(doc.Prompt), "safety_off", doc.GeminiSafety)
+	if doc.Mode == "chat" && len(doc.Turns) > 0 {
+		injectChatTurns(body, doc.Turns)
+		log.Info("jailbreak", "applied_chat_script", "model", requestedModel,
+			"turns", len(doc.Turns), "safety_off", doc.GeminiSafety)
+	} else if doc.Prompt != "" {
+		injectSystemPrompt(body, doc.Prompt, doc.Position)
+		log.Info("jailbreak", "applied_system_prompt", "model", requestedModel,
+			"position", doc.Position, "prompt_bytes", len(doc.Prompt), "safety_off", doc.GeminiSafety)
+	}
 	// Best-effort usage counter for the dashboard's per-preset hit count. A
 	// failed write must not fail a request that is already being injected.
 	if err := h.Repo.RecordJailbreakUsage(doc.ID); err != nil {
@@ -69,16 +76,235 @@ func jailbreakLegIDs(provider, model string) []string {
 // Claude (top-level "system", string or block array). Both get the prompt
 // first, original content intact after it.
 func prependSystemPrompt(body map[string]any, prompt string) {
+	injectSystemPrompt(body, prompt, "prepend")
+}
+
+// toAnySlice converts []any or []map[string]any into []any safely.
+func toAnySlice(v any) []any {
+	switch s := v.(type) {
+	case []any:
+		return s
+	case []map[string]any:
+		res := make([]any, len(s))
+		for i, m := range s {
+			res[i] = m
+		}
+		return res
+	default:
+		return nil
+	}
+}
+
+// injectSystemPrompt injects the configured prompt into the body at the requested position ("prepend" or "append").
+func injectSystemPrompt(body map[string]any, prompt string, position string) {
+	if prompt == "" || body == nil {
+		return
+	}
+	if position != "append" {
+		position = "prepend"
+	}
+
+	// 1. Claude top-level system field
 	if raw, ok := body["system"]; ok {
 		switch v := raw.(type) {
 		case string:
-			body["system"] = prompt + "\n\n" + v
+			if strings.Contains(v, prompt) {
+				return // idempotent
+			}
+			if position == "append" {
+				body["system"] = v + "\n\n" + prompt
+			} else {
+				body["system"] = prompt + "\n\n" + v
+			}
 			return
 		case []any:
-			body["system"] = append([]any{map[string]any{"type": "text", "text": prompt}}, v...)
+			for _, item := range v {
+				if m, ok := item.(map[string]any); ok {
+					if text, ok := m["text"].(string); ok && strings.Contains(text, prompt) {
+						return // idempotent
+					}
+				}
+			}
+			block := map[string]any{"type": "text", "text": prompt}
+			if position == "append" {
+				body["system"] = append(v, block)
+			} else {
+				body["system"] = append([]any{block}, v...)
+			}
 			return
 		}
 	}
-	msgs, _ := body["messages"].([]any)
-	body["messages"] = append([]any{map[string]any{"role": "system", "content": prompt}}, msgs...)
+
+	// 2. Gemini top-level system_instruction field
+	if raw, ok := body["system_instruction"]; ok {
+		if si, ok := raw.(map[string]any); ok {
+			if parts, ok := si["parts"].([]any); ok {
+				for _, p := range parts {
+					if pm, ok := p.(map[string]any); ok {
+						if txt, ok := pm["text"].(string); ok && strings.Contains(txt, prompt) {
+							return
+						}
+					}
+				}
+				part := map[string]any{"text": prompt}
+				if position == "append" {
+					si["parts"] = append(parts, part)
+				} else {
+					si["parts"] = append([]any{part}, parts...)
+				}
+				return
+			}
+		}
+	}
+
+	// 3. OpenAI / standard messages format
+	rawMsgs, ok := body["messages"]
+	if !ok {
+		body["messages"] = []any{map[string]any{"role": "system", "content": prompt}}
+		return
+	}
+
+	msgs := toAnySlice(rawMsgs)
+	if msgs == nil {
+		return
+	}
+
+	// Idempotency check across existing messages
+	for _, m := range msgs {
+		msgMap, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := msgMap["role"].(string)
+		if role == "system" || role == "developer" {
+			if content, ok := msgMap["content"].(string); ok && strings.Contains(content, prompt) {
+				return
+			}
+		}
+	}
+
+	newSysMsg := map[string]any{"role": "system", "content": prompt}
+
+	if position == "append" {
+		// Find index after the last system/developer message
+		insertIdx := 0
+		for i, m := range msgs {
+			if msgMap, ok := m.(map[string]any); ok {
+				role, _ := msgMap["role"].(string)
+				if role == "system" || role == "developer" {
+					insertIdx = i + 1
+				}
+			}
+		}
+		var newMsgs []any
+		newMsgs = append(newMsgs, msgs[:insertIdx]...)
+		newMsgs = append(newMsgs, newSysMsg)
+		newMsgs = append(newMsgs, msgs[insertIdx:]...)
+		body["messages"] = newMsgs
+		return
+	}
+
+	// Default "prepend": insert at the very beginning (index 0)
+	body["messages"] = append([]any{newSysMsg}, msgs...)
+}
+
+// injectChatTurns injects multi-turn scripted fake conversation history into the request.
+// It places the turns right before the real user conversation and auto-merges consecutive identical
+// roles to avoid strict provider rejections (e.g. Anthropic consecutive role errors).
+func injectChatTurns(body map[string]any, turns []db.ChatTurn) {
+	if body == nil || len(turns) == 0 {
+		return
+	}
+
+	var clean []db.ChatTurn
+	for _, t := range turns {
+		role := strings.ToLower(strings.TrimSpace(t.Role))
+		content := strings.TrimSpace(t.Content)
+		if (role == "user" || role == "assistant") && content != "" {
+			clean = append(clean, db.ChatTurn{Role: role, Content: content})
+		}
+	}
+	if len(clean) == 0 {
+		return
+	}
+
+	rawMsgs, ok := body["messages"]
+	if !ok {
+		var msgs []any
+		for _, t := range clean {
+			msgs = append(msgs, map[string]any{"role": t.Role, "content": t.Content})
+		}
+		body["messages"] = msgs
+		return
+	}
+
+	msgs := toAnySlice(rawMsgs)
+	if msgs == nil {
+		return
+	}
+
+	// Find the insertion point: after any initial system/developer messages
+	insertIdx := 0
+	for insertIdx < len(msgs) {
+		m, ok := msgs[insertIdx].(map[string]any)
+		if !ok {
+			break
+		}
+		role, _ := m["role"].(string)
+		if role != "system" && role != "developer" {
+			break
+		}
+		insertIdx++
+	}
+
+	// Check idempotency: if turns are already at insertIdx
+	alreadyInjected := len(clean) <= len(msgs)-insertIdx
+	for i := 0; alreadyInjected && i < len(clean); i++ {
+		m, ok := msgs[insertIdx+i].(map[string]any)
+		if !ok {
+			alreadyInjected = false
+			break
+		}
+		r, _ := m["role"].(string)
+		c, _ := m["content"].(string)
+		if r != clean[i].Role || c != clean[i].Content {
+			alreadyInjected = false
+			break
+		}
+	}
+	if alreadyInjected {
+		return
+	}
+
+	// Prepare block of turns
+	var block []map[string]any
+	for _, t := range clean {
+		block = append(block, map[string]any{"role": t.Role, "content": t.Content})
+	}
+
+	// Check consecutive role between the last injected turn and the first real user message
+	if insertIdx < len(msgs) {
+		firstReal, ok := msgs[insertIdx].(map[string]any)
+		lastInjected := block[len(block)-1]
+		if ok {
+			realRole, _ := firstReal["role"].(string)
+			lastRole, _ := lastInjected["role"].(string)
+			if realRole == lastRole {
+				// Same role! Merge content with double newline to prevent provider errors
+				realContent, _ := firstReal["content"].(string)
+				lastInjected["content"] = lastInjected["content"].(string) + "\n\n" + realContent
+				// Remove the real message at insertIdx as it's merged into lastInjected
+				msgs = append(msgs[:insertIdx], msgs[insertIdx+1:]...)
+			}
+		}
+	}
+
+	// Insert block at insertIdx
+	var newMsgs []any
+	newMsgs = append(newMsgs, msgs[:insertIdx]...)
+	for _, b := range block {
+		newMsgs = append(newMsgs, b)
+	}
+	newMsgs = append(newMsgs, msgs[insertIdx:]...)
+	body["messages"] = newMsgs
 }

@@ -40,6 +40,7 @@
 
   interface PoolForm {
     name: string
+    group: string
     proxyUrl: string
     noProxy: string
     isActive: boolean
@@ -49,6 +50,7 @@
   function normalizeFormData(data: Partial<ProxyPool> = {}): PoolForm {
     return {
       name: data.name || '',
+      group: data.group || '',
       proxyUrl: data.proxyUrl || '',
       noProxy: data.noProxy || '',
       isActive: data.isActive !== false,
@@ -186,14 +188,124 @@
   })
 
   let statusFilter = $state<PoolStatusFilter>('all')
+  let groupFilter = $state<string>('all')
   let sortOption = $state<PoolSortOption>('default')
+  let activeViewTab = $state<'pools' | 'groups' | 'fitness'>('pools')
 
   let counts = $derived(poolStatusCounts(proxyPools))
   let activeCount = $derived(counts.active)
   let failedCount = $derived(counts.failed)
+  let cooldownCount = $derived(proxyPools.filter((p) => p.inCooldown).length)
 
-  let filteredPools = $derived(filterProxyPools(proxyPools, statusFilter))
+  let availableGroups = $derived.by(() => {
+    const set = new Set<string>()
+    for (const p of proxyPools) {
+      if (p.group && p.group.trim()) {
+        set.add(p.group.trim())
+      }
+    }
+    return Array.from(set).sort()
+  })
+
+  interface GroupSummary {
+    name: string
+    pools: ProxyPool[]
+    totalCount: number
+    activeCount: number
+    inCooldownCount: number
+    avgFitness: number
+    avgLatency: number
+    strictCount: number
+  }
+
+  let groupSummaries = $derived.by<GroupSummary[]>(() => {
+    const groups = new Map<string, ProxyPool[]>()
+    for (const p of proxyPools) {
+      const g = (p.group || '').trim() || 'Default'
+      if (!groups.has(g)) groups.set(g, [])
+      groups.get(g)!.push(p)
+    }
+    const result: GroupSummary[] = []
+    for (const [name, pools] of groups.entries()) {
+      const active = pools.filter((p) => p.isActive)
+      const inCooldown = pools.filter((p) => p.inCooldown)
+      const strict = pools.filter((p) => p.strictProxy)
+      const scoredPools = pools.filter((p) => typeof p.fitnessScore === 'number')
+      const avgFitness =
+        scoredPools.length > 0
+          ? Math.round(
+              scoredPools.reduce((acc, p) => acc + (p.fitnessScore || 0), 0) / scoredPools.length
+            )
+          : 100
+      const latPools = pools.filter((p) => typeof p.latency === 'number' && (p.latency || 0) > 0)
+      const avgLatency =
+        latPools.length > 0
+          ? Math.round(latPools.reduce((acc, p) => acc + (p.latency || 0), 0) / latPools.length)
+          : 0
+
+      result.push({
+        name,
+        pools,
+        totalCount: pools.length,
+        activeCount: active.length,
+        inCooldownCount: inCooldown.length,
+        avgFitness,
+        avgLatency,
+        strictCount: strict.length,
+      })
+    }
+    return result.sort((a, b) =>
+      a.name === 'Default' ? 1 : b.name === 'Default' ? -1 : a.name.localeCompare(b.name)
+    )
+  })
+
+  let fitnessLeaderboard = $derived.by(() => {
+    return [...proxyPools].sort((a, b) => {
+      const sa = a.fitnessScore ?? 100
+      const sb = b.fitnessScore ?? 100
+      return sa - sb
+    })
+  })
+
+  async function testGroup(grpName: string) {
+    const poolsInGroup = proxyPools.filter(
+      (p) => (p.group || '').trim() === (grpName === 'Default' ? '' : grpName)
+    )
+    if (poolsInGroup.length === 0) return
+    const oldSelected = [...selectedIds]
+    selectedIds = poolsInGroup.map((p) => p.id)
+    await handleHealthCheck(false)
+    selectedIds = oldSelected
+  }
+
+  let filteredPools = $derived.by(() => {
+    let pools = filterProxyPools(proxyPools, statusFilter)
+    if (groupFilter !== 'all') {
+      pools = pools.filter((p) => (p.group || '').trim() === groupFilter)
+    }
+    return pools
+  })
   let displayedPools = $derived(sortProxyPools(filteredPools, sortOption))
+
+  let pageSize = $state<number>(10)
+  let currentPage = $state<number>(1)
+
+  let totalPages = $derived(Math.max(1, Math.ceil(displayedPools.length / pageSize)))
+  let paginatedPools = $derived(
+    displayedPools.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  )
+
+  $effect(() => {
+    // Reset to page 1 whenever filter or sort changes
+    const _ = statusFilter + sortOption + groupFilter
+    currentPage = 1
+  })
+
+  $effect(() => {
+    if (currentPage > totalPages) {
+      currentPage = totalPages
+    }
+  })
 
   // The status filter is a dropdown rather than four pills with the count in
   // brackets: beside the sort picker and the two bulk-cleanup buttons that row
@@ -207,7 +319,7 @@
   ] satisfies { value: PoolStatusFilter; label: string; count: number }[])
 
   let allSelected = $derived(
-    displayedPools.length > 0 && displayedPools.every((p) => selectedIds.includes(p.id))
+    paginatedPools.length > 0 && paginatedPools.every((p) => selectedIds.includes(p.id))
   )
 
   function toggleSelect(id: string) {
@@ -218,10 +330,10 @@
 
   function toggleSelectAll() {
     if (allSelected) {
-      const displayedIdSet = new Set(displayedPools.map((p) => p.id))
-      selectedIds = selectedIds.filter((id) => !displayedIdSet.has(id))
+      const pageIdSet = new Set(paginatedPools.map((p) => p.id))
+      selectedIds = selectedIds.filter((id) => !pageIdSet.has(id))
     } else {
-      const set = new Set([...selectedIds, ...displayedPools.map((p) => p.id)])
+      const set = new Set([...selectedIds, ...paginatedPools.map((p) => p.id)])
       selectedIds = Array.from(set)
     }
   }
@@ -342,6 +454,7 @@
   async function handleSave() {
     const payload = {
       name: formData.name.trim(),
+      group: formData.group.trim(),
       proxyUrl: formData.proxyUrl.trim(),
       noProxy: formData.noProxy.trim(),
       isActive: formData.isActive === true,
@@ -409,6 +522,13 @@
               testStatus: data.status || (data.success ? 'passed' : 'failed'),
               latency: typeof data.latency === 'number' ? data.latency : p.latency,
               lastTestedAt: new Date().toISOString(),
+              exitIpv4: data.exitIpv4 ?? p.exitIpv4,
+              exitIpv6: data.exitIpv6 ?? p.exitIpv6,
+              exitCountry: data.exitCountry ?? p.exitCountry,
+              exitCity: data.exitCity ?? p.exitCity,
+              exitIsp: data.exitIsp ?? p.exitIsp,
+              exitOrg: data.exitOrg ?? p.exitOrg,
+              exitAsn: data.exitAsn ?? p.exitAsn,
             }
           : p
       )
@@ -560,6 +680,13 @@
                   testStatus: data.status || (data.success ? 'passed' : 'failed'),
                   latency: typeof data.latency === 'number' ? data.latency : p.latency,
                   lastTestedAt: new Date().toISOString(),
+                  exitIpv4: data.exitIpv4 ?? p.exitIpv4,
+                  exitIpv6: data.exitIpv6 ?? p.exitIpv6,
+                  exitCountry: data.exitCountry ?? p.exitCountry,
+                  exitCity: data.exitCity ?? p.exitCity,
+                  exitIsp: data.exitIsp ?? p.exitIsp,
+                  exitOrg: data.exitOrg ?? p.exitOrg,
+                  exitAsn: data.exitAsn ?? p.exitAsn,
                 }
               : p
           )
@@ -1059,6 +1186,12 @@
      fields live in one snippet rather than being written twice. -->
 {#snippet singleFields()}
   <Input label="Name" bind:value={formData.name} placeholder="Office Proxy" />
+  <Input
+    label="Group / Tag (optional)"
+    bind:value={formData.group}
+    placeholder="e.g. premium, dedicated-asia"
+    hint="Assign to a group for provider smart load balancing and failover"
+  />
   <Input label="Proxy URL" bind:value={formData.proxyUrl} placeholder="http://127.0.0.1:7897" />
   <Input
     label="No Proxy"
@@ -1221,17 +1354,71 @@
       </div>
     </div>
 
+    <!-- View Switcher Tabs: All Pools | Proxy Groups | Smart Fitness & Canary -->
+    <div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+      <button
+        type="button"
+        onclick={() => (activeViewTab = 'pools')}
+        class="flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-all cursor-pointer {activeViewTab === 'pools' ? 'bg-surface text-text-main shadow-sm border border-border font-semibold' : 'bg-surface-2 text-text-muted hover:text-text-main border border-transparent'}"
+      >
+        <span class="material-symbols-outlined text-[16px] {activeViewTab === 'pools' ? 'text-primary' : ''}">lan</span>
+        <span>Proxy Pools</span>
+        <span class="rounded-full px-2 py-0.5 text-[10px] {activeViewTab === 'pools' ? 'bg-primary/10 text-primary font-semibold' : 'bg-surface-3 text-text-muted'}">{proxyPools.length}</span>
+      </button>
+
+      <button
+        type="button"
+        onclick={() => (activeViewTab = 'groups')}
+        class="flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-all cursor-pointer {activeViewTab === 'groups' ? 'bg-surface text-text-main shadow-sm border border-border font-semibold' : 'bg-surface-2 text-text-muted hover:text-text-main border border-transparent'}"
+      >
+        <span class="material-symbols-outlined text-[16px] {activeViewTab === 'groups' ? 'text-primary' : ''}">folder_special</span>
+        <span>Proxy Groups</span>
+        <span class="rounded-full px-2 py-0.5 text-[10px] {activeViewTab === 'groups' ? 'bg-primary/10 text-primary font-semibold' : 'bg-surface-3 text-text-muted'}">{availableGroups.length}</span>
+      </button>
+
+      <button
+        type="button"
+        onclick={() => (activeViewTab = 'fitness')}
+        class="flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-medium transition-all cursor-pointer {activeViewTab === 'fitness' ? 'bg-surface text-text-main shadow-sm border border-border font-semibold' : 'bg-surface-2 text-text-muted hover:text-text-main border border-transparent'}"
+      >
+        <span class="material-symbols-outlined text-[16px] {activeViewTab === 'fitness' ? 'text-primary' : ''}">monitoring</span>
+        <span>Fitness & Canary</span>
+        {#if cooldownCount > 0}
+          <span class="rounded-full bg-red-500/15 text-red-500 border border-red-500/30 px-2 py-0.5 text-[10px] font-semibold animate-pulse">{cooldownCount} cooldown</span>
+        {:else}
+          <span class="rounded-full bg-emerald-500/15 text-emerald-500 px-2 py-0.5 text-[10px] font-medium">Healthy</span>
+        {/if}
+      </button>
+    </div>
+
+    {#if activeViewTab === 'pools'}
     <Card>
       <!-- Filter & Sort Controls & Quick Cleanup -->
       <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div class="flex items-center gap-1.5">
-          <span class="text-xs text-text-muted shrink-0">Filter:</span>
-          <CountedSelect
-            value={statusFilter}
-            options={statusOptions}
-            ariaLabel="Filter proxy pools by status"
-            onChange={(next) => (statusFilter = next as PoolStatusFilter)}
-          />
+        <div class="flex items-center gap-2 flex-wrap">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs text-text-muted shrink-0">Filter:</span>
+            <CountedSelect
+              value={statusFilter}
+              options={statusOptions}
+              ariaLabel="Filter proxy pools by status"
+              onChange={(next) => (statusFilter = next as PoolStatusFilter)}
+            />
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs text-text-muted shrink-0">Group:</span>
+            <select
+              bind:value={groupFilter}
+              class="h-8 rounded-lg border border-border-subtle bg-surface-2 px-2 text-xs text-text-main outline-none transition-colors hover:bg-surface-3 cursor-pointer"
+              aria-label="Filter proxy pools by group"
+            >
+              <option value="all">All Groups ({proxyPools.length})</option>
+              {#each availableGroups as grp}
+                <option value={grp}>{grp} ({proxyPools.filter((p) => (p.group || '').trim() === grp).length})</option>
+              {/each}
+            </select>
+          </div>
         </div>
 
         <!-- Sort & Quick Cleanup -->
@@ -1286,9 +1473,12 @@
         {:else}
           <div></div>
         {/if}
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 flex-wrap">
           <Badge>Total: {proxyPools.length}</Badge>
           <Badge variant="success">Active: {activeCount}</Badge>
+          {#if cooldownCount > 0}
+            <Badge variant="error" dot>Cooldown: {cooldownCount}</Badge>
+          {/if}
           {#if failedCount > 0}
             <Badge variant="error">Failed: {failedCount}</Badge>
           {/if}
@@ -1372,13 +1562,13 @@
           <p class="text-sm text-text-muted mb-4">
             Try selecting a different filter option or reset filters.
           </p>
-          <Button variant="secondary" onclick={() => (statusFilter = 'all')}>
+          <Button variant="secondary" onclick={() => { statusFilter = 'all'; groupFilter = 'all'; }}>
             Reset Filter
           </Button>
         </div>
       {:else}
         <div class="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.05]">
-          {#each displayedPools as pool (pool.id)}
+          {#each paginatedPools as pool (pool.id)}
             {@const latencyBadge = hasMeasuredLatency(pool) ? getLatencyBadge(pool.latency) : null}
             <div class="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div class="flex items-start gap-3 min-w-0 flex-1">
@@ -1404,6 +1594,26 @@
                     <Badge variant={pool.isActive ? 'success' : 'default'} size="sm">
                       {pool.isActive ? 'active' : 'inactive'}
                     </Badge>
+                    {#if pool.group}
+                      <Badge variant="secondary" size="sm">
+                        <span class="material-symbols-outlined text-[13px] mr-1">folder</span>
+                        {pool.group}
+                      </Badge>
+                    {/if}
+                    {#if pool.inCooldown}
+                      <Badge variant="error" size="sm" dot>
+                        COOLDOWN ({pool.cooldownRemainingSec || 0}s)
+                      </Badge>
+                    {:else if typeof pool.fitnessScore === 'number'}
+                      <Badge variant={pool.fitnessScore >= 80 ? 'success' : pool.fitnessScore >= 50 ? 'warning' : 'error'} size="sm">
+                        fit: {Math.round(pool.fitnessScore)}%
+                      </Badge>
+                    {/if}
+                    {#if pool.consecutiveProbeFails && pool.consecutiveProbeFails > 0}
+                      <Badge variant="error" size="sm">
+                        probe fails: {pool.consecutiveProbeFails}/10
+                      </Badge>
+                    {/if}
                     {#if pool.type === 'vercel'}
                       <Badge size="sm">vercel relay</Badge>
                     {/if}
@@ -1428,6 +1638,31 @@
                     Last tested: {formatDateTime(pool.lastTestedAt)}
                     {pool.lastError ? ` · ${pool.lastError}` : ''}
                   </p>
+
+                  {#if pool.exitIpv4 || pool.exitIpv6 || pool.exitCountry || pool.exitIsp}
+                    <div class="flex flex-wrap items-center gap-1.5 mt-2 text-[11px]">
+                      {#if pool.exitIpv4}
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono font-medium text-emerald-700 bg-emerald-500/10 dark:text-emerald-300 dark:bg-emerald-500/15 border border-emerald-500/20">
+                          <span class="opacity-60 text-[9px] uppercase font-sans font-bold">IPv4</span> {pool.exitIpv4}
+                        </span>
+                      {/if}
+                      {#if pool.exitIpv6}
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono font-medium text-cyan-700 bg-cyan-500/10 dark:text-cyan-300 dark:bg-cyan-500/15 border border-cyan-500/20">
+                          <span class="opacity-60 text-[9px] uppercase font-sans font-bold">IPv6</span> {pool.exitIpv6}
+                        </span>
+                      {/if}
+                      {#if pool.exitCountry || pool.exitCity}
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-medium text-text-main bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08]">
+                          <span class="text-[12px]">📍</span> {[pool.exitCity, pool.exitCountry].filter(Boolean).join(', ')}
+                        </span>
+                      {/if}
+                      {#if pool.exitIsp || pool.exitOrg || pool.exitAsn}
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-medium text-text-muted bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08]">
+                          <span class="text-[12px]">🏢</span> {[pool.exitAsn, pool.exitIsp || pool.exitOrg].filter(Boolean).join(' · ')}
+                        </span>
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
               </div>
 
@@ -1472,8 +1707,400 @@
             </div>
           {/each}
         </div>
+
+        {#if totalPages > 1 || displayedPools.length > 10}
+          <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-2 border-t border-black/[0.06] dark:border-white/[0.08] text-xs text-text-muted">
+            <div class="flex items-center gap-2">
+              <span>Showing {(currentPage - 1) * pageSize + 1}–{Math.min(currentPage * pageSize, displayedPools.length)} of {displayedPools.length} pools</span>
+              <span class="opacity-40">|</span>
+              <div class="flex items-center gap-1.5">
+                <span>Per page:</span>
+                <select
+                  bind:value={pageSize}
+                  class="bg-transparent border border-black/10 dark:border-white/10 rounded px-1.5 py-0.5 text-xs text-text-main focus:outline-none focus:border-primary cursor-pointer"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={currentPage <= 1}
+                onclick={() => (currentPage = Math.max(1, currentPage - 1))}
+              >
+                Previous
+              </Button>
+              <div class="flex items-center px-2 font-medium text-text-main">
+                {currentPage} / {totalPages}
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={currentPage >= totalPages}
+                onclick={() => (currentPage = Math.min(totalPages, currentPage + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        {/if}
       {/if}
     </Card>
+    {:else if activeViewTab === 'groups'}
+      <div class="flex flex-col gap-4">
+        <!-- Group Overview Card -->
+        <Card>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-sm font-semibold text-text-main flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary text-[18px]">folder_special</span>
+                Proxy Group Balancing & Smart Fitness
+              </h2>
+              <p class="text-xs text-text-muted mt-1 max-w-2xl">
+                Grouping proxy nodes enables smart dynamic balancing. When a provider connection binds to a group (e.g. <span class="font-mono text-primary font-medium">group:dc</span>), the router selects the healthiest node based on latency EWMA and fitness score, and automatically falls over if a node fails.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onclick={() => openCreateModal('single')}
+            >
+              <span class="material-symbols-outlined text-[16px]">add</span>
+              New Pool in Group
+            </Button>
+          </div>
+        </Card>
+
+        <!-- Group Cards Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {#each groupSummaries as grp (grp.name)}
+            <div class="rounded-xl border border-border bg-surface p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-primary/40 transition-colors">
+              <div class="space-y-3">
+                <!-- Header -->
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="material-symbols-outlined text-primary text-[22px]">folder_open</span>
+                    <div>
+                      <h3 class="text-sm font-semibold text-text-main truncate">
+                        {grp.name === 'Default' ? 'Default (Ungrouped)' : grp.name}
+                      </h3>
+                      <p class="text-[11px] text-text-muted">Target ID: <span class="font-mono text-text-main font-medium">{grp.name === 'Default' ? 'none' : `group:${grp.name}`}</span></p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    {#if grp.inCooldownCount > 0}
+                      <span class="rounded bg-red-500/15 border border-red-500/30 text-red-500 px-2 py-0.5 text-[11px] font-semibold animate-pulse">
+                        {grp.inCooldownCount} in cooldown
+                      </span>
+                    {:else}
+                      <span class="rounded bg-emerald-500/10 text-emerald-500 px-2 py-0.5 text-[11px] font-medium">
+                        All Healthy
+                      </span>
+                    {/if}
+                  </div>
+                </div>
+
+                <!-- Metrics bar -->
+                <div class="grid grid-cols-3 gap-2 py-2 px-3 rounded-lg bg-surface-2 border border-border/50 text-center">
+                  <div>
+                    <div class="text-[10px] text-text-muted uppercase font-medium">Active Nodes</div>
+                    <div class="text-xs font-semibold text-text-main mt-0.5">{grp.activeCount} / {grp.totalCount}</div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] text-text-muted uppercase font-medium">Avg Fitness</div>
+                    <div class="text-xs font-semibold mt-0.5 {grp.avgFitness >= 80 ? 'text-emerald-500' : grp.avgFitness >= 50 ? 'text-amber-500' : 'text-red-500'}">
+                      {grp.avgFitness}%
+                    </div>
+                  </div>
+                  <div>
+                    <div class="text-[10px] text-text-muted uppercase font-medium">Avg Latency</div>
+                    <div class="text-xs font-semibold text-text-main mt-0.5">{grp.avgLatency > 0 ? `${grp.avgLatency}ms` : 'N/A'}</div>
+                  </div>
+                </div>
+
+                <!-- Member Pools List -->
+                <div>
+                  <div class="text-[11px] font-medium text-text-muted mb-1.5 flex items-center justify-between">
+                    <span>Member Proxies ({grp.pools.length})</span>
+                    {#if grp.strictCount > 0}
+                      <span class="text-[10px] text-amber-500">{grp.strictCount} strict mode</span>
+                    {/if}
+                  </div>
+                  <div class="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
+                    {#each grp.pools as pool (pool.id)}
+                      <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2 border border-border/40 text-xs">
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center gap-1.5">
+                            <span class="font-medium text-text-main truncate">{pool.name}</span>
+                            {#if !pool.isActive}
+                              <span class="text-[10px] text-text-muted">(off)</span>
+                            {/if}
+                            {#if pool.inCooldown}
+                              <span class="text-[10px] text-red-500 font-semibold animate-pulse">COOLDOWN ({pool.cooldownRemainingSec || 0}s)</span>
+                            {/if}
+                          </div>
+                          <div class="text-[10px] text-text-muted font-mono truncate">{pool.proxyUrl}</div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                          {#if typeof pool.fitnessScore === 'number'}
+                            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded {pool.fitnessScore >= 80 ? 'bg-emerald-500/10 text-emerald-500' : pool.fitnessScore >= 50 ? 'bg-amber-500/10 text-amber-500' : 'bg-red-500/10 text-red-500'}">
+                              {pool.fitnessScore}%
+                            </span>
+                          {/if}
+                          {#if pool.latency}
+                            <span class="text-[10px] text-text-muted font-mono">{pool.latency}ms</span>
+                          {/if}
+                          <button
+                            type="button"
+                            onclick={() => handleTest(pool.id)}
+                            disabled={testingId === pool.id}
+                            class="p-1 rounded text-text-muted hover:text-text-main hover:bg-surface-3 transition-colors cursor-pointer"
+                            title="Test proxy"
+                          >
+                            <span class="material-symbols-outlined text-[14px] {testingId === pool.id ? 'animate-spin' : ''}">refresh</span>
+                          </button>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Actions -->
+              <div class="flex items-center justify-between gap-2 pt-2 border-t border-border/40">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onclick={() => {
+                    groupFilter = grp.name === 'Default' ? '' : grp.name
+                    activeViewTab = 'pools'
+                  }}
+                >
+                  <span class="material-symbols-outlined text-[16px]">filter_list</span>
+                  View in Table
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onclick={() => testGroup(grp.name)}
+                  disabled={healthChecking}
+                >
+                  <span class="material-symbols-outlined text-[16px]">speed</span>
+                  Test Group
+                </Button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {:else if activeViewTab === 'fitness'}
+      <div class="flex flex-col gap-4">
+        <!-- Telemetry Stats Cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="rounded-xl border border-border bg-surface p-3.5">
+            <div class="text-[11px] font-medium text-text-muted">Total Monitored</div>
+            <div class="text-xl font-bold text-text-main mt-1">{proxyPools.length}</div>
+            <div class="text-[11px] text-text-muted mt-0.5">{counts.active} active in cluster</div>
+          </div>
+          <div class="rounded-xl border border-border bg-surface p-3.5">
+            <div class="text-[11px] font-medium text-text-muted">In Quarantine / Cooldown</div>
+            <div class="text-xl font-bold mt-1 {cooldownCount > 0 ? 'text-red-500' : 'text-emerald-500'}">
+              {cooldownCount}
+            </div>
+            <div class="text-[11px] text-text-muted mt-0.5">{cooldownCount > 0 ? 'Temporary penalty active' : 'Zero nodes quarantined'}</div>
+          </div>
+          <div class="rounded-xl border border-border bg-surface p-3.5">
+            <div class="text-[11px] font-medium text-text-muted">Canary Probe Interval</div>
+            <div class="text-xl font-bold text-text-main mt-1">10 min</div>
+            <div class="text-[11px] text-text-muted mt-0.5">Cloudflare trace endpoint</div>
+          </div>
+          <div class="rounded-xl border border-border bg-surface p-3.5">
+            <div class="text-[11px] font-medium text-text-muted">Quarantine Threshold</div>
+            <div class="text-xl font-bold text-text-main mt-1">10 fails</div>
+            <div class="text-[11px] text-text-muted mt-0.5">Consecutive canary drops</div>
+          </div>
+        </div>
+
+        <!-- Active Quarantine Table (if any) -->
+        {#if cooldownCount > 0}
+          <Card>
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-red-500 text-[20px]">warning</span>
+                <h2 class="text-sm font-semibold text-text-main">Nodes Currently in Cooldown</h2>
+              </div>
+              <span class="text-xs text-text-muted">Automatic rate-limit / canary quarantine</span>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead>
+                  <tr class="border-b border-border/60 text-text-muted">
+                    <th class="py-2 px-3 font-medium">Proxy Name</th>
+                    <th class="py-2 px-3 font-medium">Group</th>
+                    <th class="py-2 px-3 font-medium">Cooldown Remaining</th>
+                    <th class="py-2 px-3 font-medium">Fitness Score</th>
+                    <th class="py-2 px-3 font-medium">Canary Fails</th>
+                    <th class="py-2 px-3 font-medium text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border/30">
+                  {#each proxyPools.filter((p) => p.inCooldown) as pool (pool.id)}
+                    <tr>
+                      <td class="py-2.5 px-3">
+                        <div class="font-medium text-text-main">{pool.name}</div>
+                        <div class="text-[10px] text-text-muted font-mono">{pool.proxyUrl}</div>
+                      </td>
+                      <td class="py-2.5 px-3">
+                        <span class="px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border/40 text-[10px]">
+                          {pool.group || 'None'}
+                        </span>
+                      </td>
+                      <td class="py-2.5 px-3">
+                        <span class="font-mono text-red-500 font-semibold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20">
+                          {pool.cooldownRemainingSec || 0} seconds
+                        </span>
+                      </td>
+                      <td class="py-2.5 px-3">
+                        <span class="font-mono text-red-500 font-medium">
+                          {pool.fitnessScore ?? 0}%
+                        </span>
+                      </td>
+                      <td class="py-2.5 px-3">
+                        <span class="font-mono text-amber-500 font-medium">{pool.consecutiveProbeFails || 0} / 10</span>
+                      </td>
+                      <td class="py-2.5 px-3 text-right">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={testingId === pool.id}
+                          onclick={() => handleTest(pool.id)}
+                        >
+                          <span class="material-symbols-outlined text-[14px] {testingId === pool.id ? 'animate-spin' : ''}">refresh</span>
+                          Retest & Clear
+                        </Button>
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        {/if}
+
+        <!-- Leaderboard / Telemetry Table -->
+        <Card>
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <h2 class="text-sm font-semibold text-text-main">Fitness Score Telemetry</h2>
+              <p class="text-xs text-text-muted">Sorted from lowest to highest score to easily identify degraded or blocked proxies.</p>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={healthChecking}
+              onclick={() => handleHealthCheck(true)}
+            >
+              <span class="material-symbols-outlined text-[16px]">speed</span>
+              Test All Nodes
+            </Button>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="border-b border-border/60 text-text-muted">
+                  <th class="py-2 px-3 font-medium">Node</th>
+                  <th class="py-2 px-3 font-medium">Group</th>
+                  <th class="py-2 px-3 font-medium">Fitness Score</th>
+                  <th class="py-2 px-3 font-medium">EWMA Latency</th>
+                  <th class="py-2 px-3 font-medium">Canary Probes</th>
+                  <th class="py-2 px-3 font-medium">Status</th>
+                  <th class="py-2 px-3 font-medium text-right">Test</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border/30">
+                {#each fitnessLeaderboard as pool (pool.id)}
+                  {@const score = pool.fitnessScore ?? 100}
+                  <tr>
+                    <td class="py-2.5 px-3">
+                      <div class="font-medium text-text-main">{pool.name}</div>
+                      <div class="text-[10px] text-text-muted font-mono">{pool.proxyUrl}</div>
+                    </td>
+                    <td class="py-2.5 px-3">
+                      <span class="px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border/40 text-[10px]">
+                        {pool.group || 'None'}
+                      </span>
+                    </td>
+                    <td class="py-2.5 px-3">
+                      <div class="flex items-center gap-2 min-w-[120px]">
+                        <div class="flex-1 h-2 rounded-full bg-surface-3 overflow-hidden">
+                          <div
+                            class="h-full rounded-full transition-all {score >= 80 ? 'bg-emerald-500' : score >= 50 ? 'bg-amber-500' : 'bg-red-500'}"
+                            style="width: {score}%"
+                          ></div>
+                        </div>
+                        <span class="font-mono text-[11px] font-semibold {score >= 80 ? 'text-emerald-500' : score >= 50 ? 'text-amber-500' : 'text-red-500'}">
+                          {score}%
+                        </span>
+                      </div>
+                    </td>
+                    <td class="py-2.5 px-3 font-mono">
+                      {pool.ewmaLatencyMs ? `${Math.round(pool.ewmaLatencyMs)}ms` : pool.latency ? `${pool.latency}ms` : 'N/A'}
+                    </td>
+                    <td class="py-2.5 px-3">
+                      {#if (pool.consecutiveProbeFails || 0) > 0}
+                        <span class="text-amber-500 font-medium font-mono">{pool.consecutiveProbeFails}/10 fails</span>
+                      {:else}
+                        <span class="text-emerald-500 text-[11px]">Passing (10m)</span>
+                      {/if}
+                    </td>
+                    <td class="py-2.5 px-3">
+                      {#if pool.inCooldown}
+                        <span class="text-red-500 font-semibold text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/20 animate-pulse">
+                          COOLDOWN ({pool.cooldownRemainingSec || 0}s)
+                        </span>
+                      {:else if !pool.isActive}
+                        <span class="text-text-muted text-[10px]">Disabled</span>
+                      {:else}
+                        <span class="text-emerald-500 text-[10px]">Healthy</span>
+                      {/if}
+                    </td>
+                    <td class="py-2.5 px-3 text-right">
+                      <button
+                        type="button"
+                        onclick={() => handleTest(pool.id)}
+                        disabled={testingId === pool.id}
+                        class="p-1 rounded text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors cursor-pointer"
+                        title="Run probe test"
+                      >
+                        <span class="material-symbols-outlined text-[15px] {testingId === pool.id ? 'animate-spin' : ''}">refresh</span>
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+
+        <!-- Technical Scoring Info -->
+        <div class="rounded-xl border border-border/50 bg-surface-2 p-4 text-xs text-text-muted space-y-2">
+          <div class="font-semibold text-text-main flex items-center gap-1.5">
+            <span class="material-symbols-outlined text-[16px] text-primary">info</span>
+            Smart Fitness & Cooldown Mechanics
+          </div>
+          <p>
+            The fitness engine continuously computes composite health: baseline starts at 100%, latency over 1500ms applies proportional penalties, while HTTP 429 / 403 / connection drops deduct 25 points. Nodes failing 10 consecutive canary probes enter automatic quarantine with exponential cooldown backoff (30s to 600s).
+          </p>
+        </div>
+      </div>
+    {/if}
 
     <Modal isOpen={showVercelModal} title="Deploy Vercel Relay" onClose={closeVercelModal}>
       <div class="flex flex-col gap-4">

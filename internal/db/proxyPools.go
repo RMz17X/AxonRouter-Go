@@ -22,6 +22,7 @@ type ProxyPool struct {
 	URLs        []string `json:"urls"`
 	Strategy    string   `json:"strategy"` // "round-robin" or "random"
 	Type        string   `json:"type"`     // "http", "vercel", "cloudflare", "deno", "netlify"
+	Group       string   `json:"group,omitempty"` // custom group label or tag
 	NoProxy     string   `json:"noProxy"`
 	StrictProxy bool     `json:"strictProxy"`
 	index       uint64   // atomic counter for round-robin
@@ -127,6 +128,7 @@ func (r *Repo) GetProxyPool(poolID string) (*ProxyPool, error) {
 	if pool.Type == "" {
 		pool.Type = "http"
 	}
+	pool.Group = handlerutil.GetString(raw, "group")
 	pool.NoProxy = handlerutil.GetString(raw, "noProxy")
 	if sp, ok := raw["strictProxy"].(bool); ok {
 		pool.StrictProxy = sp
@@ -168,6 +170,7 @@ type ProxyPoolData struct {
 	ProxyURL     string  `json:"proxyUrl"`
 	NoProxy      string  `json:"noProxy"`
 	Type         string  `json:"type"`
+	Group        string  `json:"group,omitempty"`
 	StrictProxy  bool    `json:"strictProxy"`
 	LastTestedAt *string `json:"lastTestedAt"`
 	LastError    *string `json:"lastError"`
@@ -196,6 +199,7 @@ func (r *Repo) InsertProxyPool(d ProxyPoolData) (map[string]any, error) {
 		"proxyUrl":     d.ProxyURL,
 		"noProxy":      d.NoProxy,
 		"type":         d.Type,
+		"group":        d.Group,
 		"strictProxy":  d.StrictProxy,
 		"isActive":     true,
 		"testStatus":   "unknown",
@@ -405,4 +409,68 @@ func (r *Repo) SetProxyPoolStatus(id string, status string, latencyMs int64) err
 		string(updatedBytes), status, now, id)
 	proxyPoolCache.Delete(id)
 	return err
+}
+
+// DisableProxyPool deactivates a proxy pool (sets isActive = 0) when
+// background health checks fail repeatedly.
+func (r *Repo) DisableProxyPool(id string) error {
+	return r.UpdateProxyPool(id, map[string]any{"isActive": false})
+}
+
+// ActivePoolsByTarget returns active proxy pools matching target (pool ID,
+// fixed type "type:<type>" / "<type>", or group "group:<name>" / "<name>").
+func (r *Repo) ActivePoolsByTarget(target string) []*ProxyPool {
+	target = strings.TrimSpace(target)
+	if target == "" || target == "__none__" {
+		return nil
+	}
+
+	var matchType, matchGroup string
+	switch {
+	case strings.HasPrefix(strings.ToLower(target), "type:"):
+		matchType = strings.ToLower(strings.TrimPrefix(target, "type:"))
+	case strings.HasPrefix(strings.ToLower(target), "group:"):
+		matchGroup = strings.ToLower(strings.TrimPrefix(target, "group:"))
+	case isKnownProxyType(target):
+		matchType = strings.ToLower(target)
+	}
+
+	activeIDs := r.ActivePoolIDs()
+	var matched []*ProxyPool
+	for _, id := range activeIDs {
+		pool, err := r.GetProxyPool(id)
+		if err != nil || pool == nil || !pool.IsActive {
+			continue
+		}
+		if matchType != "" {
+			if strings.EqualFold(pool.Type, matchType) {
+				matched = append(matched, pool)
+			}
+			continue
+		}
+		if matchGroup != "" {
+			if strings.EqualFold(pool.Group, matchGroup) {
+				matched = append(matched, pool)
+			}
+			continue
+		}
+		// Exact pool ID match
+		if pool.ID == target {
+			matched = append(matched, pool)
+			break
+		}
+		// Fallback: target matching pool.Group
+		if pool.Group != "" && strings.EqualFold(pool.Group, target) {
+			matched = append(matched, pool)
+		}
+	}
+	return matched
+}
+
+func isKnownProxyType(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "http", "cloudflare", "vercel", "deno", "netlify":
+		return true
+	}
+	return false
 }

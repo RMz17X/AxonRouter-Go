@@ -23,6 +23,7 @@ import (
 	"9router/proxy/internal/shutdown"
 	"9router/proxy/internal/updater"
 	"9router/proxy/internal/uptime"
+	"9router/proxy/internal/proxy/smart"
 )
 
 // ServerModule provides *http.Server and manages its lifecycle and background tasks.
@@ -119,6 +120,9 @@ func ProvideServer(p ServerParams) *http.Server {
 			startAutoPingScheduler(shutdown.Context(), p.Repo, p.ChatHandler)
 			startModelHealthScheduler(shutdown.Context(), p.Repo, p.ChatHandler)
 			startUptimeHeartbeat(shutdown.Context(), p.Repo)
+			if p.Repo != nil {
+				smart.NewCanaryWorker(p.Repo, nil).Start(shutdown.Context())
+			}
 
 			log.Printf("9router-go Proxy (%s) starting on port %d", updater.CurrentVersion, p.Config.Port)
 

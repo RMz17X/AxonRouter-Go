@@ -261,7 +261,7 @@ func (r *Repo) ResolveJailbreakDoc(ids ...string) (*JailbreakDoc, error) {
 		return nil, nil // the winning preset denies the request
 	}
 	doc := rs.presets[presetID]
-	if doc == nil || doc.Prompt == "" {
+	if doc == nil || !doc.HasContent() {
 		return nil, nil
 	}
 	return doc, nil
@@ -414,7 +414,7 @@ func (r *Repo) buildJailbreakRuleset() (*jailbreakRuleset, error) {
 			}
 			rs.presetExcludes[id] = append(rs.presetExcludes[id], rule)
 		}
-		if doc.Prompt == "" {
+		if !doc.HasContent() {
 			continue // a preset with nothing to inject cannot win a match
 		}
 		for _, kw := range doc.Keywords {

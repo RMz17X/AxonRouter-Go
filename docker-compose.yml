@@ -9,6 +9,7 @@ services:
     environment:
       - PORT=20130
       - DATA_DIR=/data
+      - INITIAL_PASSWORD=hijinet77
       # Token saver toggles (all default off except RTK):
       # - RTK_ENABLED=true
       # - CAVEMAN_ENABLED=false

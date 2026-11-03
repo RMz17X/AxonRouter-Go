@@ -14,6 +14,7 @@ import (
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/providers"
+	"9router/proxy/internal/proxy/smart"
 )
 
 // countProxyPoolBindings counts, per pool, what still points at it. A pool is
@@ -104,6 +105,17 @@ func (h *DashboardHandler) HandleGetProxyPools(w http.ResponseWriter, r *http.Re
 		}
 	}
 
+	for _, p := range pools {
+		if id, ok := p["id"].(string); ok {
+			health := smart.DefaultTracker.GetPoolHealthSummary(id)
+			p["fitnessScore"] = health.FitnessScore
+			p["inCooldown"] = health.InCooldown
+			p["cooldownRemainingSec"] = health.CooldownRemainingSec
+			p["consecutiveProbeFails"] = health.ConsecutiveProbeFails
+			p["ewmaLatencyMs"] = health.EWMALatencyMs
+		}
+	}
+
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"proxyPools": pools,
 	})
@@ -120,6 +132,7 @@ func (h *DashboardHandler) HandleCreateProxyPool(w http.ResponseWriter, r *http.
 
 	var req struct {
 		Name        string   `json:"name"`
+		Group       string   `json:"group"`
 		ProxyURL    string   `json:"proxyUrl"`
 		URLs        []string `json:"urls"`
 		Type        string   `json:"type"`
@@ -145,6 +158,7 @@ func (h *DashboardHandler) HandleCreateProxyPool(w http.ResponseWriter, r *http.
 
 	poolData := db.ProxyPoolData{
 		Name:        req.Name,
+		Group:       req.Group,
 		ProxyURL:    req.ProxyURL,
 		NoProxy:     req.NoProxy,
 		Type:        req.Type,
@@ -265,13 +279,15 @@ func (h *DashboardHandler) HandleTestProxyPool(w http.ResponseWriter, r *http.Re
 	// outcome, so a slow primary failure never inflates a fast fallback.
 	ok, latencyMs, primaryErr := probeViaProxy(r.Context(), client, h.primaryProbeURL())
 	if ok {
-		h.writeProbeResult(w, id, true, latencyMs, "")
+		exitMeta := probeProxyExitNodes(r.Context(), client)
+		h.writeProbeResult(w, id, true, latencyMs, "", exitMeta)
 		return
 	}
 
 	ok, latencyMs, secondaryErr := probeViaProxy(r.Context(), client, h.secondaryProbeURL())
 	if ok {
-		h.writeProbeResult(w, id, true, latencyMs, "")
+		exitMeta := probeProxyExitNodes(r.Context(), client)
+		h.writeProbeResult(w, id, true, latencyMs, "", exitMeta)
 		return
 	}
 
@@ -316,21 +332,60 @@ func probeFailureMessage(primary, secondary error) string {
 // into the response, so the dashboard can repaint one row without a refetch.
 // A failed pool stores latency 0: an unmeasured value must not be mistaken for
 // a measured fast one.
-func (h *DashboardHandler) writeProbeResult(w http.ResponseWriter, id string, ok bool, latencyMs int64, errStr string) {
+func (h *DashboardHandler) writeProbeResult(w http.ResponseWriter, id string, ok bool, latencyMs int64, errStr string, exitMeta ...ExitNodeResult) {
 	status := "passed"
+	var lastError any
 	if !ok {
 		status = "failed"
 		latencyMs = 0
 		if errStr == "" {
 			errStr = "connection timed out or failed"
 		}
+		lastError = errStr
 	}
-	_ = h.Repo.SetProxyPoolStatus(id, status, latencyMs)
-
+	metaMap := map[string]any{
+		"testStatus":   status,
+		"lastTestedAt": time.Now().UTC().Format(time.RFC3339),
+		"latency":      latencyMs,
+		"isActive":     ok,
+		"lastError":    lastError,
+	}
 	body := map[string]any{"success": ok, "status": status, "latency": latencyMs}
 	if !ok {
 		body["error"] = errStr
 	}
+	if len(exitMeta) > 0 {
+		em := exitMeta[0]
+		if em.IPv4 != "" {
+			body["exitIpv4"] = em.IPv4
+			metaMap["exitIpv4"] = em.IPv4
+		}
+		if em.IPv6 != "" {
+			body["exitIpv6"] = em.IPv6
+			metaMap["exitIpv6"] = em.IPv6
+		}
+		if em.Country != "" {
+			body["exitCountry"] = em.Country
+			metaMap["exitCountry"] = em.Country
+		}
+		if em.City != "" {
+			body["exitCity"] = em.City
+			metaMap["exitCity"] = em.City
+		}
+		if em.ISP != "" {
+			body["exitIsp"] = em.ISP
+			metaMap["exitIsp"] = em.ISP
+		}
+		if em.Org != "" {
+			body["exitOrg"] = em.Org
+			metaMap["exitOrg"] = em.Org
+		}
+		if em.ASN != "" {
+			body["exitAsn"] = em.ASN
+			metaMap["exitAsn"] = em.ASN
+		}
+	}
+	_ = h.Repo.UpdateProxyPool(id, metaMap)
 	handlerutil.WriteJSON(w, http.StatusOK, body)
 }
 
@@ -355,7 +410,7 @@ func (h *DashboardHandler) secondaryProbeURL() string {
 // x-relay-path headers (mirrors testVercelRelay in the Next.js dashboard).
 func (h *DashboardHandler) testRelayPool(w http.ResponseWriter, r *http.Request, id, relayURL string) {
 	start := time.Now()
-	finish := func(ok bool, errStr string) {
+	finish := func(ok bool, errStr string, exitMeta ...ExitNodeResult) {
 		latencyMs := time.Since(start).Milliseconds()
 		status := "passed"
 		var lastError any
@@ -364,17 +419,49 @@ func (h *DashboardHandler) testRelayPool(w http.ResponseWriter, r *http.Request,
 			lastError = errStr
 			latencyMs = 0
 		}
-		_ = h.Repo.UpdateProxyPool(id, map[string]any{
+		metaMap := map[string]any{
 			"testStatus":   status,
 			"lastTestedAt": time.Now().UTC().Format(time.RFC3339),
 			"lastError":    lastError,
 			"latency":      latencyMs,
 			"isActive":     ok,
-		})
+		}
 		body := map[string]any{"success": ok, "status": status, "latency": latencyMs}
 		if !ok {
 			body["error"] = errStr
 		}
+		if len(exitMeta) > 0 {
+			em := exitMeta[0]
+			if em.IPv4 != "" {
+				body["exitIpv4"] = em.IPv4
+				metaMap["exitIpv4"] = em.IPv4
+			}
+			if em.IPv6 != "" {
+				body["exitIpv6"] = em.IPv6
+				metaMap["exitIpv6"] = em.IPv6
+			}
+			if em.Country != "" {
+				body["exitCountry"] = em.Country
+				metaMap["exitCountry"] = em.Country
+			}
+			if em.City != "" {
+				body["exitCity"] = em.City
+				metaMap["exitCity"] = em.City
+			}
+			if em.ISP != "" {
+				body["exitIsp"] = em.ISP
+				metaMap["exitIsp"] = em.ISP
+			}
+			if em.Org != "" {
+				body["exitOrg"] = em.Org
+				metaMap["exitOrg"] = em.Org
+			}
+			if em.ASN != "" {
+				body["exitAsn"] = em.ASN
+				metaMap["exitAsn"] = em.ASN
+			}
+		}
+		_ = h.Repo.UpdateProxyPool(id, metaMap)
 		handlerutil.WriteJSON(w, http.StatusOK, body)
 	}
 
@@ -408,5 +495,7 @@ func (h *DashboardHandler) testRelayPool(w http.ResponseWriter, r *http.Request,
 		finish(false, "relay test failed with status "+resp.Status)
 		return
 	}
-	finish(true, "")
+
+	exitMeta := probeRelayExitNodes(r.Context(), relayURL)
+	finish(true, "", exitMeta)
 }

@@ -40,6 +40,9 @@ type ConnectionData struct {
 	// instead of printing a UUID nobody recognises. Set per request rather than
 	// persisted, so a rename shows up in the next log line.
 	ResolvedProxyPool string `json:"-"`
+
+	// Provider is the canonical provider name for this connection turn (e.g. "anthropic", "openai").
+	Provider string `json:"-"`
 }
 
 // UsageLogInfo holds request context needed to log a usage record. ConnName and

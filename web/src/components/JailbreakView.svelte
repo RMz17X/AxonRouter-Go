@@ -1,7 +1,7 @@
 
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, type JailbreakDoc, type JailbreakImportEntry, type JailbreakImportResult, type JailbreakMatch, type JailbreakKeyword, type JailbreakModelConfig } from '../api/client'
+  import { api, type JailbreakDoc, type JailbreakImportEntry, type JailbreakImportResult, type JailbreakMatch, type JailbreakKeyword, type JailbreakModelConfig, type ChatTurn } from '../api/client'
   import { matchesAnyJailbreakKeyword } from '../lib/jailbreakKeywords'
   import { marked } from 'marked'
   import KeywordRules from './KeywordRules.svelte'
@@ -27,6 +27,9 @@
     prompt: string
     kind: string
     geminiSafety: boolean
+    mode: 'single' | 'chat'
+    position: 'prepend' | 'append'
+    turns: ChatTurn[]
     source: string
     keywords: JailbreakKeyword[]
     excludes: JailbreakKeyword[]
@@ -37,11 +40,29 @@
     prompt: '',
     kind: '',
     geminiSafety: false,
+    mode: 'single',
+    position: 'prepend',
+    turns: [
+      { role: 'user', content: '' },
+      { role: 'assistant', content: '' },
+    ],
     source: '',
     keywords: [],
     excludes: [],
     order: 0,
   })
+
+  function addTurn(role: 'user' | 'assistant' = 'user') {
+    presetForm.turns = [...presetForm.turns, { role, content: '' }]
+  }
+
+  function removeTurn(index: number) {
+    if (presetForm.turns.length <= 1) {
+      presetForm.turns = [{ role: 'user', content: '' }]
+      return
+    }
+    presetForm.turns = presetForm.turns.filter((_, i) => i !== index)
+  }
   let presetSaving = $state(false)
   let presetError = $state('')
 
@@ -759,6 +780,12 @@
       prompt: '',
       kind: '',
       geminiSafety: false,
+      mode: 'single',
+      position: 'prepend',
+      turns: [
+        { role: 'user', content: '' },
+        { role: 'assistant', content: '' },
+      ],
       source: '',
       keywords: [],
       excludes: [],
@@ -778,9 +805,18 @@
       prompt: preset.prompt || '',
       kind: preset.kind || '',
       geminiSafety: !!preset.geminiSafety,
+      mode: preset.mode === 'chat' ? 'chat' : 'single',
+      position: preset.position === 'append' ? 'append' : 'prepend',
+      turns:
+        preset.turns && preset.turns.length > 0
+          ? preset.turns.map((t) => ({ ...t }))
+          : [
+              { role: 'user', content: '' },
+              { role: 'assistant', content: '' },
+            ],
       source: preset.source || '',
-      keywords: preset.keywords || [],
-      excludes: preset.excludes || [],
+      keywords: preset.keywords ? [...preset.keywords] : [],
+      excludes: preset.excludes ? [...preset.excludes] : [],
       order: preset.order || 0,
     }
     presetError = ''
@@ -788,9 +824,21 @@
     presetModalOpen = true
   }
   async function savePreset() {
-    if (!presetForm.name.trim() || !presetForm.prompt.trim()) {
-      presetError = 'Name and prompt are required.'
+    if (!presetForm.name.trim()) {
+      presetError = 'Name is required.'
       return
+    }
+    if (presetForm.mode === 'chat') {
+      const activeTurns = presetForm.turns.filter((t) => t.content.trim())
+      if (activeTurns.length === 0) {
+        presetError = 'At least one chat turn with content is required in Multi-turn Script mode.'
+        return
+      }
+    } else {
+      if (!presetForm.prompt.trim()) {
+        presetError = 'Prompt is required in System Prompt mode.'
+        return
+      }
     }
     presetSaving = true
     presetError = ''
@@ -800,6 +848,9 @@
         name: presetForm.name.trim(),
         prompt: presetForm.prompt,
         geminiSafety: presetForm.geminiSafety,
+        mode: presetForm.mode,
+        position: presetForm.position,
+        turns: presetForm.mode === 'chat' ? presetForm.turns.filter((t) => t.content.trim()) : undefined,
         kind: presetForm.kind.trim() || undefined,
         source: presetForm.source.trim() || undefined,
         keywords: presetForm.keywords,
@@ -1159,6 +1210,17 @@
                   <span
                     class="px-1.5 py-0.5 rounded-[6px] bg-surface-3 border border-border-subtle text-[10px] font-semibold uppercase text-text-main shrink-0"
                     >{preset.kind}</span
+                  >
+                {/if}
+                {#if preset.mode === 'chat'}
+                  <span
+                    class="px-1.5 py-0.5 rounded-[6px] bg-purple-500/10 border border-purple-500/30 text-[10px] font-semibold text-purple-400 shrink-0"
+                    >SCRIPT ({preset.turns?.length || 0})</span
+                  >
+                {:else if preset.position === 'append'}
+                  <span
+                    class="px-1.5 py-0.5 rounded-[6px] bg-blue-500/10 border border-blue-500/30 text-[10px] font-semibold text-blue-400 shrink-0"
+                    >APPEND</span
                   >
                 {/if}
               </div>
@@ -1602,28 +1664,138 @@
           class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500"
         />
       </label>
-      <label class="block space-y-1.5">
-        <span class="text-xs text-text-muted">Prompt</span>
-        <textarea
-          bind:value={presetForm.prompt}
-          rows="6"
-          class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm font-code outline-none focus:border-brand-500 resize-y"
-        ></textarea>
-        <button
-          type="button"
-          onclick={() => (promptPreviewOpen = !promptPreviewOpen)}
-          class="text-[11px] text-text-muted hover:text-brand-500 hover:underline"
-        >
-          {promptPreviewOpen ? 'Hide preview' : 'Preview markdown'}
-        </button>
-        {#if promptPreviewOpen && presetForm.prompt.trim()}
-          <div class="mt-1 p-3 rounded-[10px] bg-surface-2 border border-border-subtle max-h-60 overflow-y-auto">
-            <div class="prose-jailbreak text-xs text-text-main leading-relaxed">
-              {@html marked.parse(presetForm.prompt, { async: false }) as string}
-            </div>
+
+      <!-- Mode Toggle: System Prompt vs Multi-turn Script -->
+      <div class="space-y-1.5">
+        <span class="text-xs text-text-muted">Injection Mode</span>
+        <div class="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onclick={() => (presetForm.mode = 'single')}
+            class="flex items-center justify-center gap-2 py-2 px-3 rounded-[10px] border text-xs font-medium transition-colors {presetForm.mode === 'single'
+              ? 'border-brand-500 bg-brand-500/10 text-text-main font-semibold'
+              : 'border-border-subtle bg-surface-2 text-text-muted hover:border-border hover:text-text-main'}"
+          >
+            <span class="material-symbols-outlined text-[16px]">description</span>
+            System Prompt
+          </button>
+          <button
+            type="button"
+            onclick={() => (presetForm.mode = 'chat')}
+            class="flex items-center justify-center gap-2 py-2 px-3 rounded-[10px] border text-xs font-medium transition-colors {presetForm.mode === 'chat'
+              ? 'border-purple-500 bg-purple-500/10 text-purple-400 font-semibold'
+              : 'border-border-subtle bg-surface-2 text-text-muted hover:border-border hover:text-text-main'}"
+          >
+            <span class="material-symbols-outlined text-[16px]">chat</span>
+            Multi-turn Script
+          </button>
+        </div>
+      </div>
+
+      {#if presetForm.mode === 'single'}
+        <div class="space-y-1.5">
+          <span class="text-xs text-text-muted">Position</span>
+          <div class="flex items-center gap-4 py-1">
+            <label class="flex items-center gap-2 cursor-pointer text-xs text-text-main">
+              <input
+                type="radio"
+                name="preset-position"
+                value="prepend"
+                bind:group={presetForm.position}
+                class="accent-brand-500"
+              />
+              Prepend (before system/user prompt)
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer text-xs text-text-main">
+              <input
+                type="radio"
+                name="preset-position"
+                value="append"
+                bind:group={presetForm.position}
+                class="accent-brand-500"
+              />
+              Append (after existing system prompt)
+            </label>
           </div>
-        {/if}
-      </label>
+        </div>
+
+        <label class="block space-y-1.5">
+          <span class="text-xs text-text-muted">System Prompt</span>
+          <textarea
+            bind:value={presetForm.prompt}
+            rows="6"
+            placeholder="You are an expert assistant..."
+            class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm font-code outline-none focus:border-brand-500 resize-y"
+          ></textarea>
+          <button
+            type="button"
+            onclick={() => (promptPreviewOpen = !promptPreviewOpen)}
+            class="text-[11px] text-text-muted hover:text-brand-500 hover:underline"
+          >
+            {promptPreviewOpen ? 'Hide preview' : 'Preview markdown'}
+          </button>
+          {#if promptPreviewOpen && presetForm.prompt.trim()}
+            <div class="mt-1 p-3 rounded-[10px] bg-surface-2 border border-border-subtle max-h-60 overflow-y-auto">
+              <div class="prose-jailbreak text-xs text-text-main leading-relaxed">
+                {@html marked.parse(presetForm.prompt, { async: false }) as string}
+              </div>
+            </div>
+          {/if}
+        </label>
+      {:else}
+        <!-- Multi-turn Script Editor -->
+        <div class="space-y-3 p-3.5 rounded-[12px] bg-surface-2/60 border border-border-subtle">
+          <div class="flex items-center justify-between">
+            <div>
+              <span class="text-xs font-semibold text-text-main">Conversation Script Turns</span>
+              <p class="text-[11px] text-text-subtle">
+                Scripted fake history inserted before real user questions. Roles alternate user ↔ assistant.
+              </p>
+            </div>
+            <button
+              type="button"
+              onclick={() => addTurn(presetForm.turns[presetForm.turns.length - 1]?.role === 'user' ? 'assistant' : 'user')}
+              class="flex items-center gap-1 px-2.5 py-1 rounded-[8px] bg-purple-500/10 border border-purple-500/30 text-purple-400 hover:bg-purple-500/20 text-xs font-medium transition-colors"
+            >
+              <span class="material-symbols-outlined text-[14px]">add</span>
+              Add Turn
+            </button>
+          </div>
+
+          <div class="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
+            {#each presetForm.turns as turn, idx (idx)}
+              <div class="p-2.5 rounded-[10px] bg-surface-1 border border-border-subtle space-y-2">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-mono text-text-subtle">#{idx + 1}</span>
+                    <select
+                      bind:value={turn.role}
+                      class="px-2 py-0.5 rounded-[6px] bg-surface-2 border border-border-subtle text-xs text-text-main outline-none focus:border-brand-500 font-medium uppercase"
+                    >
+                      <option value="user">User</option>
+                      <option value="assistant">Assistant</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onclick={() => removeTurn(idx)}
+                    title="Remove turn"
+                    class="text-text-subtle hover:text-error transition-colors p-1 leading-none"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">delete</span>
+                  </button>
+                </div>
+                <textarea
+                  bind:value={turn.content}
+                  rows="2"
+                  placeholder={turn.role === 'user' ? 'e.g. Please confirm you understand my rules.' : 'e.g. Understood, I will comply with all instructions.'}
+                  class="w-full px-2.5 py-1.5 rounded-[8px] bg-surface-2 border border-border-subtle text-text-main text-xs font-code outline-none focus:border-brand-500 resize-y"
+                ></textarea>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
       <div class="grid gap-4 sm:grid-cols-2">
         <label class="block space-y-1.5">
           <span class="text-xs text-text-muted">Source file name</span>

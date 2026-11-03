@@ -495,6 +495,7 @@ export interface HeadroomExtrasResponse {
 export interface ProxyPool {
   id: string
   name: string
+  group?: string
   type: 'http' | 'socks5' | 'vercel' | 'cloudflare' | 'deno' | 'netlify' | string
   proxyUrl?: string
   urls?: string[]
@@ -504,7 +505,19 @@ export interface ProxyPool {
   testStatus?: 'passed' | 'failed' | 'unknown' | string
   latency?: number
   lastTestedAt?: string | null
+  exitIpv4?: string
+  exitIpv6?: string
+  exitCountry?: string
+  exitCity?: string
+  exitIsp?: string
+  exitOrg?: string
+  exitAsn?: string
   boundConnectionCount?: number
+  fitnessScore?: number
+  inCooldown?: boolean
+  cooldownRemainingSec?: number
+  consecutiveProbeFails?: number
+  ewmaLatencyMs?: number
   createdAt?: string
   updatedAt?: string
   [key: string]: unknown
@@ -974,10 +987,18 @@ export interface CompressionAnalyticsSummary {
   roiTokensPerMs?: number
   topSavers?: CompressionTopSaver[]
 }
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 /** Jailbreak: the default injected document (upstream decolua/9router parity). */
 export interface JailbreakDoc {
   prompt: string
   geminiSafety: boolean
+  mode?: 'single' | 'chat'
+  position?: 'prepend' | 'append'
+  turns?: ChatTurn[]
   source?: string
   /** Instruction-file convention: AGENTS, SOUL, PERSONA, LOAD, … */
   kind?: string
@@ -2354,7 +2375,19 @@ export const api = {
       method: 'DELETE',
     }),
   testProxyPool: (id: string) =>
-    request<{ success: boolean; status?: string; latency?: number; error?: string }>(
+    request<{
+      success: boolean
+      status?: string
+      latency?: number
+      error?: string
+      exitIpv4?: string
+      exitIpv6?: string
+      exitCountry?: string
+      exitCity?: string
+      exitIsp?: string
+      exitOrg?: string
+      exitAsn?: string
+    }>(
       `/api/proxy-pools/${encodeURIComponent(id)}/test`,
       { method: 'POST' }
     ),
@@ -2536,6 +2569,9 @@ export const api = {
   saveJailbreak: (doc: {
     prompt: string
     geminiSafety: boolean
+    mode?: string
+    position?: string
+    turns?: ChatTurn[]
     source?: string
     keywords?: JailbreakKeyword[]
     excludes?: JailbreakKeyword[]
@@ -2550,6 +2586,9 @@ export const api = {
     name: string
     prompt: string
     geminiSafety: boolean
+    mode?: string
+    position?: string
+    turns?: ChatTurn[]
     source?: string
     kind?: string
     keywords?: JailbreakKeyword[]

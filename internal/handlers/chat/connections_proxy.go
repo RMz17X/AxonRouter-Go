@@ -7,9 +7,20 @@ import (
 	"strings"
 	"sync"
 
+	"9router/proxy/internal/db"
 	"9router/proxy/internal/log"
 	internalproxy "9router/proxy/internal/proxy"
+	"9router/proxy/internal/proxy/smart"
 )
+
+func isKnownProxyType(t string) bool {
+	switch strings.ToLower(t) {
+	case "cloudflare", "vercel", "deno", "netlify", "http":
+		return true
+	default:
+		return false
+	}
+}
 
 // maxProxyClients caps rotating-proxy growth: each entry pins a Transport
 // plus idle sockets, so unbounded distinct URLs (residential rotation)
@@ -87,36 +98,51 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 	// proxy was assigned to prevent, and the dashboard would keep showing the
 	// connection as proxied.
 	if connData.ProxyPoolID != "" {
-		pool, err := h.Repo.GetProxyPool(connData.ProxyPoolID)
-		switch {
-		case err != nil || pool == nil:
-			log.Warn("proxy", "assigned pool not found", "pool", connData.ProxyPoolID)
-			return nil, fmt.Errorf("proxy pool %q is assigned but does not exist", connData.ProxyPoolID)
-		case !pool.IsActive:
-			log.Warn("proxy", "assigned pool is inactive", "pool", connData.ProxyPoolID)
-			return nil, fmt.Errorf("proxy pool %q is assigned but inactive", connData.ProxyPoolID)
+		isGroupOrType := strings.HasPrefix(connData.ProxyPoolID, "type:") ||
+			strings.HasPrefix(connData.ProxyPoolID, "group:") ||
+			isKnownProxyType(connData.ProxyPoolID)
+
+		var pool *db.ProxyPool
+		if isGroupOrType {
+			candidates := h.Repo.ActivePoolsByTarget(connData.ProxyPoolID)
+			if len(candidates) > 0 {
+				pool, _ = smart.DefaultTracker.PickBest(connData.Provider, candidates)
+			}
+			if pool == nil {
+				if strictProxy {
+					log.Warn("proxy", "assigned proxy group/type has no active pool in strict mode", "target", connData.ProxyPoolID)
+					return nil, fmt.Errorf("proxy target %q is unavailable in strict mode", connData.ProxyPoolID)
+				}
+				// Non-strict: fallback to direct connection
+				log.Warn("proxy", "assigned proxy group/type has no active pool, falling back to direct", "target", connData.ProxyPoolID)
+				return h.Client, nil
+			}
+		} else {
+			var err error
+			pool, err = h.Repo.GetProxyPool(connData.ProxyPoolID)
+			switch {
+			case err != nil || pool == nil:
+				log.Warn("proxy", "assigned pool not found", "pool", connData.ProxyPoolID)
+				return nil, fmt.Errorf("proxy pool %q is assigned but does not exist", connData.ProxyPoolID)
+			case !pool.IsActive:
+				log.Warn("proxy", "assigned pool is inactive", "pool", connData.ProxyPoolID)
+				return nil, fmt.Errorf("proxy pool %q is assigned but inactive", connData.ProxyPoolID)
+			}
 		}
+
 		proxyURLStr = pool.NextURL()
 		if proxyURLStr == "" {
 			log.Warn("proxy", "assigned pool has no url", "pool", connData.ProxyPoolID)
 			return nil, fmt.Errorf("proxy pool %q is assigned but carries no url", connData.ProxyPoolID)
 		}
 		proxyType = pool.Type
-		strictProxy = pool.StrictProxy
-		// Name the pool for the log line. The lookup already happened, so this
-		// costs nothing, and "Vercel Relay" answers a question a UUID cannot.
+		if pool.StrictProxy {
+			strictProxy = true
+		}
 		connData.ResolvedProxyPool = pool.Name
 
 		if pool.IsEdgeRelay() {
-			// A relay is an HTTPS endpoint that forwards on x-relay-target /
-			// x-relay-path, not a CONNECT proxy: dialing it with http.ProxyURL
-			// answers "malformed HTTP status code" (see db.ProxyPool.IsEdgeRelay).
-			//
-			// The client carries the relay as a RoundTripper, so every provider
-			// — including one added later, and every request an executor builds
-			// itself — leaves through the relay without provider-specific code.
-			// The dial moves; the request keeps the URL it was built for.
-			logProxyOnce(connData.ProxyPoolID, proxyURLStr, proxyType)
+			logProxyOnce(pool.ID, proxyURLStr, proxyType)
 			return h.relayClient(proxyURLStr), nil
 		}
 	}
