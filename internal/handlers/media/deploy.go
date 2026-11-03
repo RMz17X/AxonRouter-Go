@@ -650,8 +650,12 @@ func (h *MediaHandler) HandleCloudflareDeploy(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	poolName := projectName
+	if strings.TrimSpace(reqBody.Name) != "" {
+		poolName = strings.TrimSpace(reqBody.Name)
+	}
 	pool, err := h.Repo.InsertProxyPool(db.ProxyPoolData{
-		Name: projectName, ProxyURL: deployURL, NoProxy: "", Type: "cloudflare", StrictProxy: false,
+		Name: poolName, ProxyURL: deployURL, NoProxy: "", Type: "cloudflare", StrictProxy: false,
 	})
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())

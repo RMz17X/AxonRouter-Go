@@ -777,20 +777,26 @@
         .replace(/^-+|-+$/g, '')
         .slice(0, 32) || 'cloudflare-relay'
 
+    // Worker name = pool base. Number only appended when the same Cloudflare
+    // account appears more than once (script name is unique per account, NOT
+    // globally), so distinct accounts keep the clean identical name.
+    const accountCounts = new Map<string, number>()
     const entries = cloudflareBulkText
       .split(/\r?\n/)
       .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
       .filter(({ line }) => line.length > 0)
-      .map(({ line, lineNumber }, index) => {
+      .map(({ line, lineNumber }) => {
         const [label = '', accountId = '', apiToken = '', ...extra] = line
           .split('|')
           .map((part) => part.trim())
+        const seen = (accountCounts.get(accountId) ?? 0) + 1
+        accountCounts.set(accountId, seen)
         return {
           lineNumber,
           label,
           accountId,
           apiToken,
-          projectName: `${poolBase}-${index + 1}`,
+          projectName: seen === 1 ? poolBase : `${poolBase}-${seen}`,
           valid: Boolean(label && accountId && apiToken && !extra.length)
         }
       })
@@ -848,7 +854,8 @@
                 accountId: entry.accountId,
                 apiToken: entry.apiToken,
                 projectName: entry.projectName,
-                email: entry.name
+                name: entry.projectName,
+                email: entry.label
               })
 
               successCount += 1
@@ -895,6 +902,7 @@
         .replace(/^-+|-+$/g, '')
         .slice(0, 32) || 'vercel-relay'
 
+    const tokenCounts = new Map<string, number>()
     const entries = vercelBulkText
       .split(/\r?\n/)
       .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
@@ -907,11 +915,13 @@
           label = parts[0] || `Token ${index + 1}`
           token = parts[1] || ''
         }
+        const seen = (tokenCounts.get(token) ?? 0) + 1
+        tokenCounts.set(token, seen)
         return {
           lineNumber,
           label,
           token,
-          projectName: `${poolBase}-${index + 1}`,
+          projectName: seen === 1 ? poolBase : `${poolBase}-${seen}`,
           valid: Boolean(token.length > 0)
         }
       })
