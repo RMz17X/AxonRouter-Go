@@ -75,6 +75,54 @@
   let cloudflareForm = $state({ accountId: '', apiToken: '', projectName: 'cloudflare-relay' })
   let denoForm = $state({ denoToken: '', orgDomain: '', projectName: '' })
   let netlifyForm = $state({ netlifyToken: '', projectName: 'netlify-relay' })
+
+  interface CloudflareBulkResult {
+    lineNumber: number
+    label: string
+    accountId: string
+    projectName: string
+    status: 'pending' | 'running' | 'success' | 'failed'
+    deployUrl?: string
+    error?: string
+  }
+
+  let showCloudflareBulkModal = $state(false)
+  let cloudflareBulkPoolName = $state('cloudflare-relay')
+  let cloudflareBulkText = $state('')
+  let cloudflareBulkResults = $state<CloudflareBulkResult[]>([])
+  let cloudflareBulkProgress = $state({
+    total: 0,
+    completed: 0,
+    success: 0,
+    failed: 0,
+    currentBatch: 0,
+    totalBatches: 0
+  })
+  let bulkCloudflareDeploying = $state(false)
+
+  interface VercelBulkResult {
+    lineNumber: number
+    label: string
+    tokenMasked: string
+    projectName: string
+    status: 'pending' | 'running' | 'success' | 'failed'
+    deployUrl?: string
+    error?: string
+  }
+
+  let showVercelBulkModal = $state(false)
+  let vercelBulkPoolName = $state('vercel-relay')
+  let vercelBulkText = $state('')
+  let vercelBulkResults = $state<VercelBulkResult[]>([])
+  let vercelBulkProgress = $state({
+    total: 0,
+    completed: 0,
+    success: 0,
+    failed: 0,
+    currentBatch: 0,
+    totalBatches: 0
+  })
+  let bulkVercelDeploying = $state(false)
   let saving = $state(false)
   let importing = $state(false)
   let deploying = $state(false)
@@ -229,6 +277,46 @@
   function closeCloudflareModal() {
     if (deploying) return
     showCloudflareModal = false
+  }
+
+  function openCloudflareBulkModal() {
+    cloudflareBulkPoolName = 'cloudflare-relay'
+    cloudflareBulkText = ''
+    cloudflareBulkResults = []
+    cloudflareBulkProgress = {
+      total: 0,
+      completed: 0,
+      success: 0,
+      failed: 0,
+      currentBatch: 0,
+      totalBatches: 0
+    }
+    showCloudflareBulkModal = true
+  }
+
+  function closeCloudflareBulkModal() {
+    if (bulkCloudflareDeploying) return
+    showCloudflareBulkModal = false
+  }
+
+  function openVercelBulkModal() {
+    vercelBulkPoolName = 'vercel-relay'
+    vercelBulkText = ''
+    vercelBulkResults = []
+    vercelBulkProgress = {
+      total: 0,
+      completed: 0,
+      success: 0,
+      failed: 0,
+      currentBatch: 0,
+      totalBatches: 0
+    }
+    showVercelBulkModal = true
+  }
+
+  function closeVercelBulkModal() {
+    if (bulkVercelDeploying) return
+    showVercelBulkModal = false
   }
 
   function openDenoModal() {
@@ -679,6 +767,242 @@
     }
   }
 
+  async function handleCloudflareBulkDeploy() {
+    const poolBase =
+      cloudflareBulkPoolName
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 32) || 'cloudflare-relay'
+
+    const entries = cloudflareBulkText
+      .split(/\r?\n/)
+      .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
+      .filter(({ line }) => line.length > 0)
+      .map(({ line, lineNumber }, index) => {
+        const [label = '', accountId = '', apiToken = '', ...extra] = line
+          .split('|')
+          .map((part) => part.trim())
+        return {
+          lineNumber,
+          label,
+          accountId,
+          apiToken,
+          projectName: `${poolBase}-${index + 1}`,
+          valid: Boolean(label && accountId && apiToken && !extra.length)
+        }
+      })
+
+    if (!entries.length) return
+
+    const maskAccountId = (id: string) =>
+      id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : '••••'
+
+    cloudflareBulkResults = entries.map((entry) => ({
+      lineNumber: entry.lineNumber,
+      label: entry.label || `Line ${entry.lineNumber}`,
+      accountId: entry.accountId ? maskAccountId(entry.accountId) : '—',
+      projectName: entry.projectName,
+      status: entry.valid ? 'pending' : 'failed',
+      error: entry.valid ? undefined : 'Format harus name/email|accountID|apiToken'
+    }))
+
+    bulkCloudflareDeploying = true
+    const validEntries = entries
+      .map((entry, index) => ({ ...entry, originalIndex: index }))
+      .filter((entry) => entry.valid)
+    const BATCH_SIZE = 10
+    const totalBatches = Math.ceil(validEntries.length / BATCH_SIZE) || 1
+
+    let successCount = 0
+    let failedCount = entries.filter((entry) => !entry.valid).length
+
+    cloudflareBulkProgress = {
+      total: entries.length,
+      completed: failedCount,
+      success: 0,
+      failed: failedCount,
+      currentBatch: validEntries.length > 0 ? 1 : 0,
+      totalBatches
+    }
+
+    try {
+      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        const batch = validEntries.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE)
+        if (!batch.length) continue
+
+        cloudflareBulkProgress.currentBatch = batchIndex + 1
+
+        const runningIndices = new Set(batch.map((item) => item.originalIndex))
+        cloudflareBulkResults = cloudflareBulkResults.map((result, idx) =>
+          runningIndices.has(idx) ? { ...result, status: 'running' } : result
+        )
+
+        await Promise.all(
+          batch.map(async (entry) => {
+            const index = entry.originalIndex
+            try {
+              const res = await api.deployCloudflareRelay({
+                accountId: entry.accountId,
+                apiToken: entry.apiToken,
+                projectName: entry.projectName
+              })
+
+              successCount += 1
+              cloudflareBulkResults = cloudflareBulkResults.map((result, resultIndex) =>
+                resultIndex === index
+                  ? { ...result, status: 'success', deployUrl: res.deployUrl || res.proxyUrl || 'Deployed' }
+                  : result
+              )
+              cloudflareBulkProgress.completed += 1
+              cloudflareBulkProgress.success += 1
+            } catch (error) {
+              failedCount += 1
+              cloudflareBulkResults = cloudflareBulkResults.map((result, resultIndex) =>
+                resultIndex === index
+                  ? { ...result, status: 'failed', error: error instanceof Error ? error.message : 'Deploy failed' }
+                  : result
+              )
+              cloudflareBulkProgress.completed += 1
+              cloudflareBulkProgress.failed += 1
+            }
+          })
+        )
+      }
+
+      await fetchProxyPools()
+      if (failedCount > 0) {
+        notifications.error(`${successCount} deployed, ${failedCount} failed`)
+      } else {
+        notifications.success(`${successCount} Cloudflare relays deployed`)
+      }
+    } catch (error) {
+      notifications.error(error instanceof Error ? error.message : 'Bulk deploy failed')
+    } finally {
+      bulkCloudflareDeploying = false
+    }
+  }
+
+  async function handleVercelBulkDeploy() {
+    const poolBase =
+      vercelBulkPoolName
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 32) || 'vercel-relay'
+
+    const entries = vercelBulkText
+      .split(/\r?\n/)
+      .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
+      .filter(({ line }) => line.length > 0)
+      .map(({ line, lineNumber }, index) => {
+        let label = `Token ${index + 1}`
+        let token = line
+        if (line.includes('|')) {
+          const parts = line.split('|').map((p) => p.trim())
+          label = parts[0] || `Token ${index + 1}`
+          token = parts[1] || ''
+        }
+        return {
+          lineNumber,
+          label,
+          token,
+          projectName: `${poolBase}-${index + 1}`,
+          valid: Boolean(token.length > 0)
+        }
+      })
+
+    if (!entries.length) return
+
+    const maskToken = (tok: string) =>
+      tok.length > 8 ? `${tok.slice(0, 4)}…${tok.slice(-4)}` : '••••'
+
+    vercelBulkResults = entries.map((entry) => ({
+      lineNumber: entry.lineNumber,
+      label: entry.label,
+      tokenMasked: entry.token ? maskToken(entry.token) : '—',
+      projectName: entry.projectName,
+      status: entry.valid ? 'pending' : 'failed',
+      error: entry.valid ? undefined : 'Token tidak boleh kosong'
+    }))
+
+    bulkVercelDeploying = true
+    const validEntries = entries
+      .map((entry, index) => ({ ...entry, originalIndex: index }))
+      .filter((entry) => entry.valid)
+    const BATCH_SIZE = 10
+    const totalBatches = Math.ceil(validEntries.length / BATCH_SIZE) || 1
+
+    let successCount = 0
+    let failedCount = entries.filter((entry) => !entry.valid).length
+
+    vercelBulkProgress = {
+      total: entries.length,
+      completed: failedCount,
+      success: 0,
+      failed: failedCount,
+      currentBatch: validEntries.length > 0 ? 1 : 0,
+      totalBatches
+    }
+
+    try {
+      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        const batch = validEntries.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE)
+        if (!batch.length) continue
+
+        vercelBulkProgress.currentBatch = batchIndex + 1
+
+        const runningIndices = new Set(batch.map((item) => item.originalIndex))
+        vercelBulkResults = vercelBulkResults.map((result, idx) =>
+          runningIndices.has(idx) ? { ...result, status: 'running' } : result
+        )
+
+        await Promise.all(
+          batch.map(async (entry) => {
+            const index = entry.originalIndex
+            try {
+              const res = await api.deployVercelRelay({
+                vercelToken: entry.token,
+                projectName: entry.projectName
+              })
+
+              successCount += 1
+              vercelBulkResults = vercelBulkResults.map((result, resultIndex) =>
+                resultIndex === index
+                  ? { ...result, status: 'success', deployUrl: res.deployUrl || res.proxyUrl || 'Deployed' }
+                  : result
+              )
+              vercelBulkProgress.completed += 1
+              vercelBulkProgress.success += 1
+            } catch (error) {
+              failedCount += 1
+              vercelBulkResults = vercelBulkResults.map((result, resultIndex) =>
+                resultIndex === index
+                  ? { ...result, status: 'failed', error: error instanceof Error ? error.message : 'Deploy failed' }
+                  : result
+              )
+              vercelBulkProgress.completed += 1
+              vercelBulkProgress.failed += 1
+            }
+          })
+        )
+      }
+
+      await fetchProxyPools()
+      if (failedCount > 0) {
+        notifications.error(`${successCount} deployed, ${failedCount} failed`)
+      } else {
+        notifications.success(`${successCount} Vercel relays deployed`)
+      }
+    } catch (error) {
+      notifications.error(error instanceof Error ? error.message : 'Bulk deploy failed')
+    } finally {
+      bulkVercelDeploying = false
+    }
+  }
+
   async function handleDenoDeploy() {
     if (!denoForm.denoToken.trim() || !denoForm.orgDomain.trim()) return
     deploying = true
@@ -811,6 +1135,17 @@
               <button
                 type="button"
                 onclick={() => {
+                  openCloudflareBulkModal()
+                  showRelayMenu = false
+                }}
+                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+              >
+                <span class="material-symbols-outlined text-[20px] text-amber-500">playlist_add</span>
+                CF Bulk
+              </button>
+              <button
+                type="button"
+                onclick={() => {
                   openVercelModal()
                   showRelayMenu = false
                 }}
@@ -818,6 +1153,17 @@
               >
                 <span class="material-symbols-outlined text-[20px] text-blue-500">cloud_upload</span>
                 Vercel Relay
+              </button>
+              <button
+                type="button"
+                onclick={() => {
+                  openVercelBulkModal()
+                  showRelayMenu = false
+                }}
+                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+              >
+                <span class="material-symbols-outlined text-[20px] text-sky-500">playlist_add</span>
+                Vercel Bulk
               </button>
               <button
                 type="button"
@@ -1179,6 +1525,140 @@
     </Modal>
 
     <Modal
+      isOpen={showVercelBulkModal}
+      title="Vercel Bulk"
+      onClose={closeVercelBulkModal}
+    >
+      <div class="flex flex-col gap-4">
+        <div class="rounded-lg bg-sky-500/10 border border-sky-500/20 p-3 flex flex-col gap-1">
+          <p class="text-sm font-medium text-text-main">One account / token per line (Batch of 10 concurrent)</p>
+          <p class="text-xs text-text-muted">
+            Format: <code class="font-mono text-sky-500">name/email|vercelToken</code> atau langsung <code class="font-mono text-sky-500">vercelToken</code>. Project name otomatis memakai Pool Name + urutan batch.
+          </p>
+        </div>
+
+        <Input
+          label="Pool Name / Project Prefix"
+          bind:value={vercelBulkPoolName}
+          disabled={bulkVercelDeploying}
+          placeholder="e.g. vercel-relay, vc-indo, vc-pool"
+          hint="Prefix untuk nama pool dan project Vercel (contoh: vercel-relay-1, vercel-relay-2)."
+        />
+
+        <div class="flex flex-col gap-1.5">
+          <label for="vercel-bulk-textarea" class="text-xs font-medium text-text-muted">Tokens List</label>
+          <textarea
+            id="vercel-bulk-textarea"
+            bind:value={vercelBulkText}
+            disabled={bulkVercelDeploying}
+            placeholder={"team-a|vcp_xxxxxxxx...\nteam-b|vcp_yyyyyyyy...\nvcp_zzzzzzzz..."}
+            spellcheck="false"
+            rows={8}
+            class="min-h-[160px] w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
+          ></textarea>
+        </div>
+
+        {#if vercelBulkProgress.total > 0}
+          <div class="rounded-lg border border-border bg-surface p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between text-xs font-medium">
+              <span class="text-text-main flex items-center gap-1.5">
+                {#if bulkVercelDeploying}
+                  <span class="inline-block size-2 rounded-full bg-brand-500 animate-pulse"></span>
+                {/if}
+                {bulkVercelDeploying
+                  ? `Deploying Batch ${vercelBulkProgress.currentBatch} of ${vercelBulkProgress.totalBatches}...`
+                  : 'Deployment Complete'}
+              </span>
+              <span class="font-mono text-text-muted">
+                {vercelBulkProgress.completed} / {vercelBulkProgress.total} ({Math.round(
+                  (vercelBulkProgress.completed / vercelBulkProgress.total) * 100
+                ) || 0}%)
+              </span>
+            </div>
+
+            <div class="flex h-2 w-full overflow-hidden rounded-full bg-surface-2">
+              <div
+                class="bg-emerald-500 transition-all duration-300"
+                style="width: {(vercelBulkProgress.success / vercelBulkProgress.total) * 100}%"
+                title="{vercelBulkProgress.success} succeeded"
+              ></div>
+              <div
+                class="bg-red-500 transition-all duration-300"
+                style="width: {(vercelBulkProgress.failed / vercelBulkProgress.total) * 100}%"
+                title="{vercelBulkProgress.failed} failed"
+              ></div>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] text-text-muted pt-0.5">
+              <div class="flex items-center gap-3">
+                <span class="flex items-center gap-1 text-emerald-500 font-medium">
+                  <span class="size-1.5 rounded-full bg-emerald-500"></span>
+                  {vercelBulkProgress.success} Success
+                </span>
+                <span class="flex items-center gap-1 text-red-500 font-medium">
+                  <span class="size-1.5 rounded-full bg-red-500"></span>
+                  {vercelBulkProgress.failed} Failed
+                </span>
+              </div>
+              <span>Concurrency: 10/batch</span>
+            </div>
+          </div>
+        {/if}
+
+        {#if vercelBulkResults.length > 0}
+          <div class="max-h-60 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+            {#each vercelBulkResults as result}
+              <div class="flex items-start gap-3 p-2.5 text-xs">
+                <span class="w-6 shrink-0 text-text-muted font-mono">#{result.lineNumber}</span>
+                <div class="min-w-0 flex-1 flex flex-col gap-0.5">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-text-main">{result.label}</span>
+                    <Badge
+                      size="sm"
+                      variant={result.status === 'success'
+                        ? 'success'
+                        : result.status === 'failed'
+                          ? 'error'
+                          : result.status === 'running'
+                            ? 'warning'
+                            : 'neutral'}
+                    >
+                      {result.status}
+                    </Badge>
+                  </div>
+                  <p class="font-mono text-text-muted text-[11px]">
+                    {result.tokenMasked} · {result.projectName}
+                  </p>
+                  {#if result.deployUrl}
+                    <p class="break-all text-emerald-500 text-[11px] font-mono">{result.deployUrl}</p>
+                  {/if}
+                  {#if result.error}
+                    <p class="break-words text-red-500 text-[11px]">{result.error}</p>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            fullWidth
+            onclick={handleVercelBulkDeploy}
+            disabled={!vercelBulkText.trim() || bulkVercelDeploying}
+          >
+            {bulkVercelDeploying
+              ? `Deploying (${vercelBulkProgress.completed}/${vercelBulkProgress.total})...`
+              : 'Deploy All'}
+          </Button>
+          <Button fullWidth variant="ghost" onclick={closeVercelBulkModal} disabled={bulkVercelDeploying}>
+            Close
+          </Button>
+        </div>
+      </div>
+    </Modal>
+
+    <Modal
       isOpen={showCloudflareModal}
       title="Deploy Cloudflare Relay"
       onClose={closeCloudflareModal}
@@ -1251,6 +1731,140 @@
           </Button>
           <Button fullWidth variant="ghost" onclick={closeCloudflareModal} disabled={deploying}>
             Cancel
+          </Button>
+        </div>
+      </div>
+    </Modal>
+
+    <Modal
+      isOpen={showCloudflareBulkModal}
+      title="CF Bulk"
+      onClose={closeCloudflareBulkModal}
+    >
+      <div class="flex flex-col gap-4">
+        <div class="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 flex flex-col gap-1">
+          <p class="text-sm font-medium text-text-main">One account per line (Batch of 10 concurrent)</p>
+          <p class="text-xs text-text-muted">
+            Format: <code class="font-mono text-amber-500">name/email|accountID|apiToken</code>. Nama worker/subdomain otomatis memakai Pool Name + urutan batch (bukan nama/email akun).
+          </p>
+        </div>
+
+        <Input
+          label="Pool Name / Worker Prefix"
+          bind:value={cloudflareBulkPoolName}
+          disabled={bulkCloudflareDeploying}
+          placeholder="e.g. cloudflare-relay, cf-indo, cf-pool"
+          hint="Prefix untuk nama pool dan subdomain worker Cloudflare (contoh: cloudflare-relay-1, cloudflare-relay-2)."
+        />
+
+        <div class="flex flex-col gap-1.5">
+          <label for="cf-bulk-textarea" class="text-xs font-medium text-text-muted">Accounts List</label>
+          <textarea
+            id="cf-bulk-textarea"
+            bind:value={cloudflareBulkText}
+            disabled={bulkCloudflareDeploying}
+            placeholder={"email@example.com|account-id|api-token\nteam-account|account-id|api-token"}
+            spellcheck="false"
+            rows={8}
+            class="min-h-[160px] w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
+          ></textarea>
+        </div>
+
+        {#if cloudflareBulkProgress.total > 0}
+          <div class="rounded-lg border border-border bg-surface p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between text-xs font-medium">
+              <span class="text-text-main flex items-center gap-1.5">
+                {#if bulkCloudflareDeploying}
+                  <span class="inline-block size-2 rounded-full bg-brand-500 animate-pulse"></span>
+                {/if}
+                {bulkCloudflareDeploying
+                  ? `Deploying Batch ${cloudflareBulkProgress.currentBatch} of ${cloudflareBulkProgress.totalBatches}...`
+                  : 'Deployment Complete'}
+              </span>
+              <span class="font-mono text-text-muted">
+                {cloudflareBulkProgress.completed} / {cloudflareBulkProgress.total} ({Math.round(
+                  (cloudflareBulkProgress.completed / cloudflareBulkProgress.total) * 100
+                ) || 0}%)
+              </span>
+            </div>
+
+            <div class="flex h-2 w-full overflow-hidden rounded-full bg-surface-2">
+              <div
+                class="bg-emerald-500 transition-all duration-300"
+                style="width: {(cloudflareBulkProgress.success / cloudflareBulkProgress.total) * 100}%"
+                title="{cloudflareBulkProgress.success} succeeded"
+              ></div>
+              <div
+                class="bg-red-500 transition-all duration-300"
+                style="width: {(cloudflareBulkProgress.failed / cloudflareBulkProgress.total) * 100}%"
+                title="{cloudflareBulkProgress.failed} failed"
+              ></div>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] text-text-muted pt-0.5">
+              <div class="flex items-center gap-3">
+                <span class="flex items-center gap-1 text-emerald-500 font-medium">
+                  <span class="size-1.5 rounded-full bg-emerald-500"></span>
+                  {cloudflareBulkProgress.success} Success
+                </span>
+                <span class="flex items-center gap-1 text-red-500 font-medium">
+                  <span class="size-1.5 rounded-full bg-red-500"></span>
+                  {cloudflareBulkProgress.failed} Failed
+                </span>
+              </div>
+              <span>Concurrency: 10/batch</span>
+            </div>
+          </div>
+        {/if}
+
+        {#if cloudflareBulkResults.length > 0}
+          <div class="max-h-60 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+            {#each cloudflareBulkResults as result}
+              <div class="flex items-start gap-3 p-2.5 text-xs">
+                <span class="w-6 shrink-0 text-text-muted font-mono">#{result.lineNumber}</span>
+                <div class="min-w-0 flex-1 flex flex-col gap-0.5">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-text-main">{result.label}</span>
+                    <Badge
+                      size="sm"
+                      variant={result.status === 'success'
+                        ? 'success'
+                        : result.status === 'failed'
+                          ? 'error'
+                          : result.status === 'running'
+                            ? 'warning'
+                            : 'neutral'}
+                    >
+                      {result.status}
+                    </Badge>
+                  </div>
+                  <p class="font-mono text-text-muted text-[11px]">
+                    {result.accountId} · {result.projectName}
+                  </p>
+                  {#if result.deployUrl}
+                    <p class="break-all text-emerald-500 text-[11px] font-mono">{result.deployUrl}</p>
+                  {/if}
+                  {#if result.error}
+                    <p class="break-words text-red-500 text-[11px]">{result.error}</p>
+                  {/if}
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Button
+            fullWidth
+            onclick={handleCloudflareBulkDeploy}
+            disabled={!cloudflareBulkText.trim() || bulkCloudflareDeploying}
+          >
+            {bulkCloudflareDeploying
+              ? `Deploying (${cloudflareBulkProgress.completed}/${cloudflareBulkProgress.total})...`
+              : 'Deploy All'}
+          </Button>
+          <Button fullWidth variant="ghost" onclick={closeCloudflareBulkModal} disabled={bulkCloudflareDeploying}>
+            Close
           </Button>
         </div>
       </div>
