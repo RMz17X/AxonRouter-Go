@@ -755,6 +755,7 @@
         accountId: cloudflareForm.accountId.trim(),
         apiToken: cloudflareForm.apiToken.trim(),
         projectName: cloudflareForm.projectName.trim() || undefined,
+        name: cloudflareForm.projectName.trim() || undefined,
       })
       await fetchProxyPools()
       closeCloudflareModal()
@@ -846,7 +847,8 @@
               const res = await api.deployCloudflareRelay({
                 accountId: entry.accountId,
                 apiToken: entry.apiToken,
-                projectName: entry.projectName
+                projectName: entry.projectName,
+                email: entry.name
               })
 
               successCount += 1

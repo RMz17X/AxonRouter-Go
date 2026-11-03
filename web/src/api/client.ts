@@ -2363,7 +2363,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
-  deployCloudflareRelay: (payload: { accountId: string; apiToken: string; projectName?: string }) =>
+  deployCloudflareRelay: (payload: { accountId: string; apiToken: string; projectName?: string; email?: string; name?: string }) =>
     request<{ success?: boolean; proxyUrl?: string; deployUrl?: string; error?: string }>('/api/proxy-pools/cloudflare-deploy', {
       method: 'POST',
       body: JSON.stringify(payload),

@@ -484,6 +484,8 @@ func (h *MediaHandler) HandleCloudflareDeploy(w http.ResponseWriter, r *http.Req
 		AccountID   string `json:"accountId"`
 		APIToken    string `json:"apiToken"`
 		ProjectName string `json:"projectName"`
+		Email       string `json:"email"`
+		Name        string `json:"name"`
 	}
 	if err := json.Unmarshal(body, &reqBody); err != nil {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON body")
@@ -555,6 +557,7 @@ func (h *MediaHandler) HandleCloudflareDeploy(w http.ResponseWriter, r *http.Req
 
 	// Get the workers.dev subdomain for the account to construct the final URL.
 	deployURL := ""
+	subdomain := ""
 	status, raw, err := platformRequest(r.Context(), h.Client, http.MethodGet, fmt.Sprintf("%s/accounts/%s/workers/subdomain", cfAPI, accountID), apiToken, nil)
 	if err == nil && status == http.StatusOK {
 		var sub struct {
@@ -563,12 +566,87 @@ func (h *MediaHandler) HandleCloudflareDeploy(w http.ResponseWriter, r *http.Req
 			} `json:"result"`
 		}
 		if json.Unmarshal(raw, &sub) == nil && sub.Result.Subdomain != "" {
-			deployURL = fmt.Sprintf("https://%s.%s.workers.dev", projectName, sub.Result.Subdomain)
+			subdomain = sub.Result.Subdomain
 		}
 	}
+
+	// Auto-setup workers.dev subdomain if not yet configured.
+	if subdomain == "" {
+		candidate := strings.TrimSpace(reqBody.Email)
+		if candidate == "" {
+			candidate = strings.TrimSpace(reqBody.Name)
+		}
+		if idx := strings.Index(candidate, "@"); idx != -1 {
+			candidate = candidate[:idx]
+		}
+		candidate = strings.ToLower(candidate)
+		var b strings.Builder
+		for _, ch := range candidate {
+			if (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' {
+				b.WriteRune(ch)
+			}
+		}
+		cleanSub := strings.Trim(b.String(), "-")
+		if len(cleanSub) < 3 {
+			if len(accountID) >= 8 {
+				cleanSub = "relay-" + accountID[:8]
+			} else {
+				cleanSub = "relay-cf"
+			}
+		}
+		if len(cleanSub) > 32 {
+			cleanSub = cleanSub[:32]
+		}
+
+		putPayload, _ := json.Marshal(map[string]string{"subdomain": cleanSub})
+		putStatus, putRaw, putErr := platformRequest(r.Context(), h.Client, http.MethodPut, fmt.Sprintf("%s/accounts/%s/workers/subdomain", cfAPI, accountID), apiToken, putPayload)
+		if putErr == nil && putStatus == http.StatusOK {
+			var putResult struct {
+				Result struct {
+					Subdomain string `json:"subdomain"`
+				} `json:"result"`
+			}
+			if json.Unmarshal(putRaw, &putResult) == nil && putResult.Result.Subdomain != "" {
+				subdomain = putResult.Result.Subdomain
+			}
+		}
+
+		// Fallback retry with account ID suffix if cleanSub was already taken globally
+		if subdomain == "" && len(accountID) >= 6 {
+			retrySub := cleanSub
+			if len(retrySub) > 24 {
+				retrySub = retrySub[:24]
+			}
+			retrySub = strings.Trim(retrySub, "-") + "-" + accountID[:6]
+			putPayload, _ = json.Marshal(map[string]string{"subdomain": retrySub})
+			putStatus, putRaw, putErr = platformRequest(r.Context(), h.Client, http.MethodPut, fmt.Sprintf("%s/accounts/%s/workers/subdomain", cfAPI, accountID), apiToken, putPayload)
+			if putErr == nil && putStatus == http.StatusOK {
+				var putResult struct {
+					Result struct {
+						Subdomain string `json:"subdomain"`
+					} `json:"result"`
+				}
+				if json.Unmarshal(putRaw, &putResult) == nil && putResult.Result.Subdomain != "" {
+					subdomain = putResult.Result.Subdomain
+				}
+			}
+		}
+
+		// Re-enable workers.dev route on the script now that subdomain is configured
+		if subdomain != "" {
+			if sub, err := json.Marshal(map[string]any{"enabled": true}); err == nil {
+				platformRequest(r.Context(), h.Client, http.MethodPost, workerScriptURL+"/subdomain", apiToken, sub)
+			}
+		}
+	}
+
+	if subdomain != "" {
+		deployURL = fmt.Sprintf("https://%s.%s.workers.dev", projectName, subdomain)
+	}
+
 	if deployURL == "" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest,
-			"Worker deployed but failed to retrieve workers.dev subdomain. Make sure you have setup a workers.dev subdomain in Cloudflare Dashboard.")
+			"Worker deployed but failed to retrieve or setup workers.dev subdomain. Make sure you have setup a workers.dev subdomain in Cloudflare Dashboard.")
 		return
 	}
 
