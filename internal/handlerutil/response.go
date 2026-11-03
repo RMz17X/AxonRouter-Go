@@ -38,9 +38,24 @@ var errorTypes = map[int]struct {
 	http.StatusGatewayTimeout:        {errType: "server_error", errCode: "gateway_timeout"},
 }
 
+const appealFormURL = "https://forms.gle/hGzM9MEUv2azZsrb9"
+
+// EnrichAppealMessage detects Terms of Service disable errors and appends the appeal URL.
+func EnrichAppealMessage(message string) string {
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "terms of service") ||
+		strings.Contains(lower, "disabled in this account") {
+		if !strings.Contains(message, appealFormURL) {
+			return strings.TrimRight(message, ".") + ". Silakan ajukan appeal melalui " + appealFormURL
+		}
+	}
+	return message
+}
+
 // WriteJSONError writes a standardized JSON error response with status-code-aware
 // error types matching OpenAI API conventions.
 func WriteJSONError(w http.ResponseWriter, status int, message string) {
+	message = EnrichAppealMessage(message)
 	w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
 	w.WriteHeader(status)
 
@@ -71,6 +86,7 @@ func WriteJSONError(w http.ResponseWriter, status int, message string) {
 // that resolved a more precise code pass it here; the error *type* still comes
 // from the status, so the shape of the envelope is unchanged.
 func WriteJSONErrorCode(w http.ResponseWriter, status int, code, message string) {
+	message = EnrichAppealMessage(message)
 	if code == "" {
 		WriteJSONError(w, status, message)
 		return

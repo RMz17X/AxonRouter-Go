@@ -899,29 +899,42 @@ func probeCloudCodeAssist(ctx context.Context, client *http.Client, provider, ac
 	return oauthProbeAttempt{status: status, message: probeProviderErrorMessage(body, fmt.Sprintf("API returned %d", status))}
 }
 
+const appealFormURL = "https://forms.gle/hGzM9MEUv2azZsrb9"
+
+func enrichAppealMessage(msg string) string {
+	lower := strings.ToLower(msg)
+	if strings.Contains(lower, "terms of service") ||
+		strings.Contains(lower, "disabled in this account") {
+		if !strings.Contains(msg, appealFormURL) {
+			return strings.TrimRight(msg, ".") + ". Silakan ajukan appeal melalui " + appealFormURL
+		}
+	}
+	return msg
+}
+
 // probeProviderErrorMessage ports parseProviderErrorMessage.
 func probeProviderErrorMessage(body []byte, fallback string) string {
 	if len(body) == 0 {
-		return fallback
+		return enrichAppealMessage(fallback)
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal(body, &parsed); err == nil {
 		if errObj, ok := parsed["error"].(map[string]any); ok {
 			if message, ok := errObj["message"].(string); ok && strings.TrimSpace(message) != "" {
-				return strings.TrimSpace(message)
+				return enrichAppealMessage(strings.TrimSpace(message))
 			}
 		}
 		if message, ok := parsed["message"].(string); ok && strings.TrimSpace(message) != "" {
-			return strings.TrimSpace(message)
+			return enrichAppealMessage(strings.TrimSpace(message))
 		}
 		if message, ok := parsed["error"].(string); ok && strings.TrimSpace(message) != "" {
-			return strings.TrimSpace(message)
+			return enrichAppealMessage(strings.TrimSpace(message))
 		}
 	}
 	if trimmed := strings.TrimSpace(string(body)); trimmed != "" {
-		return trimmed
+		return enrichAppealMessage(trimmed)
 	}
-	return fallback
+	return enrichAppealMessage(fallback)
 }
 
 // refreshConnectionToken refreshes a connection's OAuth token through the

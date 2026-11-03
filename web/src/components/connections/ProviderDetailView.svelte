@@ -3986,14 +3986,30 @@
                     </div>
                     <!-- Error message block -->
                     {#if lastErr && lastErr !== 'Provider test not supported' && (status?.state === 'failed' || conn.testStatus === 'failed' || conn.testStatus === 'error')}
-                      <div class="mt-1.5 flex items-start gap-1.5 text-xs text-red-500 bg-red-500/10 px-2.5 py-1.5 rounded-md border border-red-500/20 max-w-full">
-                        <span class="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
-                        <span class="break-words font-medium leading-relaxed">
-                          {#if conn.lastErrorModel}
-                            <span class="font-mono text-[11px] mr-1">[{conn.lastErrorModel}]</span>
-                          {/if}
-                          {lastErr}
-                        </span>
+                      <div class="mt-1.5 flex flex-col gap-1.5 text-xs text-red-500 bg-red-500/10 px-2.5 py-1.5 rounded-md border border-red-500/20 max-w-full">
+                        <div class="flex items-start gap-1.5">
+                          <span class="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
+                          <span class="break-words font-medium leading-relaxed">
+                            {#if conn.lastErrorModel}
+                              <span class="font-mono text-[11px] mr-1">[{conn.lastErrorModel}]</span>
+                            {/if}
+                            {lastErr}
+                          </span>
+                        </div>
+                        {#if lastErr.toLowerCase().includes('terms of service') || lastErr.toLowerCase().includes('disabled in this account')}
+                          <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
+                            <span class="text-amber-400 font-medium">Akun dinonaktifkan (Pelanggaran ToS). Segera ajukan appeal:</span>
+                            <a
+                              href="https://forms.gle/hGzM9MEUv2azZsrb9"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-semibold shadow-sm transition-colors"
+                            >
+                              <span>Kunjungi Form Appeal</span>
+                              <span class="material-symbols-outlined text-xs">open_in_new</span>
+                            </a>
+                          </div>
+                        {/if}
                       </div>
                     {/if}
                     <!-- Proxy detail line: pool/legacy label, masked endpoint, no_proxy -->

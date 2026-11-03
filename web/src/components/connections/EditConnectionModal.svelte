@@ -265,6 +265,20 @@
         <div class="text-xs {testStatus === 'ok' ? 'text-green-500' : 'text-red-500'}">
           {testStatus === 'ok' ? 'Connection valid!' : testError || 'Test failed'}
         </div>
+        {#if testStatus !== 'ok' && testError && (testError.toLowerCase().includes('terms of service') || testError.toLowerCase().includes('disabled in this account'))}
+          <div class="mt-2 flex flex-wrap items-center justify-between gap-2 p-2 rounded-md bg-amber-500/10 border border-amber-500/30 text-xs">
+            <span class="text-amber-300 font-medium">Akun dinonaktifkan (ToS). Silakan ajukan appeal:</span>
+            <a
+              href="https://forms.gle/hGzM9MEUv2azZsrb9"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-black font-semibold text-xs transition-colors"
+            >
+              <span>Form Appeal</span>
+              <span class="material-symbols-outlined text-[13px]">open_in_new</span>
+            </a>
+          </div>
+        {/if}
       {/if}
 
       <div class="flex items-center justify-between pt-2">
