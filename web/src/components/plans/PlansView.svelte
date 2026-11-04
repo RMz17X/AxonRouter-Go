@@ -196,14 +196,14 @@
     <div class="flex items-center gap-2">
       <button
         onclick={load}
-        class="flex items-center gap-2 px-3 py-2 rounded-[10px] border border-border-subtle text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors text-sm"
+        class="flex items-center gap-2 px-3 py-2 rounded-brand border border-border-subtle text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors text-sm"
       >
         <RefreshCw size={16} class={isLoading ? 'animate-spin' : ''} />
         Reload
       </button>
       <button
         onclick={openCreate}
-        class="flex items-center gap-2 px-3 py-2 rounded-[10px] bg-primary text-white hover:bg-primary-hover transition-colors text-sm font-medium"
+        class="flex items-center gap-2 px-3 py-2 rounded-brand bg-primary text-white hover:bg-primary-hover transition-colors text-sm font-medium"
       >
         <Plus size={16} />
         New plan
@@ -213,14 +213,14 @@
 
   {#if error}
     <div
-      class="rounded-[10px] border border-error/40 bg-error/10 px-4 py-3 text-sm text-error"
+      class="rounded-brand border border-error/40 bg-error/10 px-4 py-3 text-sm text-error"
       role="alert"
     >
       {error}
     </div>
   {/if}
   {#if notice}
-    <div class="rounded-[10px] border border-success/40 bg-success/10 px-4 py-3 text-sm">
+    <div class="rounded-brand border border-success/40 bg-success/10 px-4 py-3 text-sm">
       {notice}
     </div>
   {/if}
@@ -231,11 +231,11 @@
       Loading plans…
     </div>
   {:else if plans.length === 0}
-    <div class="rounded-[14px] border border-border-subtle bg-surface px-5 py-8 text-center">
+    <div class="rounded-brand-lg border border-border-subtle bg-surface px-5 py-8 text-center">
       <p class="text-sm text-text-muted">No plans yet.</p>
     </div>
   {:else}
-    <div class="rounded-[14px] border border-border-subtle bg-surface overflow-hidden">
+    <div class="rounded-brand-lg border border-border-subtle bg-surface overflow-hidden">
       <table class="w-full text-sm">
         <thead class="bg-surface-2 text-text-muted">
           <tr>
@@ -305,7 +305,7 @@
         e.preventDefault()
         save(e)
       }}
-      class="rounded-[14px] border border-border-subtle bg-surface p-5 space-y-4"
+      class="rounded-brand-lg border border-border-subtle bg-surface p-5 space-y-4"
     >
       <div class="flex items-center justify-between">
         <h2 class="text-lg font-semibold text-text-main">
@@ -327,14 +327,14 @@
           <input
             bind:value={formName}
             placeholder="Pro"
-            class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+            class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
           />
         </label>
         <label class="flex flex-col gap-1">
           <span class="text-xs text-text-muted">Budget period</span>
           <select
             bind:value={formPeriod}
-            class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+            class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
           >
             {#each PERIODS as p (p.id)}
               <option value={p.id}>{p.label}</option>
@@ -352,7 +352,7 @@
         <input
           bind:value={formDescription}
           placeholder="Paid tier — 120 RPM, $5 monthly budget"
-          class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+          class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
         />
       </label>
 
@@ -362,7 +362,7 @@
           <input
             bind:value={formRpm}
             inputmode="numeric"
-            class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+            class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
           />
         </label>
         <label class="flex flex-col gap-1">
@@ -370,7 +370,7 @@
           <input
             bind:value={formTpm}
             inputmode="numeric"
-            class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+            class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
           />
         </label>
         <label class="flex flex-col gap-1">
@@ -378,7 +378,7 @@
           <input
             bind:value={formConcurrency}
             inputmode="numeric"
-            class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+            class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
           />
         </label>
       </div>
@@ -389,7 +389,7 @@
           <input
             bind:value={formBudgetUsd}
             inputmode="decimal"
-            class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+            class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
           />
         </label>
         <label class="flex flex-col gap-1">
@@ -397,7 +397,7 @@
           <input
             bind:value={formTokens}
             inputmode="numeric"
-            class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+            class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
           />
         </label>
         <label class="flex flex-col gap-1">
@@ -405,7 +405,7 @@
           <input
             bind:value={formAlertPct}
             inputmode="numeric"
-            class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main"
+            class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main"
           />
         </label>
       </div>
@@ -424,7 +424,7 @@
           bind:value={formModels}
           rows="4"
           placeholder={'gpt-4o\nclaude-*'}
-          class="px-3 py-2 rounded-[10px] border border-border bg-surface-2 text-sm text-text-main font-mono"
+          class="px-3 py-2 rounded-brand border border-border bg-surface-2 text-sm text-text-main font-mono"
         ></textarea>
       </label>
 
@@ -432,14 +432,14 @@
         <button
           type="button"
           onclick={() => (isEditorOpen = false)}
-          class="px-3 py-2 rounded-[10px] border border-border-subtle text-sm text-text-muted hover:text-text-main"
+          class="px-3 py-2 rounded-brand border border-border-subtle text-sm text-text-muted hover:text-text-main"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isSaving}
-          class="flex items-center gap-2 px-3 py-2 rounded-[10px] bg-primary text-white hover:bg-primary-hover text-sm font-medium disabled:opacity-60"
+          class="flex items-center gap-2 px-3 py-2 rounded-brand bg-primary text-white hover:bg-primary-hover text-sm font-medium disabled:opacity-60"
         >
           {#if isSaving}<Loader2 size={15} class="animate-spin" />{/if}
           Save plan

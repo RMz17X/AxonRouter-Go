@@ -359,12 +359,13 @@ Always write modern Svelte 5 code using Runes. **Never use legacy Svelte 3/4 syn
 
 Always use the established design tokens defined in `web/src/index.css` for consistent appearance across light and dark themes:
 
-- **Brand (Terracotta)**: `bg-brand-500`, `text-brand-500`, `bg-primary`, `text-primary`, `hover:bg-primary-hover` (`#e56a4a`).
-- **Surfaces**: `bg-surface`, `bg-surface-2`, `bg-surface-3`, `bg-sidebar`.
+- **Brand (Axon cyan)**: `bg-brand-500`, `text-brand-500`, `bg-primary`, `text-primary`, `hover:bg-primary-hover`. The palette is the AxonRouter design system: primary `#06B6D4` on the dark theme (near-black surfaces: bg `#000000`, surface `#121212`), `#0891B2` on the light theme (cool slate surfaces). Status tokens: `danger` `#FF5555`/`#cf222e`, `success` `#22C55E`/`#0F766E`, `warning` `#FFB86C`/`#B45309` (dark/light).
+- **Surfaces**: `bg-bg`, `bg-bg-alt`, `bg-surface`, `bg-surface-2`, `bg-surface-3`, `bg-sidebar` (solid, no translucency/blur).
 - **Borders**: `border-border`, `border-border-subtle`.
 - **Text**: `text-text-main`, `text-text-muted`, `text-text-subtle`.
-- **Radii**: `rounded-[10px]`, `rounded-[14px]`, `rounded-2xl`.
-- **Shadows**: `shadow-[var(--shadow-warm)]`, `shadow-[var(--shadow-elev)]`.
+- **Radii**: `rounded-brand` (4px), `rounded-brand-lg` (6px); the Tailwind radius scale is Axon's (`sm` 4px, `md` 6px, `lg` 8px, `xl` 10px, `2xl` 12px). Do not reintroduce `rounded-[10px]`/`rounded-[14px]`.
+- **Shadows**: `shadow-[var(--shadow-soft)]`, `shadow-[var(--shadow-warm)]`, `shadow-[var(--shadow-elev)]`, `shadow-[var(--shadow-elevated)]`, `shadow-[var(--shadow-focus)]`.
+- **Tables**: shared `.data-table` / `.data-table-plain` / `.data-cards` classes in `index.css` carry Axon's grid lines and zebra striping from the `--color-table-*` tokens.
 - **Icons**:
   - Google Material Symbols: `<span class="material-symbols-outlined text-[18px]">icon_name</span>`
   - Lucide Svelte: `import { IconName } from 'lucide-svelte'; <IconName size={18} />`

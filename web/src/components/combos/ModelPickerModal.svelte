@@ -112,30 +112,17 @@
 {#if isOpen}
   <div class="fixed inset-0 z-[70] flex items-center justify-center p-4">
     <!-- Overlay -->
-    <div class="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in" onclick={onClose} aria-hidden="true"></div>
+    <div class="absolute inset-0 bg-black/50 fade-in" onclick={onClose} aria-hidden="true"></div>
 
     <div
-      class="relative w-full max-w-md bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] fade-in overflow-hidden flex flex-col max-h-[85vh] z-10 p-4!"
+      class="relative w-full max-w-md bg-surface border border-border rounded-brand-lg shadow-[var(--shadow-elev)] fade-in overflow-hidden flex flex-col max-h-[85vh] z-10 p-4!"
       role="dialog"
       aria-modal="true"
     >
-      <!-- Header (traffic lights + title) -->
-      <div class="flex items-center justify-between p-2 border-b border-border-subtle -m-4 mb-4">
+      <!-- Header -->
+      <div class="flex items-center justify-between p-2 border-b border-border -m-4 mb-4">
         <div class="flex items-center">
-          <div class="hidden md:flex items-center gap-2 mr-4 ml-2">
-            <button
-              type="button"
-              onclick={onClose}
-              aria-label="Close"
-              title="Close"
-              class="w-4 h-4 rounded-full bg-[#FF5F56] hover:brightness-90 transition-all cursor-pointer flex items-center justify-center"
-            >
-              <span class="text-[9px] font-bold text-white leading-none">✕</span>
-            </button>
-            <div class="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed"></div>
-            <div class="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed"></div>
-          </div>
-          <h2 class="text-lg font-semibold text-text-main">
+          <h2 class="text-sm font-semibold text-text-main">
             {target === 'vision'
               ? 'Add Vision Model'
               : target === 'audio'
@@ -151,7 +138,7 @@
           type="button"
           onclick={onClose}
           aria-label="Close"
-          class="md:hidden p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+          class="p-1.5 rounded-sm text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
         >
           <X class="w-4 h-4" />
         </button>

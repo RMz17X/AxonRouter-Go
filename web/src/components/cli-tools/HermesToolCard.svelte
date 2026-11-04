@@ -264,7 +264,7 @@
       <span>Checking Hermes Agent…</span>
     </div>
   {:else if settings && !settings.installed}
-    <div class="flex flex-col gap-3 p-4 rounded-[10px] bg-yellow-500/10 border border-yellow-500/30">
+    <div class="flex flex-col gap-3 p-4 rounded-brand bg-yellow-500/10 border border-yellow-500/30">
       <div class="flex items-start gap-3">
         <AlertTriangle class="w-5 h-5 text-warning shrink-0" />
         <div class="flex-1">
@@ -277,7 +277,7 @@
       <button
         type="button"
         onclick={() => (showManualConfig = true)}
-        class="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-xs font-semibold bg-warning/20 border border-warning/40 text-warning cursor-pointer"
+        class="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-brand text-xs font-semibold bg-warning/20 border border-warning/40 text-warning cursor-pointer"
       >
         <Copy class="w-3.5 h-3.5" />
         Manual Config
@@ -412,7 +412,7 @@
           type="button"
           onclick={handleApply}
           disabled={!selectedModel.trim() || applying}
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] bg-brand-500 hover:bg-brand-600 text-white font-semibold text-xs disabled:opacity-50 cursor-pointer"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-brand bg-brand-500 hover:bg-brand-600 text-white font-semibold text-xs disabled:opacity-50 cursor-pointer"
         >
           <Save class="w-3.5 h-3.5" />Apply
         </button>
@@ -422,7 +422,7 @@
             onclick={handleApplyAll}
             disabled={applyingAll}
             title="Set the endpoint and API key on every profile that routes through 9router. Each profile keeps its own model."
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] bg-surface-2 hover:bg-surface-3 text-text-main border border-border font-semibold text-xs disabled:opacity-50 cursor-pointer"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-brand bg-surface-2 hover:bg-surface-3 text-text-main border border-border font-semibold text-xs disabled:opacity-50 cursor-pointer"
           >
             <Layers class="w-3.5 h-3.5" />Apply to All Profiles
           </button>
@@ -431,14 +431,14 @@
           type="button"
           onclick={handleReset}
           disabled={!settings.has9Router || resetting}
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] border border-border text-text-main font-semibold text-xs disabled:opacity-50 cursor-pointer"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-brand border border-border text-text-main font-semibold text-xs disabled:opacity-50 cursor-pointer"
         >
           <RotateCcw class="w-3.5 h-3.5" />Reset
         </button>
         <button
           type="button"
           onclick={() => (showManualConfig = true)}
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-[10px] text-text-muted font-semibold text-xs hover:text-text-main cursor-pointer"
+          class="flex items-center gap-1.5 px-3 py-1.5 rounded-brand text-text-muted font-semibold text-xs hover:text-text-main cursor-pointer"
         >
           <Copy class="w-3.5 h-3.5" />Manual Config
         </button>
@@ -452,7 +452,7 @@
 </Card>
 
 {#if showManualConfig}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onclick={() => (showManualConfig = false)} role="presentation">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" onclick={() => (showManualConfig = false)} role="presentation">
     <div class="w-full max-w-2xl p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-4" onclick={(e) => e.stopPropagation()} role="presentation">
       <div class="flex items-start justify-between pb-3 border-b border-border">
         <div>

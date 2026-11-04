@@ -14,7 +14,7 @@
 
   The panel is also portalled to `<body>` while it is open: `position: fixed`
   resolves against the nearest ancestor that establishes a containing block,
-  and the top bar's `backdrop-blur-xl` `<header>` is exactly that, so its panel
+  and the top bar's filtered `<header>` is exactly that, so its panel
   was laid out from the header's box and rendered off-screen (issue #235).
 
   The trigger is labelled "Menu" rather than icon-only: an icon alone gives a
@@ -154,10 +154,10 @@
     disabled={disabled}
     onclick={() => (open = !open)}
     onkeydown={onKeydown}
-    class="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-text-main shadow-sm transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:opacity-50 sm:px-3 sm:text-sm {fullWidth
+    class="inline-flex h-8 items-center gap-2 rounded-sm border border-border bg-surface px-2.5 text-xs font-medium text-text-main transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/15 focus-visible:border-primary/60 disabled:opacity-50 sm:px-3 sm:text-[13px] {fullWidth
       ? 'w-full justify-center py-2.5 text-sm'
       : iconOnly
-        ? 'w-9 justify-center bg-transparent px-0 py-0 shadow-none'
+        ? 'w-9 justify-center bg-transparent px-0 py-0'
         : ''}"
   >
     <span class="material-symbols-outlined text-[18px] text-text-muted" aria-hidden="true">
@@ -196,7 +196,7 @@
         // plain buttons that do not need to know about the menu above them.
         if ((e.target as HTMLElement).closest('button')) close()
       }}
-      class="fixed z-50 w-max max-w-[calc(100vw-1rem)] rounded-xl border border-border bg-surface p-1.5 shadow-[var(--shadow-elev)]"
+      class="fixed z-50 w-max max-w-[calc(100vw-1rem)] rounded-md border border-border bg-surface px-1 py-1 shadow-[var(--shadow-elevated)]"
     >
       {@render children?.()}
     </div>

@@ -1270,7 +1270,7 @@
 
 <!-- MODAL: Create API Key -->
 {#if isCreateKeyOpen}
-  <div class="fixed inset-0 z-\[100\] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+  <div class="fixed inset-0 z-\[100\] flex items-center justify-center bg-black/75 p-4">
     <div class="w-full {createKeyTab === 'bulk' ? 'max-w-lg' : 'max-w-md'} p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-4">
       <div class="flex items-center justify-between pb-3 border-b border-border">
         <h3 class="text-base font-bold text-text-main">Create API Key</h3>
@@ -1438,7 +1438,7 @@
 {/if}
 <!-- MODAL: Bulk Keys Created -->
 {#if bulkKeyResults.length > 0}
-  <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+  <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4">
     <div class="w-full max-w-lg p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-4">
       <div class="flex items-center justify-between pb-3 border-b border-border">
         <h3 class="text-base font-bold text-text-main">
@@ -1508,7 +1508,7 @@
 {/if}
 
 {#if newlyCreatedKey}
-  <div class="fixed inset-0 z-\[100\] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+  <div class="fixed inset-0 z-\[100\] flex items-center justify-center bg-black/75 p-4">
     <div class="w-full max-w-md p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-4">
       <div class="flex items-center justify-between pb-3 border-b border-border">
         <h3 class="text-base font-bold text-text-main">API Key Created</h3>
@@ -1572,7 +1572,7 @@
        starts inside the panel — a Toggle, a select, a drag that ends on the
        backdrop — does not close the modal on its way out. -->
   <div
-    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
     onclick={(e) => {
       if (e.target === e.currentTarget) showTunnelSettingsModal = false
     }}
@@ -2400,7 +2400,7 @@
 <!-- MODAL: Disable Cloudflare Tunnel -->
 {#if showDisableTunnelModal}
   <div
-    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
     onclick={(e) => {
       if (e.target === e.currentTarget) showDisableTunnelModal = false
     }}
@@ -2442,7 +2442,7 @@
 <!-- MODAL: Disable Tailscale -->
 {#if showDisableTailscaleModal}
   <div
-    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
     onclick={(e) => {
       if (e.target === e.currentTarget) showDisableTailscaleModal = false
     }}

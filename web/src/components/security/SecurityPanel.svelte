@@ -294,12 +294,12 @@
 <div class="space-y-6">
 
   {#if error}
-    <div class="rounded-[10px] border border-error/40 bg-error/10 px-4 py-3 text-sm text-error" role="alert">
+    <div class="rounded-brand border border-error/40 bg-error/10 px-4 py-3 text-sm text-error" role="alert">
       {error}
     </div>
   {/if}
   {#if notice}
-    <div class="rounded-[10px] border border-success/40 bg-success/10 px-4 py-3 text-sm text-text-main">
+    <div class="rounded-brand border border-success/40 bg-success/10 px-4 py-3 text-sm text-text-main">
       {notice}
     </div>
   {/if}
@@ -359,7 +359,7 @@
 
       <div class="space-y-4">
         {#if vault && !vault.enabled}
-          <div class="flex items-start gap-2.5 rounded-[10px] border border-warning/25 bg-warning/5 p-3">
+          <div class="flex items-start gap-2.5 rounded-brand border border-warning/25 bg-warning/5 p-3">
             <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             <p class="text-xs leading-relaxed text-text-muted">
               Credentials are stored in plaintext. Set
@@ -435,7 +435,7 @@
         <select
           bind:value={scopeFilter}
           aria-label="Filter policies by scope"
-          class="rounded-[10px] border border-border bg-surface px-3 py-2 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/40 cursor-pointer"
+          class="rounded-brand border border-border bg-surface px-3 py-2 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-brand-500/40 cursor-pointer"
         >
           <option value="all">All scopes</option>
           {#each SCOPES as option (option.id)}
@@ -465,14 +465,14 @@
         Loading policies…
       </div>
     {:else if visiblePolicies.length === 0}
-      <div class="rounded-[14px] border border-border-subtle bg-surface px-5 py-8 text-center">
+      <div class="rounded-brand-lg border border-border-subtle bg-surface px-5 py-8 text-center">
         <p class="text-sm text-text-muted">
           No policy{scopeFilter === 'all' ? '' : ` at ${scopeLabel(scopeFilter)} scope`} —
           traffic passes through unscanned.
         </p>
       </div>
     {:else}
-      <div class="overflow-hidden rounded-[14px] border border-border-subtle bg-surface">
+      <div class="overflow-hidden rounded-brand-lg border border-border-subtle bg-surface">
         <table class="w-full text-sm">
           <thead class="bg-surface-2 text-text-muted">
             <tr>
@@ -542,14 +542,14 @@
     </div>
 
     {#if logs.length === 0}
-      <div class="rounded-[14px] border border-border-subtle bg-surface px-5 py-8 text-center">
+      <div class="rounded-brand-lg border border-border-subtle bg-surface px-5 py-8 text-center">
         <p class="inline-flex items-center gap-2 text-sm text-text-muted">
           <KeyRound size={15} />
           No guardrail decisions recorded yet.
         </p>
       </div>
     {:else}
-      <div class="overflow-hidden rounded-[14px] border border-border-subtle bg-surface">
+      <div class="overflow-hidden rounded-brand-lg border border-border-subtle bg-surface">
         <table class="w-full text-sm">
           <thead class="bg-surface-2 text-text-muted">
             <tr>
@@ -609,7 +609,7 @@
       <select
         id="policy-scope"
         bind:value={formScope}
-        class="w-full rounded-[10px] border border-transparent bg-surface-2 px-3 py-2.5 text-sm text-text-main focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30 cursor-pointer"
+        class="w-full rounded-brand border border-transparent bg-surface-2 px-3 py-2.5 text-sm text-text-main focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30 cursor-pointer"
       >
         {#each SCOPES as option (option.id)}
           <option value={option.id}>{option.label}</option>
@@ -643,7 +643,7 @@
             onclick={() => toggleFormDetector(detector.id)}
             title={detector.hint}
             aria-pressed={formDetectors.includes(detector.id)}
-            class="rounded-[10px] border px-3 py-1.5 text-sm transition-colors cursor-pointer {formDetectors.includes(
+            class="rounded-brand border px-3 py-1.5 text-sm transition-colors cursor-pointer {formDetectors.includes(
               detector.id
             )
               ? 'border-brand-500/30 bg-brand-500/10 text-brand-600 dark:text-brand-400'
@@ -685,7 +685,7 @@
         {#if formCustomPatterns.length > 0}
           <div class="space-y-2">
             {#each formCustomPatterns as pattern, index (index)}
-              <div class="flex items-center gap-2 rounded-[10px] border border-border bg-surface-2 px-3 py-2">
+              <div class="flex items-center gap-2 rounded-brand border border-border bg-surface-2 px-3 py-2">
                 <div class="flex-1 min-w-0">
                   <div class="font-code text-xs text-text-main truncate">{pattern.name}</div>
                   <div class="font-code text-xs text-text-subtle truncate">{pattern.regex}</div>
@@ -713,7 +713,7 @@
       <select
         id="policy-action"
         bind:value={formAction}
-        class="w-full rounded-[10px] border border-transparent bg-surface-2 px-3 py-2.5 text-sm text-text-main focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30 cursor-pointer"
+        class="w-full rounded-brand border border-transparent bg-surface-2 px-3 py-2.5 text-sm text-text-main focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30 cursor-pointer"
       >
         {#each ACTIONS as option (option.id)}
           <option value={option.id}>{option.label}</option>

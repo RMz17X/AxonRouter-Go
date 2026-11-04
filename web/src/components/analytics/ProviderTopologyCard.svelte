@@ -462,7 +462,7 @@
   {/if}
 
   <!-- Bottom-left React Flow style controls -->
-  <div class="absolute bottom-4 left-4 z-20 flex flex-col rounded-md border border-border bg-surface/90 shadow-md overflow-hidden backdrop-blur">
+  <div class="absolute bottom-4 left-4 z-20 flex flex-col rounded-md border border-border bg-surface shadow-md overflow-hidden">
     <button
       type="button"
       onclick={() => (zoom = Math.min(2.5, zoom * 1.2))}

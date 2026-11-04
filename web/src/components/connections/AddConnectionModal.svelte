@@ -65,10 +65,10 @@
   // Field styling mirrors upstream shared Input/Select (bg-surface-2, rounded 10px).
   const labelCls = 'block text-sm font-medium text-text-main mb-1.5'
   const inputCls =
-    'w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder:text-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150 ease-out'
+    'w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-brand border border-transparent placeholder:text-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150 ease-out'
   const selectWrapCls = 'relative'
   const selectCls =
-    'w-full py-2.5 px-3 pr-10 text-sm text-text-main bg-surface-2 border border-transparent rounded-[10px] appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150'
+    'w-full py-2.5 px-3 pr-10 text-sm text-text-main bg-surface-2 border border-transparent rounded-brand appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150'
 
   // Provider-specific branches (upstream AddApiKeyModal).
   let catalogItem = $derived(PROVIDER_CATALOG.find((p) => p.id === providerId))
@@ -475,27 +475,14 @@
 {#if isOpen}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in"
+      class="absolute inset-0 bg-black/50 fade-in"
       onclick={onClose}
       role="presentation"
     ></div>
-    <div class="relative w-full bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] fade-in max-w-md">
-      <div class="flex items-center justify-between p-2 border-b border-border-subtle">
+    <div class="relative w-full bg-surface border border-border rounded-brand-lg shadow-[var(--shadow-elev)] fade-in max-w-md">
+      <div class="flex items-center justify-between p-2 border-b border-border">
         <div class="flex items-center">
-          <div class="hidden md:flex items-center gap-2 mr-4 ml-2">
-            <button
-              type="button"
-              onclick={onClose}
-              aria-label="Close"
-              title="Close"
-              class="w-4 h-4 rounded-full bg-[#FF5F56] hover:brightness-90 transition-all cursor-pointer flex items-center justify-center group/dot"
-            >
-              <span class="text-[9px] font-bold text-white opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">✕</span>
-            </button>
-            <div class="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed"></div>
-            <div class="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed"></div>
-          </div>
-          <h2 class="text-lg font-semibold text-text-main">
+          <h2 class="text-sm font-semibold text-text-main">
             {modalTitle}
           </h2>
         </div>
@@ -503,7 +490,7 @@
           type="button"
           onclick={onClose}
           aria-label="Close"
-          class="md:hidden p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors cursor-pointer"
+          class="p-1.5 rounded-sm text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors cursor-pointer"
         >
           <span class="material-symbols-outlined text-[20px]">close</span>
         </button>
@@ -712,7 +699,7 @@
                 this is where the credential is pasted, and the mistake it warns
                 about is the one that signs the account out.
               -->
-              <div class="rounded-[10px] border border-warning/40 bg-warning/10 p-3">
+              <div class="rounded-brand border border-warning/40 bg-warning/10 p-3">
                 <p class="text-xs font-semibold text-text-main">
                   Sign in through a throwaway browser
                 </p>
@@ -783,7 +770,7 @@
                 rather than only in the catalog hint because this is where the
                 credential is pasted.
               -->
-              <div class="rounded-[10px] border border-warning/40 bg-warning/10 p-3">
+              <div class="rounded-brand border border-warning/40 bg-warning/10 p-3">
                 <p class="text-xs font-semibold text-text-main">
                   Sign in through a throwaway browser
                 </p>

@@ -123,7 +123,7 @@
     aria-label={ariaLabel}
     onclick={() => (open = !open)}
     onkeydown={onKeydown}
-    class="inline-flex max-w-full items-center gap-2 rounded-xl border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text-main shadow-sm transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 sm:text-sm"
+    class="inline-flex h-8 max-w-full items-center gap-2 rounded-sm border border-border bg-surface px-3 text-xs font-medium text-text-main transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/15 focus-visible:border-primary/60 sm:text-[13px]"
   >
     <span class="truncate">{current?.label}</span>
     {#if current}
@@ -147,7 +147,7 @@
       tabindex="-1"
       style="{panelStyle};max-width:{maxPanelWidth()};min-width:{panelMinWidth()}"
       onkeydown={onKeydown}
-      class="fixed z-50 w-max rounded-xl border border-border bg-surface p-1.5 shadow-[var(--shadow-elev)]"
+      class="fixed z-50 w-max rounded-md border border-border bg-surface px-1 py-1 shadow-[var(--shadow-elevated)]"
     >
       {#each options as o (o.value)}
         <button
@@ -155,13 +155,13 @@
           role="option"
           aria-selected={value === o.value}
           onclick={() => select(o.value)}
-          class="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-xs text-text-main transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 sm:text-sm"
+          class="flex h-8 w-full items-center justify-between gap-3 rounded-sm px-2.5 text-left text-[13px] text-text-main transition-colors hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/15"
         >
           <span class="truncate">{o.label}</span>
           <span class="flex items-center gap-2">
             <span class="text-text-muted">{o.count}</span>
             {#if value === o.value}
-              <span class="material-symbols-outlined text-[16px] text-brand-500" aria-hidden="true">check</span>
+              <span class="material-symbols-outlined text-[16px] text-primary" aria-hidden="true">check</span>
             {/if}
           </span>
         </button>

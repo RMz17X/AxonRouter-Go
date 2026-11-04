@@ -367,7 +367,7 @@
             {:else}
               <select
                 bind:value={pickedKeyId}
-                class="w-full rounded-[10px] border border-transparent bg-surface-2 px-3 py-2 text-sm text-text-main focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+                class="w-full rounded-brand border border-transparent bg-surface-2 px-3 py-2 text-sm text-text-main focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
               >
                 {#each keyedConnections as c (c.id)}
                   <option value={c.id}>{c.name || c.id}</option>

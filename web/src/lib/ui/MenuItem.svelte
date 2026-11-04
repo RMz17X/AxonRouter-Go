@@ -43,14 +43,14 @@
   aria-checked={checkbox ? pressed : undefined}
   disabled={disabled}
   onclick={onSelect}
-  class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm {danger
-    ? 'text-red-500 hover:bg-red-500/10'
+  class="flex h-8 w-full items-center gap-2.5 rounded-sm px-2.5 text-left text-[13px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50 {danger
+    ? 'text-danger hover:bg-danger/10'
     : 'text-text-main hover:bg-surface-2'}"
 >
   {#if icon}
     <span
-      class="material-symbols-outlined text-[18px] {pressed ? 'text-brand-500' : danger
-        ? 'text-red-500'
+      class="material-symbols-outlined text-[18px] {pressed ? 'text-primary' : danger
+        ? 'text-danger'
         : 'text-text-muted'}"
       aria-hidden="true"
     >
@@ -61,6 +61,6 @@
   {#if note}
     <span class="shrink-0 text-[11px] text-text-muted">{note}</span>
   {:else if pressed}
-    <span class="material-symbols-outlined text-[16px] text-brand-500" aria-hidden="true">check</span>
+    <span class="material-symbols-outlined text-[16px] text-primary" aria-hidden="true">check</span>
   {/if}
 </button>

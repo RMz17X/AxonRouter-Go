@@ -264,7 +264,7 @@
         <div
           role="status"
           aria-live="polite"
-          class="mt-2 rounded-[10px] border border-border bg-surface-2 px-3 py-2 text-[11px] text-text-main"
+          class="mt-2 rounded-brand border border-border bg-surface-2 px-3 py-2 text-[11px] text-text-main"
         >
           <div class="font-semibold text-text-muted">{stack[hovered].bucket.label}</div>
           <div class="mt-1 flex items-center justify-between gap-3">

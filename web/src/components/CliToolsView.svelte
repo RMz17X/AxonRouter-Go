@@ -743,7 +743,7 @@
 <!-- MODAL: Tool Configuration Detail -->
 {#if selectedTool}
   {@const status = getToolStatus(selectedTool.id)}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
     <div class="w-full max-w-xl p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-5">
       <!-- Modal Header -->
       <div class="flex items-start justify-between pb-3 border-b border-border">

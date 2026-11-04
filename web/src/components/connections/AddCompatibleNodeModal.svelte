@@ -209,7 +209,7 @@
             role="radio"
             aria-checked={selectedType === option.value}
             onclick={() => selectType(option.value)}
-            class="flex flex-col items-start gap-0.5 rounded-[10px] border px-3 py-2 text-left transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 {selectedType === option.value
+            class="flex flex-col items-start gap-0.5 rounded-brand border px-3 py-2 text-left transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 {selectedType === option.value
               ? 'border-brand-500 bg-brand-500/10'
               : 'border-border bg-surface-2 hover:border-brand-500/40'}"
           >
@@ -260,7 +260,7 @@
         <select
           id="api-type"
           bind:value={formApiType}
-          class="w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150 ease-out text-[16px] sm:text-sm"
+          class="w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-brand border border-transparent focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40 transition-all duration-150 ease-out text-[16px] sm:text-sm"
         >
           <option value="chat">Chat Completions</option>
           <option value="responses">Responses API</option>

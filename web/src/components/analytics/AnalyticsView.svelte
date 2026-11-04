@@ -571,7 +571,7 @@
   {#if section === 'overview' && statsError}
     <div
       role="alert"
-      class="flex flex-col gap-2 rounded-[14px] border border-red-500/30 bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+      class="flex flex-col gap-2 rounded-brand-lg border border-red-500/30 bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
     >
       <div class="flex min-w-0 items-start gap-2">
         <span class="material-symbols-outlined mt-px text-[18px] text-red-600 dark:text-red-400" aria-hidden="true">error</span>
@@ -742,7 +742,7 @@
 
 {#snippet recentRequestsCard()}
   <div
-    class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] p-4 flex min-w-0 flex-col overflow-hidden"
+    class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-4 flex min-w-0 flex-col overflow-hidden"
     style="height: 480px"
   >
     <div class="px-1 py-2 border-b border-border shrink-0">

@@ -37,17 +37,17 @@
 
 <div
   {id}
-  class="bg-surface border border-border-subtle rounded-[14px] {elev
-    ? 'shadow-[var(--shadow-elev)]'
+  class="bg-surface border border-border rounded-brand-lg {elev
+    ? 'shadow-[var(--shadow-elevated)]'
     : 'shadow-[var(--shadow-soft)]'} {hover
-    ? 'hover:shadow-[var(--shadow-warm)] hover:border-brand-500/30 transition-all cursor-pointer'
+    ? 'hover:shadow-[var(--shadow-elevated)] hover:border-primary/30 transition-all cursor-pointer'
     : ''} {paddings[padding]} {klass}"
 >
   {#if title || action}
     <div class="flex items-center justify-between mb-4">
       <div class="flex items-center gap-3">
         {#if icon}
-          <div class="p-2 rounded-[10px] bg-bg text-text-muted">
+          <div class="p-2 rounded-sm bg-surface-2 text-text-muted">
             {@render icon()}
           </div>
         {/if}

@@ -4,25 +4,30 @@
 
 /*
  * 9Router design tokens
- * Ported from decolua/9router `src/app/globals.css`:
- * warm paper light theme + charcoal dark theme, terracotta brand (#E56A4A),
- * frosted sidebar, 10/14px brand radii, soft/warm/elevated shadows.
+ * Reskinned to the AxonRouter design system (its `app/globals.css` dark
+ * theme + `shared/constants/colors.js` light mapping): cyan brand
+ * (#06B6D4), true-black dark surfaces / cool paper light surfaces, solid
+ * sidebar, 4/6px brand radii, and per-theme shadow + table tokens.
+ * Every colour/shadow that differs per theme lives in an --app-* variable
+ * on :root / .dark and is referenced from here, so one utility class
+ * (bg-brand-500, shadow-warm, rounded-brand, ...) serves both themes.
  */
 
 @theme inline {
-  /* Brand scale (terracotta) */
-  --color-brand-50: #fdf1ed;
-  --color-brand-100: #fadccf;
-  --color-brand-200: #f4b59c;
-  --color-brand-300: #ee8d6a;
-  --color-brand-400: #ea7855;
-  --color-brand-500: #e56a4a;
-  --color-brand-600: #cc5236;
-  --color-brand-700: #a64027;
-  --color-brand-800: #7a2f1d;
-  --color-brand-900: #4d1e12;
-  --color-primary: #e56a4a;
-  --color-primary-hover: #cc5236;
+  /* Brand scale (cyan — AxonRouter) */
+  --color-brand-50: #ecfeff;
+  --color-brand-100: #cffafe;
+  --color-brand-200: #a5f3fc;
+  --color-brand-300: #67e8f9;
+  --color-brand-400: #22d3ee;
+  --color-brand-500: #06b6d4;
+  --color-brand-600: #0891b2;
+  --color-brand-700: #0e7490;
+  --color-brand-800: #155e75;
+  --color-brand-900: #164e63;
+  --color-primary: var(--app-primary);
+  --color-primary-hover: var(--app-primary-hover);
+  --color-brand-text: var(--app-brand-text);
   --color-vibrancy: var(--app-sidebar);
 
   /* Semantic surfaces */
@@ -43,58 +48,109 @@
   --color-text-subtle: var(--app-text-subtle);
 
   /* Status */
-  --color-danger: #cf222e;
-  --color-success: #10b981;
-  --color-warning: #f59e0b;
-  --color-info: #3b82f6;
+  --color-danger: var(--app-danger);
+  --color-success: var(--app-success);
+  --color-warning: var(--app-warning);
+  --color-info: var(--app-info);
 
-  /* Radii */
-  --radius-brand: 10px;
-  --radius-brand-lg: 14px;
+  /* Data table surfaces */
+  --color-table-head: var(--app-table-head);
+  --color-table-row: var(--app-table-row);
+  --color-table-row-alt: var(--app-table-row-alt);
+  --color-table-row-hover: var(--app-table-row-hover);
+  --color-table-grid: var(--app-table-grid);
+
+  /* Radii (Axon scale: brand 4px / brand-lg 6px, tight Tailwind steps) */
+  --radius-brand: 4px;
+  --radius-brand-lg: 6px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
 
   /* Shadows */
-  --shadow-soft: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
-  --shadow-warm: 0 2px 12px -2px rgba(229, 106, 74, 0.18);
-  --shadow-elevated: 0 12px 28px -4px rgba(60, 50, 45, 0.06);
+  --shadow-soft: var(--app-shadow-soft);
+  --shadow-warm: var(--app-shadow-warm);
+  --shadow-elevated: var(--app-shadow-elevated);
+  --shadow-elev: var(--app-shadow-elev);
+  --shadow-focus: var(--app-shadow-focus);
+  --shadow-glow: var(--app-shadow-warm);
 
-  /* Fonts */
-  --font-headline: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Display",
-    system-ui, sans-serif;
+  /* Fonts (Axon Inter stack) */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "SF Pro Display", system-ui, sans-serif;
+  --font-headline: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "SF Pro Display", system-ui, sans-serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
-    system-ui, sans-serif;
+    "SF Pro Display", system-ui, sans-serif;
   --font-code: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Light theme (default) */
+/* Light theme (default) — Axon colors.js light mapping */
 :root {
   color-scheme: light;
-  --app-bg: #fdfaf6;
-  --app-bg-alt: #f7f3ee;
+  --app-bg: #f4f7f8;
+  --app-bg-alt: #e7eeef;
   --app-surface: #ffffff;
-  --app-surface-2: #f4f4f5;
-  --app-surface-3: #e7e7e9;
-  --app-sidebar: rgba(244, 241, 236, 0.85);
-  --app-border: #e5e7eb;
-  --app-border-subtle: #f1f1f3;
+  --app-surface-2: #e7eeef;
+  --app-surface-3: #d5dee2;
+  --app-sidebar: #e7eeef;
+  --app-border: #d5dee2;
+  --app-border-subtle: #e1e8eb;
   --app-text-main: #0a0a0a;
   --app-text-muted: #6b7280;
-  --app-text-subtle: #9ca3af;
+  --app-text-subtle: #9aa5ad;
+  --app-primary: #0891b2;
+  --app-primary-hover: #0e7490;
+  --app-brand-text: #0891b2;
+  --app-danger: #cf222e;
+  --app-success: #0f766e;
+  --app-warning: #b45309;
+  --app-info: #0891b2;
+  --app-table-head: #e7eeef;
+  --app-table-row: #ffffff;
+  --app-table-row-alt: #f4f7f8;
+  --app-table-row-hover: #e7eeef;
+  --app-table-grid: #d5dee2;
+  --app-shadow-soft: 0 1px 2px rgba(10, 30, 40, 0.06);
+  --app-shadow-warm: 0 2px 12px -2px rgba(8, 145, 178, 0.18);
+  --app-shadow-elevated: 0 12px 28px -4px rgba(10, 30, 40, 0.14);
+  --app-shadow-elev: 0 2px 4px rgba(10, 30, 40, 0.08);
+  --app-shadow-focus: 0 0 0 3px rgba(8, 145, 178, 0.35);
 }
 
-/* Dark theme */
+/* Dark theme — Axon globals.css, exact */
 .dark {
   color-scheme: dark;
-  --app-bg: #1a1a1a;
-  --app-bg-alt: #1f1f1e;
-  --app-surface: #262626;
-  --app-surface-2: #303030;
-  --app-surface-3: #3a3a3a;
-  --app-sidebar: rgba(30, 30, 30, 0.85);
-  --app-border: #333333;
-  --app-border-subtle: #2a2a2a;
-  --app-text-main: #ededed;
-  --app-text-muted: #9ca3af;
-  --app-text-subtle: #6b7280;
+  --app-bg: #000000;
+  --app-bg-alt: #0a0a0a;
+  --app-surface: #121212;
+  --app-surface-2: #1a1a1a;
+  --app-surface-3: #242424;
+  --app-sidebar: #0a0a0a;
+  --app-border: #2a2a2a;
+  --app-border-subtle: #1f1f1f;
+  --app-text-main: #ffffff;
+  --app-text-muted: #a0a0a0;
+  --app-text-subtle: #7a7a7a;
+  --app-primary: #06b6d4;
+  --app-primary-hover: #0891b2;
+  --app-brand-text: #22d3ee;
+  --app-danger: #ff5555;
+  --app-success: #22c55e;
+  --app-warning: #ffb86c;
+  --app-info: #06b6d4;
+  --app-table-head: #0a0a0a;
+  --app-table-row: #121212;
+  --app-table-row-alt: #161616;
+  --app-table-row-hover: #1a1a1a;
+  --app-table-grid: #2a2a2a;
+  --app-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.6);
+  --app-shadow-warm: 0 4px 12px rgba(6, 182, 212, 0.15);
+  --app-shadow-elevated: 0 12px 32px -8px rgba(0, 0, 0, 0.8);
+  --app-shadow-elev: 0 2px 4px rgba(0, 0, 0, 0.6);
+  --app-shadow-focus: 0 0 0 3px rgba(6, 182, 212, 0.4);
 }
 
 body {
@@ -107,19 +163,304 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Upstream landing grid background */
-.landing-grid {
-  background-image: linear-gradient(
-      to right,
-      var(--color-brand-500) 1px,
-      transparent 1px
-    ),
-    linear-gradient(to bottom, var(--color-brand-500) 1px, transparent 1px);
-  background-size: 40px 40px;
-  opacity: 0.08;
+/*
+ * Axon global styles
+ * Ported from AxonRouter `app/globals.css`: thin global scrollbars, cyan
+ * selection/focus treatment, form-control colour-scheme handling, the
+ * data-table family, soft/elevated cards and the landing glow utilities.
+ */
+
+/* Global thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 120, 0.35) transparent;
 }
-.dark .landing-grid {
-  opacity: 0.04;
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 120, 0.35);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 120, 0.55);
+  background-clip: padding-box;
+}
+
+/* Scroll helpers */
+.scroll-thin-x {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.tab-scroll-fade {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 16px,
+    black calc(100% - 16px),
+    transparent
+  );
+}
+@media (min-width: 640px) {
+  .tab-scroll-fade {
+    scroll-snap-type: x proximity;
+  }
+  .tab-scroll-fade > * {
+    scroll-snap-align: start;
+  }
+}
+
+/* Focus + form controls */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+select {
+  color-scheme: light;
+  background-color: var(--app-surface);
+  color: var(--app-text-main);
+}
+.dark select {
+  color-scheme: dark;
+}
+select option {
+  background-color: var(--app-surface);
+  color: var(--app-text-main);
+}
+input,
+textarea {
+  accent-color: var(--color-primary);
+}
+button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+button:not(:disabled) {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Data tables (Axon .data-table family) */
+.data-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+}
+.data-table thead th {
+  background: var(--app-table-head);
+  color: var(--app-text-muted);
+  border-bottom: 1px solid var(--app-table-grid);
+  border-right: 1px solid var(--app-table-grid);
+}
+.data-table thead th:last-child {
+  border-right: none;
+}
+.data-table tbody td {
+  background: var(--app-table-row);
+  border-bottom: 1px solid var(--app-table-grid);
+  border-right: 1px solid var(--app-table-grid);
+}
+.data-table tbody td:last-child {
+  border-right: none;
+}
+.data-table tbody tr:nth-child(even) td {
+  background: var(--app-table-row-alt);
+}
+.data-table tbody tr:hover td {
+  background: var(--app-table-row-hover);
+}
+.data-table.sticky thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.data-table tbody tr.row-failed td {
+  box-shadow: inset 3px 0 0 var(--color-danger);
+}
+.data-table tbody tr.row-pending td {
+  box-shadow: inset 3px 0 0 var(--color-warning);
+}
+.data-table-plain {
+  border-collapse: collapse;
+}
+.data-table-plain thead th,
+.data-table-plain tbody td {
+  border-right: none;
+}
+.data-table-sticky-first tbody td:first-child,
+.data-table-sticky-first thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+}
+
+/* Data cards: zebra list variant of the table surfaces */
+.data-cards > *:nth-child(even) {
+  background: var(--app-table-row-alt);
+}
+.data-cards > *:hover {
+  background: var(--app-table-row-hover);
+}
+
+/* Cards */
+.card-soft {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-brand-lg);
+  box-shadow: var(--app-shadow-soft);
+}
+.card-elev {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-brand-lg);
+  box-shadow: var(--app-shadow-elev);
+}
+
+/* Landing / hero backgrounds */
+.bg-hero-gradient {
+  background: linear-gradient(
+    to bottom,
+    var(--app-bg-alt),
+    var(--app-bg)
+  );
+}
+.dot-grid-bg {
+  background-image: radial-gradient(
+      circle at 25% 25%,
+      rgba(6, 182, 212, 0.14) 0,
+      transparent 42%
+    ),
+    radial-gradient(circle at 75% 75%, rgba(34, 211, 238, 0.1) 0, transparent 42%);
+}
+.landing-grid {
+  background-image: radial-gradient(
+      circle at 50% 0%,
+      rgba(6, 182, 212, 0.12) 0,
+      transparent 55%
+    ),
+    radial-gradient(circle at 85% 90%, rgba(8, 145, 178, 0.08) 0, transparent 50%);
+  opacity: 0.5;
+}
+
+/* Motion utilities (Axon keyframes) */
+@keyframes axon-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes axon-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes axon-slide-in-top {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes axon-border-glow {
+  0%, 100% {
+    border-color: var(--app-border);
+  }
+  50% {
+    border-color: var(--color-primary);
+  }
+}
+@keyframes axon-pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(6, 182, 212, 0);
+  }
+}
+.animate-fade-in {
+  animation: axon-fade-in 0.2s ease-out both;
+}
+.animate-slide-in-right {
+  animation: axon-slide-in-right 0.25s ease-out both;
+}
+.animate-slide-in-top {
+  animation: axon-slide-in-top 0.25s ease-out both;
+}
+.animate-border-glow {
+  animation: axon-border-glow 2.4s ease-in-out infinite;
+}
+.animate-pulse-glow {
+  animation: axon-pulse-glow 2s ease-in-out infinite;
+}
+
+/* Primary call-to-action: cyan shimmer + glow (Axon .btn-cta) */
+.btn-cta {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-primary);
+  color: #ffffff;
+  box-shadow: var(--app-shadow-warm);
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-cta:hover {
+  background: var(--color-primary-hover);
+  box-shadow: var(--app-shadow-focus);
+}
+.btn-cta::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.25) 50%,
+    transparent 60%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.6s ease;
+  pointer-events: none;
+}
+.btn-cta:hover::after {
+  transform: translateX(100%);
+}
+
+/* Reduced motion: Axon's guard list */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-in-right,
+  .animate-slide-in-top,
+  .animate-border-glow,
+  .animate-pulse-glow,
+  .animate-disco,
+  .btn-cta::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 /*
@@ -202,34 +543,46 @@ body {
   src: url('./assets/material-symbols-outlined.woff2') format('woff2');
 }
 
-/* Custom scrollbar (kept from upstream custom-scrollbar utility) */
+/* Custom scrollbar (Axon values: 6px, thumb hovers to primary) */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 120, 0.35) transparent;
+}
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
+  height: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--app-surface-3);
+  background: rgba(120, 120, 120, 0.35);
   border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--app-text-subtle);
+  background: var(--color-primary);
+  background-clip: padding-box;
 }
 
 ::selection {
-  background: rgba(229, 106, 74, 0.18);
+  background: rgba(8, 145, 178, 0.18);
+}
+.dark ::selection {
+  background: rgba(6, 182, 212, 0.3);
+  color: #67e8f9;
 }
 
 @keyframes disco-glow {
   0%, 100% {
-    box-shadow: 0 0 15px rgba(229, 106, 74, 0.6), 0 0 25px rgba(245, 158, 11, 0.3);
+    box-shadow: 0 0 15px rgba(6, 182, 212, 0.6), 0 0 25px rgba(34, 211, 238, 0.3);
   }
   33% {
-    box-shadow: 0 0 18px rgba(16, 185, 129, 0.6), 0 0 28px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 0 18px rgba(8, 145, 178, 0.6), 0 0 28px rgba(103, 232, 249, 0.3);
   }
   66% {
-    box-shadow: 0 0 18px rgba(168, 85, 247, 0.6), 0 0 28px rgba(236, 72, 153, 0.3);
+    box-shadow: 0 0 18px rgba(34, 211, 238, 0.6), 0 0 28px rgba(14, 116, 144, 0.3);
   }
 }
 .animate-disco {
@@ -353,7 +706,7 @@ body {
   font-size: 1.1rem;
   font-weight: 600;
   margin: 1.25rem 0 0.5rem;
-  color: var(--color-primary, #e56a4a);
+  color: var(--color-primary, #06b6d4);
 }
 .changelog-body h3 {
   font-size: 0.95rem;
@@ -392,7 +745,7 @@ body {
   padding: 0;
 }
 .changelog-body a {
-  color: var(--color-primary, #e56a4a);
+  color: var(--color-primary, #06b6d4);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -422,7 +775,7 @@ body {
   justify-content: space-between;
   gap: 0.4rem;
   padding: 0.6rem 0.7rem;
-  border-bottom: 1px solid var(--color-border, #334155);
+  border-bottom: 1px solid var(--color-border);
   background: linear-gradient(90deg, rgba(34, 211, 238, 0.08), transparent 60%);
 }
 .cf-heading {
@@ -503,8 +856,8 @@ body {
   align-items: center;
   gap: 0.3rem;
   border-radius: 0.55rem;
-  border: 1.4px solid var(--color-border, #334155);
-  background: rgba(15, 23, 42, 0.9);
+  border: 1.4px solid var(--color-border);
+  background: var(--color-surface);
   padding: 0.25rem 0.4rem;
   min-width: 0;
 }
@@ -672,7 +1025,7 @@ body {
   min-width: 1rem;
   border-radius: 999px;
   border: 1px solid rgba(148, 163, 184, 0.45);
-  background: var(--color-surface, #0f172a);
+  background: var(--color-surface);
   font-size: 0.52rem;
   font-weight: 700;
   color: var(--color-text-muted, #94a3b8);
@@ -696,8 +1049,8 @@ body {
   flex: 1;
   min-width: 0;
   border-radius: 0.55rem;
-  border: 1px solid var(--color-border, #334155);
-  background: var(--color-surface, rgba(15, 23, 42, 0.6));
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
   padding: 0.35rem 0.45rem;
 }
 .cf-row[data-status='trying'] .cf-row-card {
@@ -830,7 +1183,7 @@ body {
   flex-wrap: wrap;
   gap: 0.25rem 0.6rem;
   padding: 0.45rem 0.7rem 0.55rem;
-  border-top: 1px solid var(--color-border, #334155);
+  border-top: 1px solid var(--color-border);
   font-size: 0.55rem;
   color: var(--color-text-muted, #94a3b8);
 }

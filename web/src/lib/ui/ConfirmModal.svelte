@@ -27,7 +27,7 @@
 </script>
 
 <Modal {isOpen} {onClose} {title} size="sm">
-  <p class="text-text-muted">{message}</p>
+  <p class="text-sm text-text-muted">{message}</p>
   {#snippet footer()}
     <Button variant="ghost" onclick={() => onClose?.()} disabled={loading}>
       {cancelText}

@@ -181,14 +181,14 @@
     {#if hasPassword === null}
       <div class="text-center">
         <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-        <p class="text-text-muted mt-4">Loading...</p>
+        <p class="mt-4 font-body text-sm text-text-muted">Loading...</p>
       </div>
     {:else}
       <div class="text-center mb-8 flex flex-col items-center">
-        <div class="size-14 rounded-2xl bg-surface border border-border-subtle shadow-[var(--shadow-warm)] flex items-center justify-center p-2.5 mb-4">
+        <div class="size-14 rounded-brand-lg bg-surface border border-border flex items-center justify-center p-2.5 mb-4">
           <img src="/favicon.svg" alt="9router-go" class="w-full h-full object-contain" />
         </div>
-        <h1 class="text-3xl font-bold text-primary mb-2">9router-go</h1>
+        <h1 class="text-3xl font-bold text-text-main mb-2">9router-go</h1>
         <p class="text-text-muted">
           {#if samlAvailable}
             Sign in with SAML 2.0 Single Sign-On
@@ -200,10 +200,10 @@
         </p>
       </div>
 
-      <div class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] p-6">
+      <div class="bg-surface border border-border rounded-brand-lg shadow-[var(--shadow-elevated)] p-6">
         {#if mustChange}
           <form onsubmit={handleSetNewPassword} class="flex flex-col gap-4">
-            <p class="text-sm text-amber-600 dark:text-amber-400 text-center">
+            <p class="text-sm text-warning text-center">
               Set a new password before accessing the dashboard remotely.
             </p>
             <div class="flex flex-col gap-2">
@@ -215,16 +215,16 @@
                 bind:value={newPassword}
                 required
                 data-login-focus
-                class="w-full py-2.5 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 transition-colors"
+                class="w-full py-2.5 px-3 text-sm text-text-main bg-surface rounded-sm border border-border placeholder:text-text-muted/60 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
               />
               {#if errorMessage}
-                <p class="text-xs text-red-500">{errorMessage}</p>
+                <p class="text-xs text-danger">{errorMessage}</p>
               {/if}
             </div>
             <button
               type="submit"
               disabled={isLoading || !newPassword}
-              class="w-full h-9 px-4 text-sm rounded-[10px] font-medium bg-brand-500 hover:bg-brand-600 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 cursor-pointer"
+              class="w-full h-9 px-4 text-sm rounded-sm font-medium bg-primary hover:bg-primary-hover text-white disabled:bg-surface-3 disabled:text-text-muted disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
               {#if isLoading}
                 <span class="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white/20 border-t-white"></span>
@@ -240,7 +240,7 @@
               <button
                 type="button"
                 onclick={handleSamlLogin}
-                class="w-full h-9 px-4 text-sm rounded-[10px] font-medium bg-brand-500 hover:bg-brand-600 text-white shadow-sm transition-colors cursor-pointer"
+                class="w-full h-9 px-4 text-sm rounded-sm font-medium bg-primary hover:bg-primary-hover text-white transition-colors cursor-pointer"
               >
                 {samlLoginLabel}
               </button>
@@ -250,20 +250,20 @@
               <button
                 type="button"
                 onclick={handleOidcLogin}
-                class="w-full h-9 px-4 text-sm rounded-[10px] font-medium bg-brand-500 hover:bg-brand-600 text-white shadow-sm transition-colors cursor-pointer"
+                class="w-full h-9 px-4 text-sm rounded-sm font-medium bg-primary hover:bg-primary-hover text-white transition-colors cursor-pointer"
               >
                 {oidcLoginLabel}
               </button>
             {/if}
 
             {#if ssoAvailable && passwordAvailable}
-              <div class="h-px bg-border-subtle"></div>
+              <div class="h-px bg-border"></div>
             {/if}
 
             {#if passwordAvailable}
               <form onsubmit={handleSubmit} class="flex flex-col gap-4">
                 {#if isSsoEnabled && !ssoAvailable}
-                  <p class="text-xs text-amber-600 dark:text-amber-400 text-center">
+                  <p class="text-xs text-warning text-center">
                     {activeSsoType === 'saml' ? 'SAML SSO' : 'OIDC'} login is enabled, but configuration is incomplete. Password login is still available for recovery.
                   </p>
                 {/if}
@@ -284,7 +284,7 @@
                       bind:value={password}
                       required
                       data-login-focus
-                      class="w-full py-2.5 px-3 pr-10 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 transition-colors"
+                      class="w-full py-2.5 px-3 pr-10 text-sm text-text-main bg-surface rounded-sm border border-border placeholder:text-text-muted/60 focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors"
                     />
                     <button
                       type="button"
@@ -298,10 +298,10 @@
                     </button>
                   </div>
                   {#if errorMessage}
-                    <p class="text-xs text-red-500">{errorMessage}</p>
+                    <p class="text-xs text-danger">{errorMessage}</p>
                   {/if}
                   {#if retryAfter > 0}
-                    <p class="text-xs text-amber-600 dark:text-amber-400">
+                    <p class="text-xs text-warning">
                       Locked. Retry in <span class="font-mono">{retryAfter}s</span>.
                     </p>
                   {/if}
@@ -313,7 +313,7 @@
                 <button
                   type="submit"
                   disabled={isLoading || !password || retryAfter > 0}
-                  class="w-full h-9 px-4 text-sm rounded-[10px] font-medium bg-brand-500 hover:bg-brand-600 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  class="w-full h-9 px-4 text-sm rounded-sm font-medium bg-primary hover:bg-primary-hover text-white disabled:bg-surface-3 disabled:text-text-muted disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2 cursor-pointer"
                 >
                   {#if isLoading}
                     <span class="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white/20 border-t-white"></span>
@@ -329,13 +329,13 @@
                   Default password is <code class="bg-surface-2 px-1.5 py-0.5 rounded text-text-main font-mono">123456</code>
                 </p>
                 {#if hasPassword === false}
-                  <p class="text-xs text-center text-amber-600 dark:text-amber-400">
+                  <p class="text-xs text-center text-warning">
                     Security risk: no password set. You will be asked to set one when logging in remotely.
                   </p>
                 {/if}
               </form>
             {:else if errorMessage}
-              <p class="text-xs text-red-500">{errorMessage}</p>
+              <p class="text-xs text-danger">{errorMessage}</p>
             {/if}
           </div>
         {/if}

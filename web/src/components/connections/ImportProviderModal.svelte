@@ -105,7 +105,7 @@
           bind:value={pasted}
           rows={5}
           placeholder={'9router://…\n— or —\nhttps://gateway/add#prov=…'}
-          class="w-full rounded-[10px] border border-border-subtle bg-surface-2 px-3 py-2 font-mono text-xs text-text-main placeholder:text-text-muted/70 focus:border-brand-500/40 focus:outline-none"
+          class="w-full rounded-brand border border-border-subtle bg-surface-2 px-3 py-2 font-mono text-xs text-text-main placeholder:text-text-muted/70 focus:border-brand-500/40 focus:outline-none"
         ></textarea>
       </label>
 
@@ -122,7 +122,7 @@
         ondragover={(e) => { e.preventDefault(); dragging = true }}
         ondragleave={() => (dragging = false)}
         ondrop={onDrop}
-        class="rounded-[10px] border-2 border-dashed p-4 text-center transition-colors {dragging ? 'border-brand-500 bg-brand-500/5' : 'border-border-subtle bg-surface-2/40'}"
+        class="rounded-brand border-2 border-dashed p-4 text-center transition-colors {dragging ? 'border-brand-500 bg-brand-500/5' : 'border-border-subtle bg-surface-2/40'}"
       >
         <p class="text-xs text-text-muted">
           Drop a <span class="font-mono">.9router.json</span> file here, or

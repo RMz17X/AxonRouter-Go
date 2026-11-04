@@ -122,7 +122,7 @@
     providerNodes.find((n) => n.id === providerId)
   )
   let providerName = $derived(selectedNode?.name || selectedCatalogItem?.name || providerId)
-  let providerColor = $derived(selectedCatalogItem?.color || '#f59e0b')
+  let providerColor = $derived(selectedCatalogItem?.color || '#06b6d4')
   let providerWebsite = $derived(
     selectedCatalogItem?.notice?.apiKeyUrl ||
       selectedCatalogItem?.notice?.signupUrl ||
@@ -3430,7 +3430,7 @@
 
   <!-- 2. Compatible Node details (if custom node) — upstream parity: endpoint line + Add API Key / Edit / Delete -->
   {#if selectedNode}
-    <div class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] p-6">
+    <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6">
       <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0">
           <h2 class="text-lg font-semibold">
@@ -3506,7 +3506,7 @@
 
   {#if isNoAuth}
     <!-- Free Provider: NoAuthProxyCard -->
-    <div class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] p-6 flex flex-col gap-4">
+    <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6 flex flex-col gap-4">
       <div class="flex items-start gap-3">
         <span class="material-symbols-outlined text-[20px] text-primary mt-0.5">lock_open</span>
         <div class="flex-1 min-w-0">
@@ -3603,7 +3603,7 @@
     </div>
   {:else}
   <!-- 3. Connections Card -->
-  <div class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] p-6">
+  <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6">
     <!-- Header -->
     <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h2 class="text-lg font-semibold">Connections</h2>
@@ -4369,7 +4369,7 @@
 
   <!-- 4. Models Card: compatible nodes use upstream CompatibleModelsSection layout -->
   {#if isCompatibleNode}
-  <div class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] p-6">
+  <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6">
     <div class="flex flex-col gap-4">
       <p class="text-sm text-text-muted">
         Add {isAnthropicCompatibleNode ? 'Anthropic' : 'OpenAI'}-compatible models manually or import them from the /models endpoint.
@@ -4630,7 +4630,7 @@
     </div>
   </div>
   {:else}
-  <div class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] p-6">
+  <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6">
     <!-- Header -->
     <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div class="flex items-center gap-3">
@@ -5053,11 +5053,11 @@
 {#if showRiskNoticeModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in"
+      class="absolute inset-0 bg-black/50 fade-in"
       onclick={() => (showRiskNoticeModal = false)}
       role="presentation"
     ></div>
-    <div class="relative w-full bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] fade-in max-w-md p-6">
+    <div class="relative w-full bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] fade-in max-w-md p-6">
       <div class="flex items-center justify-between pb-3 border-b border-border-subtle mb-4">
         <h2 class="text-lg font-semibold text-text-main">Risk Notice</h2>
         <button
@@ -5095,11 +5095,11 @@
 {#if showOAuthModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        class="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in"
+        class="absolute inset-0 bg-black/50 fade-in"
         onclick={closeOAuthModal}
         role="presentation"
       ></div>
-    <div class="relative w-full bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] fade-in max-w-lg p-6">
+    <div class="relative w-full bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] fade-in max-w-lg p-6">
       <div class="flex items-center justify-between pb-3 border-b border-border-subtle mb-4">
         <h2 class="text-lg font-semibold text-text-main">Connect {providerName}</h2>
         <button
@@ -5427,11 +5427,11 @@
 {#if showApplyProxyModal}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in"
+      class="absolute inset-0 bg-black/50 fade-in"
       onclick={cancelApplyProxy}
       role="presentation"
     ></div>
-    <div class="relative flex max-h-[85vh] w-full flex-col bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] fade-in max-w-lg">
+    <div class="relative flex max-h-[85vh] w-full flex-col bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] fade-in max-w-lg">
       <div class="flex shrink-0 items-center justify-between px-6 pt-5 pb-3 border-b border-border-subtle">
         <h2 class="text-lg font-semibold text-text-main">
           Apply Proxy ({providerConnections.length} connections)

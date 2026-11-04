@@ -142,7 +142,7 @@
 
 {#if liveCombo && steps.length > 0}
   <section
-    class="cf bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] min-w-0 overflow-hidden"
+    class="cf bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] min-w-0 overflow-hidden"
     aria-label="Combo flow"
   >
     <header class="cf-header">

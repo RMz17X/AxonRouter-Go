@@ -1572,7 +1572,7 @@
           <p class="text-xs text-text-main">Rates — one USD in each currency</p>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {#each CURRENCY_CATALOG as option (option.code)}
-              <label class="flex items-center gap-2 rounded-[10px] border border-border-subtle px-2 py-1.5">
+              <label class="flex items-center gap-2 rounded-brand border border-border-subtle px-2 py-1.5">
                 <span class="w-9 text-[11px] font-semibold text-text-muted">{option.code}</span>
                 <input
                   type="number"
@@ -1900,7 +1900,7 @@
     {#if showSaveHint}
       <div
         role="status"
-        class="fixed bottom-5 right-5 z-40 flex items-center gap-3 rounded-[10px] border border-border bg-surface-2 px-4 py-3 shadow-[var(--shadow-elev)]"
+        class="fixed bottom-5 right-5 z-40 flex items-center gap-3 rounded-brand border border-border bg-surface-2 px-4 py-3 shadow-[var(--shadow-elev)]"
       >
         <span class="text-xs text-text-muted">Unsaved changes</span>
         <Button variant="primary" onclick={handleSaveAll} loading={isSavingSettings}>
