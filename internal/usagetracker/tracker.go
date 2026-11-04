@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"9router/proxy/internal/db"
+	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/log"
 	"9router/proxy/internal/translator"
 )
@@ -44,10 +45,26 @@ type RecentRequest struct {
 	Status           string `json:"status"`
 	RequestedModel   string `json:"requestedModel,omitempty"`
 	ComboName        string `json:"comboName,omitempty"`
+	// Endpoint is the gateway route the request arrived on (e.g.
+	// /v1/chat/completions). The Realtime table derives the request's
+	// capability from it, the way AxonRouter's live rows do.
+	Endpoint string `json:"endpoint,omitempty"`
+	// APIKey is the upstream credential the request used, ALWAYS in the
+	// masked form maskAPIKeyForStats produces — a raw key never rides this
+	// struct. Empty when the request carried no credential.
+	APIKey string `json:"apiKey,omitempty"`
+	// Account is the connection/account display value the request-details
+	// rows resolve (see detailListItem): the stored account label where one
+	// exists, else the connection id, else "Default".
+	Account string `json:"account,omitempty"`
+	// IsStream reports whether the client asked for a streamed response. It
+	// is only set where the push site knows the request's streaming nature;
+	// history rows do not record it, so seeded entries leave it false.
+	IsStream bool `json:"isStream,omitempty"`
 	// LatencyMs is how long the request took, recorded for completed requests
 	// only: a refused member has a rejection time, not a latency, and the map
 	// must not present one as the other.
-	LatencyMs int64 `json:"latencyMs,omitempty"`
+	LatencyMs   int64  `json:"latencyMs,omitempty"`
 	LoopWarning string `json:"loopWarning,omitempty"`
 }
 
@@ -373,6 +390,25 @@ func (t *Tracker) buildPayloadLocked(repo *db.Repo) StreamPayload {
 	}
 }
 
+// maskRecentAPIKey masks a stored usageHistory apiKey for the recent-requests
+// wire shape. It is maskAPIKeyForStats (package handlers) re-implemented on
+// handlerutil: the tracker must not import handlers, and the two masks must
+// agree or the same row would show different key forms on the stats and SSE
+// surfaces. usageHistory rows written by this build already hold
+// handlerutil.MaskAPIKey output (re-masking that form is a no-op); rows the
+// Next.js dashboard wrote can hold the full key, which is why the mask is
+// applied here at all.
+func maskRecentAPIKey(key string) string {
+	trimmed := strings.TrimSpace(key)
+	if trimmed == "" || trimmed == "local-no-key" || trimmed == "***" {
+		return ""
+	}
+	if handlerutil.RuneCount(trimmed) <= 12 {
+		return handlerutil.RunePrefix(trimmed, 1) + "***"
+	}
+	return handlerutil.MaskAPIKey(trimmed)
+}
+
 // recentFromHistoryRow maps a persisted usageHistory row onto the stream shape
 // so ring seeding and live pushes render identically.
 func recentFromHistoryRow(rh db.UsageHistoryRow) RecentRequest {
@@ -384,6 +420,14 @@ func recentFromHistoryRow(rh db.UsageHistoryRow) RecentRequest {
 		status = rh.Status
 	}
 
+	// Account mirrors detailListItem's fallback chain as far as a history
+	// row allows: the row stores no account label, so the chain lands on the
+	// connection id, or "Default" for a direct (connection-less) request.
+	account := rh.ConnectionID
+	if account == "" {
+		account = "Default"
+	}
+
 	return RecentRequest{
 		Timestamp:        rh.Timestamp,
 		Model:            rh.Model,
@@ -392,6 +436,9 @@ func recentFromHistoryRow(rh db.UsageHistoryRow) RecentRequest {
 		CompletionTokens: int(complTok),
 		CachedTokens:     cached,
 		Status:           status,
+		Endpoint:         rh.Endpoint,
+		APIKey:           maskRecentAPIKey(rh.APIKey),
+		Account:          account,
 	}
 }
 

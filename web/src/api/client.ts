@@ -715,6 +715,20 @@ export interface UsageDashboardResponse {
   lifetime: UsageLifetime | null
 }
 
+/** One resolved combo member from GET /api/combos/analytics: the model a
+ * combo name resolved to on one provider, with its outcome counts for the
+ * window. Mirrors the Go ComboAnalyticsMember wire shape. */
+export interface ComboAnalyticsMember {
+  comboName: string
+  model: string
+  provider: string
+  total: number
+  success: number
+  errors: number
+  avgLatencyS: number
+  lastSeen: string
+}
+
 // Codex reset credits. `selectionToken` is the field the dashboard selects
 // with; `code` carries the typed refusal the server raised (e.g. no_credit vs
 // nothing_to_reset) so the modal can say which happened.
@@ -2188,6 +2202,13 @@ export const api = {
     ),
   /** Full stored payload for one request; the list omits request/response bodies. */
   getRequestDetail: (id: string) => request<any>(`/api/usage/request-details/${encodeURIComponent(id)}`),
+  /** Combo Routing rows for the Usage Overview: per-(combo, model, provider)
+   * aggregates from the request-details ledger. `combos` is part of the
+   * payload contract but carries no rendered data. */
+  getCombosAnalytics: (period = '7d') =>
+    request<{ members: ComboAnalyticsMember[]; combos: unknown[] }>(
+      `/api/combos/analytics?period=${encodeURIComponent(period)}`
+    ),
   resetHealth: (provider: string, model?: string) =>
     request<{ status: string }>(`/admin/health/reset?provider=${encodeURIComponent(provider)}${model ? `&model=${encodeURIComponent(model)}` : ''}`, {
       method: 'POST',

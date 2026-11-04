@@ -551,6 +551,32 @@ func (r *Repo) GetUsageHistorySince(cutoff string) ([]UsageHistoryRow, error) {
 	return res, nil
 }
 
+// GetUsageHistoryTimestampsSince returns just the timestamps of usageHistory
+// rows at or after the cutoff, oldest first. It backs the stats response's
+// per-minute Request Stream series: the fold into minute buckets happens in
+// the handler (the same parse-and-bucket pattern usage_chart.go uses), so the
+// read stays a single timestamp-column projection answered by idx_uh_ts
+// instead of dragging the token payload of every row in the window.
+func (r *Repo) GetUsageHistoryTimestampsSince(since string) ([]string, error) {
+	rows, err := r.db.Query(`SELECT timestamp FROM usageHistory WHERE timestamp >= ? ORDER BY timestamp ASC`, since) //nolint:noctx
+	if err != nil {
+		return nil, fmt.Errorf("query usageHistory timestamps since %s: %w", since, err)
+	}
+	defer func() { _ = rows.Close() }()
+	var res []string
+	for rows.Next() {
+		var ts string
+		if err := rows.Scan(&ts); err != nil {
+			return nil, fmt.Errorf("scan usageHistory timestamps since %s: %w", since, err)
+		}
+		res = append(res, ts)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate usageHistory timestamps since %s: %w", since, err)
+	}
+	return res, nil
+}
+
 // GetUsageHistoryWatermark returns the timestamp of the newest usageHistory row.
 // It rides idx_uh_ts as a covering-index seek, so it stays O(log n) no matter
 // how large the table grows — that is what makes a cached aggregate safe to
@@ -746,4 +772,63 @@ func (r *Repo) GetRequestDetailsErrorCountSince(ctx context.Context, since strin
 		return 0, fmt.Errorf("count requestDetails errors since %s: %w", since, err)
 	}
 	return count, nil
+}
+
+// ComboAnalyticsRow is one (combo, resolved model, provider) aggregate of the
+// request-details ledger, backing GET /api/combos/analytics. Errors are not
+// carried: the handler derives them as Total - Success, matching how the
+// column vocabulary works — InsertRequestDetail is only ever called with
+// "success" or "error", so every non-success row is an error row.
+type ComboAnalyticsRow struct {
+	ComboName   string
+	Model       string
+	Provider    string
+	Total       int
+	Success     int
+	AvgLatencyS float64
+	LastSeen    string
+}
+
+// GetComboAnalyticsSince aggregates the request-details ledger by (combo,
+// model, provider) over the window. Only combo-routed rows qualify — the
+// combo name lives in the stored payload ($.combo), like the other values
+// requestDetailListSelect extracts. since is the optional timestamp floor;
+// an empty string reads the whole ledger, mirroring GetRequestDetailsPaged.
+// One grouped statement answers the whole table: averaging latency in SQL
+// keeps a long window from shipping every ledger row to the handler.
+func (r *Repo) GetComboAnalyticsSince(ctx context.Context, since string) ([]ComboAnalyticsRow, error) {
+	where := "WHERE COALESCE(json_extract(data, '$.combo'), '') <> ''"
+	var args []any
+	if since != "" {
+		where += " AND timestamp >= ?"
+		args = append(args, since)
+	}
+	query := `SELECT COALESCE(json_extract(data, '$.combo'), '') AS combo,
+	       COALESCE(model, ''), COALESCE(provider, ''),
+	       COUNT(*),
+	       COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0),
+	       COALESCE(AVG(json_extract(data, '$.latency.total')), 0) / 1000.0,
+	       COALESCE(MAX(timestamp), '')
+	FROM requestDetails
+	` + where + `
+	GROUP BY combo, model, provider
+	ORDER BY combo ASC, model ASC, provider ASC`
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query combo analytics since %q: %w", since, err)
+	}
+	defer func() { _ = rows.Close() }()
+	res := make([]ComboAnalyticsRow, 0)
+	for rows.Next() {
+		var row ComboAnalyticsRow
+		if err := rows.Scan(&row.ComboName, &row.Model, &row.Provider,
+			&row.Total, &row.Success, &row.AvgLatencyS, &row.LastSeen); err != nil {
+			return nil, fmt.Errorf("scan combo analytics since %q: %w", since, err)
+		}
+		res = append(res, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate combo analytics since %q: %w", since, err)
+	}
+	return res, nil
 }

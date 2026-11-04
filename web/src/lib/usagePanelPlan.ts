@@ -15,16 +15,6 @@ export const USAGE_PANEL_DEFAULT_ORDER: Record<UsagePanelGroupId, UsagePanelId[]
     UsagePanelId[]
   >
 
-/**
- * Two panels that share one layout row. In the Overview the provider map and the
- * Recent Requests list sit side by side; they still hide independently, so the
- * arrangement treats them as a row only while they are both visible and adjacent.
- */
-export const USAGE_PANEL_ROW_PARTNERS: Partial<Record<UsagePanelId, UsagePanelId>> = {
-  'overview.topology': 'overview.recent',
-  'overview.recent': 'overview.topology',
-}
-
 export interface UsagePanelBlock {
   /** Stable key for the `{#each}` over the section's blocks. */
   key: string
@@ -33,23 +23,16 @@ export interface UsagePanelBlock {
 
 /**
  * blocksFor turns one section's ordered, visible panels into the blocks the
- * template draws: a row block for the two panel ids that share a row and ended up
- * next to each other, a panel block for everything else. Ordering is preserved
- * exactly as given, so what the settings list shows is what the page draws.
+ * template draws: one block per panel. (The Overview's old topology+recent
+ * row pairing went away with its fixed Axon layout; no remaining panel
+ * shares a row.) Ordering is preserved exactly as given, so what the
+ * settings list shows is what the page draws.
  */
 export function blocksFor(orderedVisible: readonly UsagePanelId[]): UsagePanelBlock[] {
   const blocks: UsagePanelBlock[] = []
   const consumed = new Set<UsagePanelId>()
-  for (let i = 0; i < orderedVisible.length; i++) {
-    const id = orderedVisible[i]
+  for (const id of orderedVisible) {
     if (consumed.has(id)) continue
-    const partner = USAGE_PANEL_ROW_PARTNERS[id]
-    if (partner && i + 1 < orderedVisible.length && orderedVisible[i + 1] === partner) {
-      blocks.push({ key: `${id}+${partner}`, ids: [id, partner] })
-      consumed.add(id)
-      consumed.add(partner)
-      continue
-    }
     blocks.push({ key: id, ids: [id] })
     consumed.add(id)
   }
