@@ -727,6 +727,31 @@ func getSettingsRawTx(ctx context.Context, tx *sql.Tx) (map[string]any, error) {
 	return raw, nil
 }
 
+// importExec runs one statement of the import transaction with its
+// placeholders rebound for the handle's dialect (the transaction does not
+// know its dialect; the Repo does).
+func (h *DashboardHandler) importExec(tx *sql.Tx, query string, args ...any) (sql.Result, error) {
+	return tx.Exec(h.Repo.Rebind(query), args...)
+}
+
+// importUpsert picks one import statement's upsert form for the handle's
+// dialect: SQLite's INSERT OR REPLACE text, or the PostgreSQL ON CONFLICT
+// form the caller supplies. The two land the same row here: the import
+// wipes every table before inserting, so a conflict can only be with a
+// row this same import wrote moments earlier through the same column
+// list, and the schema declares no foreign keys (db/client.go), so
+// REPLACE's delete has no cascades to fire that DO UPDATE would skip.
+// The two tables with a second unique index (apiKeys.key, combos.name)
+// are the exception — a single ON CONFLICT target cannot resolve a
+// conflict on the other index — and emulate REPLACE with an explicit
+// delete-then-insert at their call sites instead.
+func (h *DashboardHandler) importUpsert(sqliteForm, pgForm string) string {
+	if h.Repo.IsPostgres() {
+		return pgForm
+	}
+	return sqliteForm
+}
+
 // importDatabase wipes the dashboard tables and restores a backup payload,
 // matching Next's importDb transaction.
 //
@@ -786,7 +811,7 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		if err != nil {
 			return nil, err
 		}
-		if _, err := tx.Exec(
+		if _, err := h.importExec(tx,
 			`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, string(b),
 		); err != nil {
 			return nil, err
@@ -800,9 +825,15 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 			continue
 		}
 		data := restData(c, "id", "provider", "authType", "name", "email", "priority", "isActive", "createdAt", "updatedAt")
-		if _, err := tx.Exec(
+		if _, err := h.importExec(tx, h.importUpsert(
 			`INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
 			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
+			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (id) DO UPDATE SET provider = EXCLUDED.provider, authType = EXCLUDED.authType,
+				name = EXCLUDED.name, email = EXCLUDED.email, priority = EXCLUDED.priority,
+				isActive = EXCLUDED.isActive, data = EXCLUDED.data, createdAt = EXCLUDED.createdAt,
+				updatedAt = EXCLUDED.updatedAt`),
 			c["id"], c["provider"], stringDefault(c["authType"], "oauth"), stringDefault(c["name"], nil),
 			stringDefault(c["email"], nil), c["priority"], boolToInt(c["isActive"]), data,
 			stringDefault(c["createdAt"], nowISO()), stringDefault(c["updatedAt"], nowISO()),
@@ -826,11 +857,21 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		data := restData(n, "id", "type", "name", "createdAt", "updatedAt",
 			"rpmLimit", "tpmLimit", "concurrencyLimit", "tokenQuota", "queueTimeoutMs",
 			"quotaResetId", "contractExpiresAt")
-		if _, err := tx.Exec(
+		if _, err := h.importExec(tx, h.importUpsert(
 			`INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt,
 			        rpmLimit, tpmLimit, concurrencyLimit, tokenQuota, queueTimeoutMs, quotaResetId,
 			        contractExpiresAt)
 			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO providerNodes(id, type, name, data, createdAt, updatedAt,
+			        rpmLimit, tpmLimit, concurrencyLimit, tokenQuota, queueTimeoutMs, quotaResetId,
+			        contractExpiresAt)
+			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (id) DO UPDATE SET type = EXCLUDED.type, name = EXCLUDED.name,
+				data = EXCLUDED.data, createdAt = EXCLUDED.createdAt, updatedAt = EXCLUDED.updatedAt,
+				rpmLimit = EXCLUDED.rpmLimit, tpmLimit = EXCLUDED.tpmLimit,
+				concurrencyLimit = EXCLUDED.concurrencyLimit, tokenQuota = EXCLUDED.tokenQuota,
+				queueTimeoutMs = EXCLUDED.queueTimeoutMs, quotaResetId = EXCLUDED.quotaResetId,
+				contractExpiresAt = EXCLUDED.contractExpiresAt`),
 			n["id"], stringDefault(n["type"], nil), stringDefault(n["name"], nil), data,
 			stringDefault(n["createdAt"], nowISO()), stringDefault(n["updatedAt"], nowISO()),
 			intDefault(n["rpmLimit"], 0), intDefault(n["tpmLimit"], 0),
@@ -849,8 +890,11 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 			continue
 		}
 		data := restData(p, "id", "isActive", "testStatus", "createdAt", "updatedAt")
-		if _, err := tx.Exec(
+		if _, err := h.importExec(tx, h.importUpsert(
 			`INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (id) DO UPDATE SET isActive = EXCLUDED.isActive, testStatus = EXCLUDED.testStatus,
+				data = EXCLUDED.data, createdAt = EXCLUDED.createdAt, updatedAt = EXCLUDED.updatedAt`),
 			p["id"], boolToInt(p["isActive"]), stringDefault(p["testStatus"], "unknown"), data,
 			stringDefault(p["createdAt"], nowISO()), stringDefault(p["updatedAt"], nowISO()),
 		); err != nil {
@@ -868,8 +912,22 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		if keyID == "" {
 			continue
 		}
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt,
+		// apiKeys has a second unique index (key): SQLite's REPLACE
+		// resolves a conflict on either index by deleting the conflicting
+		// row, which one ON CONFLICT target cannot express, so the
+		// PostgreSQL form deletes-then-inserts (importUpsert's comment
+		// covers why that is the same outcome here).
+		insertVerb := "INSERT OR REPLACE INTO"
+		if h.Repo.IsPostgres() {
+			if _, err := h.importExec(tx,
+				`DELETE FROM apiKeys WHERE id = ? OR key = ?`, k["id"], k["key"],
+			); err != nil {
+				return nil, err
+			}
+			insertVerb = "INSERT INTO"
+		}
+		if _, err := h.importExec(tx,
+			insertVerb+` apiKeys(id, key, name, machineId, isActive, createdAt,
 			        rateLimitRPM, rateLimitTPM, rateLimitConcurrency, tokenQuota, queueTimeoutMs,
 			        limitMicros, limitTokens, budgetPeriod, alertPct, hardCutoff)
 			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -893,8 +951,10 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 			return nil, err
 		}
 		for _, model := range importAllowlist(k) {
-			if _, err := tx.Exec(
+			if _, err := h.importExec(tx, h.importUpsert(
 				`INSERT OR REPLACE INTO api_key_model_access(api_key_id, model, created_at) VALUES(?, ?, ?)`,
+				`INSERT INTO api_key_model_access(api_key_id, model, created_at) VALUES(?, ?, ?)
+				 ON CONFLICT (api_key_id, model) DO UPDATE SET created_at = EXCLUDED.created_at`),
 				keyID, model, stringDefault(k["createdAt"], nowISO()),
 			); err != nil {
 				return nil, err
@@ -916,8 +976,19 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		if err != nil || string(rules) == "null" {
 			rules = []byte("[]")
 		}
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO combos(id, name, kind, models, matchRules, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+		// combos has a second unique index (name) — the same REPLACE
+		// emulation as apiKeys above.
+		comboVerb := "INSERT OR REPLACE INTO"
+		if h.Repo.IsPostgres() {
+			if _, err := h.importExec(tx,
+				`DELETE FROM combos WHERE id = ? OR name = ?`, c["id"], c["name"],
+			); err != nil {
+				return nil, err
+			}
+			comboVerb = "INSERT INTO"
+		}
+		if _, err := h.importExec(tx,
+			comboVerb+` combos(id, name, kind, models, matchRules, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
 			c["id"], c["name"], stringDefault(c["kind"], nil), string(models), string(rules),
 			stringDefault(c["createdAt"], nowISO()), stringDefault(c["updatedAt"], nowISO()),
 		); err != nil {
@@ -925,16 +996,16 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		}
 	}
 
-	if err := writeKVPayload(tx, "modelAliases", payload["modelAliases"], true); err != nil {
+	if err := h.writeKVPayload(tx, "modelAliases", payload["modelAliases"], true); err != nil {
 		return nil, err
 	}
-	if err := writeKVPayload(tx, "customModels", payload["customModels"], false); err != nil {
+	if err := h.writeKVPayload(tx, "customModels", payload["customModels"], false); err != nil {
 		return nil, err
 	}
-	if err := writeKVPayload(tx, "mitmAlias", payload["mitmAlias"], true); err != nil {
+	if err := h.writeKVPayload(tx, "mitmAlias", payload["mitmAlias"], true); err != nil {
 		return nil, err
 	}
-	if err := writeKVPayload(tx, "pricing", payload["pricing"], true); err != nil {
+	if err := h.writeKVPayload(tx, "pricing", payload["pricing"], true); err != nil {
 		return nil, err
 	}
 
@@ -1034,7 +1105,11 @@ func importReport(payload map[string]any) map[string]any {
 
 // writeKVPayload restores kv rows for one scope. keyed scopes store a map of
 // key → value; customModels stores a list keyed by providerAlias|id|type.
-func writeKVPayload(tx *sql.Tx, scope string, value any, keyed bool) error {
+func (h *DashboardHandler) writeKVPayload(tx *sql.Tx, scope string, value any, keyed bool) error {
+	kvUpsert := h.importUpsert(
+		`INSERT OR REPLACE INTO kv(scope, key, value) VALUES(?, ?, ?)`,
+		`INSERT INTO kv(scope, key, value) VALUES(?, ?, ?)
+		 ON CONFLICT (scope, key) DO UPDATE SET value = EXCLUDED.value`)
 	if keyed {
 		m, ok := value.(map[string]any)
 		if !ok {
@@ -1045,9 +1120,7 @@ func writeKVPayload(tx *sql.Tx, scope string, value any, keyed bool) error {
 			if err != nil {
 				continue
 			}
-			if _, err := tx.Exec(
-				`INSERT OR REPLACE INTO kv(scope, key, value) VALUES(?, ?, ?)`, scope, k, string(b),
-			); err != nil {
+			if _, err := h.importExec(tx, kvUpsert, scope, k, string(b)); err != nil {
 				return err
 			}
 		}
@@ -1069,9 +1142,7 @@ func writeKVPayload(tx *sql.Tx, scope string, value any, keyed bool) error {
 		if err != nil {
 			continue
 		}
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO kv(scope, key, value) VALUES(?, ?, ?)`, scope, key, string(b),
-		); err != nil {
+		if _, err := h.importExec(tx, kvUpsert, scope, key, string(b)); err != nil {
 			return err
 		}
 	}
@@ -1105,6 +1176,38 @@ func loadKVScopes(db queryer, out *databaseExport) error {
 	return rows.Err()
 }
 
+// canonicalColumnNames maps a lowercased column name to the schema's
+// camelCase spelling. PostgreSQL folds unquoted identifiers to lowercase,
+// so a column the DDL spells createdAt arrives from the driver as
+// "createdat"; SQLite returns the DDL case untouched. The export builds
+// row maps keyed by column name and looks the canonical names up in them
+// (mergeDataColumn's keep list, normalizeBool, the access join), so the
+// folded forms are restored in selectRows — the one place every export
+// read flows through. A name absent from the map passes through as-is.
+var canonicalColumnNames = func() map[string]string {
+	names := []string{
+		"id", "provider", "authType", "name", "email", "priority", "isActive",
+		"data", "createdAt", "updatedAt", "type", "testStatus", "key",
+		"machineId", "rateLimitRPM", "rateLimitTPM", "rateLimitConcurrency",
+		"tokenQuota", "queueTimeoutMs", "rpmLimit", "tpmLimit",
+		"concurrencyLimit", "quotaResetId", "contractExpiresAt",
+		"limitMicros", "limitTokens", "budgetPeriod", "alertPct", "hardCutoff",
+		"api_key_id", "model", "kind", "models", "matchRules", "scope", "value",
+	}
+	m := make(map[string]string, len(names))
+	for _, n := range names {
+		m[strings.ToLower(n)] = n
+	}
+	return m
+}()
+
+func canonicalColumnName(name string) string {
+	if canon, ok := canonicalColumnNames[strings.ToLower(name)]; ok {
+		return canon
+	}
+	return name
+}
+
 // selectRows runs a query and returns every row as a column → value map, with
 // SQLite BLOB values surfaced as strings (they hold JSON columns).
 func selectRows(db queryer, query string) ([]map[string]any, error) {
@@ -1135,7 +1238,7 @@ func selectRows(db queryer, query string) ([]map[string]any, error) {
 			if b, ok := v.([]byte); ok {
 				v = string(b)
 			}
-			row[col] = v
+			row[canonicalColumnName(col)] = v
 		}
 		out = append(out, row)
 	}

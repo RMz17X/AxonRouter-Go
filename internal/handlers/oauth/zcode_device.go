@@ -3,7 +3,6 @@ package oauth
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"9router/proxy/internal/db"
 )
 
 // zcodeUUID returns a random RFC 4122 v4 UUID — the shape every identity
@@ -229,12 +230,12 @@ func zcodePollContext(ctx context.Context, provider, flowID string, session map[
 // token_version and leaves the credential-keyed row permanently unusable.
 // Returns the row id and its providerSpecificData (deviceId, sessionSeed,
 // accountUUID) to preserve.
-func zcodeExistingIdentity(ctx context.Context, db *sql.DB, email string) (string, map[string]any) {
+func zcodeExistingIdentity(ctx context.Context, repo *db.Repo, email string) (string, map[string]any) {
 	email = strings.TrimSpace(email)
-	if db == nil || email == "" {
+	if repo == nil || email == "" {
 		return "", nil
 	}
-	rows, err := db.QueryContext(ctx,
+	rows, err := repo.QueryContext(ctx,
 		"SELECT id, data FROM providerConnections WHERE provider = 'zcode' AND isActive = 1 ORDER BY updatedAt DESC")
 	if err != nil {
 		return "", nil

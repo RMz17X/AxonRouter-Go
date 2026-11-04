@@ -240,7 +240,7 @@ type morphUsageRow struct {
 	status        string
 }
 
-func queryMorphUsageRows(database *sql.DB, since string, limit int) ([]morphUsageRow, error) {
+func queryMorphUsageRows(repo *db.Repo, since string, limit int) ([]morphUsageRow, error) {
 	query := `SELECT timestamp, model, endpoint, promptTokens, completionTokens, status
 		FROM usageHistory WHERE provider = 'morph'`
 	args := []any{}
@@ -253,7 +253,7 @@ func queryMorphUsageRows(database *sql.DB, since string, limit int) ([]morphUsag
 		query += ` LIMIT ?`
 		args = append(args, limit)
 	}
-	rows, err := database.Query(query, args...)
+	rows, err := repo.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -345,14 +345,13 @@ func HandleMorphUsageStats(repo *db.Repo) http.HandlerFunc {
 		}
 		since := time.Now().Add(-window).UTC().Format(time.RFC3339)
 
-		database := repo.RawDB()
-		rows, err := queryMorphUsageRows(database, since, 0)
+		rows, err := queryMorphUsageRows(repo, since, 0)
 		if err != nil {
 			fail(http.StatusInternalServerError, "Failed to fetch Morph usage stats")
 			return
 		}
 		var lifetime int
-		if err := database.QueryRow(
+		if err := repo.QueryRow(
 			`SELECT COUNT(*) FROM usageHistory WHERE provider = 'morph'`).Scan(&lifetime); err != nil {
 			fail(http.StatusInternalServerError, "Failed to fetch Morph usage stats")
 			return
@@ -434,7 +433,7 @@ func HandleMorphUsageRequests(repo *db.Repo) http.HandlerFunc {
 		if limit > 500 {
 			limit = 500
 		}
-		rows, err := queryMorphUsageRows(repo.RawDB(), "", limit)
+		rows, err := queryMorphUsageRows(repo, "", limit)
 		if err != nil {
 			fail(http.StatusInternalServerError, "Failed to fetch Morph request logs")
 			return

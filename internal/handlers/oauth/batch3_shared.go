@@ -90,7 +90,7 @@ func (h *OAuthHandler) saveAxonConnection(id, provider, authType, name, email st
 	if h.Repo == nil || h.Repo.RawDB() == nil {
 		return fmt.Errorf("connection store unavailable")
 	}
-	db := h.Repo.RawDB()
+	db := h.Repo
 	var existing string
 	if err := db.QueryRow("SELECT data FROM providerConnections WHERE id = ?", id).Scan(&existing); err == nil && existing != "" {
 		if _, has := dataMap["refreshToken"]; !has {

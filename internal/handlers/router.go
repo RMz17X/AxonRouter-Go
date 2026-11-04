@@ -822,7 +822,7 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 		}
 		return middleware.Limits{RPM: d.RPM, TPM: d.TPM, Concurrency: d.Concurrency}
 	}
-	guardrailStore := guardrails.NewStore(repo.RawDB())
+	guardrailStore := guardrails.NewStoreWithRebind(repo.RawDB(), repo.Rebind)
 	// One switch for both taps. It reads the settings row per request, which is
 	// a single indexed read on an already-loaded connection, and buys an
 	// operator an off switch that does not require deleting their policies.

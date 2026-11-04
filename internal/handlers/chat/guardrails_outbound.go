@@ -26,7 +26,7 @@ func (h *ChatHandler) resolveGuardrailEngine(keyID, model string) *guardrails.En
 		return nil
 	}
 	engine, err := guardrails.Resolve(
-		guardrails.NewStore(h.Repo.RawDB()),
+		guardrails.NewStoreWithRebind(h.Repo.RawDB(), h.Repo.Rebind),
 		guardrails.Target{APIKeyID: keyID, Model: model},
 	)
 	if err != nil || engine == nil || !engine.Enabled() {

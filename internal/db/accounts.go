@@ -20,6 +20,24 @@ func modelLockDataKey(model string) string {
 	return "$.\"" + modelLockPrefix + model + "\""
 }
 
+// SetConnectionProjectID stores a discovered provider project id in the
+// providerConnections.data JSON blob using a json_set-style update. It is
+// the Repo-side form of the statement handlers/chat's Gemini path used to
+// spell against the raw handle (the json_set vocabulary is this package's,
+// so the statement lives here like the other connection-data updaters).
+func (r *Repo) SetConnectionProjectID(connID, projectID string) error {
+	_, err := r.Exec(
+		`UPDATE providerConnections SET data = `+jsonSetExpr(r.dialect, "data",
+			jsonSetPairAt(jsonStringParam(), "projectId"),
+		)+` WHERE id = ?`,
+		projectID, connID,
+	)
+	if err != nil {
+		return fmt.Errorf("set connection project id %s: %w", connID, err)
+	}
+	return nil
+}
+
 // LockConnectionModel stores a per-connection model lock in the
 // providerConnections.data JSON blob using a json_set-style update.
 // Also stores backoffLevel. Matches Next.js markAccountUnavailable.

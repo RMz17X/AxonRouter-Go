@@ -282,7 +282,7 @@ func (h *OAuthHandler) HandleAuthCodeExchange(w http.ResponseWriter, r *http.Req
 	}
 	if h.Repo != nil && h.Repo.RawDB() != nil {
 		var existing string
-		err := h.Repo.RawDB().QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing)
+		err := h.Repo.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing)
 		if err == nil && existing != "" {
 			if tokens.RefreshToken == "" {
 				var old map[string]any
@@ -293,12 +293,12 @@ func (h *OAuthHandler) HandleAuthCodeExchange(w http.ResponseWriter, r *http.Req
 				}
 				dataBytes, _ = json.Marshal(dataMap)
 			}
-			_, err = h.Repo.RawDB().Exec(
+			_, err = h.Repo.Exec(
 				"UPDATE providerConnections SET name = ?, data = ?, updatedAt = ? WHERE id = ?",
 				connName, string(dataBytes), now, connID,
 			)
 		} else {
-			_, err = h.Repo.RawDB().Exec(
+			_, err = h.Repo.Exec(
 				"INSERT INTO providerConnections (id, provider, authType, name, isActive, data, createdAt, updatedAt) VALUES (?, ?, 'oauth', ?, 1, ?, ?, ?)",
 				connID, body.Provider, connName, string(dataBytes), now, now,
 			)

@@ -2,8 +2,8 @@ package guardrails
 
 import (
 	"database/sql"
-	"errors"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -36,16 +36,20 @@ type policyConfig struct {
 }
 
 // sqlPolicyStore adapts *sql.DB to PolicyStore.
-type sqlPolicyStore struct{ db *sql.DB }
+type sqlPolicyStore struct {
+	db     *sql.DB
+	rebind func(string) string
+}
 
 // ListGuardrailPolicies implements PolicyStore.
 func (s sqlPolicyStore) ListGuardrailPolicies(scope, scopeID string) ([]policy, error) {
-	rows, err := s.db.Query(
-		`SELECT config FROM guardrail_policies
+	query := `SELECT config FROM guardrail_policies
 		 WHERE tenant_id = 'default' AND scope = ? AND scope_id = ? AND enabled = 1
-		 ORDER BY id`,
-		scope, scopeID,
-	)
+		 ORDER BY id`
+	if s.rebind != nil {
+		query = s.rebind(query)
+	}
+	rows, err := s.db.Query(query, scope, scopeID)
 	if err != nil {
 		return nil, fmt.Errorf("guardrails: list policies: %w", err)
 	}
@@ -67,6 +71,14 @@ func (s sqlPolicyStore) ListGuardrailPolicies(scope, scopeID string) ([]policy, 
 
 // NewStore returns a PolicyStore backed directly by the database handle.
 func NewStore(db *sql.DB) PolicyStore { return sqlPolicyStore{db: db} }
+
+// NewStoreWithRebind is NewStore for a handle whose statements need their
+// placeholders rewritten first — the gateway's PostgreSQL dialect, whose
+// Repo supplies the rebind. This package stays independent of the
+// repository layer, so the rewrite arrives as a plain function.
+func NewStoreWithRebind(db *sql.DB, rebind func(string) string) PolicyStore {
+	return sqlPolicyStore{db: db, rebind: rebind}
+}
 
 // scopeChain lists the scopes to consult, least specific first. The last
 // non-empty result wins, which is what "most specific overrides" means in

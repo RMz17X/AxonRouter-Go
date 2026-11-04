@@ -45,7 +45,7 @@ func (h *OAuthHandler) dynExchangeSuccess(w http.ResponseWriter, provider string
 	}
 	if name == "" && id != "" && h.Repo != nil && h.Repo.RawDB() != nil {
 		var dbName sql.NullString
-		if err := h.Repo.RawDB().QueryRow("SELECT name FROM providerConnections WHERE id = ?", id).Scan(&dbName); err == nil && dbName.Valid {
+		if err := h.Repo.QueryRow("SELECT name FROM providerConnections WHERE id = ?", id).Scan(&dbName); err == nil && dbName.Valid {
 			name = dbName.String
 		}
 	}

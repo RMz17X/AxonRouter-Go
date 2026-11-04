@@ -455,7 +455,7 @@ func (h *OAuthHandler) persistConnection(connID, provider, connName string, data
 	}
 	if refreshToken == "" {
 		var existing string
-		if err := h.Repo.RawDB().QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing); err == nil && existing != "" {
+		if err := h.Repo.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing); err == nil && existing != "" {
 			var old map[string]any
 			if jerr := json.Unmarshal([]byte(existing), &old); jerr == nil {
 				if rt, ok := old["refreshToken"].(string); ok && rt != "" {
@@ -470,8 +470,8 @@ func (h *OAuthHandler) persistConnection(connID, provider, connName string, data
 	}
 	now := currentTimestamp()
 	var existing string
-	if err := h.Repo.RawDB().QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing); err == nil && existing != "" {
-		_, err = h.Repo.RawDB().Exec(
+	if err := h.Repo.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing); err == nil && existing != "" {
+		_, err = h.Repo.Exec(
 			"UPDATE providerConnections SET name = ?, data = ?, updatedAt = ? WHERE id = ?",
 			connName, string(dataBytes), now, connID,
 		)
@@ -480,7 +480,7 @@ func (h *OAuthHandler) persistConnection(connID, provider, connName string, data
 		if h.Repo != nil {
 			priority = h.Repo.ResolveDefaultPriority(provider)
 		}
-		_, err = h.Repo.RawDB().Exec(
+		_, err = h.Repo.Exec(
 			"INSERT INTO providerConnections (id, provider, authType, name, priority, isActive, data, createdAt, updatedAt) VALUES (?, ?, 'oauth', ?, ?, 1, ?, ?, ?)",
 			connID, provider, connName, priority, string(dataBytes), now, now,
 		)

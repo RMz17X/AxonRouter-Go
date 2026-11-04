@@ -175,7 +175,7 @@ func (h *OAuthHandler) findMimoKeyConnection(uid, key string) (string, string, s
 	if h.Repo == nil || h.Repo.RawDB() == nil {
 		return "", "", "", nil, false
 	}
-	rows, err := h.Repo.RawDB().Query(
+	rows, err := h.Repo.Query(
 		"SELECT id, name, email, data FROM providerConnections WHERE provider = 'xiaomi-mimo'")
 	if err != nil {
 		return "", "", "", nil, false

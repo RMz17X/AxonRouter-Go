@@ -246,7 +246,7 @@ func (h *OAuthHandler) bulkExistingState(provider string) (map[string]bool, int)
 	now := time.Now()
 	prefix := fmt.Sprintf("%02d-%02d-%d", now.Day(), int(now.Month()), now.Year())
 	nameRe := regexp.MustCompile(`^` + regexp.QuoteMeta(prefix) + `-(\d+)$`)
-	rows, err := h.Repo.RawDB().Query(
+	rows, err := h.Repo.Query(
 		"SELECT name, data FROM providerConnections WHERE provider = ?", provider)
 	if err != nil {
 		return tokens, next

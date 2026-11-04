@@ -547,7 +547,7 @@ func (h *OAuthHandler) saveDeviceConnection(provider string, t deviceTokens) sav
 	// already knows: a device that changes on every re-login is exactly what the
 	// identity gate flags.
 	if provider == "zcode" && h.Repo != nil && h.Repo.RawDB() != nil {
-		if prevID, prevPSD := zcodeExistingIdentity(context.Background(), h.Repo.RawDB(), email); prevID != "" {
+		if prevID, prevPSD := zcodeExistingIdentity(context.Background(), h.Repo, email); prevID != "" {
 			id = prevID
 			for _, key := range []string{"deviceId", "sessionSeed", "accountUUID"} {
 				if v, ok := prevPSD[key].(string); ok && v != "" {
@@ -571,22 +571,22 @@ func (h *OAuthHandler) saveDeviceConnection(provider string, t deviceTokens) sav
 			// The minted Model API key rotates on every login, so without
 			// this each re-login would pile up another active row for the
 			// same account. Keep only the newest connection active.
-			_, _ = h.Repo.RawDB().Exec(
+			_, _ = h.Repo.Exec(
 				"UPDATE providerConnections SET isActive = 0, updatedAt = ? WHERE provider = ? AND id != ? AND isActive = 1",
 				now, provider, id)
 		}
 		raw, _ := json.Marshal(dataMap)
 		var existing string
-		err := h.Repo.RawDB().QueryRow("SELECT data FROM providerConnections WHERE id = ?", id).Scan(&existing)
+		err := h.Repo.QueryRow("SELECT data FROM providerConnections WHERE id = ?", id).Scan(&existing)
 		if err == nil && existing != "" {
-			_, _ = h.Repo.RawDB().Exec(
+			_, _ = h.Repo.Exec(
 				"UPDATE providerConnections SET name = ?, data = ?, updatedAt = ? WHERE id = ?", name, string(raw), now, id)
 		} else {
 			priority := 1
 			if h.Repo != nil {
 				priority = h.Repo.ResolveDefaultPriority(provider)
 			}
-			_, _ = h.Repo.RawDB().Exec(
+			_, _ = h.Repo.Exec(
 				"INSERT INTO providerConnections (id, provider, authType, name, priority, isActive, data, createdAt, updatedAt) VALUES (?, ?, 'oauth', ?, ?, 1, ?, ?, ?)",
 				id, provider, name, priority, string(raw), now, now)
 		}

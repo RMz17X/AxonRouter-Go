@@ -190,7 +190,7 @@ func (h *ChatHandler) storeAntigravityProjectID(connectionID, pid string) {
 		if h.Repo == nil || h.Repo.RawDB() == nil {
 			return
 		}
-		if _, err := h.Repo.RawDB().Exec("UPDATE providerConnections SET data = json_set(data, '$.projectId', ?) WHERE id = ?", pid, connectionID); err != nil {
+		if err := h.Repo.SetConnectionProjectID(connectionID, pid); err != nil {
 			log.Warn("gemini", "update projectId failed", "conn", connectionID, "error", err)
 		}
 	}()
@@ -290,7 +290,7 @@ func (h *ChatHandler) refreshOAuthTokenIfExpired(connectionID, currentToken stri
 	// stored accessToken before adopting anything.
 	stored, _, readErr := h.oauthRefreshNeeded(connectionID)
 	if readErr == nil && !stored {
-		db := h.Repo.RawDB()
+		db := h.Repo
 		row := db.QueryRowContext(context.Background(),
 			"SELECT data FROM providerConnections WHERE id = ?", connectionID)
 		var rawData string
@@ -323,7 +323,7 @@ func (h *ChatHandler) refreshOAuthTokenIfExpired(connectionID, currentToken stri
 // and a refresher exists for its provider. It also returns the project id the
 // connection carries, so a caller that skips the refresh still propagates it.
 func (h *ChatHandler) oauthRefreshNeeded(connectionID string) (needs bool, projectID string, err error) {
-	db := h.Repo.RawDB()
+	db := h.Repo
 	row := db.QueryRowContext(context.Background(), "SELECT provider, data FROM providerConnections WHERE id = ?", connectionID)
 	var provider string
 	var rawData string
@@ -351,7 +351,7 @@ func (h *ChatHandler) oauthRefreshNeeded(connectionID string) (needs bool, proje
 // refreshOAuthLocked performs the exchange and persists the result. The caller
 // must hold the connection's refresh lock.
 func (h *ChatHandler) refreshOAuthLocked(connectionID, currentToken string) (oauthTokenResult, error) {
-	db := h.Repo.RawDB()
+	db := h.Repo
 	row := db.QueryRowContext(context.Background(), "SELECT provider, data FROM providerConnections WHERE id = ?", connectionID)
 	var provider string
 	var rawData string
@@ -446,7 +446,7 @@ func (h *ChatHandler) forceRefreshOAuthToken(connectionID string) (string, strin
 // forceRefreshLocked is the body of a forced refresh, run while the caller
 // holds the connection's refresh lock.
 func (h *ChatHandler) forceRefreshLocked(connectionID string) (oauthTokenResult, error) {
-	db := h.Repo.RawDB()
+	db := h.Repo
 	row := db.QueryRowContext(context.Background(), "SELECT provider, data FROM providerConnections WHERE id = ?", connectionID)
 	var provider string
 	var rawData string

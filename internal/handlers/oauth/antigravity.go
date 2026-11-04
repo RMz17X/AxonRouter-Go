@@ -248,7 +248,7 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 
 	if h.Repo != nil && h.Repo.RawDB() != nil {
 		var existingDataStr string
-		err := h.Repo.RawDB().QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existingDataStr)
+		err := h.Repo.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existingDataStr)
 		if err == nil && existingDataStr != "" {
 			var existingData map[string]any
 			if err := json.Unmarshal([]byte(existingDataStr), &existingData); err == nil {
@@ -266,7 +266,7 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 				}
 			}
 			dataBytes, _ = json.Marshal(dataMap)
-			_, err = h.Repo.RawDB().Exec(
+			_, err = h.Repo.Exec(
 				"UPDATE providerConnections SET name = ?, data = ?, updatedAt = ? WHERE id = ?",
 				connName, string(dataBytes), now, connID,
 			)
@@ -275,7 +275,7 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 			if h.Repo != nil {
 				priority = h.Repo.ResolveDefaultPriority("antigravity")
 			}
-			_, err = h.Repo.RawDB().Exec(
+			_, err = h.Repo.Exec(
 				"INSERT INTO providerConnections (id, provider, authType, name, priority, isActive, data, createdAt, updatedAt) VALUES (?, 'antigravity', 'oauth', ?, ?, 1, ?, ?, ?)",
 				connID, connName, priority, string(dataBytes), now, now,
 			)
