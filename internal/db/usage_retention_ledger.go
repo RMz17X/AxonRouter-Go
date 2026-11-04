@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json/v2"
 	"fmt"
-	"log"
 	"slices"
 	"time"
 
@@ -49,12 +48,10 @@ type LedgerPruneResult struct {
 
 // ledgerRow is one doomed usageHistory row, reduced to what the carryover needs.
 //
-// The identity is the row's id: on SQLite id is the rowid alias (the
-// schema declares it INTEGER PRIMARY KEY), and on PostgreSQL it is the
-// identity column — one name for the same value in both dialects, which
-// is what lets the cursor, the reset marks and the chunk delete below
-// stay dialect-neutral. (The pre-sweep code selected rowid, which
-// PostgreSQL does not have.)
+// The identity is the row's id: the identity column the schema
+// declares, which is what lets the cursor, the reset marks and the
+// chunk delete below share one spelling. (The pre-sweep code selected
+// rowid, which PostgreSQL does not have.)
 type ledgerRow struct {
 	id        int64
 	clientKey string
@@ -132,18 +129,9 @@ func (r *Repo) PruneUsageHistory(ctx context.Context, retention time.Duration) (
 		result.CarriedTokens += int(carried.total())
 	}
 
-	if result.Rows > 0 && !r.IsPostgres() {
-		// The deleted rows left the planner's statistics describing a table that
-		// is no longer there, and the statements that read the ledger are the
-		// ones the dashboard polls. Fail-open: the rows are already gone, so a
-		// statistics refresh that cannot run costs query plans, not correctness.
-		// SQLite-only: PRAGMA optimize has no PostgreSQL form, and the
-		// server's autoanalyze owns the same job there — the refresh is
-		// gated off rather than transliterated (see the fragment).
-		if _, err := r.ExecContext(ctx, `PRAGMA optimize`); err != nil && ctx.Err() == nil {
-			log.Printf("[RETENTION] ledger PRAGMA optimize failed: %v", err)
-		}
-	}
+	// No post-prune statistics refresh runs here: the server's
+	// autoanalyze owns that job (the file backend's PRAGMA optimize had
+	// no server form and was gated off rather than transliterated).
 	return result, nil
 }
 
@@ -536,16 +524,11 @@ func (r *Repo) deleteLedgerChunk(ctx context.Context, chunk []ledgerRow, watched
 	}
 	carried := watched.fold(chunk)
 
-	// The accumulation names its target table on PostgreSQL: the bare
-	// column reads as the existing row's on SQLite, but PostgreSQL calls
-	// it ambiguous with the EXCLUDED row's same-named column (SQLSTATE
-	// 42702) and wants the table named.
-	keyAccum := `tokens = tokens + excluded.tokens`
-	providerAccum := keyAccum
-	if r.IsPostgres() {
-		keyAccum = `tokens = usageLedgerCarryover.tokens + excluded.tokens`
-		providerAccum = `tokens = providerLedgerCarryover.tokens + excluded.tokens`
-	}
+	// The accumulation names its target table: the bare column reads as
+	// ambiguous with the EXCLUDED row's same-named column (SQLSTATE
+	// 42702), so the table is named.
+	keyAccum := `tokens = usageLedgerCarryover.tokens + excluded.tokens`
+	providerAccum := `tokens = providerLedgerCarryover.tokens + excluded.tokens`
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, keyID := range sortedKeyIDs(carried.keys) {
@@ -567,13 +550,9 @@ func (r *Repo) deleteLedgerChunk(ctx context.Context, chunk []ledgerRow, watched
 		}
 	}
 
-	// The id set travels as JSON in both dialects; only the array
-	// expansion differs (json_each on SQLite, json_array_elements_text
-	// on PostgreSQL).
-	deleteChunk := `DELETE FROM usageHistory WHERE id IN (SELECT value FROM json_each(?))`
-	if r.IsPostgres() {
-		deleteChunk = `DELETE FROM usageHistory WHERE id IN (SELECT t.elem::bigint FROM json_array_elements_text(?::json) AS t(elem))`
-	}
+	// The id set travels as JSON; the array expansion is
+	// json_array_elements_text.
+	deleteChunk := `DELETE FROM usageHistory WHERE id IN (SELECT t.elem::bigint FROM json_array_elements_text(?::json) AS t(elem))`
 	if _, err := tx.ExecContext(ctx, r.Rebind(deleteChunk), string(encoded)); err != nil {
 		return ledgerCarry{}, fmt.Errorf("delete usageHistory chunk: %w", err)
 	}

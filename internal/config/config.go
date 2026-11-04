@@ -20,7 +20,6 @@ import (
 type Config struct {
 	Host                string
 	Port                int
-	DatabasePath        string
 	JWTSecret           string
 	InitialPassword     string
 	APIKeySecret        string
@@ -172,21 +171,8 @@ func LoadConfigFromViper(v *viper.Viper) *Config {
 		log.Warn("config", "create data dir failed", "dir", dataDir, "error", err)
 	}
 
-	// Database file: DB_PATH overrides default DATA_DIR/db/data.sqlite
-	dbPath := v.GetString("DB_PATH")
-	if dbPath == "" {
-		dbPath = filepath.Join(dataDir, "db", "data.sqlite")
-	} else if fi, err := os.Stat(dbPath); err == nil && fi.IsDir() {
-		if _, err := os.Stat(filepath.Join(dbPath, "db", "data.sqlite")); err == nil {
-			dbPath = filepath.Join(dbPath, "db", "data.sqlite")
-		} else if _, err := os.Stat(filepath.Join(dbPath, "data.sqlite")); err == nil {
-			dbPath = filepath.Join(dbPath, "data.sqlite")
-		} else if _, err := os.Stat(filepath.Join(dbPath, "9router.db")); err == nil {
-			dbPath = filepath.Join(dbPath, "9router.db")
-		} else {
-			dbPath = filepath.Join(dbPath, "db", "data.sqlite")
-		}
-	}
+	// The database is configured by DATABASE_URL alone (read by
+	// internal/db at boot); there is no database path setting anymore.
 
 	// INITIAL_PASSWORD has no hardcoded default — an empty value forces the
 	// operator to set one explicitly rather than shipping a known password.
@@ -211,8 +197,7 @@ func LoadConfigFromViper(v *viper.Viper) *Config {
 	return &Config{
 		Host:                host,
 		Port:                port,
-		DatabasePath:        dbPath,
-		JWTSecret:           loadJWTSecret(v, dataDir),
+		JWTSecret:           loadJWTSecret(v),
 		InitialPassword:     initialPassword,
 		APIKeySecret:        apiKeySecret,
 		MachineIDSalt:       machineIDSalt,
@@ -224,12 +209,18 @@ func LoadConfigFromViper(v *viper.Viper) *Config {
 	}
 }
 
-// jwtFileDeprecationOnce keeps the per-node jwt-secret file's
-// deprecation line to once per process: LoadConfig runs on request
-// paths, and a warning per request would bury the signal it carries.
-var jwtFileDeprecationOnce sync.Once
+// jwtEphemeralWarnOnce keeps the ephemeral-secret warning to once per
+// process: LoadConfig runs on request paths, and a warning per request
+// would bury the signal it carries.
+var jwtEphemeralWarnOnce sync.Once
 
-func loadJWTSecret(v *viper.Viper, dataDir string) string {
+// loadJWTSecret resolves the JWT signing secret. JWT_SECRET is the only
+// durable source (P4 removed the per-node jwt-secret file): in a cluster
+// every node must hold the SAME secret, and an env value is the only
+// form that cannot drift per node. When it is unset the boot generates
+// an ephemeral per-boot secret instead — sessions then do not survive
+// a restart and do not span nodes, which the warning states loudly.
+func loadJWTSecret(v *viper.Viper) string {
 	var secret string
 	if v != nil {
 		secret = v.GetString("JWT_SECRET")
@@ -238,35 +229,20 @@ func loadJWTSecret(v *viper.Viper, dataDir string) string {
 		secret = os.Getenv("JWT_SECRET")
 	}
 	if secret != "" {
-		// JWT_SECRET is the secret's source (P3): in a cluster every
-		// node must hold the SAME secret, and an env value is the only
-		// form that cannot drift per node.
 		return secret
 	}
 
-	// Deprecated fallback (P3; the file itself is removed in P4): a
-	// per-node file means every node mints a different secret, so
-	// sessions stop surviving a move between nodes. It stays readable
-	// so existing single-node installs boot unchanged.
-	jwtFileDeprecationOnce.Do(func() {
-		log.Warn("config", "JWT_SECRET is not set; using the per-node jwt-secret file, which is deprecated — set JWT_SECRET so every node shares one secret")
+	jwtEphemeralWarnOnce.Do(func() {
+		log.Warn("config", "JWT_SECRET is not set; generated an ephemeral per-boot secret — sessions will NOT survive a restart and will NOT span nodes; set JWT_SECRET so every node shares one secret")
 	})
-	secretFile := filepath.Join(dataDir, "jwt-secret")
-	data, err := os.ReadFile(secretFile)
-	if err == nil {
-		return string(data)
-	}
 
-	// Generate 32 cryptographically secure random bytes
+	// Generate 32 cryptographically secure random bytes. The value is
+	// never written anywhere: persisting it per node is exactly the
+	// drift the env-only rule exists to prevent.
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
 		log.Error("config", "crypto/rand failed to generate JWT secret; refusing to fall back to a static secret", "error", err)
 		return ""
 	}
-
-	generated := hex.EncodeToString(bytes)
-	if err := os.WriteFile(secretFile, []byte(generated), constants.FilePermKey); err != nil {
-		log.Warn("config", "write JWT secret failed", "file", secretFile, "error", err)
-	}
-	return generated
+	return hex.EncodeToString(bytes)
 }

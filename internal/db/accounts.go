@@ -11,15 +11,6 @@ import (
 
 const modelLockPrefix = "modelLock_"
 
-// modelLockDataKey builds the JSON key used to store a model lock in the
-// providerConnections.data blob. Matches Next.js flat field key format
-// so dashboard can read modelLock_* fields across shared DB.
-func modelLockDataKey(model string) string {
-	// Quote the path segment so a model containing '.', '"', '[', ']' etc.
-	// is treated as a literal key name, not JSON path syntax.
-	return "$.\"" + modelLockPrefix + model + "\""
-}
-
 // SetConnectionProjectID stores a discovered provider project id in the
 // providerConnections.data JSON blob using a json_set-style update. It is
 // the Repo-side form of the statement handlers/chat's Gemini path used to
@@ -27,7 +18,7 @@ func modelLockDataKey(model string) string {
 // so the statement lives here like the other connection-data updaters).
 func (r *Repo) SetConnectionProjectID(connID, projectID string) error {
 	_, err := r.Exec(
-		`UPDATE providerConnections SET data = `+jsonSetExpr(r.dialect, "data",
+		`UPDATE providerConnections SET data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonStringParam(), "projectId"),
 		)+` WHERE id = ?`,
 		projectID, connID,
@@ -46,11 +37,11 @@ func (r *Repo) LockConnectionModel(connID, model string, durationSec int, backof
 	lockedUntil := time.Now().UTC().Add(time.Duration(durationSec) * time.Second).Format(time.RFC3339)
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.Exec(
-		`UPDATE providerConnections SET data = `+jsonSetExpr(r.dialect, "data",
+		`UPDATE providerConnections SET data = `+jsonSetExpr("data",
 			jsonSetBoundPair(jsonStringParam()),
 			jsonSetPairAt(jsonIntParam(), "backoffLevel"),
 		)+`, updatedAt = ? WHERE id = ?`,
-		r.modelLockKeyArg(model, modelLockDataKey(model)), lockedUntil, backoffLevel, now, connID,
+		modelLockPrefix+model, lockedUntil, backoffLevel, now, connID,
 	)
 	if err != nil {
 		return fmt.Errorf("lock connection model %s/%s: %w", connID, model, err)
@@ -62,20 +53,6 @@ func (r *Repo) LockConnectionModel(connID, model string, durationSec int, backof
 		r.publishModelLock(connID, model, until)
 	}
 	return nil
-}
-
-// modelLockKeyArg returns the argument a json_set-style update binds for
-// the modelLock_<model> key. The SQLite arm binds a JSON path string —
-// quoted the way modelLockDataKey builds it, or the bare '$.…' form the
-// clear* helpers historically built; the caller passes that form. The
-// PostgreSQL arm binds the bare key, which jsonSetBoundPair wraps in a
-// one-element path array, so a model name is always data there, never
-// path syntax.
-func (r *Repo) modelLockKeyArg(model, sqlitePath string) string {
-	if r.IsPostgres() {
-		return modelLockPrefix + model
-	}
-	return sqlitePath
 }
 
 // ConnectionCooldownUntil reads the account-scoped quota cooldown a connection
@@ -127,7 +104,7 @@ func (r *Repo) RecordConnectionScopedError(connID, model, source string, status 
 	}
 	_, err = r.Exec(
 		`UPDATE providerConnections
-		 SET data = `+jsonSetExpr(r.dialect, "data",
+		 SET data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonIntParam(), "backoffLevel"),
 			jsonSetPairAt(jsonDocParam(), "lastError"),
 			jsonSetPairAt(jsonStringLiteral("error"), "status"),
@@ -161,7 +138,7 @@ func (r *Repo) LockConnectionRateLimit(connID string, until time.Time, backoffLe
 	}
 	_, err = r.Exec(
 		`UPDATE providerConnections
-		 SET data = `+jsonSetExpr(r.dialect, "data",
+		 SET data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonStringParam(), "rateLimitedUntil"),
 			jsonSetPairAt(jsonIntParam(), "backoffLevel"),
 			jsonSetPairAt(jsonDocParam(), "lastError"),
@@ -187,7 +164,7 @@ func (r *Repo) ClearConnectionRateLimit(connID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.Exec(
 		`UPDATE providerConnections
-		 SET data = `+jsonSetExpr(r.dialect, "data",
+		 SET data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonNullSQLValue(), "rateLimitedUntil"),
 			jsonSetPairAt(jsonNullSQLValue(), "lastError"),
 			jsonSetPairAt(jsonStringLiteral("active"), "status"),
@@ -284,11 +261,11 @@ func (r *Repo) IsConnectionModelLocked(connID, model string) (bool, error) {
 func (r *Repo) UnlockConnectionModel(connID, model string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.Exec(
-		`UPDATE providerConnections SET data = `+jsonSetExpr(r.dialect, "data",
+		`UPDATE providerConnections SET data = `+jsonSetExpr("data",
 			jsonSetBoundPair(jsonNullLiteral()),
 			jsonSetPairAt(jsonIntLiteral(0), "backoffLevel"),
 		)+`, updatedAt = ? WHERE id = ?`,
-		r.modelLockKeyArg(model, modelLockDataKey(model)), now, connID,
+		modelLockPrefix+model, now, connID,
 	)
 	if err != nil {
 		return fmt.Errorf("unlock connection model %s/%s: %w", connID, model, err)
@@ -444,7 +421,7 @@ func (r *Repo) clearProviderModelLocks(provider string) error {
 }
 
 func (r *Repo) clearSpecificModelLock(provider, model string) error {
-	key := "$." + modelLockPrefix + model
+	key := modelLockPrefix + model
 	pairs, err := r.listConnectionData("SELECT id, data FROM providerConnections WHERE provider = ?", provider)
 	if err != nil {
 		return err
@@ -455,11 +432,11 @@ func (r *Repo) clearSpecificModelLock(provider, model string) error {
 			continue
 		}
 		if _, err := r.Exec(
-			`UPDATE providerConnections SET data = `+jsonSetExpr(r.dialect, "data",
+			`UPDATE providerConnections SET data = `+jsonSetExpr("data",
 				jsonSetBoundPair(jsonNullLiteral()),
 				jsonSetPairAt(jsonIntLiteral(0), "backoffLevel"),
 			)+`, updatedAt = ? WHERE id = ?`,
-			r.modelLockKeyArg(model, key), nowUTC(), p.id,
+			modelLockPrefix+model, nowUTC(), p.id,
 		); err != nil {
 			return fmt.Errorf("clear lock %s on %s: %w", key, p.id, err)
 		}
@@ -476,11 +453,11 @@ func (r *Repo) clearConnectionModelLocks(id, data string) error {
 	args := make([]any, 0, len(fields)+2)
 	for _, f := range fields {
 		pairs = append(pairs, jsonSetBoundPair(jsonNullLiteral()))
-		args = append(args, r.modelLockKeyArg(strings.TrimPrefix(f, modelLockPrefix), "$."+f))
+		args = append(args, f)
 	}
 	pairs = append(pairs, jsonSetPairAt(jsonIntLiteral(0), "backoffLevel"))
 	q := "UPDATE providerConnections SET data = " +
-		jsonSetExpr(r.dialect, "data", pairs...) +
+		jsonSetExpr("data", pairs...) +
 		", updatedAt = ? WHERE id = ?"
 	args = append(args, nowUTC(), id)
 	_, err := r.Exec(q, args...)

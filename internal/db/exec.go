@@ -8,33 +8,25 @@ import (
 	"sync"
 )
 
-// exec.go is step 0 of the PostgreSQL dialect sweep (P1): how a statement
-// written once — in the SQLite-flavoured form this codebase already speaks,
-// '?' placeholders — reaches a PostgreSQL handle unchanged in meaning.
+// exec.go is how a statement reaches the database: statements in this
+// codebase are authored once, with '?' placeholders, and rebindQuery
+// rewrites them to PostgreSQL's $1..$n before execution.
 //
 // The mechanism is deliberately small:
 //
-//   - rebindQuery rewrites '?' placeholders to $1..$n for the PostgreSQL
-//     dialect and is the identity for SQLite, so SQLite behaviour is
-//     unchanged byte for byte. The scan is quote- and comment-aware: a '?'
-//     inside a string literal or a comment is never renumbered.
+//   - rebindQuery rewrites '?' placeholders to $1..$n. The scan is
+//     quote- and comment-aware: a '?' inside a string literal or a
+//     comment is never renumbered.
 //   - The Repo wrappers below (Exec/Query/QueryRow and their Context
-//     forms) rebind and delegate to the handle, so a call site migrates by
-//     dropping its `.db` — nothing else about the statement changes.
-//   - Repo.Rebind exposes the rewrite for the call sites that cannot use a
-//     wrapper: statements on a *sql.Tx a Repo method opened (the
-//     transaction does not know its dialect; the Repo does), and
+//     forms) rebind and delegate to the handle, so a call site migrates
+//     by dropping its `.db` — nothing else about the statement changes.
+//   - Repo.Rebind exposes the rewrite for the call sites that cannot use
+//     a wrapper: statements on a *sql.Tx a Repo method opened, and
 //     package-level helpers handed the Repo.
 //
-// Statements routed through here must be authored in '?' form. SQL that is
-// already PostgreSQL-native (schema_pg.go) keeps using the raw handle, as
-// do SQLite-only paths the PG bootstrap never runs (schema.go,
-// BackfillCompressionAnalytics).
-//
-// A cluster adopts the mechanism file by file: route the file's statements
-// through the wrappers, then add dialect branches only where the SQL
-// itself differs — the JSON expressions in jsonexpr.go, upsert forms, and
-// PRAGMA-class maintenance, which has no PG form and is gated off instead.
+// Statements routed through here must be authored in '?' form. SQL that
+// is already PostgreSQL-native (schema_pg.go) keeps using the raw
+// handle.
 
 // rebindCache memoises rebindQuery's PostgreSQL output keyed by the
 // source statement (Efficiency Mandate, 2026-11-04: the PG layer must
@@ -53,11 +45,10 @@ var (
 	rebindCache   = make(map[string]string, 512)
 )
 
-// rebindQuery rewrites the '?' placeholders of a statement to PostgreSQL's
-// $1..$n for the PostgreSQL dialect. Any other dialect gets the statement
-// back unchanged.
-func rebindQuery(d Dialect, query string) string {
-	if d != DialectPostgres || !strings.Contains(query, "?") {
+// rebindQuery rewrites the '?' placeholders of a statement to
+// PostgreSQL's $1..$n.
+func rebindQuery(query string) string {
+	if !strings.Contains(query, "?") {
 		return query
 	}
 	rebindCacheMu.Lock()
@@ -155,16 +146,16 @@ func rebindScan(query string) string {
 	return b.String()
 }
 
-// Rebind rewrites a statement's placeholders for the Repo's dialect. It is
-// the escape hatch for statements executed on something the wrappers do
-// not cover — a *sql.Tx opened by a Repo method, or a *sql.DB a package
+// Rebind rewrites a statement's placeholders for PostgreSQL. It is the
+// escape hatch for statements executed on something the wrappers do not
+// cover — a *sql.Tx opened by a Repo method, or a *sql.DB a package
 // helper was handed alongside the Repo.
 func (r *Repo) Rebind(query string) string {
-	return rebindQuery(r.dialect, query)
+	return rebindQuery(query)
 }
 
 // ExecContext executes a statement through the Repo's handle with its
-// placeholders rebound for the handle's dialect.
+// placeholders rebound for PostgreSQL.
 func (r *Repo) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return r.db.ExecContext(ctx, r.Rebind(query), args...)
 }
@@ -176,7 +167,7 @@ func (r *Repo) Exec(query string, args ...any) (sql.Result, error) {
 }
 
 // QueryContext runs a query through the Repo's handle with its
-// placeholders rebound for the handle's dialect.
+// placeholders rebound for PostgreSQL.
 func (r *Repo) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	return r.db.QueryContext(ctx, r.Rebind(query), args...)
 }
@@ -187,7 +178,7 @@ func (r *Repo) Query(query string, args ...any) (*sql.Rows, error) {
 }
 
 // QueryRowContext runs a one-row query through the Repo's handle with its
-// placeholders rebound for the handle's dialect.
+// placeholders rebound for PostgreSQL.
 func (r *Repo) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	return r.db.QueryRowContext(ctx, r.Rebind(query), args...)
 }

@@ -2,7 +2,7 @@
 // 9router-go.
 //
 // The tests here boot the real HTTP stack — the same chi router, middleware
-// chain, handlers, SQLite schema and provider dispatch that the binary serves
+// chain, handlers, database schema and provider dispatch that the binary serves
 // — against a temporary database and a fake LLM upstream. Nothing reaches the
 // network: every outbound provider call is intercepted by an httptest server
 // seeded through providerConnections.data.baseUrl (AddConnection reads the row

@@ -60,8 +60,8 @@ func HandleMCPAuditStats(repo *db.Repo) http.HandlerFunc {
 
 // auditQueryInt parses a pagination parameter the way the upstream route
 // does with Number(...): a missing parameter yields the default. A
-// non-numeric one also falls back here (upstream would hand NaN to SQLite
-// and fail; the fallback keeps the endpoint usable and is recorded in
+// non-numeric one also falls back here (upstream would hand NaN to its
+// database and fail; the fallback keeps the endpoint usable and is recorded in
 // .changes/918).
 func auditQueryInt(raw string, fallback int) int {
 	if raw == "" {

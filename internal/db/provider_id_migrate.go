@@ -30,7 +30,7 @@ func MigrateLegacyProviderIDs(db *sql.DB) error {
 	}
 	for legacy, canonical := range legacyProviderIDs {
 		if _, err := db.Exec(
-			rebindQuery(DialectOf(db), `UPDATE providerConnections SET provider = ? WHERE provider = ?`),
+			rebindQuery(`UPDATE providerConnections SET provider = ? WHERE provider = ?`),
 			canonical, legacy,
 		); err != nil {
 			return fmt.Errorf("migrate legacy provider id %q -> %q: %w", legacy, canonical, err)

@@ -37,7 +37,7 @@ func NewTokenSaverConfig(rtk, caveman, ponytail bool) *TokenSaverConfig {
 // engine's chat handler, which owns the semantic cache the engine actually
 // reads and writes. The caller must pass that same handler to
 // SetupDashboardRoutes: a second NewChatHandler builds a second
-// PersistentStore over the same SQLite file with its own in-memory LRU, so the
+// PersistentStore over the same database with its own in-memory LRU, so the
 // dashboard would report zero entries while the engine served hits, and
 // clearing entries from the dashboard would leave the engine still serving them.
 func SetupRoutes(r interface {

@@ -872,7 +872,7 @@ func (h *DashboardHandler) HandleUpdateConnection(w http.ResponseWriter, r *http
 // HandleReorderConnection handles POST /api/connections/{id}/reorder.
 // Body: {"direction": "up"|"down"}.
 //
-// The whole swap plus the 1..N renumbering happens in one SQLite transaction,
+// The whole swap plus the 1..N renumbering happens in one transaction,
 // so the pool can never end up with two rows sharing a priority. See
 // Repo.ReorderProviderConnections for why the previous two-PUT client swap was
 // not safe.

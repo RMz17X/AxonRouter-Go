@@ -9,7 +9,7 @@
 // So this package answers two questions about a browser profile, and each
 // has its own answer:
 //
-//   - the cookies, which live in the browser's SQLite database and are
+//   - the cookies, which live in the browser's cookie database and are
 //     sealed with a key the keyring holds; and
 //   - the localStorage values, which live in the profile's LevelDB files and
 //     are stored in the clear.

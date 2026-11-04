@@ -96,7 +96,7 @@ func (r *Repo) plansTableMissing() (bool, error) {
 		return true, nil
 	}
 	// The catalog probe is dialect-branched inside tableExistsOnDB
-	// (sqlite_master on SQLite, to_regclass on PostgreSQL); the contract
+	// (to_regclass); the contract
 	// here is unchanged: a failure to answer is an error, not an absence.
 	exists, err := tableExistsOnDB(r.db, planTable)
 	if err != nil {
@@ -368,7 +368,7 @@ func splitPlanModels(s string) []string {
 	return out
 }
 
-// boolToInt converts a bool to 0/1 for SQLite INTEGER columns.
+// boolToInt converts a bool to 0/1 for INTEGER columns.
 func boolToInt(b bool) int {
 	if b {
 		return 1

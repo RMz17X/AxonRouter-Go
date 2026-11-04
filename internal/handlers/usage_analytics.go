@@ -19,7 +19,7 @@ import (
 // stream. The same per-request record here is the requestDetails ledger, so
 // the handler folds ledger rows (db.GetAnalyticsEvents) into the summary in
 // Go — that is what reproduces the Postgres PERCENTILE_CONT and DATE_BIN
-// semantics exactly rather than approximating them in SQLite.
+// semantics exactly rather than approximating them in the database.
 
 const analyticsMinSampleThreshold = 30
 

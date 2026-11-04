@@ -75,15 +75,11 @@ func (r *Repo) InsertUsageHistory(provider, model, connectionID, apiKey, endpoin
 // concurrent writers from MULTIPLE processes can still clobber each other. This
 // is documented as single-writer unless the aggregation moves SQL-side.
 func (r *Repo) UpsertUsageDaily(dateKey string, data string) error {
-	// The PostgreSQL form of the full-row replace above: usageDaily keys
-	// on dateKey in both dialects, so the conflict target is the key
-	// itself and DO UPDATE SET is the atomic replace INSERT OR REPLACE
-	// performs (the merge still happened in-process, per the note above).
-	query := `INSERT OR REPLACE INTO usageDaily (dateKey, data) VALUES (?, ?)`
-	if r.IsPostgres() {
-		query = `INSERT INTO usageDaily (dateKey, data) VALUES (?, ?)
-		 ON CONFLICT (dateKey) DO UPDATE SET data = EXCLUDED.data`
-	}
+	// The full-row replace: usageDaily keys on dateKey, so the conflict
+	// target is the key itself and DO UPDATE SET is the atomic replace
+	// (the merge still happened in-process, per the note above).
+	query := `INSERT INTO usageDaily (dateKey, data) VALUES (?, ?)
+	 ON CONFLICT (dateKey) DO UPDATE SET data = EXCLUDED.data`
 	_, err := r.Exec(query, dateKey, data)
 	if err != nil {
 		return fmt.Errorf("upsert daily usage %s: %w", dateKey, err)
@@ -94,21 +90,17 @@ func (r *Repo) UpsertUsageDaily(dateKey string, data string) error {
 // InsertRequestDetail logs a request detail record for the Recent Requests dashboard tab.
 func (r *Repo) InsertRequestDetail(id, provider, model, connectionID, status string, data string) error {
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
-	// PostgreSQL: ON CONFLICT DO NOTHING with no target. One grain of
-	// difference from OR IGNORE is deliberate and recorded in the P1
-	// fragment: requestDetails is a partitioned parent whose key is
-	// (id, timestamp) — a partitioned table cannot carry a unique index
-	// on id alone — so the skip fires on the full key, where SQLite's
-	// id-only primary key skips on id alone. The writers generate one
-	// id per request and insert it once (the chat path's success and
-	// failure branches are exclusive), so the wider grain is not
-	// reachable from the current call graph; a future caller that
-	// retries an insert must dedupe itself.
-	query := `INSERT OR IGNORE INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	if r.IsPostgres() {
-		query = `INSERT INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES (?, ?, ?, ?, ?, ?, ?)
-		 ON CONFLICT DO NOTHING`
-	}
+	// ON CONFLICT DO NOTHING with no target. The conflict grain is
+	// deliberate and recorded in the P1 fragment: requestDetails is a
+	// partitioned parent whose key is (id, timestamp) — a partitioned
+	// table cannot carry a unique index on id alone — so the skip fires
+	// on the full key. The writers generate one id per request and
+	// insert it once (the chat path's success and failure branches are
+	// exclusive), so the wider grain is not reachable from the current
+	// call graph; a future caller that retries an insert must dedupe
+	// itself.
+	query := `INSERT INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES (?, ?, ?, ?, ?, ?, ?)
+	 ON CONFLICT DO NOTHING`
 	_, err := r.Exec(query, id, timestamp, provider, model, connectionID, status, data)
 	if err != nil {
 		return fmt.Errorf("insert request detail %s: %w", id, err)
@@ -330,16 +322,12 @@ func (r *Repo) GetUsageTopModelSince(since string) (provider, model string, toke
 	return provider, model, tokens, true, nil
 }
 
-// cacheHitTokenExpr renders one guarded token extraction of
-// GetUsageCacheHitTotalsSince for the dialect: the json_valid-guarded
-// extraction SQLite has always run, or — tokens being jsonb there, valid
-// by construction with absence as the same NULL — the PostgreSQL
-// extraction with the same COALESCE-to-zero.
-func cacheHitTokenExpr(d Dialect, field string) string {
-	if d == DialectPostgres {
-		return "COALESCE(" + jsonIntAt(d, "tokens", field) + ", 0)"
-	}
-	return "CASE WHEN json_valid(tokens) THEN COALESCE(json_extract(tokens, '$." + field + "'), 0) ELSE 0 END"
+// cacheHitTokenExpr renders one token extraction of
+// GetUsageCacheHitTotalsSince: tokens is jsonb, valid by construction
+// with absence as the same NULL, so the extraction is the bare
+// truncating integer read with a COALESCE-to-zero.
+func cacheHitTokenExpr(field string) string {
+	return "COALESCE(" + jsonIntAt("tokens", field) + ", 0)"
 }
 
 // GetUsageCacheHitTotalsSince returns the cached and total input tokens of the
@@ -363,10 +351,10 @@ func (r *Repo) GetUsageCacheHitTotalsSince(since string) (hit, total int64, err 
 	err = r.QueryRow( //nolint:noctx
 		`WITH raw AS (
 		   SELECT COALESCE(promptTokens, 0) AS prompt_column,
-		          `+cacheHitTokenExpr(r.dialect, "cached_tokens")+` AS cached_primary,
-		          `+cacheHitTokenExpr(r.dialect, "cache_read_input_tokens")+` AS cached_read,
-		          `+cacheHitTokenExpr(r.dialect, "cache_creation_input_tokens")+` AS creation,
-		          `+cacheHitTokenExpr(r.dialect, "prompt_tokens")+` AS prompt_json
+		          `+cacheHitTokenExpr("cached_tokens")+` AS cached_primary,
+		          `+cacheHitTokenExpr("cache_read_input_tokens")+` AS cached_read,
+		          `+cacheHitTokenExpr("cache_creation_input_tokens")+` AS creation,
+		          `+cacheHitTokenExpr("prompt_tokens")+` AS prompt_json
 		     FROM usageHistory WHERE timestamp >= ?
 		 ), resolved AS (
 		   SELECT CASE WHEN cached_primary != 0 THEN cached_primary ELSE cached_read END AS cached,
@@ -403,25 +391,12 @@ type RequestDetailPerfRow struct {
 	OutputTokens     int64
 }
 
-// requestDetailPerfSelect reads the latency and output numbers out of the
-// stored payload. json_valid guards the extraction: a row whose payload is
-// not JSON makes json_extract fail, and a broken row must read as "no
-// observation" rather than take the whole read down.
+// requestDetailPerfSelect reads the latency and output numbers out of
+// the stored payload. data is jsonb, so no validity guard is needed —
+// an absent path is the same NULL the COALESCE folds to zero. The
+// extractions are the truncating integer form of jsonexpr.go (latency
+// and token counts are integers by construction).
 const requestDetailPerfSelect = `
-	SELECT COALESCE(provider, ''), COALESCE(model, ''),
-	       CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.latency.ttft'), 0) ELSE 0 END,
-	       CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.latency.total'), 0) ELSE 0 END,
-	       CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.tokens.completion_tokens'), 0) ELSE 0 END,
-	       CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.tokens.output_tokens'), 0) ELSE 0 END
-	FROM requestDetails`
-
-// requestDetailPerfSelectPG is the PostgreSQL twin of
-// requestDetailPerfSelect: data is jsonb, so the json_valid guard is a
-// presence check the extraction does not need — an absent path is the
-// same NULL the guard's ELSE folds to zero. The extractions are the
-// truncating integer form of jsonexpr.go (latency and token counts are
-// integers by construction).
-const requestDetailPerfSelectPG = `
 	SELECT COALESCE(provider, ''), COALESCE(model, ''),
 	       COALESCE((trunc((data #>> '{latency,ttft}')::numeric)::bigint), 0),
 	       COALESCE((trunc((data #>> '{latency,total}')::numeric)::bigint), 0),
@@ -433,11 +408,7 @@ const requestDetailPerfSelectPG = `
 // detail. The ring is retention-bounded, so this stays cheap; it is the
 // gateway's only source of per-request latency for the node-health table.
 func (r *Repo) GetRequestDetailPerf() ([]RequestDetailPerfRow, error) {
-	query := requestDetailPerfSelect
-	if r.IsPostgres() {
-		query = requestDetailPerfSelectPG
-	}
-	rows, err := r.Query(query) //nolint:noctx
+	rows, err := r.Query(requestDetailPerfSelect) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("query request detail perf: %w", err)
 	}
@@ -716,35 +687,16 @@ type RequestDetailListRow struct {
 	LoopWarning  string
 }
 
-// requestDetailListSelect pulls the renderable values straight out of the
-// stored JSON. The key paths mirror what internal/handlers/chat writes into
-// `latency` and `tokens`; json_extract returns NULL for a path a given row does
-// not carry, which COALESCE folds to the zero the table already renders for
-// "not reported".
+// requestDetailListSelect pulls the renderable values straight out of
+// the stored JSON. The key paths mirror what internal/handlers/chat
+// writes into `latency` and `tokens`; the extraction returns NULL for
+// a path a given row does not carry, which COALESCE folds to the zero
+// the table already renders for "not reported". The validity column is
+// a presence check (data is jsonb, valid by construction); the tokens
+// column is the jsonb sub-document, which the driver returns in
+// jsonb's canonical text form — the document a reader parses out of
+// it is the same.
 const requestDetailListSelect = `
-	SELECT id, timestamp, COALESCE(provider, ''), COALESCE(model, ''), COALESCE(connectionId, ''),
-	       COALESCE(status, ''),
-	       COALESCE(json_extract(data, '$.latency.ttft'), 0),
-	       COALESCE(json_extract(data, '$.latency.total'), 0),
-	       COALESCE(json_extract(data, '$.tokens'), '{}'),
-	       COALESCE(json_extract(data, '$.account'), ''),
-	       COALESCE(json_extract(data, '$.cost'), 0.0),
-	       COALESCE(json_extract(data, '$.combo'), ''),
-	       COALESCE(json_extract(data, '$.protocol'), ''),
-	       COALESCE(json_extract(data, '$.loopWarning'), COALESCE(json_extract(data, '$.anomalies[0].message'), '')),
-	       json_valid(data)
-	FROM requestDetails
-	%s
-	ORDER BY timestamp DESC
-	LIMIT ? OFFSET ?`
-
-// requestDetailListSelectPG is the PostgreSQL twin of
-// requestDetailListSelect, same columns in the same order. The validity
-// column is a presence check (data is jsonb, valid by construction); the
-// tokens column is the jsonb sub-document, which the driver returns in
-// jsonb's canonical text form rather than the stored byte form SQLite
-// returns — the document a reader parses out of it is the same.
-const requestDetailListSelectPG = `
 	SELECT id, timestamp, COALESCE(provider, ''), COALESCE(model, ''), COALESCE(connectionId, ''),
 	       COALESCE(status, ''),
 	       COALESCE((trunc((data #>> '{latency,ttft}')::numeric)::bigint), 0),
@@ -788,11 +740,7 @@ func (r *Repo) GetRequestDetailsPaged(ctx context.Context, limit, offset int, si
 		return nil, 0, fmt.Errorf("count requestDetails: %w", err)
 	}
 
-	listSelect := requestDetailListSelect
-	if r.IsPostgres() {
-		listSelect = requestDetailListSelectPG
-	}
-	rows, err := r.QueryContext(ctx, fmt.Sprintf(listSelect, where), append(args, limit, offset)...)
+	rows, err := r.QueryContext(ctx, fmt.Sprintf(requestDetailListSelect, where), append(args, limit, offset)...)
 	if err != nil {
 		return nil, total, fmt.Errorf("query requestDetails paged: %w", err)
 	}
@@ -873,13 +821,9 @@ type ComboAnalyticsRow struct {
 // keeps a long window from shipping every ledger row to the handler.
 func (r *Repo) GetComboAnalyticsSince(ctx context.Context, since string) ([]ComboAnalyticsRow, error) {
 	// The combo name and the latency live in the stored payload; the two
-	// expressions are the only dialect-bearing parts of the statement.
-	comboExpr := "COALESCE(json_extract(data, '$.combo'), '')"
-	latencyAvg := "COALESCE(AVG(json_extract(data, '$.latency.total')), 0) / 1000.0"
-	if r.IsPostgres() {
-		comboExpr = "COALESCE(data #>> '{combo}', '')"
-		latencyAvg = "COALESCE(AVG((data #>> '{latency,total}')::float8), 0) / 1000.0"
-	}
+	// expressions are the only extraction-bearing parts of the statement.
+	comboExpr := "COALESCE(data #>> '{combo}', '')"
+	latencyAvg := "COALESCE(AVG((data #>> '{latency,total}')::float8), 0) / 1000.0"
 	where := "WHERE " + comboExpr + " <> ''"
 	var args []any
 	if since != "" {

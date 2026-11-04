@@ -159,7 +159,7 @@ func piPaths(home string) Paths {
 	}
 }
 
-// ompPaths is ~/.omp/agent/models.yml. The SQLite agent.db beside it is the
+// ompPaths is ~/.omp/agent/models.yml. The agent.db beside it is the
 // dashboard's business, not connect's (matrix §3.9).
 func ompPaths(home string) Paths {
 	dir := filepath.Join(home, ".omp", "agent")

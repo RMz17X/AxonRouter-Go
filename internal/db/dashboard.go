@@ -104,7 +104,7 @@ func (r *Repo) SetConnectionPriority(id string, priority int) error {
 // has no cross-row transaction, so a partial failure left two rows sharing a
 // priority — and a stable sort over tied priorities then made every later swap
 // a literal no-op, permanently bricking the pair. Doing the swap plus the
-// renumber in one SQLite transaction makes partial failure impossible, and
+// renumber in one transaction makes partial failure impossible, and
 // normalising to 1..N also repairs any duplicates left behind by older data.
 // direction is -1 to move the row up and +1 to move it down.
 func (r *Repo) ReorderProviderConnections(provider, id string, direction int) error {

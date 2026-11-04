@@ -7,24 +7,19 @@ import (
 	"time"
 )
 
-// EnsurePostgresSchema is the PostgreSQL counterpart of EnsureCoreSchema:
-// the same table set, the same additive-only contract, the same seeds,
-// created when the PG backend is selected (EnsureCoreSchema branches on
-// DialectOf). Definitions live in schema_pg_defs.go.
+// EnsureCoreSchema creates the gateway's tables/indexes when absent,
+// backfills missing columns on existing databases, and seeds the
+// minimal rows a fresh dashboard needs. Definitions live in
+// schema_pg_defs.go. Safe to call on every startup: every statement is
+// IF NOT EXISTS / ON CONFLICT DO NOTHING / column-presence-checked, so
+// existing user data is never touched.
 //
-// Two deliberate omissions versus the SQLite path, both safe on a schema
-// this function creates itself: the superseded-index drops (those indexes
-// are never created here) and BackfillCompressionAnalytics (a repair of
-// SQLite-era rows, written in SQLite dialect; a fresh PostgreSQL schema
-// has no such rows — the data migrator owns repairs for imported ones).
-//
-// The bootstrap reads the existing catalog ONCE (pgCatalog) and diffs in
-// memory rather than probing per column. The SQLite helper it mirrors
-// pays one PRAGMA per column against a local file; against a server —
-// possibly a network hop away — the same shape is one round trip per
-// column for no benefit, and this package's own rule (§4.A of AGENTS.md)
-// is one read, never N+1.
-func EnsurePostgresSchema(db *sql.DB) error {
+// The bootstrap reads the existing catalog ONCE (pgCatalog) and diffs
+// in memory rather than probing per column: against a server —
+// possibly a network hop away — a probe per column is one round trip
+// per column for no benefit, and this package's own rule (§4.A of
+// AGENTS.md) is one read, never N+1.
+func EnsureCoreSchema(db *sql.DB) error {
 	if db == nil {
 		return fmt.Errorf("postgres schema: nil db")
 	}
@@ -66,11 +61,11 @@ func EnsurePostgresSchema(db *sql.DB) error {
 	if err := ensureAdditiveColumnsPG(db, cat); err != nil {
 		return err
 	}
-	// Mirrors the SQLite bootstrap in schema.go: idx_ak_lookup serves the
-	// hashed-key auth lookup (FindApiKeyByLookup), the primary
-	// authentication path for hashed rows; it is created only after the
-	// additive columns exist because lookupHash is one of them, so the
-	// table DDL cannot index it on a fresh database.
+	// idx_ak_lookup serves the hashed-key auth lookup
+	// (FindApiKeyByLookup), the primary authentication path for hashed
+	// rows; it is created only after the additive columns exist because
+	// lookupHash is one of them, so the table DDL cannot index it on a
+	// fresh database.
 	if _, err := db.Exec(
 		`CREATE INDEX IF NOT EXISTS idx_ak_lookup ON apiKeys(lookupHash)`,
 	); err != nil {
@@ -133,8 +128,7 @@ func (c *pgCatalog) recordColumn(table, column string) {
 }
 
 // loadPGCatalog reads the whole user schema's tables and columns in two
-// statements, replacing the per-column probes a naive port of the SQLite
-// helper would issue.
+// statements, instead of probing per column.
 func loadPGCatalog(db *sql.DB) (*pgCatalog, error) {
 	cat := &pgCatalog{
 		tables:  map[string]bool{},
@@ -198,8 +192,8 @@ func loadPGCatalog(db *sql.DB) (*pgCatalog, error) {
 // readers already use (timestamp >= '…' AND timestamp < '…').
 //
 // PostgreSQL requires a partitioned table's primary key to include the
-// partition key, so both parents key on (id, timestamp) where SQLite keys
-// on id alone — the same widening Axon's schema carries. The monthly
+// partition key, so both parents key on (id, timestamp) rather than id
+// alone — the same widening Axon's schema carries. The monthly
 // partitions themselves are created by ensureMonthlyPartitions.
 func ensurePartitionedUsageTables(db *sql.DB, cat *pgCatalog) error {
 	parents := []tableDef{
@@ -303,9 +297,8 @@ func ensureMonthlyPartitions(db *sql.DB, now time.Time) error {
 	return nil
 }
 
-// ensureDefaultPlanPG mirrors the default-plan seed in
-// EnsureKeiRouterTables with PostgreSQL placeholders and conflict
-// handling.
+// ensureDefaultPlanPG seeds the default plan row with PostgreSQL
+// placeholders and conflict handling.
 func ensureDefaultPlanPG(db *sql.DB) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := db.Exec(
@@ -319,9 +312,9 @@ func ensureDefaultPlanPG(db *sql.DB) error {
 	return nil
 }
 
-// ensureAdditiveColumnsPG is EnsureAdditiveColumns for the PostgreSQL
-// definitions (pgGoOnlyColumns), with the same skip-if-table-absent
-// semantics, answered from the catalog snapshot.
+// ensureAdditiveColumnsPG applies the additive Go-only columns
+// (pgGoOnlyColumns) with skip-if-table-absent semantics, answered from
+// the catalog snapshot.
 func ensureAdditiveColumnsPG(db *sql.DB, cat *pgCatalog) error {
 	for _, c := range pgGoOnlyColumns {
 		if !cat.hasTable(c[0]) {
@@ -338,8 +331,8 @@ func ensureAdditiveColumnsPG(db *sql.DB, cat *pgCatalog) error {
 	return nil
 }
 
-// ensureTablePG is ensureTable with the catalog snapshot standing in for
-// the SQLite helper's per-column PRAGMA probes.
+// ensureTablePG creates or extends one table, with the catalog
+// snapshot standing in for per-column probes.
 func ensureTablePG(db *sql.DB, cat *pgCatalog, t tableDef) error {
 	if !cat.hasTable(t.name) {
 		defs := make([]string, 0, len(t.columns)+1)
@@ -373,9 +366,26 @@ func ensureTablePG(db *sql.DB, cat *pgCatalog, t tableDef) error {
 	return nil
 }
 
-// alterColumnAddPG adds one column. The PRIMARY KEY / UNIQUE stripping
-// matches the SQLite helper: those fragments are only legal at CREATE
-// TABLE time, never in ADD COLUMN.
+// tableExistsOnDB reports whether a table is present, probed through
+// the catalog (to_regclass, which folds the name the same way the DDL
+// did, so a camelCase probe name matches the folded catalog entry)
+// rather than depending on rewordable driver error strings. Runtime
+// readers call this too (the ledger prune's providerNodes probe), not
+// only the bootstrap.
+func tableExistsOnDB(db *sql.DB, table string) (bool, error) {
+	var exists bool
+	err := db.QueryRow(
+		`SELECT to_regclass($1) IS NOT NULL`, table,
+	).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("core schema: inspect table %s: %w", table, err)
+	}
+	return exists, nil
+}
+
+// alterColumnAddPG adds one column. The PRIMARY KEY / UNIQUE fragments
+// are stripped: they are only legal at CREATE TABLE time, never in
+// ADD COLUMN.
 func alterColumnAddPG(db *sql.DB, table, column, definition string) error {
 	safe := definition
 	for _, frag := range []string{"PRIMARY KEY AUTOINCREMENT", "PRIMARY KEY", "UNIQUE"} {

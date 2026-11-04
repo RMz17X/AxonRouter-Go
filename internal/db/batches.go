@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"sync/atomic"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
 
 type Batch struct {

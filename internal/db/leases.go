@@ -126,8 +126,9 @@ func (r *Repo) AcquireLease(scope, key, value string, ttl time.Duration) (bool, 
 }
 
 // isLeaseConflict reports a primary-key race lost to a concurrent inserter.
-// The spellings are per dialect: SQLite's constraint text, and PostgreSQL's
-// duplicate-key report (SQLSTATE 23505), which the same-instant race raises
+// The spellings are per era: the file backend's constraint text (rows
+// an import can still quote), and PostgreSQL's duplicate-key report
+// (SQLSTATE 23505), which the same-instant race raises
 // once the winning transaction commits.
 func isLeaseConflict(err error) bool {
 	if err == nil {

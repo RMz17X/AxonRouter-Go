@@ -1,18 +1,18 @@
 // Package browsercookies reads a Google session out of a browser's own cookie
 // database.
 //
-// A Google session is a set of cookies, and a browser keeps them in a SQLite
-// database it encrypts with a key it holds elsewhere: in the login keyring on
+// A Google session is a set of cookies, and a browser keeps them in a database
+// file it encrypts with a key it holds elsewhere: in the login keyring on
 // Linux, in the Keychain on macOS, wrapped by DPAPI in the profile's own
 // "Local State" file on Windows. Reading a session out of a browser that is
 // already signed in means opening that database and unwrapping that key.
 //
 // The shape of the work comes from azrinaldi/gemini-stealth-bridge
-// internal/cookies/chrome_sqlite.go, which is the reference implementation of
-// the same job. What this package does differently is stated where it differs.
+// internal/cookies, which is the reference implementation of the
+// same job. What this package does differently is stated where it differs.
 //
 // The database is copied before it is read. A browser writes to it while it
-// runs, and reading a live SQLite file can see a half-written page.
+// runs, and reading a live database file can see a half-written page.
 package browsercookies
 
 import (
@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "9router/proxy/internal/foreigndb"
 )
 
 // ErrNoDatabase means no cookie database was found for what was asked for.
@@ -96,7 +96,7 @@ func ReadDomain(ctx context.Context, dbPath, domain string) (*Result, error) {
 		}
 	}
 
-	db, err := sql.Open("sqlite", tmpDB)
+	db, err := sql.Open("foreigndb", tmpDB)
 	if err != nil {
 		return nil, fmt.Errorf("browsercookies.Read: open the copy: %w", err)
 	}

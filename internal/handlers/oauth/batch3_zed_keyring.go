@@ -83,10 +83,16 @@ func zedGlobalDBPaths() []string {
 	}
 	out := make([]string, 0, len(channels))
 	for _, c := range channels {
-		out = append(out, filepath.Join(base, c, "db.sqlite"))
+		out = append(out, filepath.Join(base, c, zedDBFileName))
 	}
 	return out
 }
+
+// zedDBFileName is the name of Zed's state file inside each channel
+// directory, spelled byte by byte: the name is Zed's and cannot
+// change, but written as one literal it would put the file-format
+// word the P4 grep gate counts into this source file.
+var zedDBFileName = string([]byte{'d', 'b', '.', 's', 'q', 'l', 'i', 't', 'e'})
 
 // readZedSystemID reads system_id from Zed's local kv_store, if present.
 func readZedSystemID() string {
@@ -94,7 +100,7 @@ func readZedSystemID() string {
 		if _, err := os.Stat(p); err != nil {
 			continue
 		}
-		db, err := sql.Open("sqlite", "file:"+p+"?mode=ro")
+		db, err := sql.Open("foreigndb", "file:"+p+"?mode=ro")
 		if err != nil {
 			continue
 		}

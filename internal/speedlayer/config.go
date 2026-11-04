@@ -68,7 +68,7 @@ func RedisURLFromEnv() string {
 }
 
 // Build selects and constructs the store for this boot and records the
-// boot status. handle/dialect describe the application database (the
+// boot status. handle is the application database (the
 // degradation backend lives in it). Selection:
 //
 //   - REDIS_URL/VALKEY_URL set → failover(redis, database); an eager
@@ -77,7 +77,7 @@ func RedisURLFromEnv() string {
 //     anyway (database serving, breaker open) rather than silently
 //     falling back to per-node memory, which the design forbids.
 //   - unset → memory (single-node mode).
-func Build(handle *sql.DB, dialect string) Store {
+func Build(handle *sql.DB) Store {
 	node := NodeID()
 	raw := RedisURLFromEnv()
 	if raw == "" {
@@ -85,7 +85,7 @@ func Build(handle *sql.DB, dialect string) Store {
 		return NewMemoryStore()
 	}
 
-	dbStore, err := NewDBStore(handle, dialect)
+	dbStore, err := NewDBStore(handle)
 	if err != nil {
 		// The database is the application's own handle, already proven
 		// by boot reaching this point; landing here means the speed
@@ -119,9 +119,9 @@ func Build(handle *sql.DB, dialect string) Store {
 }
 
 // Banner returns the one-line boot banner values: mode, node identity,
-// and the backends in use (database dialect + speed layer). The app
-// logs it once at startup.
-func Banner(dbDialect string) (mode string, node string, backends string) {
+// and the backends in use (database + speed layer). The app logs it
+// once at startup.
+func Banner() (mode string, node string, backends string) {
 	s := CurrentStatus()
-	return string(s.Mode), s.NodeID, "db=" + dbDialect + " speed=" + s.Serving + " primary=" + s.Primary
+	return string(s.Mode), s.NodeID, "db=postgres speed=" + s.Serving + " primary=" + s.Primary
 }

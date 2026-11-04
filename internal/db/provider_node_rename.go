@@ -33,29 +33,19 @@ var ErrProviderNodeNotFound = errors.New("provider node not found")
 // suffix.
 var ErrProviderNodeIDTaken = errors.New("provider node id already in use")
 
-// tableExists reports whether a table is present in this database. The rename
-// probes the schema instead of inspecting a driver error, so "nothing to move"
-// does not depend on a message string the driver is free to reword. The probe
-// itself is dialect-shaped: sqlite_master on SQLite, to_regclass on
-// PostgreSQL (the same form tableExistsOnDB uses on a bare handle, spelled
-// with its literal $1 inside its own branch).
-func tableExists(tx *sql.Tx, d Dialect, name string) bool {
-	if d == DialectPostgres {
-		var exists bool
-		if err := tx.QueryRow(
-			`SELECT to_regclass($1) IS NOT NULL`, name,
-		).Scan(&exists); err != nil {
-			return false
-		}
-		return exists
-	}
-	var count int
+// tableExists reports whether a table is present in this database. The
+// rename probes the schema instead of inspecting a driver error, so
+// "nothing to move" does not depend on a message string the driver is
+// free to reword. The probe is to_regclass (the same form
+// tableExistsOnDB uses on a bare handle, spelled with its literal $1).
+func tableExists(tx *sql.Tx, name string) bool {
+	var exists bool
 	if err := tx.QueryRow(
-		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`, name,
-	).Scan(&count); err != nil {
+		`SELECT to_regclass($1) IS NOT NULL`, name,
+	).Scan(&exists); err != nil {
 		return false
 	}
-	return count > 0
+	return exists
 }
 
 // renamedCustomModel is one kv row before and after the alias rewrite. Both are
@@ -130,7 +120,7 @@ func (r *Repo) RenameProviderNode(oldID, newID string) (*models.ProviderNode, er
 	// never fully bootstrapped, and losing analytics is a far better outcome
 	// than refusing the edit.
 	for _, table := range []string{"usageHistory", "requestDetails"} {
-		if !tableExists(tx, r.dialect, table) {
+		if !tableExists(tx, table) {
 			continue
 		}
 		if _, err := tx.Exec(r.Rebind(`UPDATE `+table+` SET provider = ? WHERE provider = ?`), newID, oldID); err != nil {

@@ -52,45 +52,19 @@ func (r *Repo) budgetColumnsPresent() bool {
 		return false
 	}
 	r.budgetColsOnce.Do(func() {
-		if r.IsPostgres() {
-			// PostgreSQL has no PRAGMA; the catalog is the probe. The
-			// question is the same one the SQLite arm asks — does the
-			// limitMicros column exist — so a hand-made PostgreSQL schema
-			// without the F-2 columns still degrades every key read to
-			// the legacy query, exactly as a pre-F-2 SQLite file does.
-			// The names are the folded forms the unquoted DDL stored.
-			var present int
-			err := r.QueryRowContext(context.Background(),
-				`SELECT COUNT(*) FROM information_schema.columns
-				 WHERE table_schema = current_schema() AND table_name = 'apikeys'
-				   AND column_name = 'limitmicros'`).Scan(&present)
-			if err == nil && present > 0 {
-				r.budgetCols = true
-			}
-			return
+		// The catalog is the probe: does the limitMicros column exist?
+		// A hand-made schema without the F-2 columns still degrades
+		// every key read to the legacy query, exactly as a pre-F-2
+		// database does. The names are the folded forms the unquoted
+		// DDL stored.
+		var present int
+		err := r.QueryRowContext(context.Background(),
+			`SELECT COUNT(*) FROM information_schema.columns
+			 WHERE table_schema = current_schema() AND table_name = 'apikeys'
+			   AND column_name = 'limitmicros'`).Scan(&present)
+		if err == nil && present > 0 {
+			r.budgetCols = true
 		}
-		rows, err := r.db.QueryContext(context.Background(), `PRAGMA table_info(apiKeys)`)
-		if err != nil {
-			return
-		}
-		defer func() { _ = rows.Close() }()
-		for rows.Next() {
-			var cid int
-			var name, ctype string
-			var notNull, pk int
-			var dflt sql.NullString
-			if err := rows.Scan(&cid, &name, &ctype, &notNull, &dflt, &pk); err != nil {
-				return
-			}
-			if name == "limitMicros" {
-				r.budgetCols = true
-				return
-			}
-		}
-		// A mid-iteration failure would otherwise leave the probe answering
-		// "no budget columns" for a database that has them, which silently
-		// degrades every key read to the legacy query.
-		_ = rows.Err()
 	})
 	return r.budgetCols
 }
@@ -259,13 +233,10 @@ func hashedKeySentinel(lookupHash string) string {
 	return hashedKeyPrefix + lookupHash
 }
 
-// hashedKeySentinelFor returns the sentinel in the spelling the dialect
-// can store.
+// hashedKeySentinelFor returns the sentinel in the spelling the
+// database can store.
 func (r *Repo) hashedKeySentinelFor(lookupHash string) string {
-	if r.IsPostgres() {
-		return hashedKeyPrefixPG + lookupHash
-	}
-	return hashedKeySentinel(lookupHash)
+	return hashedKeyPrefixPG + lookupHash
 }
 
 // IsHashedKeyRow reports whether a row is a pre-#199 hashed row: its `key`

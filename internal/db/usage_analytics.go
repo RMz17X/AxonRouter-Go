@@ -17,38 +17,25 @@ import (
 // events, which here live in the requestDetails ledger (see
 // GetAnalyticsEvents).
 
-// usageTotalTokensExpr is AxonRouter's total-tokens rule (its
+// usageTotalTokensExpr renders AxonRouter's total-tokens rule (its
 // COALESCE(total_tokens, tokens_input + tokens_output + tokens_cache_read +
-// tokens_cache_creation + tokens_reasoning)): a stored total wins when the
-// row's tokens payload carries one, otherwise the parts are summed. The cache
-// read count resolves the way GetUsageCacheHitTotalsSince resolves it —
-// cached_tokens first, cache_read_input_tokens when the first is zero/absent.
-const usageTotalTokensExpr = `CASE
-	WHEN json_valid(tokens) AND json_extract(tokens, '$.total_tokens') IS NOT NULL
-		THEN json_extract(tokens, '$.total_tokens')
-	ELSE COALESCE(promptTokens, 0) + COALESCE(completionTokens, 0)
-		+ CASE WHEN json_valid(tokens) THEN COALESCE(NULLIF(json_extract(tokens, '$.cached_tokens'), 0), json_extract(tokens, '$.cache_read_input_tokens'), 0) ELSE 0 END
-		+ CASE WHEN json_valid(tokens) THEN COALESCE(json_extract(tokens, '$.cache_creation_input_tokens'), 0) ELSE 0 END
-		+ CASE WHEN json_valid(tokens) THEN COALESCE(json_extract(tokens, '$.reasoning_tokens'), 0) ELSE 0 END
-END`
-
-// usageTotalTokensExprFor renders usageTotalTokensExpr for the dialect.
-// The PostgreSQL form reads the same fields out of the jsonb payload with
-// the jsonexpr.go forms: presence of total_tokens is tested on the text
-// extraction because a stored JSON null must read as absent, exactly as
-// json_extract reports it, and the guards collapse to the presence check
-// (tokens is jsonb there, valid by construction).
-func usageTotalTokensExprFor(d Dialect) string {
-	if d != DialectPostgres {
-		return usageTotalTokensExpr
-	}
+// tokens_cache_creation + tokens_reasoning)) from the jsonb payload with
+// the jsonexpr.go forms: a stored total wins when the row's tokens
+// payload carries one, otherwise the parts are summed. Presence of
+// total_tokens is tested on the text extraction because a stored JSON
+// null must read as absent, and the guards collapse to the presence
+// check (tokens is jsonb, valid by construction). The cache read count
+// resolves the way GetUsageCacheHitTotalsSince resolves it —
+// cached_tokens first, cache_read_input_tokens when the first is
+// zero/absent.
+func usageTotalTokensExpr() string {
 	return `CASE
-		WHEN ` + jsonValid(d, "tokens") + ` AND ` + jsonTextAt(d, "tokens", "total_tokens") + ` IS NOT NULL
-			THEN ` + jsonIntAt(d, "tokens", "total_tokens") + `
+		WHEN ` + jsonValid("tokens") + ` AND ` + jsonTextAt("tokens", "total_tokens") + ` IS NOT NULL
+			THEN ` + jsonIntAt("tokens", "total_tokens") + `
 		ELSE COALESCE(promptTokens, 0) + COALESCE(completionTokens, 0)
-			+ CASE WHEN ` + jsonValid(d, "tokens") + ` THEN COALESCE(NULLIF(` + jsonIntAt(d, "tokens", "cached_tokens") + `, 0), ` + jsonIntAt(d, "tokens", "cache_read_input_tokens") + `, 0) ELSE 0 END
-			+ CASE WHEN ` + jsonValid(d, "tokens") + ` THEN COALESCE(` + jsonIntAt(d, "tokens", "cache_creation_input_tokens") + `, 0) ELSE 0 END
-			+ CASE WHEN ` + jsonValid(d, "tokens") + ` THEN COALESCE(` + jsonIntAt(d, "tokens", "reasoning_tokens") + `, 0) ELSE 0 END
+			+ CASE WHEN ` + jsonValid("tokens") + ` THEN COALESCE(NULLIF(` + jsonIntAt("tokens", "cached_tokens") + `, 0), ` + jsonIntAt("tokens", "cache_read_input_tokens") + `, 0) ELSE 0 END
+			+ CASE WHEN ` + jsonValid("tokens") + ` THEN COALESCE(` + jsonIntAt("tokens", "cache_creation_input_tokens") + `, 0) ELSE 0 END
+			+ CASE WHEN ` + jsonValid("tokens") + ` THEN COALESCE(` + jsonIntAt("tokens", "reasoning_tokens") + `, 0) ELSE 0 END
 	END`
 }
 
@@ -150,31 +137,21 @@ func (r *Repo) GetAnalyticsEvents(ctx context.Context, since, until, provider, m
 		clauses = append(clauses, "COALESCE(model, '') = ?")
 		args = append(args, model)
 	}
-	// The latency and token columns come out of the stored payload; on
-	// PostgreSQL the jsonb extractions replace the json_valid-guarded
-	// json_extract forms (an absent path is the same NULL either way, and
-	// the scan types fix the cast: latency is a float, the counts are
-	// integers).
-	latencyExpr := "CASE WHEN json_valid(data) THEN json_extract(data, '$.latency.total') END"
-	inputTokensExpr := "CASE WHEN json_valid(data) THEN json_extract(data, '$.tokens.prompt_tokens') END"
-	outputTokensExpr := "CASE WHEN json_valid(data) THEN json_extract(data, '$.tokens.completion_tokens') END"
-	categoryExpr := `COALESCE(
-				CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.error_category'), '') END,
-				CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.errorCategory'), '') END, '')`
-	if r.IsPostgres() {
-		latencyExpr = jsonRealAt(r.dialect, "data", "latency", "total")
-		inputTokensExpr = jsonIntAt(r.dialect, "data", "tokens", "prompt_tokens")
-		outputTokensExpr = jsonIntAt(r.dialect, "data", "tokens", "completion_tokens")
-		categoryExpr = "COALESCE(NULLIF(" + jsonTextAt(r.dialect, "data", "error_category") +
-			", ''), NULLIF(" + jsonTextAt(r.dialect, "data", "errorCategory") + ", ''), '')"
-	}
+	// The latency and token columns come out of the stored payload as
+	// jsonb extractions (an absent path is the same NULL, and the scan
+	// types fix the cast: latency is a float, the counts are integers).
+	latencyExpr := jsonRealAt("data", "latency", "total")
+	inputTokensExpr := jsonIntAt("data", "tokens", "prompt_tokens")
+	outputTokensExpr := jsonIntAt("data", "tokens", "completion_tokens")
+	categoryExpr := "COALESCE(NULLIF(" + jsonTextAt("data", "error_category") +
+		", ''), NULLIF(" + jsonTextAt("data", "errorCategory") + ", ''), '')"
 	rows, err := r.QueryContext(ctx, `
 		SELECT timestamp, COALESCE(provider, ''), COALESCE(model, ''), status,
 			`+latencyExpr+`,
 			`+inputTokensExpr+`,
 			`+outputTokensExpr+`,
-			CAST(`+failureSampleErrorExprFor(r.dialect)+` AS TEXT),
-			CAST(`+failureSampleStatusExprFor(r.dialect)+` AS TEXT),
+			CAST(`+failureSampleErrorExpr()+` AS TEXT),
+			CAST(`+failureSampleStatusExpr()+` AS TEXT),
 			`+categoryExpr+`
 		FROM requestDetails
 		WHERE `+strings.Join(clauses, " AND ")+`
@@ -229,7 +206,7 @@ func (r *Repo) GetUsageHistoryGrouped(ctx context.Context, f UsageWindowFilter) 
 			COUNT(*),
 			COALESCE(SUM(COALESCE(promptTokens, 0)), 0),
 			COALESCE(SUM(COALESCE(completionTokens, 0)), 0),
-			COALESCE(SUM(`+usageTotalTokensExprFor(r.dialect)+`), 0),
+			COALESCE(SUM(`+usageTotalTokensExpr()+`), 0),
 			COALESCE(SUM(COALESCE(cost, 0)), 0),
 			COALESCE(MAX(timestamp), '')
 		FROM usageHistory `+where+`
@@ -289,52 +266,29 @@ func (f FailureFilter) whereClause() (string, []any) {
 // The sample error/status expressions mirror AxonRouter's COALESCE chains
 // over the stored payload: the newest failure's own error text first, then
 // its nested response/providerResponse forms, then the row's status column.
-// json_valid guards every extraction, the pattern requestDetailPerfSelect
-// established — a malformed payload must read as "no sample", not fail.
-const failureSampleErrorExpr = `COALESCE(
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.error'), '') END,
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.response.error'), '') END,
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.response.message'), '') END,
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.providerResponse.error'), '') END,
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.response.error.message'), '') END,
-	status, 'Unknown failure')`
-
-const failureSampleStatusExpr = `COALESCE(
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.response.status'), '') END,
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.providerResponse.status'), '') END,
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.errorCode'), '') END,
-	CASE WHEN json_valid(data) THEN NULLIF(json_extract(data, '$.status'), '') END,
-	status, '500')`
-
-// failureSampleErrorExprFor renders failureSampleErrorExpr for the
-// dialect. On PostgreSQL the payload is jsonb — valid by construction, so
-// the guards fall away and the chain is the bare NULLIF sequence over the
-// text extractions (an object at a path reads as its JSON text in both
-// dialects, a number as its digits).
-func failureSampleErrorExprFor(d Dialect) string {
-	if d != DialectPostgres {
-		return failureSampleErrorExpr
-	}
+// failureSampleErrorExpr renders the failure-sample error chain. The
+// payload is jsonb — valid by construction, so no validity guards are
+// needed and the chain is the bare NULLIF sequence over the text
+// extractions (an object at a path reads as its JSON text, a number as
+// its digits).
+func failureSampleErrorExpr() string {
 	return `COALESCE(
-		NULLIF(` + jsonTextAt(d, "data", "error") + `, ''),
-		NULLIF(` + jsonTextAt(d, "data", "response", "error") + `, ''),
-		NULLIF(` + jsonTextAt(d, "data", "response", "message") + `, ''),
-		NULLIF(` + jsonTextAt(d, "data", "providerResponse", "error") + `, ''),
-		NULLIF(` + jsonTextAt(d, "data", "response", "error", "message") + `, ''),
+		NULLIF(` + jsonTextAt("data", "error") + `, ''),
+		NULLIF(` + jsonTextAt("data", "response", "error") + `, ''),
+		NULLIF(` + jsonTextAt("data", "response", "message") + `, ''),
+		NULLIF(` + jsonTextAt("data", "providerResponse", "error") + `, ''),
+		NULLIF(` + jsonTextAt("data", "response", "error", "message") + `, ''),
 		status, 'Unknown failure')`
 }
 
-// failureSampleStatusExprFor renders failureSampleStatusExpr for the
-// dialect, on the same terms as failureSampleErrorExprFor.
-func failureSampleStatusExprFor(d Dialect) string {
-	if d != DialectPostgres {
-		return failureSampleStatusExpr
-	}
+// failureSampleStatusExpr renders the failure-sample status chain, on
+// the same terms as failureSampleErrorExpr.
+func failureSampleStatusExpr() string {
 	return `COALESCE(
-		NULLIF(` + jsonTextAt(d, "data", "response", "status") + `, ''),
-		NULLIF(` + jsonTextAt(d, "data", "providerResponse", "status") + `, ''),
-		NULLIF(` + jsonTextAt(d, "data", "errorCode") + `, ''),
-		NULLIF(` + jsonTextAt(d, "data", "status") + `, ''),
+		NULLIF(` + jsonTextAt("data", "response", "status") + `, ''),
+		NULLIF(` + jsonTextAt("data", "providerResponse", "status") + `, ''),
+		NULLIF(` + jsonTextAt("data", "errorCode") + `, ''),
+		NULLIF(` + jsonTextAt("data", "status") + `, ''),
 		status, '500')`
 }
 
@@ -355,8 +309,8 @@ func (r *Repo) queryFailureGroups(ctx context.Context, op, partition, selectMode
 	rows, err := r.QueryContext(ctx, `
 		WITH failed AS (
 			SELECT COALESCE(provider, '') AS provider, COALESCE(model, '') AS model, timestamp,
-				CAST(`+failureSampleErrorExprFor(r.dialect)+` AS TEXT) AS sample_error,
-				CAST(`+failureSampleStatusExprFor(r.dialect)+` AS TEXT) AS sample_status
+				CAST(`+failureSampleErrorExpr()+` AS TEXT) AS sample_error,
+				CAST(`+failureSampleStatusExpr()+` AS TEXT) AS sample_status
 			FROM requestDetails `+where+`
 		), ranked AS (
 			SELECT *, ROW_NUMBER() OVER (PARTITION BY `+partition+` ORDER BY timestamp DESC) AS rn
@@ -406,14 +360,10 @@ func (r *Repo) GetFailureTopProviders(ctx context.Context, f FailureFilter) ([]F
 // itself), so the read stays a single column projection.
 func (r *Repo) GetRecentFailurePayloads(ctx context.Context, f FailureFilter, limit int) ([]string, error) {
 	where, args := f.whereClause()
-	// On PostgreSQL the payload column is jsonb; the ::text cast pins the
-	// same "payload as a string" the SQLite text column returns (in
-	// jsonb's canonical rendering — the document parsed from it is the
-	// same).
-	payloadExpr := "COALESCE(data, '')"
-	if r.IsPostgres() {
-		payloadExpr = "COALESCE(data::text, '')"
-	}
+	// The payload column is jsonb; the ::text cast pins "payload as a
+	// string" (in jsonb's canonical rendering — the document parsed
+	// from it is the same).
+	payloadExpr := "COALESCE(data::text, '')"
 	rows, err := r.QueryContext(ctx, `
 		SELECT `+payloadExpr+`
 		FROM requestDetails `+where+`
@@ -456,13 +406,10 @@ type UsageLogRow struct {
 
 // GetRecentUsageLogRows returns the newest usage history rows in log shape.
 func (r *Repo) GetRecentUsageLogRows(ctx context.Context, limit int) ([]UsageLogRow, error) {
-	// meta is a JSON payload: text on SQLite, jsonb on PostgreSQL, where
-	// the '' default has to be produced from the value's text form — a
-	// bare COALESCE(meta, '') asks the server to parse '' as JSON.
-	metaExpr := `COALESCE(meta, '')`
-	if r.IsPostgres() {
-		metaExpr = `COALESCE(meta::text, '')`
-	}
+	// meta is a jsonb payload, so the '' default has to be produced from
+	// the value's text form — a bare COALESCE(meta, '') asks the server
+	// to parse '' as JSON.
+	metaExpr := `COALESCE(meta::text, '')`
 	rows, err := r.QueryContext(ctx, `
 		SELECT id, timestamp, COALESCE(provider, ''), COALESCE(model, ''),
 			COALESCE(connectionId, ''), COALESCE(status, ''),

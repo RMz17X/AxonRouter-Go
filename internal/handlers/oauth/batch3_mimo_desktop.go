@@ -41,7 +41,7 @@ func readDesktopPassToken() *mimoDesktopPassToken {
 		return nil
 	}
 	tmp.Close()
-	db, err := sql.Open("sqlite", "file:"+tmpPath+"?mode=ro")
+	db, err := sql.Open("foreigndb", "file:"+tmpPath+"?mode=ro")
 	if err != nil {
 		return nil
 	}

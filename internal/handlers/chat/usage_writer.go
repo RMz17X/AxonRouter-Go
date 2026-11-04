@@ -10,7 +10,7 @@ import (
 
 // Off-path usage writes.
 //
-// logUsage used to run every SQLite write it needed — the usageHistory row,
+// logUsage used to run every database write it needed — the usageHistory row,
 // the requestDetails row, the compression-analytics row, and the daily
 // aggregate read-modify-write — on the goroutine that had just finished
 // streaming the response. All of them share one WAL writer, so under load each

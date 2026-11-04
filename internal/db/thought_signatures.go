@@ -28,21 +28,6 @@ var thoughtSignatureTables = []tableDef{
 	},
 }
 
-// EnsureThoughtSignatureTables creates the persistent signature table. Exported
-// so a test fixture that builds only part of the schema still gets the shape
-// the runtime queries.
-func EnsureThoughtSignatureTables(db *sql.DB) error {
-	if db == nil {
-		return fmt.Errorf("thought signature tables: nil db")
-	}
-	for _, t := range thoughtSignatureTables {
-		if err := ensureTable(db, t); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ThoughtSignatureRow is one persisted signature.
 type ThoughtSignatureRow struct {
 	Key       string
@@ -95,17 +80,13 @@ func (r *Repo) GetThoughtSignature(ctx context.Context, key string) (*ThoughtSig
 }
 
 // thoughtSignatureOrder is the newest-first order the load and the trim
-// share. updatedAt leads in both dialects; the tiebreak is the row's
-// identity — SQLite's rowid, which a table with a TEXT primary key still
-// carries, or the primary key itself on PostgreSQL, which has no rowid.
-// The tiebreak only decides between rows written inside the same second
-// (updatedAt is second-resolution), so it is a determinism device for
-// the trim and the hydration cap, not part of either's contract.
+// share. updatedAt leads; the tiebreak is the row's identity — the
+// primary key itself (PostgreSQL has no rowid). The tiebreak only
+// decides between rows written inside the same second (updatedAt is
+// second-resolution), so it is a determinism device for the trim and
+// the hydration cap, not part of either's contract.
 func (r *Repo) thoughtSignatureOrder() string {
-	if r.IsPostgres() {
-		return `updatedAt DESC, key DESC`
-	}
-	return `updatedAt DESC, rowid DESC`
+	return `updatedAt DESC, key DESC`
 }
 
 // LoadThoughtSignatures returns up to limit unexpired rows, newest write first.
@@ -154,23 +135,19 @@ func (r *Repo) LoadThoughtSignatures(ctx context.Context, limit int) ([]ThoughtS
 // The order is (updatedAt, row identity): updatedAt is stored at second
 // resolution, so a burst writes many rows that share one timestamp and the
 // tiebreak decides which survive. Without it the order is whatever the scan
-// produced, and the trim can delete the rows written last. The unbounded
-// window is LIMIT -1 on SQLite and LIMIT ALL on PostgreSQL, which rejects
-// a negative limit outright.
+// produced, and the trim can delete the rows written last. The
+// unbounded window is spelled LIMIT ALL — PostgreSQL rejects a
+// negative limit outright.
 func (r *Repo) TrimThoughtSignatures(ctx context.Context, keep int) (int64, error) {
 	if keep < 0 {
 		keep = 0
-	}
-	limitAll := "LIMIT -1"
-	if r.IsPostgres() {
-		limitAll = "LIMIT ALL"
 	}
 	res, err := r.ExecContext(
 		ctx,
 		`DELETE FROM thoughtSignatures WHERE key IN (
 			SELECT key FROM thoughtSignatures
 			ORDER BY `+r.thoughtSignatureOrder()+`
-			`+limitAll+` OFFSET ?
+			LIMIT ALL OFFSET ?
 		)`, keep,
 	)
 	if err != nil {

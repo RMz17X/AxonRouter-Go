@@ -66,46 +66,27 @@ type CacheTrendPoint struct {
 }
 
 const (
-	// sqlCachedTokensExpr reads the cached (read-back) tokens a provider billed.
-	// json_valid keeps a truncated or non-JSON payload a zero rather than a
-	// parse failure that would fail the whole aggregate.
-	sqlCachedTokensExpr = `CASE WHEN tokens IS NOT NULL AND json_valid(tokens)
-		THEN CAST(COALESCE(json_extract(tokens, '$.cached_tokens'), json_extract(tokens, '$.cache_read_input_tokens'), 0) AS INTEGER)
-		ELSE 0 END`
 	defaultAvgInputPricePerMillion = 3.0
 	defaultCacheSavingsDiscount    = 0.9
-	sqlCacheCreationTokensExpr     = `CASE
-		WHEN tokens IS NOT NULL AND json_valid(tokens) AND CAST(COALESCE(json_extract(tokens, '$.cache_creation_input_tokens'), json_extract(tokens, '$.cache_creation_tokens'), 0) AS INTEGER) > 0
-		THEN CAST(COALESCE(json_extract(tokens, '$.cache_creation_input_tokens'), json_extract(tokens, '$.cache_creation_tokens'), 0) AS INTEGER)
-		WHEN tokens IS NOT NULL AND json_valid(tokens) AND promptTokens > CAST(COALESCE(json_extract(tokens, '$.cached_tokens'), json_extract(tokens, '$.cache_read_input_tokens'), 0) AS INTEGER)
-		     AND CAST(COALESCE(json_extract(tokens, '$.cached_tokens'), json_extract(tokens, '$.cache_read_input_tokens'), 0) AS INTEGER) > 0
-		THEN promptTokens - CAST(COALESCE(json_extract(tokens, '$.cached_tokens'), json_extract(tokens, '$.cache_read_input_tokens'), 0) AS INTEGER)
-		ELSE 0 END`
 )
 
-// sqlCachedTokensExprFor renders sqlCachedTokensExpr for the dialect. The
-// PostgreSQL form drops the json_valid guard (tokens is jsonb there,
-// valid by construction) and reads the two fields with the truncating
-// integer extraction, coalesced in the same order.
-func sqlCachedTokensExprFor(d Dialect) string {
-	if d != DialectPostgres {
-		return sqlCachedTokensExpr
-	}
+// sqlCachedTokensExpr renders the cached (read-back) tokens a provider
+// billed. tokens is jsonb — valid by construction — so no validity
+// guard is needed; the two fields are read with the truncating integer
+// extraction, coalesced in order.
+func sqlCachedTokensExpr() string {
 	return `CASE WHEN tokens IS NOT NULL
-		THEN COALESCE(` + jsonIntAt(d, "tokens", "cached_tokens") + `, ` + jsonIntAt(d, "tokens", "cache_read_input_tokens") + `, 0)
+		THEN COALESCE(` + jsonIntAt("tokens", "cached_tokens") + `, ` + jsonIntAt("tokens", "cache_read_input_tokens") + `, 0)
 		ELSE 0 END`
 }
 
-// sqlCacheCreationTokensExprFor renders sqlCacheCreationTokensExpr for
-// the dialect, on the same terms as sqlCachedTokensExprFor: the two
-// resolved counts (creation as stored, cached as stored) are computed
-// once as expressions and the CASE keeps the SQLite original's shape.
-func sqlCacheCreationTokensExprFor(d Dialect) string {
-	if d != DialectPostgres {
-		return sqlCacheCreationTokensExpr
-	}
-	creation := `COALESCE(` + jsonIntAt(d, "tokens", "cache_creation_input_tokens") + `, ` + jsonIntAt(d, "tokens", "cache_creation_tokens") + `, 0)`
-	cached := `COALESCE(` + jsonIntAt(d, "tokens", "cached_tokens") + `, ` + jsonIntAt(d, "tokens", "cache_read_input_tokens") + `, 0)`
+// sqlCacheCreationTokensExpr renders the cache-creation token count on
+// the same terms as sqlCachedTokensExpr: the two resolved counts
+// (creation as stored, cached as stored) are computed once as
+// expressions and the CASE combines them.
+func sqlCacheCreationTokensExpr() string {
+	creation := `COALESCE(` + jsonIntAt("tokens", "cache_creation_input_tokens") + `, ` + jsonIntAt("tokens", "cache_creation_tokens") + `, 0)`
+	cached := `COALESCE(` + jsonIntAt("tokens", "cached_tokens") + `, ` + jsonIntAt("tokens", "cache_read_input_tokens") + `, 0)`
 	return `CASE
 		WHEN tokens IS NOT NULL AND ` + creation + ` > 0
 		THEN ` + creation + `
@@ -116,18 +97,15 @@ func sqlCacheCreationTokensExprFor(d Dialect) string {
 }
 
 // hourBucketExpr renders the hourly bucket key of a stored RFC3339
-// timestamp for the dialect, in the strftime form the trend readers have
-// always emitted ('2026-11-04T08:00:00Z'). PostgreSQL has no strftime;
-// the timestamps are zero-padded UTC RFC3339 text in both dialects (the
-// premise schema_pg.go's partitioning already relies on), so the bucket
-// is the text prefix up to the hour with the minute/second zeroed —
-// date_trunc over a cast would answer the same value at the price of
-// parsing every row's timestamp.
-func hourBucketExpr(d Dialect) string {
-	if d == DialectPostgres {
-		return `substring(timestamp, 1, 13) || ':00:00Z'`
-	}
-	return `strftime('%Y-%m-%dT%H:00:00Z', timestamp)`
+// timestamp, in the form the trend readers have always emitted
+// ('2026-11-04T08:00:00Z'). PostgreSQL has no strftime; the timestamps
+// are zero-padded UTC RFC3339 text (the premise schema_pg.go's
+// partitioning already relies on), so the bucket is the text prefix up
+// to the hour with the minute/second zeroed — date_trunc over a cast
+// would answer the same value at the price of parsing every row's
+// timestamp.
+func hourBucketExpr() string {
+	return `substring(timestamp, 1, 13) || ':00:00Z'`
 }
 
 // cacheScanRow is one usageHistory row reduced to the numbers the cache
@@ -197,8 +175,8 @@ SELECT
 	COALESCE(provider, 'unknown'),
 	COALESCE(model, 'unknown'),
 	COALESCE(promptTokens, 0),
-	COALESCE(`+sqlCachedTokensExprFor(r.dialect)+`, 0),
-	COALESCE(`+sqlCacheCreationTokensExprFor(r.dialect)+`, 0)
+	COALESCE(`+sqlCachedTokensExpr()+`, 0),
+	COALESCE(`+sqlCacheCreationTokensExpr()+`, 0)
 FROM usageHistory
 `+whereClause, args...)
 	if err != nil {
@@ -368,18 +346,18 @@ func (r *Repo) GetPromptCacheTrend(ctx context.Context, win analyticsrange.Windo
 	}
 	whereClause, args := historyWindowWhere(win)
 
-	// The parentheses around each CASE are load-bearing: SQLite binds `> 0`
-	// tighter than `CASE ... END`, so `CASE ... END > 0` takes the ELSE branch
+	// The parentheses around each CASE are load-bearing: the comparison
+	// binds tighter than `CASE ... END`, so `CASE ... END > 0` takes the ELSE branch
 	// unconditionally and reports zero cached requests for every bucket.
 	trendQuery := `
 SELECT
-	` + hourBucketExpr(r.dialect) + ` as bucket,
+	` + hourBucketExpr() + ` as bucket,
 	COUNT(*) as requests,
-	SUM(CASE WHEN (` + sqlCachedTokensExprFor(r.dialect) + `) > 0 OR (` + sqlCacheCreationTokensExprFor(r.dialect) + `) > 0
+	SUM(CASE WHEN (` + sqlCachedTokensExpr() + `) > 0 OR (` + sqlCacheCreationTokensExpr() + `) > 0
 		THEN 1 ELSE 0 END) as cachedRequests,
 	COALESCE(SUM(promptTokens), 0) as inputTokens,
-	COALESCE(SUM(` + sqlCachedTokensExprFor(r.dialect) + `), 0) as cachedTokens,
-	COALESCE(SUM(` + sqlCacheCreationTokensExprFor(r.dialect) + `), 0) as cacheCreationTokens
+	COALESCE(SUM(` + sqlCachedTokensExpr() + `), 0) as cachedTokens,
+	COALESCE(SUM(` + sqlCacheCreationTokensExpr() + `), 0) as cacheCreationTokens
 FROM usageHistory
 ` + whereClause + `
 GROUP BY bucket

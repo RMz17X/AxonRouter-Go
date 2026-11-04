@@ -19,11 +19,11 @@ import (
 	"9router/proxy/internal/providers"
 	"9router/proxy/internal/proxy/executor"
 	"9router/proxy/internal/proxy/oauth"
+	"9router/proxy/internal/proxy/smart"
 	"9router/proxy/internal/schedule"
 	"9router/proxy/internal/shutdown"
 	"9router/proxy/internal/updater"
 	"9router/proxy/internal/uptime"
-	"9router/proxy/internal/proxy/smart"
 )
 
 // ServerModule provides *http.Server and manages its lifecycle and background tasks.
@@ -52,7 +52,7 @@ type ServerParams struct {
 	//
 	// It is the SAME instance the routes are mounted on — the one
 	// handlers.SetupServerRouter returns — not a second one built here. A second
-	// chat handler is a second PersistentStore over the same SQLite file with
+	// chat handler is a second PersistentStore over the same database with
 	// its own in-memory LRU, so the dashboard would report zero entries while
 	// the engine served hits.
 	ChatHandler *chat.ChatHandler `optional:"true"`
@@ -140,7 +140,7 @@ func ProvideServer(p ServerParams) *http.Server {
 			// mode; a shared volume is an optimisation (one fetch instead
 			// of N), not a correctness requirement, and P5's compose stacks
 			// may mount one over this path if the fetch cost ever matters.
-			catalogPath := filepath.Join(filepath.Dir(p.Config.DatabasePath), "model-catalog.json")
+			catalogPath := filepath.Join(config.ResolveDataDir(), "model-catalog.json")
 			providers.StartBackgroundCatalogSync(shutdown.Context(), nil, catalogPath)
 			oauth.StartBackgroundRefresh(shutdown.Context(), p.Repo)
 			db.StartRetentionLoop(shutdown.Context(), p.Repo, db.DefaultRequestDetailRetention)

@@ -417,7 +417,7 @@ LIMIT %d`, modelWhere, maxBreakdownGroups)
 	// is worse than none.
 	trendQuery := `
 SELECT
-	` + hourBucketExpr(r.dialect) + ` as hr,
+	` + hourBucketExpr() + ` as hr,
 	COUNT(*) as cnt,
 	COALESCE(SUM(tokensSaved), 0) as saved
 FROM compressionAnalytics` + windowPredicate(win) + `
@@ -560,24 +560,15 @@ func (r *Repo) queryUsageHistoryBackfill(ctx context.Context, summary *Compressi
 	// The token extractions out of the usageHistory payload, in the two
 	// forms the statements below share: coalesced (a missing field reads
 	// as zero or as the row's own prompt count) and bare (the SUM/AVG
-	// inputs, where the WHERE has already established presence). On
-	// PostgreSQL the payload is jsonb and the same fields come out
-	// through the jsonexpr.go forms; the json_valid guard exists only on
-	// the SQLite side, where the payload is text.
-	savedTokensInt := `CAST(COALESCE(json_extract(tokens, '$.saved_tokens'), 0) AS INTEGER)`
-	savedTokensBare := `CAST(json_extract(tokens, '$.saved_tokens') AS INTEGER)`
-	savedPercentReal := `CAST(COALESCE(json_extract(tokens, '$.saved_percent'), 0) AS REAL)`
-	origTokensInt := `CAST(COALESCE(json_extract(tokens, '$.original_input_tokens'), promptTokens) AS INTEGER)`
-	compTokensInt := `CAST(COALESCE(json_extract(tokens, '$.compressed_input_tokens'), promptTokens) AS INTEGER)`
-	validGuard := `json_valid(tokens) AND `
-	if r.IsPostgres() {
-		savedTokensInt = `COALESCE(` + jsonIntAt(r.dialect, "tokens", "saved_tokens") + `, 0)`
-		savedTokensBare = jsonIntAt(r.dialect, "tokens", "saved_tokens")
-		savedPercentReal = `COALESCE(` + jsonRealAt(r.dialect, "tokens", "saved_percent") + `, 0)`
-		origTokensInt = `COALESCE(` + jsonIntAt(r.dialect, "tokens", "original_input_tokens") + `, promptTokens)`
-		compTokensInt = `COALESCE(` + jsonIntAt(r.dialect, "tokens", "compressed_input_tokens") + `, promptTokens)`
-		validGuard = ``
-	}
+	// inputs, where the WHERE has already established presence). The
+	// payload is jsonb, so the fields come out through the jsonexpr.go
+	// forms with no validity guard.
+	savedTokensInt := `COALESCE(` + jsonIntAt("tokens", "saved_tokens") + `, 0)`
+	savedTokensBare := jsonIntAt("tokens", "saved_tokens")
+	savedPercentReal := `COALESCE(` + jsonRealAt("tokens", "saved_percent") + `, 0)`
+	origTokensInt := `COALESCE(` + jsonIntAt("tokens", "original_input_tokens") + `, promptTokens)`
+	compTokensInt := `COALESCE(` + jsonIntAt("tokens", "compressed_input_tokens") + `, promptTokens)`
+	validGuard := ``
 
 	// The saved-token filter is what distinguishes a compressed row, so it
 	// leads; the window is appended to it rather than replacing it, for the same
@@ -648,7 +639,7 @@ LIMIT %d`, whereClause, maxBreakdownGroups)
 	// for the same reason the table path does.
 	trendQuery := `
 SELECT
-	` + hourBucketExpr(r.dialect) + ` as hr,
+	` + hourBucketExpr() + ` as hr,
 	COUNT(*) as cnt,
 	COALESCE(SUM(` + savedTokensBare + `), 0) as saved
 FROM usageHistory
@@ -731,204 +722,4 @@ LIMIT 10`, whereClause)
 	}
 
 	return summary, nil
-}
-
-// BackfillCompressionAnalytics migrates historical compression telemetry from requestDetails
-// and usageHistory into compressionAnalytics if not already performed.
-func BackfillCompressionAnalytics(db *sql.DB) error {
-	if db == nil {
-		return nil
-	}
-	// SQLite-only by construction: EnsureCoreSchema reaches this from its
-	// SQLite branch, and EnsurePostgresSchema deliberately omits it (a
-	// repair of SQLite-era rows, written in SQLite dialect; the data
-	// migrator owns repairs for imported ones — see schema_pg.go). The
-	// guard states that contract at the function, so a future caller
-	// handing it a PostgreSQL handle gets a no-op instead of a dialect
-	// error halfway through.
-	if DialectOf(db) == DialectPostgres {
-		return nil
-	}
-
-	// 1. Check if migration already ran
-	var done string
-	err := db.QueryRow(`SELECT value FROM _meta WHERE key = 'migration_compression_backfill_done'`).Scan(&done)
-	if err == nil && done == "true" {
-		return nil
-	}
-
-	// 2. Query requestDetails with compression tokens
-	rdQuery := `
-SELECT
-	id,
-	timestamp,
-	provider,
-	COALESCE(model, '') as model,
-	data,
-	CAST(COALESCE(json_extract(data, '$.tokens.original_input_tokens'), 0) AS INTEGER) as origTokens,
-	CAST(COALESCE(json_extract(data, '$.tokens.compressed_input_tokens'), 0) AS INTEGER) as compTokens,
-	CAST(COALESCE(json_extract(data, '$.tokens.saved_tokens'), 0) AS INTEGER) as savedTokens,
-	CAST(COALESCE(json_extract(data, '$.latency.total'), 0) AS INTEGER) as durMs,
-	CAST(COALESCE(json_extract(data, '$.tokens.prompt_tokens'), 0) AS INTEGER) as promptTokens,
-	CAST(COALESCE(json_extract(data, '$.tokens.completion_tokens'), 0) AS INTEGER) as compTokens2,
-	CAST(COALESCE(json_extract(data, '$.tokens.cached_tokens'), 0) AS INTEGER) as cachedTokens,
-	CAST(COALESCE(json_extract(data, '$.tokens.cache_creation_input_tokens'), 0) AS INTEGER) as cacheWriteTokens
-FROM requestDetails
-WHERE data IS NOT NULL AND json_valid(data)
-  AND CAST(COALESCE(json_extract(data, '$.tokens.saved_tokens'), 0) AS INTEGER) > 0`
-
-	rows, err := db.Query(rdQuery)
-	if err == nil {
-		defer rows.Close()
-
-		insertStmt, prepErr := db.Prepare(`
-INSERT INTO compressionAnalytics (
-	timestamp, provider, model, mode, originalTokens, compressedTokens, tokensSaved,
-	durationMs, requestId, actualPromptTokens, actualCompletionTokens,
-	actualTotalTokens, actualCacheReadTokens, actualCacheWriteTokens, estimatedUsdSaved, skipReason
-)
-SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ''
-WHERE NOT EXISTS (SELECT 1 FROM compressionAnalytics ca WHERE ca.requestId = ?)`)
-
-		if prepErr == nil {
-			defer insertStmt.Close()
-			for rows.Next() {
-				var (
-					id, ts, prov, mdl, data                    string
-					origTok, compTok, savedTok, durMs          int
-					promptTok, compTok2, cachedTok, cacheWrTok int
-				)
-				if scanErr := rows.Scan(
-					&id, &ts, &prov, &mdl, &data,
-					&origTok, &compTok, &savedTok, &durMs,
-					&promptTok, &compTok2, &cachedTok, &cacheWrTok,
-				); scanErr == nil {
-					mode := classifyHistoricalMode(data, savedTok)
-					totalTok := promptTok + compTok2
-					mp, _ := pricing.GetPricingForModel(prov, mdl)
-					rate := mp.InputPer1M
-					if rate <= 0 {
-						rate = defaultAvgInputPricePerMillion
-					}
-					estUsd := math.Round((float64(savedTok)/1_000_000.0)*rate*100) / 100
-					_, _ = insertStmt.Exec(
-						ts, prov, mdl, mode, origTok, compTok, savedTok,
-						durMs, id, promptTok, compTok2,
-						totalTok, cachedTok, cacheWrTok, estUsd,
-						id,
-					)
-				}
-			}
-		}
-	}
-
-	// 3. Fallback: also backfill from usageHistory for rows not covered by requestDetails
-	uhQuery := `
-SELECT
-	COALESCE(timestamp, ''),
-	COALESCE(provider, 'unknown'),
-	COALESCE(model, 'unknown'),
-	CAST(COALESCE(json_extract(tokens, '$.original_input_tokens'), promptTokens) AS INTEGER) as origTok,
-	CAST(COALESCE(json_extract(tokens, '$.compressed_input_tokens'), promptTokens) AS INTEGER) as compTok,
-	CAST(COALESCE(json_extract(tokens, '$.saved_tokens'), 0) AS INTEGER) as savedTok,
-	promptTokens,
-	completionTokens,
-	CAST(COALESCE(json_extract(tokens, '$.cached_tokens'), 0) AS INTEGER) as cachedTok,
-	CAST(COALESCE(json_extract(tokens, '$.cache_creation_input_tokens'), 0) AS INTEGER) as cacheWrTok
-FROM usageHistory
-WHERE tokens IS NOT NULL AND json_valid(tokens)
-  AND CAST(COALESCE(json_extract(tokens, '$.saved_tokens'), 0) AS INTEGER) > 0`
-
-	uhRows, err := db.Query(uhQuery)
-	if err == nil {
-		defer uhRows.Close()
-
-		uhInsertStmt, prepErr := db.Prepare(`
-INSERT INTO compressionAnalytics (
-	timestamp, provider, model, mode, originalTokens, compressedTokens, tokensSaved,
-	durationMs, requestId, actualPromptTokens, actualCompletionTokens,
-	actualTotalTokens, actualCacheReadTokens, actualCacheWriteTokens, estimatedUsdSaved, skipReason
-)
-SELECT ?, ?, ?, 'stacked', ?, ?, ?, 25, '', ?, ?, ?, ?, ?, ?, ''
-WHERE NOT EXISTS (
-	SELECT 1 FROM compressionAnalytics ca
-	WHERE ca.timestamp = ? AND ca.provider = ? AND ca.tokensSaved = ?
-)`)
-
-		if prepErr == nil {
-			defer uhInsertStmt.Close()
-			for uhRows.Next() {
-				var (
-					ts, prov, mdl                              string
-					origTok, compTok, savedTok                 int
-					promptTok, compTok2, cachedTok, cacheWrTok int
-				)
-				if scanErr := uhRows.Scan(
-					&ts, &prov, &mdl,
-					&origTok, &compTok, &savedTok,
-					&promptTok, &compTok2, &cachedTok, &cacheWrTok,
-				); scanErr == nil {
-					totalTok := promptTok + compTok2
-					mp, _ := pricing.GetPricingForModel(prov, mdl)
-					rate := mp.InputPer1M
-					if rate <= 0 {
-						rate = defaultAvgInputPricePerMillion
-					}
-					estUsd := math.Round((float64(savedTok)/1_000_000.0)*rate*100) / 100
-					_, _ = uhInsertStmt.Exec(
-						ts, prov, mdl, origTok, compTok, savedTok,
-						promptTok, compTok2, totalTok, cachedTok, cacheWrTok, estUsd,
-						ts, prov, savedTok,
-					)
-				}
-			}
-		}
-	}
-
-	// 4. Mark migration done in _meta
-	_, err = db.Exec(`INSERT OR REPLACE INTO _meta (key, value) VALUES ('migration_compression_backfill_done', 'true')`)
-	if err != nil {
-		return fmt.Errorf("BackfillCompressionAnalytics mark done: %w", err)
-	}
-
-	return nil
-}
-
-func classifyHistoricalMode(data string, savedTokens int) string {
-	hasCaveman := strings.Contains(data, "terse caveman") || strings.Contains(data, "Caveman")
-	hasADHD := strings.Contains(data, "ADHD") || strings.Contains(data, "action-first")
-	hasPonytail := strings.Contains(data, "ponytail") || strings.Contains(data, "Ponytail")
-
-	personaCount := 0
-	if hasCaveman {
-		personaCount++
-	}
-	if hasADHD {
-		personaCount++
-	}
-	if hasPonytail {
-		personaCount++
-	}
-
-	// A persona is present whenever any of the three prompts matched. "stacked"
-	// is RTK compression applied *on top of* a persona prompt, so it needs both
-	// savings and a persona; a lone persona prompt with no measurable savings is
-	// classified by the persona alone.
-	if personaCount > 0 {
-		if savedTokens > 0 {
-			return "stacked"
-		}
-		switch {
-		case hasCaveman:
-			return "caveman"
-		case hasADHD:
-			return "adhd"
-		case hasPonytail:
-			return "ponytail"
-		}
-	}
-	if savedTokens > 0 {
-		return "rtk"
-	}
-	return "none"
 }

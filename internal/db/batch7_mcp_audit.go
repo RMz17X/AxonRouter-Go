@@ -189,9 +189,9 @@ func (r *Repo) QueryMCPToolAudit(f MCPToolAuditFilter) ([]MCPToolAuditEntry, int
 }
 
 // MCPToolAuditStats aggregates the last 24 hours of audit rows. Upstream
-// compares the ISO created_at strings against SQLite's datetime('now',
+// compares the ISO created_at strings against the database's datetime('now',
 // '-1 day'); the cutoff is computed here in the same "YYYY-MM-DD HH:MM:SS"
-// shape so the string comparison behaves identically in both dialects.
+// shape so the string comparison behaves identically.
 func (r *Repo) MCPToolAuditStats() (*MCPToolAuditStats, error) {
 	cutoff := time.Now().UTC().Add(-24 * time.Hour).Format("2006-01-02 15:04:05")
 

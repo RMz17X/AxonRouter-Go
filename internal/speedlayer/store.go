@@ -5,8 +5,8 @@
 // per-model cooldown locks.
 //
 // Everything held here is a cache of something the database already knows
-// or a value that expires on its own. The database (PostgreSQL in cluster
-// mode, the SQLite file in single-node mode) is always the durable truth;
+// or a value that expires on its own. The database (PostgreSQL, in every
+// mode) is always the durable truth;
 // every entry in this layer must be reconstructible from it or safe to
 // lose. Nothing here may become the only copy of anything.
 //

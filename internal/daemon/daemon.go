@@ -175,7 +175,7 @@ func Start(url string, extraArgs []string) (StartResult, error) {
 //
 // The request goes through the server's own shutdown endpoint first, because a
 // signal is not a portable option: Windows has no SIGTERM and TerminateProcess
-// cuts every in-flight SSE stream and any open SQLite write off mid-transaction.
+// cuts every in-flight SSE stream and any open database write off mid-transaction.
 // The endpoint is what the dashboard button and the updater already use, it is
 // the one path that lets server.Shutdown drain, and the force-kill below stays
 // as the fallback for a daemon too broken to answer.

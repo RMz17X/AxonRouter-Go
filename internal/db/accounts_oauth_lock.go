@@ -155,7 +155,7 @@ func (r *Repo) RecordConnectionOAuthFailure(connID string, status int, errText s
 	}
 	_, err = r.Exec(
 		`UPDATE providerConnections
-		 SET data = `+jsonSetExpr(r.dialect, "data",
+		 SET data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonStringParam(), "oauthLockedUntil"),
 			jsonSetPairAt(jsonIntParam(), "oauthFailureCount"),
 			jsonSetPairAt(jsonDocParam(), "lastError"),
@@ -182,7 +182,7 @@ func (r *Repo) ClearConnectionOAuthLock(connID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.Exec(
 		`UPDATE providerConnections
-		 SET data = `+jsonSetExpr(r.dialect, "data",
+		 SET data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonNullSQLValue(), "oauthLockedUntil"),
 			jsonSetPairAt(jsonIntLiteral(0), "oauthFailureCount"),
 		)+`,

@@ -17,7 +17,7 @@ import (
 // The dashboard polls /api/usage/stats every five seconds. A `24h` window holds
 // ~85k usageHistory rows after a day of traffic, and folding all of them
 // measured 372 ms per poll. Pushing the fold into SQL GROUP BY did not help
-// (178-207 ms: the temp b-tree SQLite builds for GROUP BY costs as much as the
+// (178-207 ms: the temp b-tree the file backend builds for GROUP BY costs as much as the
 // Go-side fold, and a covering index bought ~8% while adding +57% to every
 // insert). The rows that cross the window boundary on a 5s tick are a rounding
 // error, so re-reading the whole window every 5s is almost entirely wasted work.

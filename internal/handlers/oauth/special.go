@@ -16,7 +16,7 @@ import (
 
 	"9router/proxy/internal/handlerutil"
 
-	_ "modernc.org/sqlite"
+	_ "9router/proxy/internal/foreigndb"
 )
 
 // ---------- cursor: import + auto-import from local state.vscdb ----------
@@ -120,7 +120,7 @@ func readCursorStateDB() (token, machineID string, err error) {
 			lastErr = "not found: " + p
 			continue
 		}
-		db, oerr := sql.Open("sqlite", "file:"+p+"?mode=ro&immutable=1")
+		db, oerr := sql.Open("foreigndb", "file:"+p+"?mode=ro&immutable=1")
 		if oerr != nil {
 			lastErr = oerr.Error()
 			continue

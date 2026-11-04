@@ -42,34 +42,23 @@ type PersistentLRUStore struct {
 	lru         *LRUStore
 	db          *sql.DB
 	rebind      func(string) string
-	postgres    bool
 	ttl         time.Duration
 	stopJanitor chan struct{}
 	closeOnce   sync.Once
 }
 
-// NewPersistentStore creates an LRUStore backed by database persistence,
-// speaking the SQLite statement forms.
-func NewPersistentStore(db *sql.DB, maxEntries int, ttl time.Duration) *PersistentLRUStore {
-	return newPersistentStore(db, nil, false, maxEntries, ttl)
-}
-
-// NewPersistentStoreDialect is NewPersistentStore for a handle whose
-// statements need their placeholders rebound and whose upsert takes the
-// PostgreSQL ON CONFLICT form — the gateway's PostgreSQL deployment,
-// where this store's table lives in the main database (internal/db's
-// schema creates it there on both backends). The rebind function is the
-// Repo's; this package stays independent of the repository layer.
-func NewPersistentStoreDialect(db *sql.DB, rebind func(string) string, postgres bool, maxEntries int, ttl time.Duration) *PersistentLRUStore {
-	return newPersistentStore(db, rebind, postgres, maxEntries, ttl)
-}
-
-func newPersistentStore(db *sql.DB, rebind func(string) string, postgres bool, maxEntries int, ttl time.Duration) *PersistentLRUStore {
+// NewPersistentStore creates an LRUStore backed by database persistence.
+// The handle is the gateway's main database handle — this store's table
+// lives in the main database (internal/db's schema creates it there) and
+// the store opens no file of its own. Statements are authored in the '?'
+// form and rebound through the rebind function (the Repo's) to the '$n'
+// placeholders the driver needs; this package stays independent of the
+// repository layer.
+func NewPersistentStore(db *sql.DB, rebind func(string) string, maxEntries int, ttl time.Duration) *PersistentLRUStore {
 	store := &PersistentLRUStore{
 		lru:         NewLRUStore(maxEntries, ttl),
 		db:          db,
 		rebind:      rebind,
-		postgres:    postgres,
 		ttl:         ttl,
 		stopJanitor: make(chan struct{}),
 	}
@@ -80,9 +69,8 @@ func newPersistentStore(db *sql.DB, rebind func(string) string, postgres bool, m
 	return store
 }
 
-// stmt renders one statement for the store's dialect: the text is
-// authored in the SQLite-flavoured '?' form and rebound when the handle
-// needs '$n' placeholders.
+// stmt renders one statement: the text is authored in the '?' form and
+// rebound to the '$n' placeholders the driver needs.
 func (p *PersistentLRUStore) stmt(query string) string {
 	if p.rebind != nil {
 		return p.rebind(query)
@@ -182,15 +170,10 @@ func (p *PersistentLRUStore) Put(ctx context.Context, key string, e Entry) error
 	}
 	if p.db != nil {
 		storedAtStr := formatStoredAt(e.StoredAt)
+		// The insert names every column, so ON CONFLICT DO UPDATE lands
+		// the same row a full replace would (no foreign keys exist for a
+		// cascade to fire through).
 		upsert := `
-INSERT OR REPLACE INTO semanticCacheEntries (
-	key, model, responseBody, contentType, storedAt, hitCount, tokensSaved
-) VALUES (?, ?, ?, ?, ?, ?, ?)`
-		if p.postgres {
-			// The insert names every column, so ON CONFLICT DO UPDATE
-			// lands the same row REPLACE would (no foreign keys exist
-			// for a cascade to fire through).
-			upsert = `
 INSERT INTO semanticCacheEntries (
 	key, model, responseBody, contentType, storedAt, hitCount, tokensSaved
 ) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -198,7 +181,6 @@ ON CONFLICT (key) DO UPDATE SET model = EXCLUDED.model,
 	responseBody = EXCLUDED.responseBody, contentType = EXCLUDED.contentType,
 	storedAt = EXCLUDED.storedAt, hitCount = EXCLUDED.hitCount,
 	tokensSaved = EXCLUDED.tokensSaved`
-		}
 		_, _ = p.db.ExecContext(ctx, p.stmt(upsert),
 			key, e.Model, e.ResponseBody, e.ContentType, storedAtStr, e.HitCount, e.TokensSaved,
 		)

@@ -56,12 +56,12 @@ func (r *Repo) UpdateConnectionLastUsed(connectionID string) error {
 // already stored, reading the current maximum and writing the new value under a
 // single write lock.
 //
-// The lock is taken up front: BEGIN IMMEDIATE on SQLite, an explicit table
-// lock inside a plain BEGIN on PostgreSQL (which has no IMMEDIATE form; the
-// EXCLUSIVE table lock conflicts with the row-exclusive lock every UPDATE
-// takes, so it serializes stamp writers against all other writers of the
-// table for the transaction's duration, the same reach BEGIN IMMEDIATE has
-// on the file). A deferred transaction would only acquire it at the UPDATE —
+// The lock is taken up front: an explicit table lock inside a plain
+// BEGIN (PostgreSQL has no BEGIN IMMEDIATE form; the EXCLUSIVE table
+// lock conflicts with the row-exclusive lock every UPDATE takes, so it
+// serializes stamp writers against all other writers of the table for
+// the transaction's duration). A deferred transaction would only
+// acquire it at the UPDATE —
 // after MAX had been read — so two processes sharing one database could both
 // read the same maximum and mint the same stamp for two different rows,
 // reintroducing the tie the selector cannot break. Under this the guarantee
@@ -76,11 +76,7 @@ func (r *Repo) stampConnection(connectionID string, consecutive int, increment b
 	}
 	defer func() { _ = conn.Close() }()
 
-	begin := "BEGIN IMMEDIATE"
-	if r.IsPostgres() {
-		begin = "BEGIN"
-	}
-	if _, err := conn.ExecContext(ctx, begin); err != nil {
+	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
 		return "", fmt.Errorf("stamp connection %s: begin: %w", connectionID, err)
 	}
 	committed := false
@@ -89,10 +85,8 @@ func (r *Repo) stampConnection(connectionID string, consecutive int, increment b
 			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
 		}
 	}()
-	if r.IsPostgres() {
-		if _, err := conn.ExecContext(ctx, "LOCK TABLE providerConnections IN EXCLUSIVE MODE"); err != nil {
-			return "", fmt.Errorf("stamp connection %s: lock: %w", connectionID, err)
-		}
+	if _, err := conn.ExecContext(ctx, "LOCK TABLE providerConnections IN EXCLUSIVE MODE"); err != nil {
+		return "", fmt.Errorf("stamp connection %s: lock: %w", connectionID, err)
 	}
 
 	var previous sql.NullString

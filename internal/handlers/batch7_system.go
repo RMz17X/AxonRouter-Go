@@ -81,21 +81,12 @@ func readOrCreateHexFile(path string, n int) string {
 // sizes plus in-memory pool/session state sizes.
 func HandleSystemMemory(repo *db.Repo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		cfg := config.LoadConfig()
 		dataDir := config.ResolveDataDir()
 
-		dbEngine := "SQLite"
-		dbSize := ""
-		if repo.IsPostgres() {
-			dbEngine = "PostgreSQL"
-			dbSize = "N/A (PostgreSQL)"
-			if pretty, err := repo.DatabaseSizePretty(); err == nil && pretty != "" {
-				dbSize = pretty
-			}
-		} else if info, err := os.Stat(cfg.DatabasePath); err == nil {
-			dbSize = formatMB(info.Size())
-		} else {
-			dbSize = "0.00 MB"
+		dbEngine := "PostgreSQL"
+		dbSize := "N/A (PostgreSQL)"
+		if pretty, err := repo.DatabaseSizePretty(); err == nil && pretty != "" {
+			dbSize = pretty
 		}
 
 		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{

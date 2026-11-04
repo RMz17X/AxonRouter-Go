@@ -1,31 +1,40 @@
 package db
 
-// PostgreSQL definitions for the WS2 schema port: the same table set
-// schema.go declares for SQLite, translated column by column.
+// tableDef mirrors one entry of upstream schema.js TABLES: the
+// declarative current schema. Column definitions are kept in the shape
+// the queries in this package write against.
+type tableDef struct {
+	name       string
+	columns    [][2]string // {name, definition}
+	primaryKey string      // extra table-level constraint, e.g. PRIMARY KEY (scope, key)
+	indexes    []string
+}
+
+// PostgreSQL schema definitions: the gateway's full table set.
 //
-// Translation rules applied throughout:
-//   - Identifiers stay unquoted, exactly as the SQLite DDL and every query
-//     in this package write them. PostgreSQL folds unquoted identifiers to
-//     lowercase in DDL and DML alike, so the folded catalog names keep
-//     matching the unquoted references the existing code makes.
+// Rules applied throughout:
+//   - Identifiers stay unquoted, exactly as every query in this package
+//     writes them. PostgreSQL folds unquoted identifiers to lowercase
+//     in DDL and DML alike, so the folded catalog names keep matching
+//     the unquoted references the existing code makes.
 //   - TEXT stays text, except the JSON payload columns listed below.
 //   - INTEGER counters (tokens, bytes, counts, epoch seconds, row-id
 //     references) become bigint; small flags, priorities and limits stay
 //     integer. REAL becomes double precision. BLOB becomes bytea.
-//   - AUTOINCREMENT becomes a bigint identity column (see the partitioned
-//     parents in schema_pg.go for the two hot tables).
-//   - JSON payloads become jsonb where the codebase treats the column as a
-//     JSON document end to end: the two columns SQL itself extracts from
-//     (requestDetails.data, usageHistory.tokens — every json_extract call
-//     in the package targets one of them), plus the whole-document payload
-//     columns AxonRouter's schema.pg.js also declares jsonb and this code
-//     only ever writes through json.Marshal (settings.data,
-//     providerConnections.data, providerNodes.data, proxyPools.data,
-//     combos.models, usageDaily.data, usageHistory.meta). Columns whose
-//     write contract admits non-JSON text (kv.value, apiKeys.metadata with
-//     its ” default, combos.matchRules, guardrail config) stay text: a
-//     jsonb column would reject values the SQLite contract allows, and
-//     converting them belongs to the dialect sweep, not the DDL port.
+//   - AUTOINCREMENT becomes a bigint identity column (see the
+//     partitioned parents in schema_pg.go for the two hot tables).
+//   - JSON payloads become jsonb where the codebase treats the column
+//     as a JSON document end to end: the two columns SQL itself
+//     extracts from (requestDetails.data, usageHistory.tokens — every
+//     JSON extraction in the package targets one of them), plus the
+//     whole-document payload columns AxonRouter's schema.pg.js also
+//     declares jsonb and this code only ever writes through
+//     json.Marshal (settings.data, providerConnections.data,
+//     providerNodes.data, proxyPools.data, combos.models,
+//     usageDaily.data, usageHistory.meta). Columns whose write contract
+//     admits non-JSON text (kv.value, apiKeys.metadata with its ”
+//     default, combos.matchRules, guardrail config) stay text: a jsonb
+//     column would reject values those contracts allow.
 func pgCoreSchema() []tableDef {
 	return []tableDef{
 		{
@@ -239,8 +248,8 @@ func pgCoreSchema() []tableDef {
 		{
 			// Batch 7 (AxonRouter parity): mcp_tool_audit, PostgreSQL dialect.
 			// created_at stays TEXT (ISO strings, string-compared by the
-			// stats window exactly as in SQLite) and the writer always
-			// supplies it, so the SQLite datetime() default has no analogue.
+			// stats window) and the writer always supplies it, so no
+			// database-side datetime() default is declared.
 			name: "mcp_tool_audit",
 			columns: [][2]string{
 				{"id", "BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY"},
@@ -364,9 +373,9 @@ func pgUsageLedgerTables() []tableDef {
 	}
 }
 
-// pgGoOnlyColumns mirrors goOnlyColumns (the additive Go-runtime columns)
-// with PostgreSQL types. Same skip-if-table-absent semantics as
-// EnsureAdditiveColumns.
+// pgGoOnlyColumns lists the additive Go-runtime columns with
+// PostgreSQL types. The bootstrap applies them with the same
+// skip-if-table-absent semantics as the rest of the additive pass.
 var pgGoOnlyColumns = [][3]string{
 	{"providerConnections", "lastUsedAt", "TEXT"},
 	{"providerConnections", "consecutiveUseCount", "BIGINT DEFAULT 0"},

@@ -21,7 +21,7 @@ const ApiKeyContextKey ContextKey = "apiKey"
 
 // RequireApiKey creates a middleware handler that authenticates requests using client API keys.
 // It checks the Authorization header (Bearer <key>) and the query parameter `key`.
-// Valid keys are retrieved from the SQLite database; inactive or disabled keys are rejected with 401.
+// Valid keys are retrieved from the database; inactive or disabled keys are rejected with 401.
 func RequireApiKey(repo *db.Repo) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +31,7 @@ func RequireApiKey(repo *db.Repo) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Validate via SQLite repository and retrieve details
+			// Validate via the repository and retrieve details
 			lookup := keikey.LookupHash(apiKeyString)
 			apiKeyObj, err := resolveApiKey(repo, lookup, apiKeyString)
 			if err != nil {

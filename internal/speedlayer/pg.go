@@ -14,20 +14,16 @@ import (
 // speed layer's state in two small tables inside the application
 // database, so when the Redis primary is unreachable the cluster falls
 // back to the one store every node already shares, with the same
-// durability as the truth it caches. It serves both dialects the
-// gateway boots on (PostgreSQL in cluster mode, the SQLite file in
-// single-node mode) through database/sql, on the application's own
-// handle — no second pool to size or leak.
+// durability as the truth it caches. It runs through database/sql on
+// the application's own handle — no second pool to size or leak.
 type DBStore struct {
-	db       *sql.DB
-	postgres bool
+	db *sql.DB
 }
 
 // NewDBStore creates the backend over an existing handle and ensures
-// its tables. dialect is "postgres" or "sqlite" (anything else is
-// treated as sqlite, matching db.DialectOf's rule).
-func NewDBStore(handle *sql.DB, dialect string) (*DBStore, error) {
-	s := &DBStore{db: handle, postgres: dialect == "postgres"}
+// its tables.
+func NewDBStore(handle *sql.DB) (*DBStore, error) {
+	s := &DBStore{db: handle}
 	if err := s.ensureTables(); err != nil {
 		return nil, err
 	}
@@ -61,7 +57,7 @@ func (s *DBStore) ensureTables() error {
 // so a plain sequential rewrite is exact — the quote-aware machinery in
 // internal/db exists for the application's arbitrary SQL, not this.
 func (s *DBStore) bind(query string) string {
-	if !s.postgres || !strings.Contains(query, "?") {
+	if !strings.Contains(query, "?") {
 		return query
 	}
 	var b strings.Builder
@@ -263,8 +259,8 @@ func (s *DBStore) RingRead(ctx context.Context, key string, limit int) ([]string
 
 // withLockedRow runs fn against the current value of a speed_kv row
 // under a write lock and stores what fn returns, atomically: a dedicated
-// connection, BEGIN IMMEDIATE on SQLite / BEGIN + SELECT … FOR UPDATE on
-// PostgreSQL — the same pattern the rotation stamps use (db/rotation.go).
+// connection, BEGIN + SELECT … FOR UPDATE — the same pattern the
+// rotation stamps use (db/rotation.go).
 func (s *DBStore) withLockedRow(ctx context.Context, key string, fn func(current string) (string, error)) error {
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
@@ -272,11 +268,7 @@ func (s *DBStore) withLockedRow(ctx context.Context, key string, fn func(current
 	}
 	defer func() { _ = conn.Close() }()
 
-	begin := "BEGIN IMMEDIATE"
-	if s.postgres {
-		begin = "BEGIN"
-	}
-	if _, err := conn.ExecContext(ctx, begin); err != nil {
+	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
 		return fmt.Errorf("speedlayer: begin: %w", err)
 	}
 	committed := false
@@ -287,10 +279,7 @@ func (s *DBStore) withLockedRow(ctx context.Context, key string, fn func(current
 	}()
 
 	var current string
-	query := `SELECT value FROM speed_kv WHERE key = ?`
-	if s.postgres {
-		query += " FOR UPDATE"
-	}
+	query := `SELECT value FROM speed_kv WHERE key = ? FOR UPDATE`
 	var scanned sql.NullString
 	if err := conn.QueryRowContext(ctx, s.bind(query), key).Scan(&scanned); err != nil && err != sql.ErrNoRows {
 		return fmt.Errorf("speedlayer: read ring row: %w", err)

@@ -34,8 +34,9 @@ const (
 	CLITokenHeader = "x-9r-cli-token"
 )
 
-// Secret returns the HS256 signing secret: JWT_SECRET if set, otherwise the
-// persisted DATA_DIR/jwt-secret generated at config load.
+// Secret returns the HS256 signing secret: JWT_SECRET if set, otherwise
+// the ephemeral per-boot secret config generated at load (P4 removed the
+// persisted per-node secret file; see config.loadJWTSecret).
 func Secret() string {
 	return config.LoadConfig().JWTSecret
 }

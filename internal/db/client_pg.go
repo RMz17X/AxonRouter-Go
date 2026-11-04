@@ -13,36 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 )
 
-// Dialect names the SQL dialect a database handle speaks. WS2 (the
-// PostgreSQL migration) introduces the second dialect; until the dialect
-// sweep lands, most queries still speak SQLite, so every piece of code that
-// needs to branch on the backend asks the handle — through DialectOf here,
-// or through Repo.Dialect — instead of guessing from configuration.
-type Dialect string
-
-const (
-	// DialectSQLite is the original modernc.org/sqlite backend.
-	DialectSQLite Dialect = "sqlite"
-	// DialectPostgres is the pgx stdlib backend selected by DATABASE_URL.
-	DialectPostgres Dialect = "postgres"
-)
-
-// DialectOf reports the dialect of an arbitrary handle, decided by its
-// driver. A handle carries its backend with it, which a package-level flag
-// could not promise: tests open SQLite handles in the same process a
-// production boot might have opened PostgreSQL in, and each must be read as
-// what it is. Anything that is not the pgx stdlib driver is the SQLite
-// backend, which is the only other driver this package opens.
-func DialectOf(handle *sql.DB) Dialect {
-	if handle == nil {
-		return DialectSQLite
-	}
-	if strings.Contains(fmt.Sprintf("%T", handle.Driver()), "stdlib") {
-		return DialectPostgres
-	}
-	return DialectSQLite
-}
-
 // PostgreSQL pool sizing (Efficiency Mandate: deliberate config, not a
 // driver default). The defaults are sized for the deployment target in
 // AGENTS.md §4.G — a 1 vCPU box whose PostgreSQL is a shared server:
@@ -96,7 +66,7 @@ const pgStatementTimeoutMs = "30000"
 
 // OpenPostgresDatabase opens the PostgreSQL backend named by DATABASE_URL
 // through the pgx stdlib driver, so the Repo layer keeps speaking
-// database/sql exactly as it does over SQLite.
+// database/sql.
 //
 // The connection is pinged before it is handed out: a DATABASE_URL that
 // cannot reach its server is an operator error that must fail the boot
@@ -128,10 +98,8 @@ func OpenPostgresDatabase(dsn string) (*sql.DB, error) {
 	return handle, nil
 }
 
-// databaseURL is the operator's PostgreSQL selection: a non-empty
-// DATABASE_URL switches the global database from the SQLite file to
-// PostgreSQL. DATA_DIR keeps holding the non-database state (jwt secret,
-// model catalog) exactly as before either way.
+// databaseURL is the operator's PostgreSQL selection: DATABASE_URL is
+// the one and only database configuration this build reads.
 func databaseURL() string {
 	return strings.TrimSpace(os.Getenv("DATABASE_URL"))
 }

@@ -135,22 +135,14 @@ func (r *Repo) quotaResetIDForKey(ctx context.Context, rawKey string) (int, erro
 // Extracted so the query plan can be asserted on the exact text the reader
 // runs: the OR must stay answerable through idx_uh_clientkey and
 // idx_uh_apikey, or the statement degrades to a ledger scan per key again.
+//
+// Every VALUES parameter is cast: a parameter inside a CTE's VALUES list
+// has no column context to infer its type from, so the server types the
+// mark as text and the history sum's `u.id > k.mark` then has no operator
+// (bigint > text, SQLSTATE 42883). The casts state the types the
+// comparisons already assume.
 func apiKeyTokenUsageBatchQuery(n int) string {
-	return apiKeyTokenUsageBatchQueryFor(DialectSQLite, n)
-}
-
-// apiKeyTokenUsageBatchQueryFor is apiKeyTokenUsageBatchQuery in the form a
-// dialect runs. The PostgreSQL row casts every VALUES parameter: a parameter
-// inside a CTE's VALUES list has no column context to infer its type from,
-// so PostgreSQL types the mark as text and the history sum's `u.id > k.mark`
-// then has no operator (bigint > text, SQLSTATE 42883). The casts state the
-// types the comparisons already assume; the SQLite form needs none and is
-// unchanged.
-func apiKeyTokenUsageBatchQueryFor(d Dialect, n int) string {
-	row := "(?,?,?,?)"
-	if d == DialectPostgres {
-		row = "(?::text,?::text,?::text,?::bigint)"
-	}
+	row := "(?::text,?::text,?::text,?::bigint)"
 	rows := make([]string, n)
 	for i := range rows {
 		rows[i] = row
@@ -244,7 +236,7 @@ func (r *Repo) GetApiKeyTokenUsageForKeys(ctx context.Context, keys []*models.AP
 		args = append(args, k.ID, k.Key, handlerutil.MaskAPIKey(k.Key), marks[k.ID])
 	}
 
-	rows, err := r.QueryContext(ctx, apiKeyTokenUsageBatchQueryFor(r.dialect, len(cteRows)), args...)
+	rows, err := r.QueryContext(ctx, apiKeyTokenUsageBatchQuery(len(cteRows)), args...)
 	if err != nil {
 		return r.apiKeyTokenUsageByRow(ctx, pending, out)
 	}

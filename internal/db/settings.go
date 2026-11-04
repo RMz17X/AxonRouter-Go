@@ -214,7 +214,7 @@ func DefaultSettings() *SettingsData {
 	}
 }
 
-// GetSettings reads settings row id = 1 from SQLite settings table.
+// GetSettings reads settings row id = 1 from the settings table.
 //
 // The row is always read, so the answer is never stale. The parsed value is
 // reused when the row content is unchanged: the thinking pass reads the

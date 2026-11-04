@@ -63,7 +63,7 @@ func ProvideTokenSaverConfig(repo *db.Repo, params CLIParams) *handlers.TokenSav
 // It returns the router and the engine's chat handler — the same instance the
 // routes are mounted on, not a second one. The auto-ping scheduler needs a chat
 // handler, and a second one would be a second PersistentStore over the same
-// SQLite file with its own in-memory LRU: the dashboard would report zero
+// database with its own in-memory LRU: the dashboard would report zero
 // entries while the engine served hits, and clearing entries from the dashboard
 // would leave the engine still serving them (see handlers.SetupRoutes).
 func ProvideRouter(repo *db.Repo, ts *handlers.TokenSaverConfig) (*chi.Mux, *chat.ChatHandler) {
