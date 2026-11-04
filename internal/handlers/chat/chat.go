@@ -682,7 +682,13 @@ func (h *ChatHandler) HandleModels(w http.ResponseWriter, r *http.Request) {
 func (h *ChatHandler) HandleModelsInfo(w http.ResponseWriter, r *http.Request) {
 	modelID := r.URL.Query().Get("id")
 	if modelID == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing id query parameter")
+		// Axon shape (batch 6): nested error body, Axon's message.
+		handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"error": map[string]any{
+				"message": "Missing required query param: id (e.g. ?id=openai/dall-e-3)",
+				"type":    "invalid_request_error",
+			},
+		})
 		return
 	}
 
@@ -695,7 +701,28 @@ func (h *ChatHandler) HandleModelsInfo(w http.ResponseWriter, r *http.Request) {
 
 	modelInfo, err := h.resolveModel(modelID)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusNotFound, fmt.Sprintf("model not found: %s", modelID))
+		// Axon shape (batch 6): nested error body, Axon's message/type.
+		handlerutil.WriteJSON(w, http.StatusNotFound, map[string]any{
+			"error": map[string]any{
+				"message": fmt.Sprintf("Model not found: %s", modelID),
+				"type":    "not_found",
+			},
+		})
+		return
+	}
+
+	// Axon looks the id up in its catalogue snapshot and 404s unknown
+	// ids; resolveModel alone never rejects a slashed id (passthrough
+	// resolution for the chat path). Gate on the same existence oracle
+	// the model-lookup route uses (batch 6) — the chat path itself is
+	// untouched.
+	if _, found := h.findModelForLookup(r.Context(), modelID); !found {
+		handlerutil.WriteJSON(w, http.StatusNotFound, map[string]any{
+			"error": map[string]any{
+				"message": fmt.Sprintf("Model not found: %s", modelID),
+				"type":    "not_found",
+			},
+		})
 		return
 	}
 
@@ -996,6 +1023,16 @@ func (h *ChatHandler) HandleCountTokens(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer r.Body.Close()
+
+	// Axon answers 400 {"error":"Invalid JSON body"} for an unparseable
+	// body; the estimator alone would silently report 0 tokens (batch 6).
+	var validProbe any
+	if err := json.Unmarshal(body, &validProbe); err != nil {
+		handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "Invalid JSON body",
+		})
+		return
+	}
 
 	inputTokens := estimateAnthropicTokens(body)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{

@@ -78,6 +78,19 @@ func SetupRoutes(r interface {
 	r.Get("/api/models/catalog-sync", chatH.HandleCatalogSyncStatus)
 	r.Post("/api/models/catalog-sync", chatH.HandleCatalogSyncTrigger)
 	r.Get("/api/models", chatH.HandleModels)
+	// Backend parity batch 6 — protocol surface (see
+	// .changes/917-backend-parity-batch6-protocol-surface.md). Axon's
+	// GET /v1 re-exports its models list; the /v1beta surface is the
+	// Gemini-shaped catalogue + generateContent lane (chat package);
+	// task/unified/video-generations are Axon-only engine routes. The
+	// /api/v1 and /api/v1beta spellings reach these via the alias fold
+	// in RequestLogger.
+	r.Get("/v1", chatH.HandleModels)
+	r.Get("/v1beta/models", chatH.HandleV1BetaModels)
+	r.Post("/v1beta/models/*", chatH.HandleV1BetaModelAction)
+	r.Post("/task", mediaH.HandleTask)
+	r.Post("/unified", HandleUnified)
+	r.Post("/video/generations", HandleVideoGenerationsBaseline)
 	r.Post("/chat/completions", routinglatency.Wrap("v1", chatH.HandleChatCompletions))
 	r.Post("/messages", routinglatency.Wrap("v1", chatH.HandleMessages))
 	r.Post("/messages/count_tokens", chatH.HandleCountTokens)
@@ -207,6 +220,25 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 		dashH.Resilience = chatH.Resilience
 	}
 	ssoH := sso.NewHandler(repo)
+
+	// Backend parity batch 6 — dashboard-side protocol families
+	// (Axon: requireManagementAuth — local request or dashboard
+	// session; the dashboard group is the Go analogue).
+	r.Get("/api/protocols/status", HandleProtocolsStatus)
+	r.Get("/api/protocols/a2a/handshake", HandleA2AHandshake)
+	r.Post("/api/protocols/a2a/message", HandleA2AMessage)
+	r.Get("/api/protocols/mcp/handshake", HandleMCPHandshake)
+	r.Get("/api/protocols/mcp/tools", HandleMCPTools)
+	r.Post("/api/protocols/mcp/invoke", HandleMCPInvoke)
+	r.Get("/api/translator/load", HandleTranslatorLoad)
+	r.Post("/api/translator/save", HandleTranslatorSave)
+	r.Post("/api/translator/translate", HandleTranslatorTranslate)
+	if chatH != nil {
+		r.Post("/api/translator/send", chatH.HandleTranslatorSend)
+	}
+	r.Post("/api/morph/test-key", dashboard.HandleMorphTestKey(repo))
+	r.Get("/api/morph/usage/stats", dashboard.HandleMorphUsageStats(repo))
+	r.Get("/api/morph/usage/requests", dashboard.HandleMorphUsageRequests(repo))
 
 	r.Get("/api/connections", dashH.HandleGetConnections)
 	r.Get("/api/providers", dashH.HandleGetProvidersClient)

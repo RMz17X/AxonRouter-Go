@@ -67,10 +67,24 @@ func isQuietPath(path string) bool {
 // RequestLogger returns a middleware that logs each HTTP request with
 // method, path, status code, duration, and request ID using the
 // structured logger. It also strips repeated /v1/ prefixes from paths.
+//
+// Batch 6: the /api/v1 and /api/v1beta spellings are aliases of /v1 and
+// /v1beta (AxonRouter answers both — its web server rewrites /v1/* to
+// /api/v1/*), so the /api prefix is folded away here before the /v1
+// strip below runs. One handler set serves both spellings.
 func RequestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
 		path := req.URL.Path
+		if path == "/api/v1" {
+			path = "/v1"
+		} else if strings.HasPrefix(path, "/api/v1/") {
+			path = path[len("/api"):]
+		} else if path == "/api/v1beta" {
+			path = "/v1beta"
+		} else if strings.HasPrefix(path, "/api/v1beta/") {
+			path = path[len("/api"):]
+		}
 		for len(path) > 3 && path[:4] == "/v1/" {
 			path = path[3:]
 		}

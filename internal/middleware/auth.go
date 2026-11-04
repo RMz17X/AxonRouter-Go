@@ -174,6 +174,22 @@ func ExtractApiKey(r *http.Request) string {
 		return xApiKey
 	}
 
+	// 2b. Gemini clients authenticate with x-goog-api-key or a ?key= query
+	// parameter on the /v1beta surface (Axon's extractGeminiClientApiKey
+	// accepts both). The path here has already been alias-normalised, so
+	// /api/v1beta requests arrive as /v1beta too.
+	if r.URL.Path == "/v1beta" || strings.HasPrefix(r.URL.Path, "/v1beta/") {
+		if googKey := r.Header.Get("X-Goog-Api-Key"); googKey != "" {
+			return googKey
+		}
+		if qKey := r.URL.Query().Get("key"); qKey != "" {
+			return qKey
+		}
+		if qKey := r.URL.Query().Get("apiKey"); qKey != "" {
+			return qKey
+		}
+	}
+
 	// 3. For EventSource / SSE endpoints, accept query parameter key or apiKey
 	if strings.HasSuffix(r.URL.Path, "/stream") {
 		if qKey := r.URL.Query().Get("key"); qKey != "" {
