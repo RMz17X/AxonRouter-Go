@@ -184,7 +184,7 @@ func (r *Repo) InsertProxyPoolWithID(id string, d ProxyPoolData) error {
 	if err != nil {
 		return fmt.Errorf("marshal pool data: %w", err)
 	}
-	if _, err := r.db.Exec(
+	if _, err := r.Exec(
 		`INSERT INTO proxyPools (id, isActive, testStatus, data, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
 		id, 1, "unknown", string(dataBytes), now, now,
 	); err != nil {

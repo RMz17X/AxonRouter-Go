@@ -130,7 +130,7 @@ func scanProxyGroup(row interface{ Scan(...any) error }) (*ProxyGroup, error) {
 // ListProxyGroups returns every custom group, newest activity first
 // (upstream order: updated_at DESC, created_at DESC).
 func (r *Repo) ListProxyGroups() ([]*ProxyGroup, error) {
-	rows, err := r.db.Query(`SELECT ` + proxyGroupColumns + ` FROM proxyGroups ORDER BY updatedAt DESC, createdAt DESC`)
+	rows, err := r.Query(`SELECT ` + proxyGroupColumns + ` FROM proxyGroups ORDER BY updatedAt DESC, createdAt DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("list proxy groups: %w", err)
 	}
@@ -154,7 +154,7 @@ func (r *Repo) GetProxyGroupByID(id string) (*ProxyGroup, error) {
 	if id == "" {
 		return nil, nil
 	}
-	g, err := scanProxyGroup(r.db.QueryRow(`SELECT `+proxyGroupColumns+` FROM proxyGroups WHERE id = ?`, id))
+	g, err := scanProxyGroup(r.QueryRow(`SELECT `+proxyGroupColumns+` FROM proxyGroups WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -171,7 +171,7 @@ func (r *Repo) GetProxyGroupByName(name string) (*ProxyGroup, error) {
 	if name == "" {
 		return nil, nil
 	}
-	g, err := scanProxyGroup(r.db.QueryRow(`SELECT `+proxyGroupColumns+` FROM proxyGroups WHERE LOWER(name) = LOWER(?)`, name))
+	g, err := scanProxyGroup(r.QueryRow(`SELECT `+proxyGroupColumns+` FROM proxyGroups WHERE LOWER(name) = LOWER(?)`, name))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -206,7 +206,7 @@ func (r *Repo) CreateProxyGroup(g *ProxyGroup) (*ProxyGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := r.db.Exec(
+	if _, err := r.Exec(
 		`INSERT INTO proxyGroups (id, name, data, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)`,
 		g.ID, g.Name, dataStr, g.CreatedAt, g.UpdatedAt,
 	); err != nil {
@@ -330,7 +330,7 @@ func (r *Repo) UpdateProxyGroup(id string, patch map[string]any) (*ProxyGroup, e
 	if err != nil {
 		return nil, err
 	}
-	if _, err := r.db.Exec(
+	if _, err := r.Exec(
 		`UPDATE proxyGroups SET name = ?, data = ?, updatedAt = ? WHERE id = ?`,
 		updated.Name, dataStr, updated.UpdatedAt, id,
 	); err != nil {
@@ -354,7 +354,7 @@ func (r *Repo) DeleteProxyGroup(id string) (*ProxyGroup, error) {
 	if err != nil || existing == nil {
 		return nil, err
 	}
-	if _, err := r.db.Exec(`DELETE FROM proxyGroups WHERE id = ?`, id); err != nil {
+	if _, err := r.Exec(`DELETE FROM proxyGroups WHERE id = ?`, id); err != nil {
 		return nil, fmt.Errorf("delete proxy group %s: %w", id, err)
 	}
 	return existing, nil

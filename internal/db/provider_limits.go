@@ -96,7 +96,7 @@ func (r *Repo) GetProviderLimits(ctx context.Context, nodeID string) (ProviderLi
 		return ProviderLimits{}, nil
 	}
 	var limits ProviderLimits
-	err := scanProviderLimits(r.db.QueryRowContext(ctx,
+	err := scanProviderLimits(r.QueryRowContext(ctx,
 		`SELECT `+providerLimitColumns+` FROM providerNodes WHERE id = ? LIMIT 1`, nodeID,
 	).Scan, &limits)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -116,7 +116,7 @@ func (r *Repo) ListProviderLimits(ctx context.Context) (map[string]ProviderLimit
 	if r == nil || r.db == nil {
 		return nil, nil
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT id, `+providerLimitColumns+` FROM providerNodes`)
+	rows, err := r.QueryContext(ctx, `SELECT id, `+providerLimitColumns+` FROM providerNodes`)
 	if err != nil {
 		return nil, fmt.Errorf("list provider limits: %w", err)
 	}
@@ -173,7 +173,7 @@ func (r *Repo) SetProviderLimits(ctx context.Context, nodeID string, limits Prov
 		}
 		expiresAt = parsed.UTC().Format(time.RFC3339)
 	}
-	res, err := r.db.ExecContext(ctx, `
+	res, err := r.ExecContext(ctx, `
 		UPDATE providerNodes
 		   SET rpmLimit = ?, tpmLimit = ?, concurrencyLimit = ?, tokenQuota = ?,
 		       queueTimeoutMs = ?, contractExpiresAt = ?

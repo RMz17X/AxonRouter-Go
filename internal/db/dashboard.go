@@ -49,7 +49,7 @@ func (r *Repo) UpdateConnectionData(id string, data string) error {
 		return err
 	}
 	now := nowUTC()
-	if _, err = r.db.Exec(
+	if _, err = r.Exec(
 		`UPDATE providerConnections SET data = ?, updatedAt = ? WHERE id = ?`,
 		sealed, now, id,
 	); err != nil {

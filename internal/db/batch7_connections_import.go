@@ -35,7 +35,7 @@ func (r *Repo) CreateImportedConnection(id, provider, authType, name string, ema
 		emailVal = *email
 	}
 	now := nowUTC()
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`INSERT INTO providerConnections (id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, provider, authType, nameVal, emailVal, priorityVal, activeInt, dataJSON, now, now,
@@ -50,7 +50,7 @@ func (r *Repo) CreateImportedConnection(id, provider, authType, name string, ema
 	if sealed == dataJSON {
 		return nil
 	}
-	if _, err = r.db.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
+	if _, err = r.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
 		return fmt.Errorf("create imported connection: redact data: %w", err)
 	}
 	return nil
@@ -75,7 +75,7 @@ func (r *Repo) UpdateImportedConnection(id, name string, email *string, priority
 		return err
 	}
 	now := nowUTC()
-	if _, err = r.db.Exec(
+	if _, err = r.Exec(
 		`UPDATE providerConnections SET name = ?, email = ?, priority = ?, isActive = ?, data = ?, updatedAt = ? WHERE id = ?`,
 		nameVal, emailVal, priority, activeInt, sealed, now, id,
 	); err != nil {

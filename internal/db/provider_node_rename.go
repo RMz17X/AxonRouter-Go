@@ -35,8 +35,20 @@ var ErrProviderNodeIDTaken = errors.New("provider node id already in use")
 
 // tableExists reports whether a table is present in this database. The rename
 // probes the schema instead of inspecting a driver error, so "nothing to move"
-// does not depend on a message string the driver is free to reword.
-func tableExists(tx *sql.Tx, name string) bool {
+// does not depend on a message string the driver is free to reword. The probe
+// itself is dialect-shaped: sqlite_master on SQLite, to_regclass on
+// PostgreSQL (the same form tableExistsOnDB uses on a bare handle, spelled
+// with its literal $1 inside its own branch).
+func tableExists(tx *sql.Tx, d Dialect, name string) bool {
+	if d == DialectPostgres {
+		var exists bool
+		if err := tx.QueryRow(
+			`SELECT to_regclass($1) IS NOT NULL`, name,
+		).Scan(&exists); err != nil {
+			return false
+		}
+		return exists
+	}
 	var count int
 	if err := tx.QueryRow(
 		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`, name,
@@ -78,7 +90,7 @@ func (r *Repo) RenameProviderNode(oldID, newID string) (*models.ProviderNode, er
 	defer func() { _ = tx.Rollback() }()
 
 	var taken int
-	if err := tx.QueryRow(`SELECT COUNT(1) FROM providerNodes WHERE id = ?`, newID).Scan(&taken); err != nil {
+	if err := tx.QueryRow(r.Rebind(`SELECT COUNT(1) FROM providerNodes WHERE id = ?`), newID).Scan(&taken); err != nil {
 		return nil, fmt.Errorf("rename provider node %s: check target id: %w", oldID, err)
 	}
 	if taken > 0 {
@@ -88,27 +100,27 @@ func (r *Repo) RenameProviderNode(oldID, newID string) (*models.ProviderNode, er
 	// connection-shaped reason, and an untouched connection column would leave
 	// the node with no reachable credentials.
 	var source int
-	if err := tx.QueryRow(`SELECT COUNT(1) FROM providerNodes WHERE id = ?`, oldID).Scan(&source); err != nil {
+	if err := tx.QueryRow(r.Rebind(`SELECT COUNT(1) FROM providerNodes WHERE id = ?`), oldID).Scan(&source); err != nil {
 		return nil, fmt.Errorf("rename provider node %s: count source row: %w", oldID, err)
 	}
 	if source == 0 {
 		return nil, ErrProviderNodeNotFound
 	}
-	if _, err := tx.Exec(`UPDATE providerConnections SET provider = ? WHERE provider = ?`, newID, oldID); err != nil {
+	if _, err := tx.Exec(r.Rebind(`UPDATE providerConnections SET provider = ? WHERE provider = ?`), newID, oldID); err != nil {
 		return nil, fmt.Errorf("rename provider node %s: move connections: %w", oldID, err)
 	}
 
-	moved, err := renameCustomModels(tx, oldID, newID)
+	moved, err := renameCustomModels(tx, r.Rebind, oldID, newID)
 	if err != nil {
 		return nil, fmt.Errorf("rename provider node %s: move custom models: %w", oldID, err)
 	}
-	if err := renameDisabledModels(tx, oldID, newID); err != nil {
+	if err := renameDisabledModels(tx, r.Rebind, oldID, newID); err != nil {
 		return nil, fmt.Errorf("rename provider node %s: move disabled models: %w", oldID, err)
 	}
-	if err := renameModelAliases(tx, oldID, newID); err != nil {
+	if err := renameModelAliases(tx, r.Rebind, oldID, newID); err != nil {
 		return nil, fmt.Errorf("rename provider node %s: move model aliases: %w", oldID, err)
 	}
-	if err := renameComboMembers(tx, oldID, newID, moved); err != nil {
+	if err := renameComboMembers(tx, r.Rebind, oldID, newID, moved); err != nil {
 		return nil, fmt.Errorf("rename provider node %s: move combo members: %w", oldID, err)
 	}
 
@@ -118,19 +130,19 @@ func (r *Repo) RenameProviderNode(oldID, newID string) (*models.ProviderNode, er
 	// never fully bootstrapped, and losing analytics is a far better outcome
 	// than refusing the edit.
 	for _, table := range []string{"usageHistory", "requestDetails"} {
-		if !tableExists(tx, table) {
+		if !tableExists(tx, r.dialect, table) {
 			continue
 		}
-		if _, err := tx.Exec(`UPDATE `+table+` SET provider = ? WHERE provider = ?`, newID, oldID); err != nil {
+		if _, err := tx.Exec(r.Rebind(`UPDATE `+table+` SET provider = ? WHERE provider = ?`), newID, oldID); err != nil {
 			return nil, fmt.Errorf("rename provider node %s: move %s: %w", oldID, table, err)
 		}
 	}
 
-	if err := renameSettingsProviderKeys(tx, oldID, newID); err != nil {
+	if err := renameSettingsProviderKeys(tx, r.Rebind, oldID, newID); err != nil {
 		return nil, fmt.Errorf("rename provider node %s: move settings: %w", oldID, err)
 	}
 
-	if _, err := tx.Exec(`UPDATE providerNodes SET id = ? WHERE id = ?`, newID, oldID); err != nil {
+	if _, err := tx.Exec(r.Rebind(`UPDATE providerNodes SET id = ? WHERE id = ?`), newID, oldID); err != nil {
 		return nil, fmt.Errorf("rename provider node %s: move node row: %w", oldID, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -154,7 +166,7 @@ func (r *Repo) RenameProviderNode(oldID, newID string) (*models.ProviderNode, er
 // affected row is collected before anything is deleted: a row whose key moves
 // and whose value stays is indistinguishable from one that was never touched
 // once the old key is gone.
-func renameCustomModels(tx *sql.Tx, oldID, newID string) ([]renamedCustomModel, error) {
+func renameCustomModels(tx *sql.Tx, rebind func(string) string, oldID, newID string) ([]renamedCustomModel, error) {
 	rows, err := tx.Query(`SELECT key, value FROM kv WHERE scope = 'customModels'`)
 	if err != nil {
 		return nil, err
@@ -196,13 +208,13 @@ func renameCustomModels(tx *sql.Tx, oldID, newID string) ([]renamedCustomModel, 
 	rows.Close()
 
 	for _, d := range deletes {
-		if _, err := tx.Exec(`DELETE FROM kv WHERE scope = 'customModels' AND key = ?`, d.key); err != nil {
+		if _, err := tx.Exec(rebind(`DELETE FROM kv WHERE scope = 'customModels' AND key = ?`), d.key); err != nil {
 			return nil, err
 		}
 	}
 	for _, ins := range inserts {
 		if _, err := tx.Exec(
-			`INSERT INTO kv (scope, key, value) VALUES ('customModels', ?, ?)`,
+			rebind(`INSERT INTO kv (scope, key, value) VALUES ('customModels', ?, ?)`),
 			ins.key, ins.value,
 		); err != nil {
 			return nil, err
@@ -258,20 +270,20 @@ func rewriteCustomModelValue(value, oldID, newID string) (string, bool) {
 
 // renameDisabledModels re-keys the disabledModels list, whose key is the
 // provider alias the dashboard toggled models under.
-func renameDisabledModels(tx *sql.Tx, oldID, newID string) error {
+func renameDisabledModels(tx *sql.Tx, rebind func(string) string, oldID, newID string) error {
 	var raw string
-	err := tx.QueryRow(`SELECT value FROM kv WHERE scope = 'disabledModels' AND key = ?`, oldID).Scan(&raw)
+	err := tx.QueryRow(rebind(`SELECT value FROM kv WHERE scope = 'disabledModels' AND key = ?`), oldID).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM kv WHERE scope = 'disabledModels' AND key = ?`, oldID); err != nil {
+	if _, err := tx.Exec(rebind(`DELETE FROM kv WHERE scope = 'disabledModels' AND key = ?`), oldID); err != nil {
 		return err
 	}
 	_, err = tx.Exec(
-		`INSERT INTO kv (scope, key, value) VALUES ('disabledModels', ?, ?)`,
+		rebind(`INSERT INTO kv (scope, key, value) VALUES ('disabledModels', ?, ?)`),
 		newID, raw,
 	)
 	return err
@@ -282,7 +294,7 @@ func renameDisabledModels(tx *sql.Tx, oldID, newID string) error {
 // A key that is itself oldID moves too: a user who aliased a model onto the
 // node id would otherwise keep an alias resolving to a provider that no longer
 // exists.
-func renameModelAliases(tx *sql.Tx, oldID, newID string) error {
+func renameModelAliases(tx *sql.Tx, rebind func(string) string, oldID, newID string) error {
 	rows, err := tx.Query(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)
 	if err != nil {
 		return err
@@ -318,13 +330,13 @@ func renameModelAliases(tx *sql.Tx, oldID, newID string) error {
 	rows.Close()
 
 	for _, d := range deletes {
-		if _, err := tx.Exec(`DELETE FROM kv WHERE scope = 'modelAliases' AND key = ?`, d.key); err != nil {
+		if _, err := tx.Exec(rebind(`DELETE FROM kv WHERE scope = 'modelAliases' AND key = ?`), d.key); err != nil {
 			return err
 		}
 	}
 	for _, ins := range inserts {
 		if _, err := tx.Exec(
-			`INSERT INTO kv (scope, key, value) VALUES ('modelAliases', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
+			rebind(`INSERT INTO kv (scope, key, value) VALUES ('modelAliases', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`),
 			ins.key, ins.value,
 		); err != nil {
 			return err
@@ -345,7 +357,7 @@ func replaceModelPrefix(model, oldID, newID string) (string, bool) {
 // renameComboMembers rewrites every combo member that spelled out a model of
 // the renamed node. A combo stores the address a client asked for, so a member
 // left pointing at the old id 404s the moment the node is renamed.
-func renameComboMembers(tx *sql.Tx, oldID, newID string, moved []renamedCustomModel) error {
+func renameComboMembers(tx *sql.Tx, rebind func(string) string, oldID, newID string, moved []renamedCustomModel) error {
 	if len(moved) == 0 {
 		return nil
 	}
@@ -387,7 +399,7 @@ func renameComboMembers(tx *sql.Tx, oldID, newID string, moved []renamedCustomMo
 	rows.Close()
 
 	for _, u := range updates {
-		if _, err := tx.Exec(`UPDATE combos SET models = ? WHERE id = ?`, u.models, u.id); err != nil {
+		if _, err := tx.Exec(rebind(`UPDATE combos SET models = ? WHERE id = ?`), u.models, u.id); err != nil {
 			return err
 		}
 	}
@@ -398,7 +410,7 @@ func renameComboMembers(tx *sql.Tx, oldID, newID string, moved []renamedCustomMo
 // settings blob. These hold a proxy pool binding, a rotation strategy and the
 // operator's outbound header overrides for one provider; keying them by a node
 // id the rename just retired would silently drop all three.
-func renameSettingsProviderKeys(tx *sql.Tx, oldID, newID string) error {
+func renameSettingsProviderKeys(tx *sql.Tx, rebind func(string) string, oldID, newID string) error {
 	var rawData string
 	err := tx.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&rawData)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -435,7 +447,7 @@ func renameSettingsProviderKeys(tx *sql.Tx, oldID, newID string) error {
 		return err
 	}
 	_, err = tx.Exec(
-		`INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+		rebind(`INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`),
 		string(b),
 	)
 	return err

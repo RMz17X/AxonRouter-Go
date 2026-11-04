@@ -37,7 +37,7 @@ func (r *Repo) CreateProviderConnection(id, provider, authType, name string, api
 		return fmt.Errorf("marshal provider connection data: %w", err)
 	}
 	now := nowUTC()
-	if _, err = r.db.Exec(
+	if _, err = r.Exec(
 		`INSERT INTO providerConnections (id, provider, authType, name, isActive, data, createdAt, updatedAt) VALUES (?, ?, ?, ?, 1, ?, ?, ?)`,
 		id, provider, authType, name, string(data), now, now,
 	); err != nil {
@@ -50,7 +50,7 @@ func (r *Repo) CreateProviderConnection(id, provider, authType, name string, api
 		return err
 	}
 	if sealed != string(data) {
-		if _, err = r.db.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
+		if _, err = r.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
 			return fmt.Errorf("create provider connection: redact data: %w", err)
 		}
 	}
@@ -73,7 +73,7 @@ func (r *Repo) CreateProviderConnectionFull(id, provider, authType, name string,
 		priorityVal = next
 	}
 	now := nowUTC()
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`INSERT INTO providerConnections (id, provider, authType, name, priority, isActive, data, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)`,
 		id, provider, authType, name, priorityVal, dataJSON, now, now,
 	)
@@ -89,7 +89,7 @@ func (r *Repo) CreateProviderConnectionFull(id, provider, authType, name string,
 	if sealed == dataJSON {
 		return nil
 	}
-	if _, err = r.db.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
+	if _, err = r.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
 		return fmt.Errorf("create provider connection: redact data: %w", err)
 	}
 	return nil
@@ -111,7 +111,7 @@ func (r *Repo) ResolveDefaultPriority(provider string) int {
 // provider has no connections yet.
 func (r *Repo) NextConnectionPriority(provider string) (int, error) {
 	var maxPriority sql.NullInt64
-	if err := r.db.QueryRow(
+	if err := r.QueryRow(
 		`SELECT MAX(priority) FROM providerConnections WHERE provider = ?`, provider,
 	).Scan(&maxPriority); err != nil {
 		return 0, fmt.Errorf("next connection priority for %s: %w", provider, err)
@@ -131,7 +131,7 @@ func (r *Repo) GetProviderConnectionByName(provider, authType, name string) (*mo
 		return nil, nil
 	}
 	var conn models.ProviderConnection
-	err := r.db.QueryRow(
+	err := r.QueryRow(
 		`SELECT `+providerConnectionColumns+` FROM providerConnections
 		 WHERE provider = ? AND authType = ? AND name = ? LIMIT 1`,
 		provider, authType, name,
@@ -152,7 +152,7 @@ func (r *Repo) GetProviderConnectionByName(provider, authType, name string) (*mo
 // key. Returns nil, nil when no row matches.
 func (r *Repo) GetProviderConnectionByID(id string) (*models.ProviderConnection, error) {
 	var conn models.ProviderConnection
-	err := scanConnection(r.db.QueryRow(
+	err := scanConnection(r.QueryRow(
 		`SELECT `+providerConnectionColumns+` FROM providerConnections WHERE id = ? LIMIT 1`,
 		id,
 	).Scan, &conn)
@@ -179,7 +179,7 @@ func (r *Repo) ReplaceProviderConnectionPayload(id, name, dataJSON string) error
 		return err
 	}
 	now := nowUTC()
-	res, err := r.db.Exec(
+	res, err := r.Exec(
 		`UPDATE providerConnections SET name = ?, data = ?, updatedAt = ? WHERE id = ?`,
 		name, sealed, now, id,
 	)
@@ -196,7 +196,7 @@ func (r *Repo) ReplaceProviderConnectionPayload(id, name, dataJSON string) error
 // connection row. Used to seed the auto free-tier combo with models that are
 // actually reachable from the user's configured providers.
 func (r *Repo) GetConnectedProviders(ctx context.Context) (map[string]struct{}, error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT DISTINCT provider FROM providerConnections")
+	rows, err := r.QueryContext(ctx, "SELECT DISTINCT provider FROM providerConnections")
 	if err != nil {
 		return nil, fmt.Errorf("get connected providers: %w", err)
 	}
@@ -260,7 +260,7 @@ func (r *Repo) GetProviderConnections(provider string, activeOnly bool) ([]*mode
 // while the SELECT rows are still open can deadlock the whole pool once
 // four concurrent callers pile up (MaxOpenConns is 4).
 func (r *Repo) listProviderConnections(query string, args []any) ([]*models.ProviderConnection, error) {
-	rows, err := r.db.QueryContext(context.Background(), query, args...)
+	rows, err := r.QueryContext(context.Background(), query, args...)
 	if err != nil {
 		return nil, err
 	}
