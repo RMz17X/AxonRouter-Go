@@ -1,0 +1,77 @@
+# 9router-go — single-node stack: one gateway + PostgreSQL 17.
+#
+#   cp .env.example .env   # set POSTGRES_PASSWORD and JWT_SECRET
+#   docker compose -f docker-compose.single.yml up -d
+#
+# Upgrading from the SQLite era: put the legacy data.sqlite in
+# ${LEGACY_DIR:-./legacy}/ and run the migrate profile BEFORE the first
+# app boot against an existing database volume:
+#   docker compose -f docker-compose.single.yml --profile migrate run --rm migrate
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-9router}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-9router}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-9router} -d ${POSTGRES_DB:-9router}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: 9router-go:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Assembled from the POSTGRES_* parts so the password has one home (.env).
+      DATABASE_URL: postgres://${POSTGRES_USER:-9router}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-9router}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      INITIAL_PASSWORD: ${INITIAL_PASSWORD:-}
+      PORT: "20130"
+      DATA_DIR: /data
+      # Matches stop_grace_period below (P3 drain default is 30s).
+      SHUTDOWN_GRACE_SECONDS: ${SHUTDOWN_GRACE_SECONDS:-30}
+    ports:
+      - "${PORT:-20130}:20130"
+    volumes:
+      # Non-DB state root: CLI tokens/machine-id, uploads, provider
+      # instruction files, tunnel state, catalog cache. The database
+      # itself lives in PostgreSQL, never in this volume (P4).
+      - appdata:/data
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  # One-shot SQLite → PostgreSQL migration (tools/migrate-db). Runs the
+  # migrator's own verification: it refuses a non-empty target unless
+  # --truncate is added to the command.
+  migrate:
+    profiles: ["migrate"]
+    build:
+      context: tools/migrate-db
+    image: 9router-go-migrate:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # NOT read-only on purpose: the migrator opens the source with
+      # SQLite mode=ro (the database file itself is never written —
+      # checksum-verified), but a WAL-mode source needs a writable
+      # directory for its -shm/-wal recovery sidecars; a :ro mount
+      # fails the open with SQLITE_CANTOPEN.
+      - ${LEGACY_DIR:-./legacy}:/legacy
+    command:
+      - --sqlite
+      - /legacy/data.sqlite
+      - --pg
+      - postgres://${POSTGRES_USER:-9router}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-9router}?sslmode=disable
+
+volumes:
+  pgdata:
+  appdata:

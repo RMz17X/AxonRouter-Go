@@ -30,9 +30,26 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build -ldflags="-s -w -X '9router/proxy/internal/updater.CurrentVersion=${VERSION}'" -o 9router-go ./cmd/9router-go/
 
-# Stage 3: Minimal runtime image for target platform
+# Stage 3: Minimal runtime image for target platform.
+# The gateway is PostgreSQL-only (P4): the runtime needs DATABASE_URL,
+# JWT_SECRET and PORT — no database files, no sqlite anything. DATA_DIR
+# remains as the non-DB state root (CLI tokens, uploads, tunnel state,
+# catalog cache) and is a named volume in the compose stacks.
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata su-exec \
+    && addgroup -S -g 10001 app \
+    && adduser -S -u 10001 -G app app \
+    && mkdir -p /data \
+    && chown app:app /data
 COPY --from=builder /app/9router-go /usr/local/bin/9router-go
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENV PORT=20130 \
+    DATA_DIR=/data
 EXPOSE 20130
-ENTRYPOINT ["9router-go"]
+# The entrypoint hands the state volume to the app user, then drops
+# privileges — the server process itself always runs as uid 10001.
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["9router-go"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-20130}/api/auth/status" || exit 1

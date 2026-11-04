@@ -66,11 +66,6 @@ func main() {
 				Value: os.Getenv("INJECTION_GUARD_DISABLED") == "true",
 				Usage: "disable the prompt-injection detector (on by default; env: INJECTION_GUARD_DISABLED)",
 			},
-			&cli.BoolFlag{
-				Name:    daemon.BackgroundName,
-				Aliases: []string{"d"},
-				Usage:   "run as a background daemon: detaches from the terminal and returns (env: 9ROUTER_BACKGROUND)",
-			},
 		},
 		Commands: []*cli.Command{
 			{
@@ -113,120 +108,30 @@ func main() {
 					return nil
 				},
 			},
-			{
-				Name:  "mitm",
-				Usage: "Manage MITM proxy for CLI tool traffic interception",
-				Subcommands: []*cli.Command{
-					{
-						Name:   "enable",
-						Usage:  "Start MITM proxy (DNS redirect + TLS intercept on :443)",
-						Action: mitmEnable,
-					},
-					{
-						Name:   "disable",
-						Usage:  "Stop MITM proxy and remove DNS entries",
-						Action: mitmDisable,
-					},
-					{
-						Name:   "status",
-						Usage:  "Show MITM proxy status",
-						Action: mitmStatus,
-					},
-				},
-			},
-			{
-				Name:   "start",
-				Usage:  "Start the gateway in the background and return (same as --background)",
-				Action: startDetached,
-			},
-			{
-				Name:   "stop",
-				Usage:  "Stop the background gateway",
-				Action: stopDetached,
-			},
-			{
-				Name:   "restart",
-				Usage:  "Restart the background gateway",
-				Action: restartDetached,
-			},
-			{
-				Name:   "status",
-				Usage:  "Show whether the background gateway is running",
-				Action: statusDetached,
-			},
-			{
-				Name:  "logs",
-				Usage: "Print the tail of the background run log",
-				Flags: []cli.Flag{
-					&cli.IntFlag{Name: "lines", Aliases: []string{"n"}, Value: 40, Usage: "number of log lines to print"},
-				},
-				Action: logsDetached,
-			},
-			{
-				Name:  "service",
-				Usage: "Manage the gateway service: boot autostart plus start/stop/restart",
-				Subcommands: []*cli.Command{
-					{
-						Name:  "install",
-						Usage: "Install autostart (systemd user unit, launchd agent, OpenRC/runit service, cron @reboot, or scheduled task)",
-						Flags: []cli.Flag{
-							&cli.StringFlag{Name: "backend", Usage: "force a backend: systemd, launchd, openrc, runit, cron"},
-						},
-						Action: serviceInstall,
-					},
-					{
-						Name:   "uninstall",
-						Usage:  "Remove the autostart entry",
-						Action: serviceUninstall,
-					},
-					{
-						Name:   "start",
-						Usage:  "Start the supervised service now (falls back to background daemon)",
-						Action: serviceStart,
-					},
-					{
-						Name:   "stop",
-						Usage:  "Stop the supervised service now, stays enabled for boot",
-						Action: serviceStop,
-					},
-					{
-						Name:   "restart",
-						Usage:  "Restart the supervised service now",
-						Action: serviceRestart,
-					},
-					{
-						Name:   "status",
-						Usage:  "Show the autostart entry in effect",
-						Action: serviceStatus,
-					},
-				},
-			},
 		},
-		Action: foregroundOrBackground,
+		Action: defaultAction,
 	}
 	if err := app.Run(os.Args); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// foregroundOrBackground is the flag-free entry point: with --background (or
-// -d, or the `start` sub-command) it detaches and returns, otherwise it runs
-// the server in this terminal exactly as before.
+// defaultAction is the flag-free entry point: the foreground server is the
+// binary's only run mode. (The detached daemon and host-service subcommands
+// were removed in P5 — Docker is the deployment surface now; the tray
+// companion keeps its own lifecycle through internal/daemon.)
 //
 // Any positional argument reaching here matched no command, so it is a typo
 // or a stale name — never boot the server on it. Booting on unknown input is
 // what trapped users behind `bind: address already in use`: typing a
-// renamed command while the supervised unit already held the port started a
+// renamed command while another gateway already held the port started a
 // second gateway instead of running the intended subcommand.
-func foregroundOrBackground(cCtx *cli.Context) error {
+func defaultAction(cCtx *cli.Context) error {
 	if args := cCtx.Args(); args.Len() > 0 {
 		return unknownCommandError(args.Slice())
 	}
-	if cCtx.Bool(daemon.BackgroundName) {
-		return startDetached(cCtx)
-	}
 	// On a terminal, bare `9router-go` offers the interface picker; without one
-	// (service unit, container, pipe) it boots the server as before.
+	// (container, supervisor, pipe) it boots the server directly.
 	if stdinIsTerminal() {
 		return runMenu(cCtx)
 	}
@@ -268,8 +173,9 @@ func runServer(cCtx *cli.Context) error {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
 
-	// A daemon records its PID so `9router-go stop|status|restart` can find it
-	// after the launching terminal is long gone.
+	// A process spawned as a daemon (by the tray companion, through
+	// internal/daemon) records its PID so the spawner can find it after the
+	// launching terminal is long gone. A plain foreground run is not marked.
 	if daemon.IsBackgroundProcess() {
 		daemon.RegisterPID()
 		defer daemon.UnregisterPID()
