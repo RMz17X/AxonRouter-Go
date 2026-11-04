@@ -1711,6 +1711,9 @@ func isModelQuotaText(errorText string) bool {
 	return strings.Contains(upper, "QUOTA_EXHAUSTED") ||
 		strings.Contains(errorText, "Individual quota reached") ||
 		strings.Contains(upper, "MODEL_CAPACITY_EXHAUSTED") ||
+		strings.Contains(upper, "TOS_VIOLATION") ||
+		strings.Contains(upper, "TERMS OF SERVICE") ||
+		strings.Contains(upper, "DISABLED IN THIS ACCOUNT") ||
 		// Qoder's billing envelope: code 110/112 or a pricingUrl field
 		// (qoderIsBillingBlock). The refusal is per model — the account's
 		// free models keep working while a paid one is out of credits.

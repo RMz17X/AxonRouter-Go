@@ -86,6 +86,7 @@
   import type { ProviderNodeLimitsPatch } from '../../api/client'
   import Badge from '../../lib/ui/Badge.svelte'
   import Toggle from '../../lib/ui/Toggle.svelte'
+  import Button from '../../lib/ui/Button.svelte'
   import { PauseCircle } from 'lucide-svelte'
   import ProviderHeaderOverridesModal from './ProviderHeaderOverridesModal.svelte'
   import EditCompatibleNodeModal from './EditCompatibleNodeModal.svelte'
@@ -208,6 +209,42 @@
       .filter((c) => c.provider === providerId)
       .sort((a, b) => (a.priority ?? 999999) - (b.priority ?? 999999))
   )
+
+  // Connections pagination
+  let connPageSize = $state<number>(10)
+  let connPage = $state<number>(1)
+  let connTotalPages = $derived(Math.max(1, Math.ceil(providerConnections.length / connPageSize)))
+  let paginatedConnections = $derived(
+    providerConnections.slice((connPage - 1) * connPageSize, connPage * connPageSize)
+  )
+
+  $effect(() => {
+    void providerId
+    connPage = 1
+  })
+
+  $effect(() => {
+    if (connPage > connTotalPages) {
+      connPage = connTotalPages
+    }
+  })
+
+  function loadPageUsage(conns: ProviderConnection[]) {
+    for (const c of conns) {
+      if (!connectionQuotas[c.id]) {
+        api.getConnectionUsage(c.id).then((usage) => {
+          if (usage && !usage.error) {
+            connectionQuotas[c.id] = usage
+          }
+        }).catch(() => {})
+      }
+    }
+  }
+
+  $effect(() => {
+    loadPageUsage(paginatedConnections)
+  })
+
   let isProviderAllDisabled = $derived(
     providerConnections.length > 0 && providerConnections.every((c) => c.isActive === 0)
   )
@@ -966,14 +1003,6 @@
       if (strategy && !isSavingFreeProxy) {
         freeProxyPoolId = strategy.proxyPoolId || 'none'
         freeRotateStrategy = (strategy.rotateStrategy as 'none' | 'round-robin' | 'random') || 'none'
-      }
-      // Fetch quota info for each connection
-      for (const c of providerConnections) {
-        api.getConnectionUsage(c.id).then((usage) => {
-          if (usage && !usage.error) {
-            connectionQuotas[c.id] = usage
-          }
-        }).catch(() => {})
       }
       if (isFreebuff) {
         loadFreebuffSession()
@@ -3790,16 +3819,17 @@
            click-away backdrop over the whole viewport, which otherwise swallows
            the first click on any priority chevron. -->
       <div class="relative z-50 flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03] max-h-[500px] overflow-y-auto pr-1">
-        {#each providerConnections as conn, idx (conn.id)}
-          {@const isFirst = idx === 0}
-          {@const isLast = idx === providerConnections.length - 1}
+        {#each paginatedConnections as conn, localIdx (conn.id)}
+          {@const globalIdx = (connPage - 1) * connPageSize + localIdx}
+          {@const isFirst = globalIdx === 0}
+          {@const isLast = globalIdx === providerConnections.length - 1}
           {@const isSelected = selectedConnIds.includes(conn.id)}
           {@const status = oneByOneStatuses[conn.id]}
           {@const specificData = conn.providerSpecificData as Record<string, unknown> | undefined}
           {@const assignedPoolId = (typeof specificData?.proxyPoolId === 'string' ? specificData.proxyPoolId : null)}
           {@const proxyBadge = proxyBadgeFor(conn)}
           {@const lastErr = normalizeLastError(conn.lastError || status?.error) || ''}
-          {@const priorityNum = conn.priority ?? idx + 1}
+          {@const priorityNum = conn.priority ?? globalIdx + 1}
           {@const isConnActive = conn.isActive === 1}
           {@const cooldownInfo = getCooldownInfo(conn)}
           <!-- badgeFor owns the precedence between the live probe and the
@@ -3832,7 +3862,7 @@
                       type="button"
                       disabled={isFirst || !!reorderingConnId}
                       title={isFirst ? 'Already first' : 'Move up'}
-                      onclick={() => swapPriority(idx, -1)}
+                      onclick={() => swapPriority(globalIdx, -1)}
                       class="p-1 rounded disabled:opacity-40 {isFirst || reorderingConnId ? 'text-text-muted/30 cursor-not-allowed' : 'hover:bg-sidebar text-text-muted hover:text-primary cursor-pointer'}"
                     >
                       <span class="material-symbols-outlined text-sm">keyboard_arrow_up</span>
@@ -3841,7 +3871,7 @@
                       type="button"
                       disabled={isLast || !!reorderingConnId}
                       title={isLast ? 'Already last' : 'Move down'}
-                      onclick={() => swapPriority(idx, 1)}
+                      onclick={() => swapPriority(globalIdx, 1)}
                       class="p-1 rounded disabled:opacity-40 {isLast || reorderingConnId ? 'text-text-muted/30 cursor-not-allowed' : 'hover:bg-sidebar text-text-muted hover:text-primary cursor-pointer'}"
                     >
                       <span class="material-symbols-outlined text-sm">keyboard_arrow_down</span>
@@ -4220,6 +4250,49 @@
           </div>
         {/each}
       </div>
+
+      <!-- Pagination Controls -->
+      {#if connTotalPages > 1}
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs text-text-muted">
+          <div class="flex items-center gap-2">
+            <span>Showing {(connPage - 1) * connPageSize + 1} to {Math.min(connPage * connPageSize, providerConnections.length)} of {providerConnections.length} accounts</span>
+            <select
+              value={connPageSize}
+              onchange={(e) => {
+                connPageSize = Number((e.target as HTMLSelectElement).value)
+                connPage = 1
+              }}
+              class="rounded border border-border bg-surface-1 px-1.5 py-0.5 text-xs text-text-main"
+            >
+              <option value={10}>10 / page</option>
+              <option value={20}>20 / page</option>
+              <option value={50}>50 / page</option>
+              <option value={100}>100 / page</option>
+            </select>
+          </div>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={connPage <= 1}
+              onclick={() => connPage--}
+              class="inline-flex items-center justify-center rounded border border-border bg-surface-1 px-2.5 py-1 text-xs font-medium text-text-main hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span class="px-2 py-1 font-medium text-text-main">
+              {connPage} / {connTotalPages}
+            </span>
+            <button
+              type="button"
+              disabled={connPage >= connTotalPages}
+              onclick={() => connPage++}
+              class="inline-flex items-center justify-center rounded border border-border bg-surface-1 px-2.5 py-1 text-xs font-medium text-text-main hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      {/if}
     {/if}
 
     <!-- Bottom Add Button (upstream: compatible nodes add keys only via the details card) -->

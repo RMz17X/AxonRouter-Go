@@ -110,6 +110,11 @@ var ErrorRules = []ErrorRule{
 	// forever. The generic 403 rule cannot tell them apart.
 	{Provider: "deepseek-web", Text: "refused this account", CooldownMs: cooldownBannedAccount},
 	{Provider: "deepseek-web", Text: "refused this address", CooldownMs: cooldownAddressRefused},
+	// Terms of Service violation / account disablement (e.g. Google Cloud Code / Antigravity):
+	// Park for 24 hours (1 day) so it stops thrashing the disabled account.
+	{Text: "terms of service", CooldownMs: cooldownBannedAccount},
+	{Text: "tos_violation", CooldownMs: cooldownBannedAccount},
+	{Text: "disabled in this account", CooldownMs: cooldownBannedAccount},
 	{Text: "no credentials", CooldownMs: cooldownLong},
 	{Text: "request not allowed", CooldownMs: cooldownShort},
 	{Text: "improperly formed request", CooldownMs: cooldownLong},

@@ -906,7 +906,7 @@ func enrichAppealMessage(msg string) string {
 	if strings.Contains(lower, "terms of service") ||
 		strings.Contains(lower, "disabled in this account") {
 		if !strings.Contains(msg, appealFormURL) {
-			return strings.TrimRight(msg, ".") + ". Silakan ajukan appeal melalui " + appealFormURL
+			return strings.TrimRight(msg, ".") + ". Please submit an appeal at " + appealFormURL
 		}
 	}
 	return msg
