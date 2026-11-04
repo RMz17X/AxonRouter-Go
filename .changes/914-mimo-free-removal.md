@@ -45,9 +45,13 @@ free provider and is removed from both model registries.
 ## Verification (direct checks; no test suites per standing rule)
 
 - `go build ./...` green; `go vet` clean on providers, handlers,
-  handlers/chat; gofmt clean.
-- svelte-check: 73 errors / 53 warnings vs the 77/57 pristine
-  baseline — zero added (net improvement from stale references).
+  handlers/chat; gofmt clean on all touched files (one pre-existing
+  upstream file, internal/handlers/dashboard/apikeys_policy.go from
+  fork commit a832c429, is unformatted upstream and left alone).
+- svelte-check: 77 errors / 57 warnings — exactly the pristine
+  baseline, zero added. (Corrected 2026-11-04: the original draft of
+  this fragment claimed 73/53 from a misread truncated output; the
+  full output shows 77/57.)
 - Live smoke (fresh DATA_DIR, requireLogin off, API key created
   in-script): GET /api/providers/catalog — no `mimo-free` entry,
   `xiaomi-mimo` present (154 providers); GET /v1/models — 1521
