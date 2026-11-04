@@ -42,7 +42,7 @@ AUTO_UPDATE ?= false
 # single-quoted form passed a quoted symbol name straight to the linker.
 LDFLAGS := -s -w -X "9router/proxy/internal/updater.CurrentVersion=$(VERSION)"
 
-.PHONY: build run dev version update test test-short test-live test-integration vet vet-integration bench bench-go cross mitm-enable mitm-disable mitm-status docker docker-build clean help web-build web-dev changelog-merge
+.PHONY: build run dev version update test test-short test-live test-integration vet vet-integration bench bench-go cross docker docker-build clean help web-build web-dev changelog-merge
 
 ## web-build — build frontend static assets (Svelte/Vite) into web/dist
 #
@@ -233,21 +233,9 @@ cross-one:
 
 cross-tray-one:
 	go build -ldflags="$(LDFLAGS)" -o $(OUT) ./cmd/9router-tray/
-## mitm-enable — start MITM proxy
-mitm-enable: build
-	$(BINARY) mitm enable
-
-## mitm-disable — stop MITM proxy
-mitm-disable: build
-	$(BINARY) mitm disable
-
-## mitm-status — check MITM proxy status
-mitm-status: build
-	$(BINARY) mitm status
-
-## docker — docker compose up
+## docker — docker compose up (single stack)
 docker:
-	docker compose up -d
+	docker compose -f docker-compose.single.yml up -d
 
 ## docker-build — build Docker image only
 docker-build:
