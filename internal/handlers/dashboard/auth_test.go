@@ -318,10 +318,9 @@ func TestHandleAuthLogin_TunnelAndSSOGates(t *testing.T) {
 	if err := repo.UpdateSettingsRaw(map[string]any{
 		"tunnelDashboardAccess": true,
 		"authMode":              "sso",
-		"ssoType":               "oidc",
-		"oidcIssuerUrl":         "https://idp.example.com",
-		"oidcClientId":          "client-id",
-		"oidcClientSecret":      "client-secret",
+		"ssoType":               "saml",
+		"samlEntryPoint":        "https://idp.example.com/sso",
+		"samlCert":              "cert-body",
 	}); err != nil {
 		t.Fatalf("seed sso: %v", err)
 	}
@@ -343,19 +342,16 @@ func TestHandleAuthStatus_SSOFlagsAndIdentity(t *testing.T) {
 	if err := json.Unmarshal(anon.Body.Bytes(), &status); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if status["oidcConfigured"] != false || status["samlConfigured"] != false {
-		t.Errorf("expected both SSO flags false, got %v", status)
+	if status["samlConfigured"] != false {
+		t.Errorf("expected the SAML flag false, got %v", status)
 	}
-	if status["oidcName"] != nil || status["samlName"] != nil {
+	if status["samlName"] != nil {
 		t.Errorf("anonymous status must null the SSO identity, got %v", status)
 	}
 
 	if err := repo.UpdateSettingsRaw(map[string]any{
-		"oidcIssuerUrl":    "https://idp.example.com/",
-		"oidcClientId":     "client-id",
-		"oidcClientSecret": "client-secret",
-		"samlEntryPoint":   "https://idp.example.com/sso",
-		"samlCert":         "cert-body",
+		"samlEntryPoint": "https://idp.example.com/sso",
+		"samlCert":       "cert-body",
 	}); err != nil {
 		t.Fatalf("seed sso settings: %v", err)
 	}
@@ -365,7 +361,7 @@ func TestHandleAuthStatus_SSOFlagsAndIdentity(t *testing.T) {
 	if err := json.Unmarshal(flagged.Body.Bytes(), &status); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if status["oidcConfigured"] != true || status["samlConfigured"] != true {
-		t.Errorf("expected both SSO flags true, got %v", status)
+	if status["samlConfigured"] != true {
+		t.Errorf("expected the SAML flag true, got %v", status)
 	}
 }

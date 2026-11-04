@@ -462,9 +462,6 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Get("/api/circuit-breakers", dashH.HandleGetCircuitBreakers)
 	r.Delete("/api/circuit-breakers", dashH.HandleResetCircuitBreakers)
 	r.Get("/api/routing/latency", dashH.HandleGetRoutingLatency)
-	r.Post("/api/tunnel/ngrok/start", dashH.HandleStartNgrokTunnel)
-	r.Post("/api/tunnel/ngrok/stop", dashH.HandleStopNgrokTunnel)
-
 	r.Get("/api/keys", dashH.HandleGetApiKeys)
 	r.Post("/api/keys", dashH.HandleCreateApiKey)
 	r.Delete("/api/keys/{id}", dashH.HandleDeleteApiKey)
@@ -562,7 +559,6 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/tunnel/tailscale-disable", dashH.HandleTailscaleDisable)
 
 	// Single Sign-On settings checks + SP metadata (profile page)
-	r.Post("/api/auth/oidc/test", ssoH.HandleOidcTest)
 	r.Post("/api/auth/saml/test", ssoH.HandleSamlTest)
 	r.Get("/api/auth/saml/metadata", ssoH.HandleSamlMetadata)
 
@@ -755,15 +751,11 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	r.Get("/api/settings/require-login", dashH.HandleRequireLogin)
 	r.Get("/api/tunnel/status", dashH.HandleTunnelStatus)
 
-	// Backend parity batch 7 — SSO flow initiators (upstream
-	// PUBLIC_API_PATHS), the session probe, the local-only password
-	// reset (its own gate lives in the handler), and the internal
-	// WorkerProxy endpoints (handler-level x-internal-auth token gate;
-	// the intended caller holds no dashboard session — see
+	// Backend parity batch 7 — the session probe, the local-only
+	// password reset (its own gate lives in the handler), and the
+	// internal WorkerProxy endpoints (handler-level x-internal-auth
+	// token gate; the intended caller holds no dashboard session — see
 	// batch7_internal_proxy.go).
-	ssoStartH := sso.NewHandler(repo)
-	r.Get("/api/auth/oidc/start", ssoStartH.HandleOidcStart)
-	r.Get("/api/auth/saml/start", ssoStartH.HandleSamlStart)
 	r.Get("/api/auth/session", HandleAuthSession)
 	r.Post("/api/auth/reset-password", HandleAuthResetPassword(repo))
 	r.Post("/api/internal/proxy/resolve", HandleInternalProxyResolve(repo))

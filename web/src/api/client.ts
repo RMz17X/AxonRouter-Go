@@ -272,10 +272,6 @@ export interface Settings {
   hasPassword?: boolean
   authMode?: string
   ssoType?: string
-  oidcIssuerUrl?: string
-  oidcClientId?: string
-  oidcScopes?: string
-  oidcLoginLabel?: string
   samlEntryPoint?: string
   samlIssuer?: string
   samlCert?: string

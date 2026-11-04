@@ -17,9 +17,6 @@
   let retryAfter = $state(0)
   let hasPassword = $state<boolean | null>(null)
   let authMode = $state('password')
-  let ssoType = $state('oidc')
-  let oidcConfigured = $state(false)
-  let oidcLoginLabel = $state('Sign in with OIDC')
   let samlConfigured = $state(false)
   let samlLoginLabel = $state('Sign in with SAML SSO')
   let mustChange = $state(false)
@@ -60,9 +57,6 @@
         }
         hasPassword = !!data.hasPassword
         authMode = data.authMode || 'password'
-        ssoType = data.ssoType || 'oidc'
-        oidcConfigured = data.oidcConfigured === true
-        oidcLoginLabel = data.oidcLoginLabel || 'Sign in with OIDC'
         samlConfigured = data.samlConfigured === true
         samlLoginLabel = data.samlLoginLabel || 'Sign in with SAML SSO'
         // The form only exists once hasPassword has left null, so focus it as
@@ -158,19 +152,13 @@
     }
   }
 
-  function handleOidcLogin() {
-    window.location.href = '/api/auth/oidc/start'
-  }
-
   function handleSamlLogin() {
     window.location.href = '/api/auth/saml/start'
   }
 
-  const isSsoEnabled = $derived(['sso', 'oidc', 'saml', 'both'].includes(authMode))
-  const activeSsoType = $derived(ssoType || (authMode === 'saml' ? 'saml' : 'oidc'))
-  const samlAvailable = $derived(isSsoEnabled && activeSsoType === 'saml' && samlConfigured)
-  const oidcAvailable = $derived(isSsoEnabled && activeSsoType === 'oidc' && oidcConfigured)
-  const ssoAvailable = $derived(samlAvailable || oidcAvailable)
+  const isSsoEnabled = $derived(['sso', 'saml', 'both'].includes(authMode))
+  const samlAvailable = $derived(isSsoEnabled && samlConfigured)
+  const ssoAvailable = $derived(samlAvailable)
   const passwordAvailable = $derived(authMode === 'password' || authMode === 'both' || !ssoAvailable)
 </script>
 
@@ -192,8 +180,6 @@
         <p class="text-text-muted">
           {#if samlAvailable}
             Sign in with SAML 2.0 Single Sign-On
-          {:else if oidcAvailable}
-            Sign in with your OIDC provider to access the dashboard
           {:else}
             Enter your password to access the dashboard
           {/if}
@@ -246,16 +232,6 @@
               </button>
             {/if}
 
-            {#if oidcAvailable}
-              <button
-                type="button"
-                onclick={handleOidcLogin}
-                class="w-full h-9 px-4 text-sm rounded-sm font-medium bg-primary hover:bg-primary-hover text-white transition-colors cursor-pointer"
-              >
-                {oidcLoginLabel}
-              </button>
-            {/if}
-
             {#if ssoAvailable && passwordAvailable}
               <div class="h-px bg-border"></div>
             {/if}
@@ -264,13 +240,13 @@
               <form onsubmit={handleSubmit} class="flex flex-col gap-4">
                 {#if isSsoEnabled && !ssoAvailable}
                   <p class="text-xs text-warning text-center">
-                    {activeSsoType === 'saml' ? 'SAML SSO' : 'OIDC'} login is enabled, but configuration is incomplete. Password login is still available for recovery.
+                    SAML SSO login is enabled, but configuration is incomplete. Password login is still available for recovery.
                   </p>
                 {/if}
 
                 {#if authMode === 'both' && ssoAvailable}
                   <p class="text-xs text-text-muted text-center">
-                    Password and {activeSsoType === 'saml' ? 'SAML SSO' : 'OIDC'} login are both enabled.
+                    Password and SAML SSO login are both enabled.
                   </p>
                 {/if}
 

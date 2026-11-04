@@ -48,8 +48,8 @@ func writePlainError(w http.ResponseWriter, status int, message string) {
 }
 
 // secretSettingKeys are stripped from responses so credentials never leave the
-// server (Next strips password + oidcClientSecret from GET /api/settings).
-var secretSettingKeys = []string{"password", "oidcClientSecret"}
+// server (Next strips the password from GET /api/settings).
+var secretSettingKeys = []string{"password"}
 
 // HandleGetSettings handles GET /api/settings.
 // Reads raw settings data map minus secret keys, mirroring the Next dashboard.
@@ -743,8 +743,8 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 	defer tx.Rollback()
 	// Secrets are stripped from the backup, so a restore must not let their
 	// absence delete the live credentials: wiping the settings row without
-	// them would silently reset the dashboard to the default password and
-	// disable OIDC. Read them inside the transaction before the wipe.
+	// them would silently reset the dashboard to the default password.
+	// Read them inside the transaction before the wipe.
 	liveSecrets, err := readSettingsSecrets(tx)
 	if err != nil {
 		return nil, err

@@ -117,8 +117,8 @@ func (h *DashboardHandler) HandleAuthStatus(w http.ResponseWriter, r *http.Reque
 	raw := settingsOrEmpty(h)
 	claims := auth.SessionClaimSet(r)
 	displayName, loginMethod := "Password user", "Password"
-	var oidcName, oidcEmail, samlName, samlEmail *string
-	var oidcLogin, samlLogin bool
+	var samlName, samlEmail *string
+	var samlLogin bool
 	if claims != nil {
 		switch {
 		case claims.Saml:
@@ -126,29 +126,19 @@ func (h *DashboardHandler) HandleAuthStatus(w http.ResponseWriter, r *http.Reque
 			loginMethod = "SAML"
 			samlName, samlEmail = strPtr(claims.SamlName), strPtr(claims.SamlEmail)
 			displayName = firstNonEmptyStr(claims.SamlName, claims.SamlEmail, "SAML user")
-		case claims.Oidc:
-			oidcLogin = true
-			loginMethod = "OIDC"
-			oidcName, oidcEmail = strPtr(claims.OidcName), strPtr(claims.OidcEmail)
-			displayName = firstNonEmptyStr(claims.OidcName, claims.OidcEmail, "OIDC user")
 		}
 	}
 	noStore(w)
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"requireLogin":   auth.RequireLogin(h.Repo),
 		"authMode":       stringOr(raw, "authMode", "password"),
-		"ssoType":        stringOr(raw, "ssoType", "oidc"),
-		"oidcConfigured": oidcConfigured(raw),
-		"oidcLoginLabel": loginLabel(raw, "oidcLoginLabel", "Sign in with OIDC"),
+		"ssoType":        stringOr(raw, "ssoType", "saml"),
 		"samlConfigured": samlConfigured(raw),
 		"samlLoginLabel": loginLabel(raw, "samlLoginLabel", "Sign in with SAML SSO"),
 		"hasPassword":    hasStoredPassword(raw),
 		"displayName":    displayName,
 		"loginMethod":    loginMethod,
 		"authenticated":  claims != nil,
-		"oidcName":       oidcName,
-		"oidcEmail":      oidcEmail,
-		"oidcLogin":      oidcLogin,
 		"samlName":       samlName,
 		"samlEmail":      samlEmail,
 		"samlLogin":      samlLogin,
@@ -213,8 +203,10 @@ func writeLoginLocked(w http.ResponseWriter, retryAfter int) {
 }
 
 // ssoPasswordDisabled mirrors upstream's SSO-only gate: when authMode is sso
-// (or the legacy oidc/saml values) and the matching IdP is configured,
-// password login is rejected with the provider-specific message.
+// (or the legacy oidc/saml values) and the SAML IdP is configured, password
+// login is rejected with the SAML message. SAML is the only SSO flavor left;
+// a legacy oidc configuration no longer disables password login because the
+// OIDC sign-in flow itself was removed.
 func ssoPasswordDisabled(raw map[string]any) (string, bool) {
 	mode, _ := raw["authMode"].(string)
 	switch mode {
@@ -222,20 +214,15 @@ func ssoPasswordDisabled(raw map[string]any) (string, bool) {
 	default:
 		return "", false
 	}
-	if ssoTypeOf(raw, mode) == "saml" {
-		if samlConfigured(raw) {
-			return "Password login is disabled. Use SAML SSO sign in.", true
-		}
-		return "", false
-	}
-	if oidcConfigured(raw) {
-		return "Password login is disabled. Use OIDC sign in.", true
+	if ssoTypeOf(raw, mode) == "saml" && samlConfigured(raw) {
+		return "Password login is disabled. Use SAML SSO sign in.", true
 	}
 	return "", false
 }
 
-// ssoTypeOf resolves the active SSO flavor, defaulting to oidc unless the
-// legacy saml authMode (without an explicit ssoType) says otherwise.
+// ssoTypeOf resolves the active SSO flavor. Only SAML remains: the flavor is
+// "saml" when the ssoType setting or the legacy saml authMode says so, and
+// empty otherwise.
 func ssoTypeOf(raw map[string]any, authMode string) string {
 	if v := strings.ToLower(strings.TrimSpace(stringOr(raw, "ssoType", ""))); v != "" {
 		return v
@@ -243,25 +230,13 @@ func ssoTypeOf(raw map[string]any, authMode string) string {
 	if authMode == "saml" {
 		return "saml"
 	}
-	return "oidc"
-}
-
-// oidcConfigured mirrors upstream isOidcConfigured: issuer + client ID +
-// client secret must all be present.
-func oidcConfigured(raw map[string]any) bool {
-	return trimTrailingSlashes(stringOr(raw, "oidcIssuerUrl", "")) != "" &&
-		strings.TrimSpace(stringOr(raw, "oidcClientId", "")) != "" &&
-		strings.TrimSpace(stringOr(raw, "oidcClientSecret", "")) != ""
+	return ""
 }
 
 // samlConfigured mirrors upstream isSamlConfigured: entry point + IdP cert.
 func samlConfigured(raw map[string]any) bool {
 	return strings.TrimSpace(stringOr(raw, "samlEntryPoint", "")) != "" &&
 		strings.TrimSpace(stringOr(raw, "samlCert", "")) != ""
-}
-
-func trimTrailingSlashes(v string) string {
-	return strings.TrimRight(strings.TrimSpace(v), "/")
 }
 
 func loginLabel(raw map[string]any, key, fallback string) string {

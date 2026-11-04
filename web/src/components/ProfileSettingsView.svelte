@@ -276,11 +276,7 @@
   let showPasswordFields = $state(false)
 
   // SSO State
-  let authMode = $state<'password' | 'oidc' | 'saml'>('password')
-  let oidcIssuerUrl = $state('')
-  let oidcClientId = $state('')
-  let oidcScopes = $state('openid profile email')
-  let oidcLoginLabel = $state('Sign in with OIDC')
+  let authMode = $state<'password' | 'saml'>('password')
 
   let samlEntryPoint = $state('')
   let samlIssuer = $state('')
@@ -323,11 +319,7 @@
       if (typeof settings.systemPromptSuffix === 'string') systemPromptSuffix = settings.systemPromptSuffix
 
       // SSO
-      if (settings.authMode === 'oidc' || settings.authMode === 'saml') authMode = settings.authMode
-      if (typeof settings.oidcIssuerUrl === 'string') oidcIssuerUrl = settings.oidcIssuerUrl
-      if (typeof settings.oidcClientId === 'string') oidcClientId = settings.oidcClientId
-      if (typeof settings.oidcScopes === 'string') oidcScopes = settings.oidcScopes
-      if (typeof settings.oidcLoginLabel === 'string') oidcLoginLabel = settings.oidcLoginLabel
+      if (settings.authMode === 'saml') authMode = settings.authMode
 
       if (typeof settings.samlEntryPoint === 'string') samlEntryPoint = settings.samlEntryPoint
       if (typeof settings.samlIssuer === 'string') samlIssuer = settings.samlIssuer
@@ -362,11 +354,7 @@
         if (typeof s.appName === 'string') appName = s.appName
         if (typeof s.appLogoUrl === 'string') appLogoUrl = s.appLogoUrl
 
-        if (s.authMode === 'oidc' || s.authMode === 'saml') authMode = s.authMode
-        if (s.oidcIssuerUrl) oidcIssuerUrl = String(s.oidcIssuerUrl)
-        if (s.oidcClientId) oidcClientId = String(s.oidcClientId)
-        if (s.oidcScopes) oidcScopes = String(s.oidcScopes)
-        if (s.oidcLoginLabel) oidcLoginLabel = String(s.oidcLoginLabel)
+        if (s.authMode === 'saml') authMode = s.authMode
 
         if (s.samlEntryPoint) samlEntryPoint = String(s.samlEntryPoint)
         if (s.samlIssuer) samlIssuer = String(s.samlIssuer)
@@ -535,10 +523,6 @@
         appName: appName.trim(),
         appLogoUrl: appLogoUrl.trim(),
         authMode,
-        oidcIssuerUrl,
-        oidcClientId,
-        oidcScopes,
-        oidcLoginLabel,
         navVisibility: { hidden: hiddenNav, order: navOrder },
         samlEntryPoint,
         samlIssuer,
@@ -1005,45 +989,11 @@
             class="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs text-text-main focus:outline-none focus:border-brand-500"
           >
             <option value="password">Password Only</option>
-            <option value="oidc">OpenID Connect (OIDC)</option>
             <option value="saml">SAML 2.0 SSO</option>
           </select>
         </div>
 
-        {#if authMode === 'oidc'}
-          <div class="space-y-2 pt-2 border-t border-border/60">
-            <div class="space-y-1">
-              <label for="oidc-issuer" class="block font-semibold text-text-muted">Issuer URL</label>
-              <input
-                id="oidc-issuer"
-                type="text"
-                bind:value={oidcIssuerUrl}
-                placeholder="https://accounts.google.com or Okta URL"
-                class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main"
-              />
-            </div>
-            <div class="space-y-1">
-              <label for="oidc-client-id" class="block font-semibold text-text-muted">Client ID</label>
-              <input
-                id="oidc-client-id"
-                type="text"
-                bind:value={oidcClientId}
-                placeholder="client-id"
-                class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main"
-              />
-            </div>
-            <div class="space-y-1">
-              <label for="oidc-scopes" class="block font-semibold text-text-muted">Scopes</label>
-              <input
-                id="oidc-scopes"
-                type="text"
-                bind:value={oidcScopes}
-                placeholder="openid profile email"
-                class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main"
-              />
-            </div>
-          </div>
-        {:else if authMode === 'saml'}
+        {#if authMode === 'saml'}
           <div class="space-y-2 pt-2 border-t border-border/60">
             <div class="space-y-1">
               <label for="saml-entrypoint" class="block font-semibold text-text-muted">SAML EntryPoint (SSO URL)</label>

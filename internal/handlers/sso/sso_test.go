@@ -51,7 +51,6 @@ func newTestRepo(t *testing.T) (*db.Repo, func()) {
 func newTestRouter(repo *db.Repo) chi.Router {
 	r := chi.NewRouter()
 	h := NewHandler(repo)
-	r.Post("/api/auth/oidc/test", h.HandleOidcTest)
 	r.Post("/api/auth/saml/test", h.HandleSamlTest)
 	r.Get("/api/auth/saml/metadata", h.HandleSamlMetadata)
 	return r
@@ -157,23 +156,6 @@ func TestHandleSamlMetadata_ServesServiceProviderXML(t *testing.T) {
 	}
 	if !strings.Contains(body, "md:EntityDescriptor") {
 		t.Errorf("expected SAML entity descriptor, got %s", body)
-	}
-}
-
-func TestHandleOidcTest_RequiresIssuer(t *testing.T) {
-	repo, cleanup := newTestRepo(t)
-	defer cleanup()
-	router := newTestRouter(repo)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/oidc/test", strings.NewReader(`{}`))
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 without issuer, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !strings.Contains(rec.Body.String(), "Issuer URL is required") {
-		t.Errorf("expected issuer error, got %s", rec.Body.String())
 	}
 }
 

@@ -95,7 +95,7 @@ const SETTINGS_SECTIONS: { id: string; label: string; hint: string }[] = [
   { id: 'currency', label: 'Currency & Rates', hint: 'Settings › Currency' },
   { id: 'auth', label: 'Auth & Master Access', hint: 'Settings › Security' },
   { id: 'proxy', label: 'Outbound Proxy', hint: 'Settings › Proxy' },
-  { id: 'sso', label: 'SSO / OIDC / SAML', hint: 'Settings › SSO' },
+  { id: 'sso', label: 'SSO / SAML', hint: 'Settings › SSO' },
 ]
 
 function settingsRows(): PaletteRow[] {
