@@ -97,6 +97,49 @@
       pulseProvider = ''
     }, 3000)
   }
+
+  // Topology presence rule (Ricki, 2026-11-04): a provider belongs on the
+  // map only while it is active or its last request is under five minutes
+  // old; after five quiet minutes it leaves the map on its own. The clock
+  // below is what lets nodes expire without any new data arriving, and
+  // observedActivity remembers when each provider was last seen doing
+  // something (live requests, pulses, errors, recent rows) so the
+  // derivation in topologyProviders can judge freshness even for activity
+  // the period-scoped stats maps have already rotated past.
+  let topologyNow = $state(Date.now())
+  let observedActivity = $state(new Map<string, number>())
+
+  $effect(() => {
+    const t = setInterval(() => {
+      topologyNow = Date.now()
+    }, 5000)
+    return () => clearInterval(t)
+  })
+
+  $effect(() => {
+    const stamps = new Map<string, number>()
+    const stamp = (provider: string, at: number) => {
+      if (!provider || Number.isNaN(at)) return
+      const key = provider.trim().toLowerCase()
+      if (key && at > (stamps.get(key) || 0)) stamps.set(key, at)
+    }
+    const now = Date.now()
+    for (const r of activeRequests) stamp(r.provider || '', now)
+    stamp(pulseProvider, now)
+    stamp(errorProvider, now)
+    for (const r of stats.recentRequests || []) {
+      if (r.provider) stamp(r.provider, r.timestamp ? new Date(r.timestamp).getTime() : NaN)
+    }
+    let changed = false
+    const next = new Map(observedActivity)
+    for (const [k, v] of stamps) {
+      if (v > (next.get(k) || 0)) {
+        next.set(k, v)
+        changed = true
+      }
+    }
+    if (changed) observedActivity = next
+  })
   // mergeRecent unions an incoming SSE list with what is on screen. The SSE
   // stream carries only this process's in-memory ring, so a plain replace
   // collapses the DB-backed list (20 rows after a REST load) down to the few
@@ -392,11 +435,16 @@
     const seen = new Set<string>()
     const list: { id: string; alias?: string; name: string; color?: string; type: string }[] = []
 
-    // "Who is on the bus" is a usage question, so every source below is
-    // measured against the same window. The backend keys usage by the
-    // canonical provider id, while a connection row can hold either that or
-    // the published alias, so both are tried before a provider counts as idle.
-    const usedInPeriod = (provId: string) => {
+    // "Who is on the bus" is a presence question, and presence expires:
+    // every source below is gated on the provider's last activity being
+    // under five minutes old (the rule stated at topologyNow above), NOT
+    // on the selected stats period — the period drives the KPIs and
+    // tables, never who is on the map. The backend keys usage by the
+    // canonical provider id, while a connection row can hold either that
+    // or the published alias, so both are tried before a provider counts
+    // as idle.
+    const TOPOLOGY_RETENTION_MS = 5 * 60_000
+    const activityMs = (provId: string) => {
       const raw = provId.trim()
       const canonical = raw.toLowerCase()
       const cat = PROVIDER_CATALOG.find((p) => p.id.toLowerCase() === canonical || p.alias?.toLowerCase() === canonical)
@@ -404,7 +452,21 @@
       // so `stats.byProvider` is keyed by that raw case. Check both raw and lowercased
       // variants alongside catalog ids so mixed-case nodes aren't judged idle.
       const keys = [raw, canonical, cat?.id, cat?.alias].filter(Boolean) as string[]
-      return keys.some((k) => (stats.byProvider?.[k]?.requests || 0) > 0)
+      let latest = 0
+      for (const k of keys) {
+        const lastUsed = stats.byProvider?.[k]?.lastUsed
+        if (lastUsed) {
+          const t = Date.parse(lastUsed)
+          if (!Number.isNaN(t) && t > latest) latest = t
+        }
+        const observed = observedActivity.get(k.toLowerCase())
+        if (observed && observed > latest) latest = observed
+      }
+      return latest
+    }
+    const fresh = (provId: string) => {
+      const t = activityMs(provId)
+      return t > 0 && topologyNow - t <= TOPOLOGY_RETENTION_MS
     }
     const addProvider = (provId: string, type: string, customName?: string) => {
       if (!provId) return
@@ -438,31 +500,33 @@
       if (r.provider) addProvider(r.provider, 'active')
     }
     if (pulseProvider) addProvider(pulseProvider, 'active')
-    if (lastProvider) addProvider(lastProvider, 'recent')
-    if (errorProvider) addProvider(errorProvider, 'error')
+    if (lastProvider && fresh(lastProvider)) addProvider(lastProvider, 'recent')
+    if (errorProvider && fresh(errorProvider)) addProvider(errorProvider, 'error')
 
-    // 2. Add recent requests
+    // 2. Add recent requests — recent in the five-minute sense, not in
+    //    the "latest N rows" sense the feed itself uses.
     for (const r of stats.recentRequests || []) {
-      if (r.provider) addProvider(r.provider, 'recent')
+      if (r.provider && fresh(r.provider)) addProvider(r.provider, 'recent')
     }
 
-    // 3. Add user-configured connections, but only the ones that actually
-    //    carried traffic in the selected window. Every non-inactive row used
-    //    to be drawn here, and since that list is not usage-windowed the node
-    //    outlived both the period and the connection itself: a provider the
-    //    operator had merely configured sat on the map indefinitely as if it
-    //    were serving (#280). Gating it on the same window as every other
-    //    source is what makes the map mean what it claims to mean.
+    // 3. Add user-configured connections, but only the ones carrying
+    //    traffic inside the retention window. Every non-inactive row used
+    //    to be drawn here, and since that list is not usage-windowed the
+    //    node outlived both the period and the connection itself: a
+    //    provider the operator had merely configured sat on the map
+    //    indefinitely as if it were serving (#280). The five-minute gate
+    //    keeps that protection and tightens it — configured is not
+    //    present, and neither is "used earlier today".
     for (const c of connections) {
-      if (c.isActive !== 0 && c.provider && usedInPeriod(c.provider)) {
+      if (c.isActive !== 0 && c.provider && fresh(c.provider)) {
         addProvider(c.provider, 'connection', c.name || undefined)
       }
     }
 
-    // 4. Add historical providers with usage
+    // 4. Add providers whose latest recorded usage is still fresh
     if (stats.byProvider) {
       for (const prov of Object.keys(stats.byProvider)) {
-        addProvider(prov, 'stats')
+        if (fresh(prov)) addProvider(prov, 'stats')
       }
     }
 
@@ -474,7 +538,7 @@
     //    so this only has to cover the ids whose usage key the map lacks.
     const FREE_DEFAULTS = ['antigravity', 'opencode', 'nvidia', 'openrouter', 'clinepass']
     for (const f of FREE_DEFAULTS) {
-      if (usedInPeriod(f)) addProvider(f, 'default')
+      if (fresh(f)) addProvider(f, 'default')
     }
 
     return list
