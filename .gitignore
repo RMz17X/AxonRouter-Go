@@ -84,3 +84,6 @@ stitch-screenshots/
 # resolving without a second copy entering history. Add one here if you want it
 # kept; docs/screenshots/ is for the ones the site and README reference.
 /pr-*.png
+
+# migrator build artifact (module binary lands in its own directory)
+/tools/migrate-db/migrate-db
