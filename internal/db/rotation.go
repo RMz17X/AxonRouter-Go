@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -99,14 +100,34 @@ func (r *Repo) stampConnection(connectionID string, consecutive int, increment b
 	// selector only ever compares rows of a single pool, so a table-wide
 	// maximum is a stricter bound than it needs and needs no extra argument
 	// threaded through to keep it that way.
-	query := `UPDATE providerConnections SET lastUsedAt = ?, consecutiveUseCount = ? WHERE id = ?`
+	//
+	// The UPDATE RETURNS the counter it landed. In increment mode that
+	// value is computed from the ROW (COALESCE + 1), so under the table
+	// lock it is the authoritative count even when another process
+	// stamped the same connection a moment earlier — the snapshot patch
+	// below must mirror this value, not recompute one from its own
+	// possibly stale copy (review cycle 2, N7). In set mode the result
+	// is the literal just written. Either way a matched row guarantees a
+	// non-NULL count: set mode writes a literal, increment mode
+	// coalesces.
+	query := `UPDATE providerConnections SET lastUsedAt = ?, consecutiveUseCount = ? WHERE id = ? RETURNING consecutiveUseCount`
 	args := []any{stamp, consecutive, connectionID}
 	if increment {
-		query = `UPDATE providerConnections SET lastUsedAt = ?, consecutiveUseCount = COALESCE(consecutiveUseCount, 0) + 1 WHERE id = ?`
+		query = `UPDATE providerConnections SET lastUsedAt = ?, consecutiveUseCount = COALESCE(consecutiveUseCount, 0) + 1 WHERE id = ? RETURNING consecutiveUseCount`
 		args = []any{stamp, connectionID}
 	}
-	if _, err := conn.ExecContext(ctx, r.Rebind(query), args...); err != nil {
-		return "", fmt.Errorf("stamp connection %s: write stamp: %w", connectionID, err)
+	var newCount sql.NullInt64
+	scanErr := conn.QueryRowContext(ctx, r.Rebind(query), args...).Scan(&newCount)
+	stamped := true
+	switch {
+	case errors.Is(scanErr, sql.ErrNoRows):
+		// The connection was deleted between selection and stamping:
+		// nothing landed, and there is no row — or snapshot entry that
+		// matters — left to order. Commit the empty transaction and
+		// report the stamp as the pre-RETURNING code did.
+		stamped = false
+	case scanErr != nil:
+		return "", fmt.Errorf("stamp connection %s: write stamp: %w", connectionID, scanErr)
 	}
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {
 		return "", fmt.Errorf("stamp connection %s: commit: %w", connectionID, err)
@@ -116,7 +137,9 @@ func (r *Repo) stampConnection(connectionID string, consecutive int, increment b
 	// Keep any GetProviderConnections snapshot's ordering as fresh as
 	// the row just written (see providerConnsTTL): the selector's
 	// round-robin compares the stamps on its in-memory rows.
-	r.patchCachedConnectionStamp(connectionID, stamp, consecutive, increment)
+	if stamped && newCount.Valid {
+		r.patchCachedConnectionStamp(connectionID, stamp, int(newCount.Int64))
+	}
 
 	return stamp, nil
 }

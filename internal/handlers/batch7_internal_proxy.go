@@ -40,21 +40,38 @@ type internalProxyTokens struct {
 
 // getInternalProxyTokens reads the tokens from settings, generating and
 // persisting any that are missing (upstream's get-or-create behaviour).
+//
+// Persistence is insert-if-absent per key (FillSettingsRawIfAbsent):
+// two cluster nodes minting the pair concurrently no longer overwrite
+// each other's landed token with their own candidate — the merge keeps
+// the value the row already carries and hands it back, so the loser of
+// the race validates against the winner's token from this call on
+// (review cycle 2, N5). Previously the merge wrote the candidate
+// unconditionally, and this node kept validating against a token the
+// row no longer held until its settings cache cycled.
 func getInternalProxyTokens(repo *db.Repo) internalProxyTokens {
 	settings, _ := repo.GetSettingsRaw()
 	resolveToken := handlerutil.GetString(settings, "internalProxyResolveToken")
 	reportToken := handlerutil.GetString(settings, "internalProxyReportToken")
-	updates := map[string]any{}
+	if resolveToken != "" && reportToken != "" {
+		return internalProxyTokens{resolveToken: resolveToken, reportToken: reportToken}
+	}
+	candidates := map[string]any{}
 	if resolveToken == "" {
 		resolveToken = generateProxyToken()
-		updates["internalProxyResolveToken"] = resolveToken
+		candidates["internalProxyResolveToken"] = resolveToken
 	}
 	if reportToken == "" {
 		reportToken = generateProxyToken()
-		updates["internalProxyReportToken"] = reportToken
+		candidates["internalProxyReportToken"] = reportToken
 	}
-	if len(updates) > 0 {
-		_ = repo.UpdateSettingsRaw(updates)
+	if effective, err := repo.FillSettingsRawIfAbsent(candidates); err == nil {
+		if v, ok := effective["internalProxyResolveToken"].(string); ok && v != "" {
+			resolveToken = v
+		}
+		if v, ok := effective["internalProxyReportToken"].(string); ok && v != "" {
+			reportToken = v
+		}
 	}
 	return internalProxyTokens{resolveToken: resolveToken, reportToken: reportToken}
 }

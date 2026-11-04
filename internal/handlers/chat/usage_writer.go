@@ -92,6 +92,12 @@ var (
 	usageWriteQueue    chan usageWriteJob
 	ledgerWriteQueue   chan ledgerWrite
 	usageWritesDropped atomic.Int64
+	// usageWorkerReady is set inside the Once, before the worker starts,
+	// so a reader that observes it also observes the queues (the atomic
+	// store/load pair is the happens-before edge). FlushUsageWrites
+	// consults it instead of reading the queue variables directly, which
+	// raced the worker's lazy start (review cycle 2, N8).
+	usageWorkerReady atomic.Bool
 	// usageSynchronous runs every job inline at enqueue time. The integration
 	// harness sets it: its assertions read usage rows straight after the HTTP
 	// response, and teaching every one of them to drain would hide the exact
@@ -103,6 +109,7 @@ func ensureUsageWorker() {
 	usageWriteOnce.Do(func() {
 		usageWriteQueue = make(chan usageWriteJob, usageWriteQueueDepth)
 		ledgerWriteQueue = make(chan ledgerWrite, ledgerWriteQueueDepth)
+		usageWorkerReady.Store(true)
 		go usageWorkerLoop()
 	})
 }
@@ -190,20 +197,65 @@ func flushLedgerBatch(pending []ledgerWrite, history bool) {
 				for _, lw := range pending[start:end] {
 					recs = append(recs, *lw.history)
 				}
-				if err := repo.InsertUsageHistoryBatch(recs); err != nil {
-					log.Error("usage", "insert usage history batch failed", "rows", len(recs), "error", err)
-				}
+				insertLedgerHistoryBatch(repo, recs)
 			} else {
 				recs := make([]db.RequestDetailRecord, 0, end-start)
 				for _, lw := range pending[start:end] {
 					recs = append(recs, *lw.detail)
 				}
-				if err := repo.InsertRequestDetailBatch(recs); err != nil {
-					log.Error("usage", "insert request detail batch failed", "rows", len(recs), "error", err)
-				}
+				insertLedgerDetailBatch(repo, recs)
 			}
 		}
 		start = end
+	}
+}
+
+// insertLedgerHistoryBatch lands one run of history records. A failed
+// batch statement falls back to per-row inserts: batching must not raise
+// the blast radius of one bad record from one row to the whole run
+// (review cycle 2, N1). A worker run never exceeds one of the batch
+// writer's internal chunks (ledgerBatchMax < usageInsertChunk), so the
+// batch statement is atomic and the fallback can never re-land a row
+// the batch already wrote. Rows that still fail per-row are LOST, and
+// are counted in usageWritesDropped — the counter an operator reads in
+// GET /api/system/memory must mean all ledger loss, not only the
+// queue-full kind. The fallback runs only on the failure path; the
+// happy path stays one statement per run.
+func insertLedgerHistoryBatch(repo *db.Repo, recs []db.UsageHistoryRecord) {
+	if err := repo.InsertUsageHistoryBatch(recs); err != nil {
+		log.Error("usage", "insert usage history batch failed", "rows", len(recs), "error", err)
+		lost := 0
+		for i := range recs {
+			if err := repo.InsertUsageHistoryBatch(recs[i : i+1]); err != nil {
+				lost++
+				log.Error("usage", "insert usage history row failed", "error", err)
+			}
+		}
+		if lost > 0 {
+			dropped := usageWritesDropped.Add(int64(lost))
+			log.Error("usage", "usage history rows lost after per-row retry", "rows", lost, "dropped_total", dropped)
+		}
+	}
+}
+
+// insertLedgerDetailBatch is insertLedgerHistoryBatch for request
+// details. The batch writer's ON CONFLICT DO NOTHING grain is preserved
+// per row: a conflicting id is a dedupe, not a loss, and never reaches
+// the counter.
+func insertLedgerDetailBatch(repo *db.Repo, recs []db.RequestDetailRecord) {
+	if err := repo.InsertRequestDetailBatch(recs); err != nil {
+		log.Error("usage", "insert request detail batch failed", "rows", len(recs), "error", err)
+		lost := 0
+		for i := range recs {
+			if err := repo.InsertRequestDetailBatch(recs[i : i+1]); err != nil {
+				lost++
+				log.Error("usage", "insert request detail row failed", "error", err)
+			}
+		}
+		if lost > 0 {
+			dropped := usageWritesDropped.Add(int64(lost))
+			log.Error("usage", "request detail rows lost after per-row retry", "rows", lost, "dropped_total", dropped)
+		}
 	}
 }
 
@@ -260,13 +312,13 @@ func FlushUsageWrites(timeout time.Duration) bool {
 	if usageSynchronous.Load() {
 		return true
 	}
-	// A gateway that never served a request has no worker and nothing to drain.
-	if usageWriteQueue == nil {
+	// A gateway that never served a request has no worker and nothing to
+	// drain. The check goes through the Once-guarded ready flag the
+	// enqueue paths establish, not the queue variables themselves
+	// (review cycle 2, N8).
+	if !usageWorkerReady.Load() {
 		return true
 	}
-	// The daily accumulator is part of "every usage write": flush it on
-	// this goroutine so a shutdown does not wait out its ticker.
-	flushDailyUsage()
 	deadline := time.Now().Add(timeout)
 	genericDone := make(chan struct{})
 	select {
@@ -287,6 +339,12 @@ func FlushUsageWrites(timeout time.Duration) bool {
 			return false
 		}
 	}
+	// The daily accumulator is part of "every usage write", but it
+	// summarises the ledger, so it flushes AFTER the ledger barrier:
+	// every delta it folds now corresponds to ledger rows that have
+	// landed. Flushing it on this goroutine also means a shutdown does
+	// not wait out its ticker.
+	flushDailyUsage()
 	return true
 }
 
@@ -297,10 +355,12 @@ func SetUsageWritesSynchronousForTest(sync bool) {
 	usageSynchronous.Store(sync)
 }
 
-// UsageWritesDropped reports how many usage jobs were discarded because
-// a queue stayed full past its wait since process start. It is surfaced
-// in GET /api/system/memory: ledger loss must be operator-visible, not
-// buried in warning logs.
+// UsageWritesDropped reports how many usage writes were lost since
+// process start: generic-lane jobs dropped at a full queue, ledger
+// records dropped after their bounded enqueue wait, and ledger rows
+// whose insert failed even on the per-row retry (review cycle 2, N1).
+// It is surfaced in GET /api/system/memory: ledger loss must be
+// operator-visible, not buried in warning logs.
 func UsageWritesDropped() int64 {
 	return usageWritesDropped.Load()
 }

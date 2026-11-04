@@ -288,9 +288,13 @@ func (r *Repo) invalidateProviderConnections() {
 // patchCachedConnectionStamp mirrors a rotation stamp this process
 // just persisted onto any snapshot holding the connection, so the
 // round-robin ordering the selector computes from a snapshot stays as
-// fresh as the row it would have re-read. Cross-process stamp writes
+// fresh as the row it would have re-read. The count is the value the
+// UPDATE itself returned (RETURNING in stampConnection), not a value
+// recomputed from the snapshot — so it is the persisted count even
+// when another process stamped the same connection inside the
+// snapshot's window (review cycle 2, N7). Cross-process stamp writes
 // remain TTL-bound, exactly as documented on providerConnsTTL.
-func (r *Repo) patchCachedConnectionStamp(connID, stamp string, consecutive int, increment bool) {
+func (r *Repo) patchCachedConnectionStamp(connID, stamp string, consecutive int) {
 	r.providerConnsMu.Lock()
 	defer r.providerConnsMu.Unlock()
 	for _, entry := range r.providerConns {
@@ -301,12 +305,6 @@ func (r *Repo) patchCachedConnectionStamp(connID, stamp string, consecutive int,
 			stampCopy := stamp
 			conn.LastUsedAt = &stampCopy
 			count := consecutive
-			if increment {
-				count = 1
-				if conn.ConsecutiveUseCount != nil {
-					count = *conn.ConsecutiveUseCount + 1
-				}
-			}
 			conn.ConsecutiveUseCount = &count
 		}
 	}

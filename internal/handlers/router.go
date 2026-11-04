@@ -42,6 +42,7 @@ func NewTokenSaverConfig(rtk, caveman, ponytail bool) *TokenSaverConfig {
 // clearing entries from the dashboard would leave the engine still serving them.
 func SetupRoutes(r interface {
 	Get(pattern string, handlerFn http.HandlerFunc)
+	Head(pattern string, handlerFn http.HandlerFunc)
 	Post(pattern string, handlerFn http.HandlerFunc)
 	Put(pattern string, handlerFn http.HandlerFunc)
 	Patch(pattern string, handlerFn http.HandlerFunc)
@@ -78,6 +79,23 @@ func SetupRoutes(r interface {
 	r.Get("/api/models/catalog-sync", chatH.HandleCatalogSyncStatus)
 	r.Post("/api/models/catalog-sync", chatH.HandleCatalogSyncTrigger)
 	r.Get("/api/models", chatH.HandleModels)
+	// HEAD rides the same handlers as the model-catalogue GETs (and the
+	// voices list below): Axon's Next.js serves HEAD from the GET
+	// handler, and SDK health checks, load balancers and client
+	// libraries probe with it — a 405 here reads as a dead gateway
+	// (review cycle 2, N3). The net/http server discards the body of a
+	// HEAD response itself, so the handler — and the Content-Length it
+	// would have produced — is identical to GET by construction.
+	r.Head("/models", chatH.HandleModels)
+	r.Head("/models/info", chatH.HandleModelsInfo)
+	r.Head("/models/{kind}", chatH.HandleModelsByKind)
+	r.Head("/models/*", chatH.HandleModelLookup)
+	r.Head("/v1/models", chatH.HandleModels)
+	r.Head("/v1/models/*", chatH.HandleModelLookup)
+	r.Head("/api/v1/models", chatH.HandleModels)
+	r.Head("/api/v1/models/*", chatH.HandleModelLookup)
+	r.Head("/api/models", chatH.HandleModels)
+	r.Head("/api/models/*", chatH.HandleModelLookup)
 	// Backend parity batch 6 — protocol surface (see
 	// .changes/917-backend-parity-batch6-protocol-surface.md). Axon's
 	// GET /v1 re-exports its models list; the /v1beta surface is the
@@ -86,7 +104,9 @@ func SetupRoutes(r interface {
 	// /api/v1 and /api/v1beta spellings reach these via the alias fold
 	// in RequestLogger.
 	r.Get("/v1", chatH.HandleModels)
+	r.Head("/v1", chatH.HandleModels)
 	r.Get("/v1beta/models", chatH.HandleV1BetaModels)
+	r.Head("/v1beta/models", chatH.HandleV1BetaModels)
 	r.Post("/v1beta/models/*", chatH.HandleV1BetaModelAction)
 	r.Post("/task", mediaH.HandleTask)
 	r.Post("/unified", HandleUnified)
@@ -113,6 +133,7 @@ func SetupRoutes(r interface {
 	// ({object:"list", data:[...]} + provider whitelist); the dashboard
 	// spellings below keep the shared SPA-shaped handler.
 	r.Get("/audio/voices", mediaH.HandleAudioVoicesV1)
+	r.Head("/audio/voices", mediaH.HandleAudioVoicesV1)
 	r.Get("/api/media-providers/tts/voices", mediaH.HandleAudioVoices)
 	r.Get("/api/media-providers/tts/inworld/voices", mediaH.HandleAudioVoices)
 	r.Get("/api/media-providers/tts/minimax/voices", mediaH.HandleAudioVoices)

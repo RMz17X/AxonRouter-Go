@@ -23,6 +23,15 @@ type ErrorRule struct {
 	// error inside its throttle response) must keep its quota reading
 	// instead of inheriting a 24h account sentence.
 	RequireStatus int
+	// ExcludeStatus vetoes a text rule at one HTTP status; 0 vetoes it
+	// nowhere. It is the mirror of RequireStatus for the banned-account
+	// ToS spellings, and the decision lives here, in one place: a 429 is
+	// a throttle verdict whatever its body quotes — providers wrap
+	// account verdicts inside throttle responses — so at 429 the ToS
+	// rules stay silent and the 429 backoff rule claims the response.
+	// At every other status the same phrases keep their 24h reading
+	// (review cycle 2, N4).
+	ExcludeStatus int
 	// Quota marks an error that means the account's credit/billing budget is
 	// spent. These do NOT clear on a short timer, so they get a long cooldown
 	// and are surfaced as a distinct status instead of a transient blip.
@@ -119,9 +128,11 @@ var ErrorRules = []ErrorRule{
 	{Provider: "deepseek-web", Text: "refused this address", CooldownMs: cooldownAddressRefused},
 	// Terms of Service violation / account disablement (e.g. Google Cloud Code / Antigravity):
 	// Park for 24 hours (1 day) so it stops thrashing the disabled account.
-	{Text: "terms of service", CooldownMs: cooldownBannedAccount},
-	{Text: "tos_violation", CooldownMs: cooldownBannedAccount},
-	{Text: "disabled in this account", CooldownMs: cooldownBannedAccount},
+	// ExcludeStatus 429: a throttle response quoting one of these phrases
+	// is a throttle, not a ban — see the ExcludeStatus field comment.
+	{Text: "terms of service", CooldownMs: cooldownBannedAccount, ExcludeStatus: http.StatusTooManyRequests},
+	{Text: "tos_violation", CooldownMs: cooldownBannedAccount, ExcludeStatus: http.StatusTooManyRequests},
+	{Text: "disabled in this account", CooldownMs: cooldownBannedAccount, ExcludeStatus: http.StatusTooManyRequests},
 	{Text: "requested entity was not found", CooldownMs: cooldownBannedAccount, RequireStatus: http.StatusNotFound},
 	{Text: "model_not_found", CooldownMs: cooldownBannedAccount, RequireStatus: http.StatusNotFound},
 	{Text: "no credentials", CooldownMs: cooldownLong},
@@ -439,6 +450,9 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 				continue
 			}
 			if rule.RequireStatus != 0 && rule.RequireStatus != statusCode {
+				continue
+			}
+			if rule.ExcludeStatus != 0 && rule.ExcludeStatus == statusCode {
 				continue
 			}
 			if rule.Backoff {

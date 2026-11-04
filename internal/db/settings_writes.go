@@ -51,6 +51,51 @@ func (r *Repo) updateSettings(merge func(existing map[string]any) error) error {
 	return nil
 }
 
+// FillSettingsRawIfAbsent merges updates into the settings row only
+// for keys that do not already carry a value (absent, null, or an empty
+// string), and returns the row's effective values for the given keys
+// after the merge. It is the get-or-create primitive for values several
+// processes may mint concurrently — the internal-proxy tokens are the
+// caller: the merge runs inside the settings write lock against a
+// forced fresh read, so a key another node landed first is KEPT and
+// handed back to the caller, whose own candidate is discarded, instead
+// of the blind overwrite UpdateSettingsRaw would have applied. The
+// residual cross-node window is the row write itself: a merge whose
+// fresh read predates a rival's commit still writes its own candidate
+// for a key its read saw as absent.
+func (r *Repo) FillSettingsRawIfAbsent(updates map[string]any) (map[string]any, error) {
+	effective := make(map[string]any, len(updates))
+	err := r.updateSettings(func(existing map[string]any) error {
+		for k, candidate := range updates {
+			if cur, ok := existing[k]; ok && settingsValuePresent(cur) {
+				effective[k] = cur
+				continue
+			}
+			existing[k] = candidate
+			effective[k] = candidate
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return effective, nil
+}
+
+// settingsValuePresent reports whether a settings value counts as
+// carried: anything but null and the empty string. Get-or-create keys
+// are minted as non-empty strings, so an empty string is a key that was
+// blanked, not a value to keep.
+func settingsValuePresent(v any) bool {
+	if v == nil {
+		return false
+	}
+	if s, ok := v.(string); ok {
+		return s != ""
+	}
+	return true
+}
+
 // SetAutoUpdate updates the autoUpdate flag in the settings table.
 func (r *Repo) SetAutoUpdate(enabled bool) error {
 	return r.UpdateSettingsRaw(map[string]any{

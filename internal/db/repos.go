@@ -47,9 +47,13 @@ type Repo struct {
 	// lets GetModelDeprecation answer "nothing recorded" for the
 	// overwhelmingly common provider without a point query per request
 	// (review F1). Loaded lazily from the kv scope, maintained by the
-	// deprecation writers in deprecations.go.
-	deprecationMu        sync.Mutex
-	deprecationProviders map[string]bool
+	// deprecation writers in deprecations.go, and reloaded once it is
+	// older than deprecationSetTTL so a deprecation recorded by another
+	// node is learned without a restart (review cycle 2, N2).
+	// deprecationProvidersAt is when the set was last loaded.
+	deprecationMu          sync.Mutex
+	deprecationProviders   map[string]bool
+	deprecationProvidersAt time.Time
 	// providerConns is the short-TTL snapshot behind
 	// GetProviderConnections (review m1): selection used to re-read and
 	// re-parse every connection row of a provider on every request.

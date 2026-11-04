@@ -48,9 +48,23 @@ func (r *Repo) RecordModelDeprecation(dep providers.ModelDeprecation) error {
 	return nil
 }
 
+// deprecationSetTTL bounds how long the loaded provider set is
+// trusted before it reloads from the kv scope. The set's writers are
+// this process's own Record/Clear calls, which maintain it directly;
+// the TTL exists for the writers it cannot see — another cluster node
+// or the shared dashboard recording a deprecation for a provider this
+// node has never loaded. Without it such a row was invisible to this
+// node's clear path forever and the dashboard badge went stale until
+// restart (review cycle 2, N2). Five minutes is deliberately looser
+// than the sibling caches (settings 5 s, connections 1 s): the set
+// guards a display-truth signal, not a routing input — selection
+// never consults deprecations — and the reload is one scan of a tiny
+// kv scope, so the bound costs nothing measurable either way.
+const deprecationSetTTL = 5 * time.Minute
+
 // deprecationProviderHas reports whether any deprecation is recorded
 // for the provider, answered from the in-memory provider set when it
-// is loaded. The set exists because the success path asks
+// is loaded and fresh. The set exists because the success path asks
 // GetModelDeprecation about EVERY served model (clearModelDeprecation's
 // existence check) while almost no provider has anything recorded:
 // that was one point query per successful request (review F1). A load
@@ -60,7 +74,7 @@ func (r *Repo) deprecationProviderHas(provider string) bool {
 	provider = strings.ToLower(provider)
 	r.deprecationMu.Lock()
 	defer r.deprecationMu.Unlock()
-	if r.deprecationProviders == nil {
+	if r.deprecationProviders == nil || time.Since(r.deprecationProvidersAt) > deprecationSetTTL {
 		rows, err := r.Query("SELECT key FROM kv WHERE scope = ?", deprecationScope)
 		if err != nil {
 			return true
@@ -81,6 +95,7 @@ func (r *Repo) deprecationProviderHas(provider string) bool {
 			return true
 		}
 		r.deprecationProviders = set
+		r.deprecationProvidersAt = time.Now()
 	}
 	return r.deprecationProviders[provider]
 }
@@ -158,6 +173,7 @@ func (r *Repo) ClearModelDeprecation(provider, model string) error {
 	// per revived model), so a reload is cheaper than tracking counts.
 	r.deprecationMu.Lock()
 	r.deprecationProviders = nil
+	r.deprecationProvidersAt = time.Time{}
 	r.deprecationMu.Unlock()
 	return nil
 }
