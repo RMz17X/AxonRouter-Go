@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,6 +14,7 @@ import (
 
 	"9router/proxy/internal/app"
 	"9router/proxy/internal/db"
+	"9router/proxy/internal/db/dbtest"
 	"9router/proxy/internal/handlers"
 	"9router/proxy/internal/handlers/chat"
 )
@@ -26,8 +26,9 @@ const testAPIKey = "sk-integration-test-key"
 
 // Env is a fully wired 9router-go instance: the production chi router from
 // app.ProvideRouter (same middleware stack, same route table), a private
-// on-disk SQLite database built by the real schema bootstrap, and a real HTTP
-// listener on a random port.
+// PostgreSQL schema built by the real schema bootstrap (provisioned by
+// internal/db/dbtest from INTEGRATION_DATABASE_URL — see AGENTS.md §5.D's
+// harness status note), and a real HTTP listener on a random port.
 //
 // It deliberately does NOT boot app.AppModule. That path goes through
 // db.InitGlobalDatabase, a process-wide singleton, so only one database could
@@ -76,15 +77,15 @@ func newEnvWithTokenSaver(t *testing.T, build func(*db.Repo) *handlers.TokenSave
 	t.Setenv("DATA_DIR", t.TempDir())
 	t.Setenv("JWT_SECRET", "integration-suite-jwt-secret")
 
-	conn, err := db.OpenDatabase(filepath.Join(t.TempDir(), "data.sqlite"))
+	// Per-Env isolation is a per-Env schema in one shared scratch
+	// database: dbtest creates the schema, pins the handle's
+	// search_path to it, and drops it on cleanup (D1 harness port —
+	// the file database this replaced was removed in P4).
+	conn, _, cleanupDB, err := dbtest.NewSchemaHandle("itest")
 	if err != nil {
-		t.Fatalf("open integration database: %v", err)
+		t.Fatalf("provision integration database: %v", err)
 	}
-	t.Cleanup(func() {
-		if cerr := conn.Close(); cerr != nil {
-			t.Errorf("close integration database: %v", cerr)
-		}
-	})
+	t.Cleanup(cleanupDB)
 
 	// The same two schema calls app.ProvideDatabase makes on a real boot, so a
 	// column the gateway relies on but the test schema lacks is a failure here

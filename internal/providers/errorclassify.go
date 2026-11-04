@@ -16,6 +16,13 @@ type ErrorRule struct {
 	// Provider scopes a text rule to one canonical provider id; empty applies
 	// to every provider.
 	Provider string
+	// RequireStatus gates a text rule to one HTTP status; 0 applies it at
+	// any status. The banned-account spellings that name a gone model or
+	// entity need it: they are verdicts a 404 carries, and a 429 quota
+	// body that merely QUOTES one of them (a provider wrapping the model
+	// error inside its throttle response) must keep its quota reading
+	// instead of inheriting a 24h account sentence.
+	RequireStatus int
 	// Quota marks an error that means the account's credit/billing budget is
 	// spent. These do NOT clear on a short timer, so they get a long cooldown
 	// and are surfaced as a distinct status instead of a transient blip.
@@ -115,8 +122,8 @@ var ErrorRules = []ErrorRule{
 	{Text: "terms of service", CooldownMs: cooldownBannedAccount},
 	{Text: "tos_violation", CooldownMs: cooldownBannedAccount},
 	{Text: "disabled in this account", CooldownMs: cooldownBannedAccount},
-	{Text: "requested entity was not found", CooldownMs: cooldownBannedAccount},
-	{Text: "model_not_found", CooldownMs: cooldownBannedAccount},
+	{Text: "requested entity was not found", CooldownMs: cooldownBannedAccount, RequireStatus: http.StatusNotFound},
+	{Text: "model_not_found", CooldownMs: cooldownBannedAccount, RequireStatus: http.StatusNotFound},
 	{Text: "no credentials", CooldownMs: cooldownLong},
 	{Text: "request not allowed", CooldownMs: cooldownShort},
 	{Text: "improperly formed request", CooldownMs: cooldownLong},
@@ -397,6 +404,13 @@ type ErrorClassification struct {
 	ShouldFallback  bool
 	CooldownMs      int
 	NewBackoffLevel int // only meaningful when the matched rule has Backoff=true
+	// BannedAccount marks the banned-account class: the classifier's
+	// verdict is that the account itself is dead (a ban, a ToS
+	// disablement, a gone entity), not throttled. The class cooldown
+	// (cooldownBannedAccount, 24h) is a sentence, not a backoff, and the
+	// chat layer must carry it through unclamped — see
+	// cooldownSecForClassification in handlers/chat.
+	BannedAccount bool
 }
 
 // ClassifyError classifies an upstream error by matching text and status against ErrorRules.
@@ -424,6 +438,9 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 			if rule.Provider != "" && rule.Provider != provider {
 				continue
 			}
+			if rule.RequireStatus != 0 && rule.RequireStatus != statusCode {
+				continue
+			}
 			if rule.Backoff {
 				newLevel := min(backoffLevel+1, BackoffConfig.MaxLevel)
 				return ErrorClassification{
@@ -436,6 +453,7 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 				ShouldFallback:  true,
 				CooldownMs:      rule.CooldownMs,
 				NewBackoffLevel: backoffLevel,
+				BannedAccount:   rule.CooldownMs == cooldownBannedAccount,
 			}
 		}
 
@@ -453,6 +471,7 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 				ShouldFallback:  true,
 				CooldownMs:      rule.CooldownMs,
 				NewBackoffLevel: backoffLevel,
+				BannedAccount:   rule.CooldownMs == cooldownBannedAccount,
 			}
 		}
 	}

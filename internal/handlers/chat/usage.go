@@ -2,12 +2,15 @@ package chat
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -23,6 +26,29 @@ import (
 	"9router/proxy/internal/translator"
 	"9router/proxy/internal/usagetracker"
 )
+
+// usageReqSeq makes usage request IDs unique within the process; see
+// newUsageRequestID.
+var usageReqSeq atomic.Uint64
+
+// newUsageRequestID mints the ID a request's usageHistory and
+// requestDetails rows share. It used to be just "<unixMilli>-<model>":
+// under any real concurrency, requests landing in the same millisecond
+// with the same model minted the SAME id, and the detail insert's
+// ON CONFLICT DO NOTHING silently ate the duplicates — a ledger-loss
+// channel independent of the writer queue (found by the review-cycle-1
+// F2 probe: with the queue fixed, history reconciled exactly while
+// details still landed ~19% short at 100 workers). The atomic sequence
+// guarantees uniqueness inside the process; the random tail covers two
+// cluster nodes sharing both the millisecond and the sequence value.
+func newUsageRequestID(now time.Time, model string) string {
+	seq := usageReqSeq.Add(1)
+	var tail [4]byte
+	if _, err := rand.Read(tail[:]); err != nil {
+		return fmt.Sprintf("%d-%s-%d", now.UnixMilli(), model, seq)
+	}
+	return fmt.Sprintf("%d-%s-%d-%s", now.UnixMilli(), model, seq, hex.EncodeToString(tail[:]))
+}
 
 // shouldLogRequestDetail checks if request detail logging is enabled by settings.
 func shouldLogRequestDetail(repo *db.Repo, isError bool) bool {
@@ -69,7 +95,7 @@ func (h *ChatHandler) LogFailure(
 		usage = &translator.OpenAIUsage{}
 	}
 	now := time.Now().UTC()
-	reqID := fmt.Sprintf("%d-%s", now.UnixMilli(), info.Model)
+	reqID := newUsageRequestID(now, info.Model)
 	tokens := map[string]int{
 		"prompt_tokens":               usage.PromptTokens,
 		"completion_tokens":           usage.CompletionTokens,
@@ -174,23 +200,33 @@ func (h *ChatHandler) LogFailure(
 
 	logDetail := shouldLogRequestDetail(h.Repo, true)
 
-	enqueueUsageWrite(func() {
-		if logDetail {
-			if insertErr := failureRepo.InsertRequestDetail(
-				failureID,
-				failureProvider,
-				failureModel,
-				failureConn,
-				"error",
-				failureData,
-			); insertErr != nil {
-				log.Error("usage", "insert failed request detail failed", "error", insertErr)
-			}
-		}
-		if !isProxyBlocked {
-			h.upsertDailyUsageError(failureProvider, failureModel, failureEndpoint, failureConn, failureAPIKey, status)
-		}
-	})
+	// The failure detail row is ledger: it rides the never-droppable
+	// ledger lane, not the generic queue (review F2). The daily error
+	// fold accumulates like the success fold does.
+	if logDetail {
+		enqueueLedgerWrite(ledgerWrite{
+			repo: failureRepo,
+			detail: &db.RequestDetailRecord{
+				ID:           failureID,
+				Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+				Provider:     failureProvider,
+				Model:        failureModel,
+				ConnectionID: failureConn,
+				Status:       "error",
+				Data:         failureData,
+			},
+		})
+	}
+	if !isProxyBlocked && status != "canceled" {
+		accumulateDailyUsage(failureRepo, dailyUsageDelta{
+			provider:     failureProvider,
+			model:        failureModel,
+			endpoint:     failureEndpoint,
+			connectionID: failureConn,
+			apiKey:       failureAPIKey,
+			failed:       true,
+		})
+	}
 
 	usagetracker.GetTracker().PushRecent(usagetracker.RecentRequest{
 		Timestamp:        now.Format(time.RFC3339),
@@ -339,23 +375,28 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	if caller := middleware.AuthenticatedApiKeyFromContext(ctx); caller != nil {
 		clientKey = maskAPIKey(caller.Key)
 	}
-	// The three persistence units below leave the response goroutine: the row,
-	// the detail payload and the daily aggregate are booked by the usage
-	// writer in the order they are enqueued here. Everything the client or the
-	// limiter can observe (metrics, TPM settlement, the recent-requests ring)
-	// stays synchronous.
-	repo := h.Repo
-	usageProvider, usageModel := info.Provider, info.Model
-	usageConnID, usageAPIKey, usageEndpoint := info.ConnectionID, info.APIKey, info.Endpoint
-	usagePrompt, usageCompletion := usage.PromptTokens, usage.CompletionTokens
-	usageTotal := totalTokens
-	enqueueUsageWrite(func() {
-		if repo == nil {
-			return
-		}
-		if err := repo.InsertUsageHistory(usageProvider, usageModel, usageConnID, maskAPIKey(usageAPIKey), usageEndpoint, usagePrompt, usageCompletion, cost, "success", usageTotal, metaJSON, tokensJSON, clientKey); err != nil {
-			log.Error("usage", "insert failed", "error", err)
-		}
+	// The persistence units below leave the response goroutine: the
+	// ledger rows ride the usage writer's ledger lane (batched, never
+	// droppable), the daily aggregate accumulates in memory. Everything
+	// the client or the limiter can observe (metrics, TPM settlement,
+	// the recent-requests ring) stays synchronous.
+	enqueueLedgerWrite(ledgerWrite{
+		repo: h.Repo,
+		history: &db.UsageHistoryRecord{
+			Timestamp:        time.Now().UTC().Format(time.RFC3339),
+			Provider:         info.Provider,
+			Model:            info.Model,
+			ConnectionID:     info.ConnectionID,
+			APIKey:           maskAPIKey(info.APIKey),
+			ClientKey:        clientKey,
+			Endpoint:         info.Endpoint,
+			PromptTokens:     usage.PromptTokens,
+			CompletionTokens: usage.CompletionTokens,
+			Cost:             cost,
+			Status:           "success",
+			Tokens:           tokensJSON,
+			Meta:             metaJSON,
+		},
 	})
 
 	// Prometheus mirrors the row that was just inserted: a request is counted
@@ -369,7 +410,7 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	)
 
 	now := time.Now().UTC()
-	reqID := fmt.Sprintf("%d-%s", now.UnixMilli(), info.Model)
+	reqID := newUsageRequestID(now, info.Model)
 
 	if h.Repo != nil && (info.SavedTokens > 0 || info.OriginalInputTokens > 0) {
 		mode := resolveCompressionMode(h.TokenSaver, info.SavedTokens)
@@ -464,22 +505,30 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	}
 	// The settings read decides the row's fate now; only the write leaves.
 	if shouldLogRequestDetail(h.Repo, false) {
-		detailRepo := h.Repo
-		detailID, detailProvider := reqID, info.Provider
-		detailModel, detailConn := info.Model, info.ConnectionID
-		detailData := string(reqData)
-		enqueueUsageWrite(func() {
-			if err := detailRepo.InsertRequestDetail(detailID, detailProvider, detailModel, detailConn, "success", detailData); err != nil {
-				log.Error("usage", "insert request detail failed", "error", err)
-			}
+		enqueueLedgerWrite(ledgerWrite{
+			repo: h.Repo,
+			detail: &db.RequestDetailRecord{
+				ID:           reqID,
+				Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+				Provider:     info.Provider,
+				Model:        info.Model,
+				ConnectionID: info.ConnectionID,
+				Status:       "success",
+				Data:         string(reqData),
+			},
 		})
 	}
 
-	dailyProvider, dailyModel, dailyEndpoint := info.Provider, info.Model, info.Endpoint
-	dailyConn, dailyAPIKey := info.ConnectionID, info.APIKey
-	dailyPrompt, dailyCompletion, dailyCached := usage.PromptTokens, usage.CompletionTokens, cachedTokens
-	enqueueUsageWrite(func() {
-		h.upsertDailyUsage(dailyProvider, dailyModel, dailyEndpoint, dailyConn, dailyAPIKey, dailyPrompt, dailyCompletion, dailyCached, cost)
+	accumulateDailyUsage(h.Repo, dailyUsageDelta{
+		provider:     info.Provider,
+		model:        info.Model,
+		endpoint:     info.Endpoint,
+		connectionID: info.ConnectionID,
+		apiKey:       info.APIKey,
+		promptTokens: usage.PromptTokens,
+		completion:   usage.CompletionTokens,
+		cachedTokens: cachedTokens,
+		cost:         cost,
 	})
 
 	usagetracker.GetTracker().PushRecent(usagetracker.RecentRequest{
@@ -554,7 +603,22 @@ func (h *ChatHandler) upsertDailyUsage(provider, model, endpoint, connectionID, 
 	existing, _ := h.Repo.GetUsageDaily(dateKey)
 
 	data := parseDailyData(existing)
+	mergeDailyUsage(data, provider, model, endpoint, connectionID, apiKey, promptTokens, completionTokens, cachedTokens, cost)
 
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		log.Error("usage", "marshal daily usage failed", "error", err)
+		return
+	}
+	if err := h.Repo.UpsertUsageDaily(dateKey, string(dataJSON)); err != nil {
+		log.Error("usage", "upsert daily usage failed", "error", err)
+	}
+}
+
+// mergeDailyUsage folds one successful request's contribution into the
+// parsed day blob. It is the shared fold for the one-shot upsert above
+// and the batched accumulator in usage_daily.go.
+func mergeDailyUsage(data map[string]any, provider, model, endpoint, connectionID, apiKey string, promptTokens, completionTokens, cachedTokens int, cost float64) {
 	data["requests"] = getJSONInt(data, "requests") + 1
 	data["promptTokens"] = getJSONInt(data, "promptTokens") + promptTokens
 	data["completionTokens"] = getJSONInt(data, "completionTokens") + completionTokens
@@ -669,15 +733,6 @@ func (h *ChatHandler) upsertDailyUsage(provider, model, endpoint, connectionID, 
 	pd["models"] = models
 	providers[provider] = pd
 	data["providers"] = providers
-
-	dataJSON, err := json.Marshal(data)
-	if err != nil {
-		log.Error("usage", "marshal daily usage failed", "error", err)
-		return
-	}
-	if err := h.Repo.UpsertUsageDaily(dateKey, string(dataJSON)); err != nil {
-		log.Error("usage", "upsert daily usage failed", "error", err)
-	}
 }
 
 // parseDailyData parses an existing daily JSON string into a mutable map.
@@ -781,6 +836,20 @@ func (h *ChatHandler) upsertDailyUsageError(provider, model, endpoint, connectio
 	dateKey := time.Now().UTC().Format("2006-01-02")
 	existing, _ := h.Repo.GetUsageDaily(dateKey)
 	data := parseDailyData(existing)
+	mergeDailyUsageError(data, provider, model)
+
+	updatedJSON, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	_ = h.Repo.UpsertUsageDaily(dateKey, string(updatedJSON))
+}
+
+// mergeDailyUsageError folds one failed request's contribution into the
+// parsed day blob: the request/error counters and the provider/model
+// breakdowns, with no token movement. Shared by the one-shot upsert
+// above and the batched accumulator in usage_daily.go.
+func mergeDailyUsageError(data map[string]any, provider, model string) {
 	data["requests"] = getJSONInt(data, "requests") + 1
 	data["totalRequests"] = getJSONInt(data, "totalRequests") + 1
 	data["errors"] = getJSONInt(data, "errors") + 1
@@ -805,10 +874,4 @@ func (h *ChatHandler) upsertDailyUsageError(provider, model, endpoint, connectio
 	}
 	byModel[modelKey] = mm
 	data["byModel"] = byModel
-
-	updatedJSON, err := json.Marshal(data)
-	if err != nil {
-		return
-	}
-	_ = h.Repo.UpsertUsageDaily(dateKey, string(updatedJSON))
 }

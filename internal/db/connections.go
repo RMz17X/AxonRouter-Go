@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	json "encoding/json/v2"
 	"fmt"
+	"time"
 
 	"9router/proxy/internal/models"
 )
@@ -54,6 +55,7 @@ func (r *Repo) CreateProviderConnection(id, provider, authType, name string, api
 			return fmt.Errorf("create provider connection: redact data: %w", err)
 		}
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -87,11 +89,13 @@ func (r *Repo) CreateProviderConnectionFull(id, provider, authType, name string,
 		return err
 	}
 	if sealed == dataJSON {
+		r.invalidateProviderConnections()
 		return nil
 	}
 	if _, err = r.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
 		return fmt.Errorf("create provider connection: redact data: %w", err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -189,6 +193,7 @@ func (r *Repo) ReplaceProviderConnectionPayload(id, name, dataJSON string) error
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("replace provider connection %s: no such connection", id)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -215,8 +220,140 @@ func (r *Repo) GetConnectedProviders(ctx context.Context) (map[string]struct{}, 
 	return out, rows.Err()
 }
 
+// providerConnsKey identifies one GetProviderConnections snapshot.
+type providerConnsKey struct {
+	provider   string
+	activeOnly bool
+}
+
+// providerConnsEntry is one cached snapshot. rows are master copies:
+// callers always receive fresh clones (see cloneProviderConnections),
+// so a caller mutating its slice — the selector mirrors rotation
+// stamps onto its rows — can never poison the snapshot.
+type providerConnsEntry struct {
+	rows    []*models.ProviderConnection
+	expires time.Time
+}
+
+// providerConnsTTL bounds how long a connection snapshot may be
+// served. Selection used to re-read and re-parse every connection row
+// of a provider on EVERY request (review m1, feeding F1): one query
+// plus a JSON hydration per row, per request, from the pool the
+// completions were also fighting over. One second collapses a burst
+// of concurrent selections into one read while bounding staleness for
+// the writers that cannot invalidate (raw-SQL writers in the oauth
+// handlers, a second process, the shared Next.js dashboard). Writers
+// through this Repo invalidate immediately (see
+// invalidateProviderConnections), and the rotation stamp writer
+// patches the snapshot in place, so the in-process selection ordering
+// never trails the stamps this process minted.
+const providerConnsTTL = time.Second
+
+// cachedProviderConnections returns a clone of the snapshot for key
+// when it is still fresh.
+func (r *Repo) cachedProviderConnections(key providerConnsKey) ([]*models.ProviderConnection, bool) {
+	r.providerConnsMu.Lock()
+	defer r.providerConnsMu.Unlock()
+	entry, ok := r.providerConns[key]
+	if !ok || time.Now().After(entry.expires) {
+		return nil, false
+	}
+	return cloneProviderConnections(entry.rows), true
+}
+
+// storeProviderConnections snapshots rows for key. The snapshot keeps
+// its own clones: the slice being returned to the caller stays theirs.
+func (r *Repo) storeProviderConnections(key providerConnsKey, rows []*models.ProviderConnection) {
+	r.providerConnsMu.Lock()
+	defer r.providerConnsMu.Unlock()
+	if r.providerConns == nil {
+		r.providerConns = make(map[providerConnsKey]providerConnsEntry)
+	}
+	r.providerConns[key] = providerConnsEntry{
+		rows:    cloneProviderConnections(rows),
+		expires: time.Now().Add(providerConnsTTL),
+	}
+}
+
+// invalidateProviderConnections drops every snapshot. Connection
+// writers through this Repo call it: a dashboard edit, a lock, a
+// cooldown change must be visible to the next selection immediately,
+// not at the TTL boundary.
+func (r *Repo) invalidateProviderConnections() {
+	r.providerConnsMu.Lock()
+	r.providerConns = nil
+	r.providerConnsMu.Unlock()
+}
+
+// patchCachedConnectionStamp mirrors a rotation stamp this process
+// just persisted onto any snapshot holding the connection, so the
+// round-robin ordering the selector computes from a snapshot stays as
+// fresh as the row it would have re-read. Cross-process stamp writes
+// remain TTL-bound, exactly as documented on providerConnsTTL.
+func (r *Repo) patchCachedConnectionStamp(connID, stamp string, consecutive int, increment bool) {
+	r.providerConnsMu.Lock()
+	defer r.providerConnsMu.Unlock()
+	for _, entry := range r.providerConns {
+		for _, conn := range entry.rows {
+			if conn.ID != connID {
+				continue
+			}
+			stampCopy := stamp
+			conn.LastUsedAt = &stampCopy
+			count := consecutive
+			if increment {
+				count = 1
+				if conn.ConsecutiveUseCount != nil {
+					count = *conn.ConsecutiveUseCount + 1
+				}
+			}
+			conn.ConsecutiveUseCount = &count
+		}
+	}
+}
+
+// cloneProviderConnections deep-copies a connection slice, including
+// the pointer fields, so neither side of the cache boundary can mutate
+// the other's rows.
+func cloneProviderConnections(rows []*models.ProviderConnection) []*models.ProviderConnection {
+	out := make([]*models.ProviderConnection, len(rows))
+	for i, row := range rows {
+		if row == nil {
+			continue
+		}
+		c := *row
+		if row.Name != nil {
+			v := *row.Name
+			c.Name = &v
+		}
+		if row.Email != nil {
+			v := *row.Email
+			c.Email = &v
+		}
+		if row.Priority != nil {
+			v := *row.Priority
+			c.Priority = &v
+		}
+		if row.LastUsedAt != nil {
+			v := *row.LastUsedAt
+			c.LastUsedAt = &v
+		}
+		if row.ConsecutiveUseCount != nil {
+			v := *row.ConsecutiveUseCount
+			c.ConsecutiveUseCount = &v
+		}
+		out[i] = &c
+	}
+	return out
+}
+
 // GetProviderConnections retrieves provider connections. If activeOnly is true, only returns active ones.
 func (r *Repo) GetProviderConnections(provider string, activeOnly bool) ([]*models.ProviderConnection, error) {
+	cacheKey := providerConnsKey{provider: provider, activeOnly: activeOnly}
+	if snapshot, ok := r.cachedProviderConnections(cacheKey); ok {
+		return snapshot, nil
+	}
+
 	query := "SELECT " + providerConnectionColumns + " FROM providerConnections "
 	var args []any
 
@@ -251,6 +388,7 @@ func (r *Repo) GetProviderConnections(provider string, activeOnly bool) ([]*mode
 		r.hydrate(conn)
 	}
 
+	r.storeProviderConnections(cacheKey, connections)
 	return connections, nil
 }
 

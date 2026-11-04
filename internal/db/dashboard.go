@@ -3,9 +3,7 @@ package db
 import (
 	"9router/proxy/internal/models"
 	"context"
-	"database/sql"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -32,6 +30,7 @@ func (r *Repo) UpdateProviderConnection(id string, name string, priority *int, i
 	if err != nil {
 		return fmt.Errorf("update provider connection %s: %w", id, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -55,6 +54,7 @@ func (r *Repo) UpdateConnectionData(id string, data string) error {
 	); err != nil {
 		return fmt.Errorf("update connection data %s: %w", id, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -64,6 +64,7 @@ func (r *Repo) DeleteProviderConnection(id string) error {
 	if err != nil {
 		return fmt.Errorf("delete provider connection %s: %w", id, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -81,6 +82,7 @@ func (r *Repo) SetConnectionStatus(id string, isActive bool) error {
 	if err != nil {
 		return fmt.Errorf("set connection status %s: %w", id, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -94,6 +96,7 @@ func (r *Repo) SetConnectionPriority(id string, priority int) error {
 	if err != nil {
 		return fmt.Errorf("set connection priority %s: %w", id, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -289,10 +292,22 @@ func (r *Repo) SetApiKeyStatus(id string, isActive bool) error {
 
 // UpdateApiKeyUsage increments usedCount and sets lastUsedAt.
 func (r *Repo) UpdateApiKeyUsage(keyID string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	return r.AddApiKeyUsage(keyID, 1, time.Now().UTC())
+}
+
+// AddApiKeyUsage adds count to usedCount and sets lastUsedAt in one
+// statement. It is the flush form of UpdateApiKeyUsage: the auth
+// middleware accumulates per-key counts in memory (middleware's
+// apikey_usage.go) and lands them batched, so a burst of requests
+// through one key costs one UPDATE per flush instead of one UPDATE —
+// and one row lock — per request (review F1).
+func (r *Repo) AddApiKeyUsage(keyID string, count int, lastUsed time.Time) error {
+	if count <= 0 {
+		return nil
+	}
 	_, err := r.Exec(
-		`UPDATE apiKeys SET lastUsedAt = ?, usedCount = usedCount + 1 WHERE id = ?`,
-		now, keyID,
+		`UPDATE apiKeys SET lastUsedAt = ?, usedCount = usedCount + ? WHERE id = ?`,
+		lastUsed.UTC().Format(time.RFC3339), count, keyID,
 	)
 	if err != nil {
 		return fmt.Errorf("update api key usage %s: %w", keyID, err)
@@ -492,15 +507,27 @@ func (r *Repo) DeleteKV(scope, key string) error {
 // GetSettingsRaw reads settings row id=1 data JSON into map[string]any.
 // Returns an empty map if no settings row exists.
 func (r *Repo) GetSettingsRaw() (map[string]any, error) {
+	return r.getSettingsRaw(false)
+}
+
+// getSettingsRaw is GetSettingsRaw with the read's freshness as a
+// choice: the settings row comes through the shared TTL cache (see
+// settings.go), except when force is set — the read-modify-write in
+// updateSettings must merge into the row as it is, never into a copy
+// up to a TTL old.
+func (r *Repo) getSettingsRaw(force bool) (map[string]any, error) {
 	var rawData string
-	err := r.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&rawData)
+	var found bool
+	var err error
+	if force {
+		rawData, found, err = r.fetchSettingsRow()
+	} else {
+		rawData, found, err = r.readSettingsRow()
+	}
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return make(map[string]any), nil
-		}
 		return nil, fmt.Errorf("get settings raw: %w", err)
 	}
-	if rawData == "" {
+	if !found || rawData == "" {
 		return make(map[string]any), nil
 	}
 	var raw map[string]any

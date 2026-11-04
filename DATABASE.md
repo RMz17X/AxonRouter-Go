@@ -149,6 +149,17 @@ per node holds 40% of PostgreSQL's default `max_connections=100`,
 leaving headroom for the migrator and admin sessions, instead of one
 node being able to pin a quarter of the server alone.
 
+Both compose stacks pass the pool knobs through to the app service and
+set PostgreSQL's side explicitly (`PG_MAX_CONNECTIONS`, default 100).
+The invariant an operator must keep when resizing either side:
+
+```
+APP_REPLICAS × PG_POOL_MAX_OPEN + 10 (migrator/operator headroom) ≤ PG_MAX_CONNECTIONS
+```
+
+Raising the pool alone past the server's limit makes PostgreSQL refuse
+connections (SQLSTATE 53300) and the gateway fail closed.
+
 ---
 
 ## 5. Retention

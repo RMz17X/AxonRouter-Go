@@ -17,8 +17,8 @@ import (
 // whose entire purpose is cross-node agreement.
 //
 // A circuit breaker decides which backend serves: after failThreshold
-// consecutive primary failures the breaker opens (traffic moves to the
-// database, one log line names the transition), and a background prober
+// primary failures inside failWindow the breaker opens (traffic moves
+// to the database, one log line names the transition), and a background prober
 // pings the primary every probeInterval; the first success closes the
 // breaker (second log line) and the primary resumes. Both transitions
 // are also visible through Status() in the dashboard's system payload.
@@ -30,13 +30,23 @@ const (
 	breakerHealLog = "speed layer recovered: redis primary reachable again, resuming"
 )
 
+// failWindow is the sliding window the breaker's failure count is
+// taken over. The count used to be CONSECUTIVE failures, reset by any
+// success — so a primary flapping at ~50% success never tripped and
+// silently dropped about half of the tracker's updates forever
+// (review m3). A windowed count trips on failure DENSITY instead:
+// failThreshold failures inside failWindow open the breaker no matter
+// how successes interleave, while a healthy primary's isolated blips
+// age out of the window before they can accumulate.
+const failWindow = 10 * time.Second
+
 type failoverStore struct {
 	primary  Store
 	fallback Store
 
-	mu             sync.Mutex
-	degraded       bool
-	consecFailures int
+	mu       sync.Mutex
+	degraded bool
+	failures []time.Time // primary failures inside failWindow, oldest first
 }
 
 func newFailoverStore(primary, fallback Store) *failoverStore {
@@ -53,7 +63,6 @@ func newFailoverStore(primary, fallback Store) *failoverStore {
 func (f *failoverStore) startDegraded() {
 	f.mu.Lock()
 	f.degraded = true
-	f.consecFailures = failThreshold
 	f.mu.Unlock()
 	log.Warn("speedlayer", breakerTripLog, "primary", f.primary.Name())
 }
@@ -78,10 +87,23 @@ func (f *failoverStore) isDegraded() bool {
 	return f.degraded
 }
 
+// pruneFailuresLocked drops failures older than failWindow. Caller
+// holds f.mu.
+func (f *failoverStore) pruneFailuresLocked(now time.Time) {
+	cutoff := now.Add(-failWindow)
+	i := 0
+	for i < len(f.failures) && f.failures[i].Before(cutoff) {
+		i++
+	}
+	f.failures = f.failures[i:]
+}
+
 func (f *failoverStore) recordPrimaryFailure() {
+	now := time.Now()
 	f.mu.Lock()
-	f.consecFailures++
-	trip := !f.degraded && f.consecFailures >= failThreshold
+	f.pruneFailuresLocked(now)
+	f.failures = append(f.failures, now)
+	trip := !f.degraded && len(f.failures) >= failThreshold
 	if trip {
 		f.degraded = true
 	}
@@ -92,8 +114,10 @@ func (f *failoverStore) recordPrimaryFailure() {
 }
 
 func (f *failoverStore) recordPrimarySuccess() {
+	// A success no longer resets the failure count (see failWindow):
+	// it only lets old failures age out on schedule.
 	f.mu.Lock()
-	f.consecFailures = 0
+	f.pruneFailuresLocked(time.Now())
 	f.mu.Unlock()
 }
 
@@ -116,7 +140,7 @@ func (f *failoverStore) probeLoop() {
 		f.mu.Lock()
 		healed := f.degraded
 		f.degraded = false
-		f.consecFailures = 0
+		f.failures = nil
 		f.mu.Unlock()
 		if healed {
 			log.Info("speedlayer", breakerHealLog, "primary", f.primary.Name())

@@ -167,6 +167,7 @@ func (r *Repo) RecordConnectionOAuthFailure(connID string, status int, errText s
 	if err != nil {
 		return time.Time{}, 0, fmt.Errorf("lock connection oauth %s: %w", connID, err)
 	}
+	r.invalidateProviderConnections()
 	return until, failures, nil
 }
 
@@ -193,5 +194,6 @@ func (r *Repo) ClearConnectionOAuthLock(connID string) error {
 	if err != nil {
 		return fmt.Errorf("clear connection oauth lock %s: %w", connID, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }

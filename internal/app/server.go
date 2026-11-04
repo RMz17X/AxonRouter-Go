@@ -16,6 +16,7 @@ import (
 	"9router/proxy/internal/config"
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/handlers/chat"
+	"9router/proxy/internal/middleware"
 	"9router/proxy/internal/providers"
 	"9router/proxy/internal/proxy/executor"
 	"9router/proxy/internal/proxy/oauth"
@@ -196,6 +197,9 @@ func ProvideServer(p ServerParams) *http.Server {
 			if !chat.FlushUsageWrites(3 * time.Second) {
 				log.Printf("Usage write queue did not fully drain before exit")
 			}
+			// The api-key usage accounting accumulates in memory (review
+			// F1); land its final interval before the process goes.
+			middleware.FlushApiKeyUsage()
 			return nil
 		},
 	})

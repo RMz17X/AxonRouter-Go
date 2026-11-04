@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +21,7 @@ import (
 	"9router/proxy/internal/app"
 	"9router/proxy/internal/config"
 	"9router/proxy/internal/db"
+	"9router/proxy/internal/db/dbtest"
 	"9router/proxy/internal/shutdown"
 	"9router/proxy/internal/updater"
 )
@@ -65,8 +65,10 @@ const chatCompletionJSON = `{
 }`
 
 // TestMain boots the production fx graph — ConfigModule, DatabaseModule,
-// HandlersModule and ServerModule — once, against a temporary data directory
-// and a free port, then serves the tests against it. The environment is set
+// HandlersModule and ServerModule — once, against a temporary data directory,
+// a free port, and a throwaway PostgreSQL schema (provisioned by
+// internal/db/dbtest and handed to the app's own pool through
+// DATABASE_URL), then serves the tests against it. The environment is set
 // with os.Setenv because t.Setenv does not exist outside a test.
 func TestMain(m *testing.M) {
 	dataDir, err := os.MkdirTemp("", "bootfx-*")
@@ -75,6 +77,20 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	defer os.RemoveAll(dataDir)
+
+	// The file database this suite used to point Config at was removed
+	// in P4; the database now comes from DATABASE_URL alone. Point it
+	// at a fresh schema in the scratch database so the boot is as
+	// isolated as the temp file ever was.
+	dsn, cleanupDB, derr := dbtest.NewSchemaDSN("bootfx")
+	if derr != nil {
+		fmt.Fprintln(os.Stderr, "provision boot database:", derr)
+		os.Exit(1)
+	}
+	if serr := os.Setenv("DATABASE_URL", dsn); serr != nil {
+		fmt.Fprintln(os.Stderr, "set DATABASE_URL:", serr)
+		os.Exit(1)
+	}
 
 	// These keep config.LoadConfigFromViper and auth.CLIToken's file
 	// derivation off the developer's real ~/.9router.
@@ -117,7 +133,6 @@ func TestMain(m *testing.M) {
 	cfg := &config.Config{
 		Host:            "127.0.0.1",
 		Port:            port,
-		DatabasePath:    filepath.Join(dataDir, "db", "data.sqlite"),
 		JWTSecret:       "bootfx-jwt-secret",
 		InitialPassword: "bootfx-password",
 		APIKeySecret:    "bootfx-api-key-secret",
@@ -173,6 +188,9 @@ func TestMain(m *testing.M) {
 	if len(teardownFailures) > 0 {
 		code = 1
 	}
+	// The app is stopped and its pool closed by now, so the schema can
+	// go; os.Exit skips defers, so this runs explicitly.
+	cleanupDB()
 	os.Exit(code)
 }
 

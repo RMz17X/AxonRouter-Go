@@ -21,6 +21,7 @@ import (
 	"9router/proxy/internal/config"
 	"9router/proxy/internal/constants"
 	"9router/proxy/internal/db"
+	"9router/proxy/internal/handlers/chat"
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/proxy/executor"
 	"9router/proxy/internal/proxy/poolstate"
@@ -105,6 +106,12 @@ func HandleSystemMemory(repo *db.Repo) http.HandlerFunc {
 			// surface the failover rule requires; it rides the existing
 			// system payload rather than growing a new one.
 			"speedLayer": speedlayer.CurrentStatus(),
+			// Usage-ledger writes discarded since boot (review F2):
+			// the ledger lane is never droppable while the database is
+			// reachable, so a non-zero value here means the database
+			// was wedged past the enqueue wait — an operator must be
+			// able to see that without reading warning logs.
+			"usageWritesDropped": chat.UsageWritesDropped(),
 		})
 	}
 }

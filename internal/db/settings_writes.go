@@ -24,7 +24,7 @@ func (r *Repo) updateSettings(merge func(existing map[string]any) error) error {
 	settingsWriteMu.Lock()
 	defer settingsWriteMu.Unlock()
 
-	existing, err := r.GetSettingsRaw()
+	existing, err := r.getSettingsRaw(true)
 	if err != nil {
 		return fmt.Errorf("update settings: %w", err)
 	}
@@ -45,6 +45,9 @@ func (r *Repo) updateSettings(merge func(existing map[string]any) error) error {
 	); err != nil {
 		return fmt.Errorf("update settings raw: %w", err)
 	}
+	// Write-through: the next read serves this exact row from the TTL
+	// cache instead of re-reading what this write just landed.
+	r.noteSettingsRowWritten(string(b))
 	return nil
 }
 

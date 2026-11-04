@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -64,6 +65,91 @@ func (r *Repo) InsertUsageHistory(provider, model, connectionID, apiKey, endpoin
 	)
 	if err != nil {
 		return fmt.Errorf("insert usage history: %w", err)
+	}
+	return nil
+}
+
+// UsageHistoryRecord is one usageHistory row in insert form. It carries
+// exactly the columns InsertUsageHistory writes; the batch writer below
+// exists because the usage ledger's hot path produces rows in bursts the
+// one-statement-per-row form cannot drain (review F2).
+type UsageHistoryRecord struct {
+	Timestamp        string // RFC3339; stamped by the caller at completion time
+	Provider         string
+	Model            string
+	ConnectionID     string
+	APIKey           string // already masked by the caller
+	ClientKey        string // masked client key attribution (#365); "" when unknown
+	Endpoint         string
+	PromptTokens     int
+	CompletionTokens int
+	Cost             float64
+	Status           string
+	Tokens           string
+	Meta             string
+}
+
+// usageInsertChunk bounds one multi-row INSERT's row count: 200 rows ×
+// 13 columns = 2,600 bound parameters, far under PostgreSQL's 65,535
+// limit, and one statement stays a single WAL record set.
+const usageInsertChunk = 200
+
+// InsertUsageHistoryBatch writes recs as chunked multi-row INSERTs — one
+// statement (one round trip, one commit) per chunk instead of one per
+// row. This is the drain-rate fix for the usage writer: a burst of
+// completions becomes a handful of statements the worker lands faster
+// than requests can produce them.
+func (r *Repo) InsertUsageHistoryBatch(recs []UsageHistoryRecord) error {
+	for start := 0; start < len(recs); start += usageInsertChunk {
+		chunk := recs[start:min(start+usageInsertChunk, len(recs))]
+		var sb strings.Builder
+		sb.WriteString(`INSERT INTO usageHistory (timestamp, provider, model, connectionId, apiKey, clientKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES `)
+		args := make([]any, 0, len(chunk)*13)
+		for i, rec := range chunk {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(`(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			args = append(args, rec.Timestamp, rec.Provider, rec.Model, rec.ConnectionID, rec.APIKey, rec.ClientKey, rec.Endpoint, rec.PromptTokens, rec.CompletionTokens, rec.Cost, rec.Status, rec.Tokens, rec.Meta)
+		}
+		if _, err := r.Exec(sb.String(), args...); err != nil {
+			return fmt.Errorf("insert usage history batch: %w", err)
+		}
+	}
+	return nil
+}
+
+// RequestDetailRecord is one requestDetails row in insert form.
+type RequestDetailRecord struct {
+	ID           string
+	Timestamp    string // millisecond RFC3339, the single-row writer's format
+	Provider     string
+	Model        string
+	ConnectionID string
+	Status       string
+	Data         string
+}
+
+// InsertRequestDetailBatch is InsertUsageHistoryBatch for request
+// details, keeping the single-row writer's ON CONFLICT DO NOTHING grain
+// (see InsertRequestDetail for why the grain is (id, timestamp)).
+func (r *Repo) InsertRequestDetailBatch(recs []RequestDetailRecord) error {
+	for start := 0; start < len(recs); start += usageInsertChunk {
+		chunk := recs[start:min(start+usageInsertChunk, len(recs))]
+		var sb strings.Builder
+		sb.WriteString(`INSERT INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES `)
+		args := make([]any, 0, len(chunk)*7)
+		for i, rec := range chunk {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(`(?, ?, ?, ?, ?, ?, ?)`)
+			args = append(args, rec.ID, rec.Timestamp, rec.Provider, rec.Model, rec.ConnectionID, rec.Status, rec.Data)
+		}
+		sb.WriteString(` ON CONFLICT DO NOTHING`)
+		if _, err := r.Exec(sb.String(), args...); err != nil {
+			return fmt.Errorf("insert request detail batch: %w", err)
+		}
 	}
 	return nil
 }

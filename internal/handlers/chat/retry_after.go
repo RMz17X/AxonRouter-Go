@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"9router/proxy/internal/constants"
+	"9router/proxy/internal/providers"
 	"9router/proxy/internal/translator"
 )
 
@@ -86,6 +87,36 @@ func comboPassRetryWait(earliest time.Duration, rateLimited bool) time.Duration 
 		return 0
 	}
 	return earliest
+}
+
+// M1 — the 404/ToS cooldown semantics live here, in one place.
+//
+// Origin commit fb584e06 gave the classifier a banned-account class
+// (providers.ErrorClassification.BannedAccount, 24h) with an account-level
+// intent, but two clamps in this package silently defeated it: every
+// cooldown was capped at the generic 2h reset ceiling, and every 404 was
+// treated as model-scoped, so the account lock never fired. The reconciled
+// semantics (owner decision, review cycle 1):
+//
+//   - Duration: a banned-account classification is a sentence, not a
+//     backoff. cooldownSecForClassification returns its 24h UNCLAMPED —
+//     neither the maxCooldownFor ceiling nor a quota-reset reading in the
+//     body shortens it. Every other class keeps the clamped
+//     retryableCooldownSec behaviour below, unchanged.
+//   - Scope: a plain model_not_found 404 stays model-scoped (the model is
+//     gone, the account is not). "requested entity was not found" is
+//     carved out in isModelScopedError: on Gemini/Antigravity it names
+//     the account's project/entity, so it takes the account-level
+//     LockConnectionRateLimit path like any other account death.
+//
+// cooldownSecForClassification is the single entry point both failover
+// loops (fallback.go, combo.go) use to turn a classification into parked
+// seconds, so the two cannot drift back into disagreeing halves.
+func cooldownSecForClassification(statusCode int, cls providers.ErrorClassification, ue *upstreamError, provider string) int {
+	if cls.BannedAccount {
+		return ceilSeconds(time.Duration(cls.CooldownMs) * time.Millisecond)
+	}
+	return retryableCooldownSec(statusCode, time.Duration(cls.CooldownMs)*time.Millisecond, ue, provider)
 }
 
 // retryableCooldownSec returns how long a failed account must stay out of

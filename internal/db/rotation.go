@@ -113,6 +113,11 @@ func (r *Repo) stampConnection(connectionID string, consecutive int, increment b
 	}
 	committed = true
 
+	// Keep any GetProviderConnections snapshot's ordering as fresh as
+	// the row just written (see providerConnsTTL): the selector's
+	// round-robin compares the stamps on its in-memory rows.
+	r.patchCachedConnectionStamp(connectionID, stamp, consecutive, increment)
+
 	return stamp, nil
 }
 

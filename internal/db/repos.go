@@ -36,6 +36,27 @@ type Repo struct {
 	// settingsCache holds the parsed settings row. It lives on the Repo for
 	// the same reason activePoolIDs does: the answer belongs to one database.
 	settingsCache atomic.Pointer[cachedSettings]
+	// settingsRow holds the RAW settings row with its fetch time: the
+	// short-TTL read cache behind GetSettings/GetSettingsRaw (review
+	// F1). The parse cache above keys off this raw content, so the two
+	// compose: the row is re-read at most once per TTL window, and only
+	// re-parsed when it actually changed.
+	settingsRow atomic.Pointer[cachedSettingsRow]
+	// deprecationProviders is the in-memory set of providers that have
+	// at least one recorded model deprecation (nil = not loaded). It
+	// lets GetModelDeprecation answer "nothing recorded" for the
+	// overwhelmingly common provider without a point query per request
+	// (review F1). Loaded lazily from the kv scope, maintained by the
+	// deprecation writers in deprecations.go.
+	deprecationMu        sync.Mutex
+	deprecationProviders map[string]bool
+	// providerConns is the short-TTL snapshot behind
+	// GetProviderConnections (review m1): selection used to re-read and
+	// re-parse every connection row of a provider on every request.
+	// Guarded by providerConnsMu; entries are deep clones, never the
+	// slices handed to callers.
+	providerConnsMu sync.Mutex
+	providerConns   map[providerConnsKey]providerConnsEntry
 	// vault is the optional credential vault. It is stored rather than held by
 	// value so a key rotation can swap the live vault without touching any
 	// reader that already captured a *Repo. A nil value means "no vault", which
@@ -61,6 +82,24 @@ type cachedSettings struct {
 	raw   string
 	value *SettingsData
 }
+
+// cachedSettingsRow is the raw settings row (id = 1) as last read or
+// written through this Repo, with the moment it was captured. found is
+// false when the row does not exist yet (fresh install).
+type cachedSettingsRow struct {
+	raw       string
+	found     bool
+	fetchedAt time.Time
+}
+
+// settingsRowTTL bounds how long the raw settings row may be served
+// from memory. Writers through this Repo refresh the cache with the
+// exact row they wrote (write-through, see settings.go), so the TTL
+// only ever covers writers that bypass the Repo: a second process, the
+// shared Next.js dashboard, the backup import. Five seconds matches
+// the auth-cache precedent in middleware (a revoked key cannot outlive
+// its 5 s window either).
+const settingsRowTTL = 5 * time.Second
 
 // nowUTC is the timestamp format every connection write stamps.
 func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }

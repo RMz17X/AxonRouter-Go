@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // ComboStrategy defines routing strategy, sticky limit, and judge model for a combo.
@@ -214,13 +215,53 @@ func DefaultSettings() *SettingsData {
 	}
 }
 
+// readSettingsRow returns the raw settings row (id = 1), serving the
+// TTL cache when fresh. found is false when the row does not exist yet.
+// The error is the raw driver error; callers wrap it with their own
+// context, as they did when each read the row itself.
+func (r *Repo) readSettingsRow() (string, bool, error) {
+	if c := r.settingsRow.Load(); c != nil && time.Since(c.fetchedAt) < settingsRowTTL {
+		return c.raw, c.found, nil
+	}
+	return r.fetchSettingsRow()
+}
+
+// fetchSettingsRow reads the row unconditionally and refreshes the TTL
+// cache with what it found. The settings write path uses it for its
+// read-modify-write base: a merge must start from the row as it is,
+// not from a copy up to a TTL old.
+func (r *Repo) fetchSettingsRow() (string, bool, error) {
+	var rawData string
+	err := r.db.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&rawData)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			r.settingsRow.Store(&cachedSettingsRow{found: false, fetchedAt: time.Now()})
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	r.settingsRow.Store(&cachedSettingsRow{raw: rawData, found: true, fetchedAt: time.Now()})
+	return rawData, true, nil
+}
+
+// noteSettingsRowWritten records a row this Repo just wrote, so the
+// next read serves the written content instead of re-reading it
+// (write-through). Writers that bypass the Repo are covered by the
+// TTL instead.
+func (r *Repo) noteSettingsRowWritten(raw string) {
+	r.settingsRow.Store(&cachedSettingsRow{raw: raw, found: true, fetchedAt: time.Now()})
+}
+
 // GetSettings reads settings row id = 1 from the settings table.
 //
-// The row is always read, so the answer is never stale. The parsed value is
-// reused when the row content is unchanged: the thinking pass reads the
-// providerThinking override on every request, and parsing the blob plus
-// rebuilding the maps is about half of the read (measured 94.5 µs and 53
-// allocations for the whole read, of which the point query is 47 µs).
+// The row is served from a short-TTL cache (see readSettingsRow): the
+// answer can trail a writer that bypassed this Repo by up to the TTL,
+// and never trails this Repo's own writes, which refresh the cache
+// with the row they wrote. The parsed value is reused when the row
+// content is unchanged: the thinking pass reads the providerThinking
+// override on every request, and parsing the blob plus rebuilding the
+// maps is about half of the read (measured 94.5 µs and 53 allocations
+// for the whole read, of which the point query is 47 µs).
 //
 // A read that fails is an error, not a row of defaults: a transient database
 // failure would otherwise silently turn the operator's settings off for the
@@ -228,13 +269,12 @@ func DefaultSettings() *SettingsData {
 // override gone — and nothing would say so. A row that does not exist yet is
 // not a failure: that is a fresh install.
 func (r *Repo) GetSettings() (*SettingsData, error) {
-	var rawData string
-	err := r.db.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&rawData)
+	rawData, found, err := r.readSettingsRow()
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return DefaultSettings(), nil
-		}
 		return nil, fmt.Errorf("get settings: %w", err)
+	}
+	if !found {
+		return DefaultSettings(), nil
 	}
 	if c := r.settingsCache.Load(); c != nil && c.raw == rawData {
 		return cloneSettings(c.value), nil

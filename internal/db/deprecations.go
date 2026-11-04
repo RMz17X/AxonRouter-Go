@@ -5,6 +5,7 @@ import (
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"9router/proxy/internal/providers"
@@ -39,11 +40,56 @@ func (r *Repo) RecordModelDeprecation(dep providers.ModelDeprecation) error {
 	if err := r.SetKV(deprecationScope, key, string(encoded)); err != nil {
 		return fmt.Errorf("record model deprecation: %w", err)
 	}
+	r.deprecationMu.Lock()
+	if r.deprecationProviders != nil {
+		r.deprecationProviders[strings.ToLower(dep.Provider)] = true
+	}
+	r.deprecationMu.Unlock()
 	return nil
+}
+
+// deprecationProviderHas reports whether any deprecation is recorded
+// for the provider, answered from the in-memory provider set when it
+// is loaded. The set exists because the success path asks
+// GetModelDeprecation about EVERY served model (clearModelDeprecation's
+// existence check) while almost no provider has anything recorded:
+// that was one point query per successful request (review F1). A load
+// failure answers true — the set may only ever skip a query it is sure
+// is empty, never invent an answer.
+func (r *Repo) deprecationProviderHas(provider string) bool {
+	provider = strings.ToLower(provider)
+	r.deprecationMu.Lock()
+	defer r.deprecationMu.Unlock()
+	if r.deprecationProviders == nil {
+		rows, err := r.Query("SELECT key FROM kv WHERE scope = ?", deprecationScope)
+		if err != nil {
+			return true
+		}
+		set := make(map[string]bool)
+		for rows.Next() {
+			var key string
+			if err := rows.Scan(&key); err != nil {
+				_ = rows.Close()
+				return true
+			}
+			if i := strings.Index(key, "/"); i > 0 {
+				set[key[:i]] = true
+			}
+		}
+		_ = rows.Close()
+		if err := rows.Err(); err != nil {
+			return true
+		}
+		r.deprecationProviders = set
+	}
+	return r.deprecationProviders[provider]
 }
 
 // GetModelDeprecation returns what is recorded for one provider/model pair.
 func (r *Repo) GetModelDeprecation(provider, model string) (*providers.ModelDeprecation, error) {
+	if !r.deprecationProviderHas(provider) {
+		return nil, ErrModelNotDeprecated
+	}
 	var raw string
 	err := r.QueryRow(
 		"SELECT value FROM kv WHERE scope = ? AND key = ? LIMIT 1",
@@ -107,6 +153,12 @@ func (r *Repo) ClearModelDeprecation(provider, model string) error {
 	if err := r.DeleteKV(deprecationScope, providers.DeprecationKey(provider, model)); err != nil {
 		return fmt.Errorf("clear model deprecation: %w", err)
 	}
+	// The cleared entry may have been the provider's last: drop the
+	// whole set and let the next read reload it. Clears are rare (one
+	// per revived model), so a reload is cheaper than tracking counts.
+	r.deprecationMu.Lock()
+	r.deprecationProviders = nil
+	r.deprecationMu.Unlock()
 	return nil
 }
 

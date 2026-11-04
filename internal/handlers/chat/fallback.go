@@ -304,7 +304,7 @@ func (h *ChatHandler) handleAccountFallback(
 			// Classify error to get dynamic cooldown; provider-scoped rules
 			// key off the canonical provider the request routed to.
 			classification := providers.ClassifyErrorForProvider(ue.StatusCode, errorText, currentBackoffLevel, provider)
-			cooldownSec := retryableCooldownSec(ue.StatusCode, time.Duration(classification.CooldownMs)*time.Millisecond, ue, provider)
+			cooldownSec := cooldownSecForClassification(ue.StatusCode, classification, ue, provider)
 			errMsg := errorText
 			if errMsg == "" {
 				errMsg = fmt.Sprintf("%d upstream error", ue.StatusCode)
@@ -1160,19 +1160,17 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			fwdErr = nil
 			return nil
 		}
-		// Clear any existing model lock on success (matching Next.js clearAccountError).
+		// Clear any existing model lock and account-scoped cooldown on
+		// success (matching Next.js clearAccountError/resetAccountState),
+		// so an account that recovered is not kept out of rotation until
+		// the cooldown expires on its own. One guarded statement does
+		// the three clears the code used to issue separately: with no
+		// lock, cooldown or error state present — the common case — it
+		// matches zero rows and takes no row lock (review F1; see
+		// ClearConnectionSuccessState).
 		lockKey := canonicalLockModel(provider, model)
-		if unlockErr := h.Repo.UnlockConnectionModel(connectionID, lockKey); unlockErr != nil {
-			log.Warn("fallback", "unlock failed", "provider", provider, "model", lockKey, "error", unlockErr)
-		}
-		if lockKey != model {
-			_ = h.Repo.UnlockConnectionModel(connectionID, model)
-		}
-		// A served request also clears the account-scoped cooldown, so an
-		// account that recovered is not kept out of rotation until the
-		// cooldown expires on its own.
-		if clearErr := h.Repo.ClearConnectionRateLimit(connectionID); clearErr != nil {
-			log.Warn("fallback", "rate limit clear failed", "conn", connectionID, "error", clearErr)
+		if clearErr := h.Repo.ClearConnectionSuccessState(connectionID, lockKey, model); clearErr != nil {
+			log.Warn("fallback", "success state clear failed", "provider", provider, "model", lockKey, "conn", connectionID, "error", clearErr)
 		}
 		// A served request proves the account is usable again, so drop any
 		// cached quota block rather than leaving it to expire on its own.
@@ -1808,6 +1806,18 @@ func isModelScopedError(statusCode int, errorText string, model string, bodies .
 		if isModelQuotaText(errorText) {
 			return true
 		}
+	}
+
+	// M1 carve-out (semantics owned by cooldownSecForClassification in
+	// retry_after.go): "requested entity was not found" arrives as a 404
+	// but names the account's project/entity, not the model — on
+	// Gemini/Antigravity the entity is gone, so the error is
+	// account-scoped and takes the LockConnectionRateLimit path. Without
+	// this carve-out the blanket 404 rule below would keep offering the
+	// dead account for every other model, each collecting its own
+	// per-model lock while the account itself is never cooled.
+	if strings.Contains(lower, "requested entity was not found") {
+		return false
 	}
 
 	// 404: Upstream model not found is always model-scoped

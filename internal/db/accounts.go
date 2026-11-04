@@ -26,6 +26,7 @@ func (r *Repo) SetConnectionProjectID(connID, projectID string) error {
 	if err != nil {
 		return fmt.Errorf("set connection project id %s: %w", connID, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -46,6 +47,7 @@ func (r *Repo) LockConnectionModel(connID, model string, durationSec int, backof
 	if err != nil {
 		return fmt.Errorf("lock connection model %s/%s: %w", connID, model, err)
 	}
+	r.invalidateProviderConnections()
 	// Mirror the lock into the speed layer so the selector's per-model
 	// check can answer from the shared cache instead of a SELECT per
 	// candidate (see speed.go). The row above stays the truth.
@@ -116,6 +118,7 @@ func (r *Repo) RecordConnectionScopedError(connID, model, source string, status 
 	if err != nil {
 		return fmt.Errorf("record connection error %s: %w", connID, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -151,6 +154,7 @@ func (r *Repo) LockConnectionRateLimit(connID string, until time.Time, backoffLe
 	if err != nil {
 		return fmt.Errorf("lock connection rate limit %s: %w", connID, err)
 	}
+	r.invalidateProviderConnections()
 	return nil
 }
 
@@ -176,6 +180,77 @@ func (r *Repo) ClearConnectionRateLimit(connID string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("clear connection rate limit %s: %w", connID, err)
+	}
+	r.invalidateProviderConnections()
+	return nil
+}
+
+// ClearConnectionSuccessState performs the chat success path's three
+// clears — UnlockConnectionModel for the canonical lock key and the
+// raw model, plus ClearConnectionRateLimit — as ONE statement whose
+// guard makes it a no-op when the connection carries no state to
+// clear.
+//
+// Why (review cycle 1, F1): the three clears used to run as separate
+// unconditional UPDATEs on EVERY successful request, all against the
+// same providerConnections row. Under concurrency they serialised the
+// whole gateway on that row's lock (pg_stat_activity: 9 of 10 pooled
+// backends parked in Lock/transactionid), and each was its own WAL
+// flush. The fused statement writes the exact union of the three
+// clears' effects, but its WHERE only matches when at least one piece
+// of clearable state is present — a model lock (either key), an
+// account cooldown, a recorded error, or a raised backoff level, which
+// between them cover every writer of that state in this package. In
+// the overwhelmingly common case (nothing was ever locked) the
+// statement matches zero rows: a primary-key probe, no row lock taken,
+// no WAL record written.
+//
+// The speed-layer overlay entries for both lock keys are deleted
+// unconditionally, exactly as UnlockConnectionModel does: an overlay
+// entry can outlive its row state when another writer cleared the
+// row, and deleting a positive shortcut can only cost a re-read.
+func (r *Repo) ClearConnectionSuccessState(connID, lockKey, model string) error {
+	keys := []string{lockKey}
+	if model != "" && model != lockKey {
+		keys = append(keys, model)
+	}
+	pairs := make([]jsonSetPair, 0, len(keys)+4)
+	setArgs := make([]any, 0, len(keys))
+	guardArgs := make([]any, 0, len(keys))
+	guards := make([]string, 0, len(keys)+3)
+	for _, k := range keys {
+		pairs = append(pairs, jsonSetBoundPair(jsonNullLiteral()))
+		setArgs = append(setArgs, modelLockPrefix+k)
+		guards = append(guards, `(data #>> ARRAY[?]) IS NOT NULL`)
+		guardArgs = append(guardArgs, modelLockPrefix+k)
+	}
+	pairs = append(pairs,
+		jsonSetPairAt(jsonNullSQLValue(), "rateLimitedUntil"),
+		jsonSetPairAt(jsonNullSQLValue(), "lastError"),
+		jsonSetPairAt(jsonStringLiteral("active"), "status"),
+		jsonSetPairAt(jsonIntLiteral(0), "backoffLevel"),
+	)
+	guards = append(guards,
+		`(data #>> '{rateLimitedUntil}') IS NOT NULL`,
+		`(data #>> '{lastError}') IS NOT NULL`,
+		`COALESCE(data #>> '{backoffLevel}', '0') <> '0'`,
+	)
+	now := time.Now().UTC().Format(time.RFC3339)
+	query := `UPDATE providerConnections SET data = ` + jsonSetExpr("data", pairs...) +
+		`, updatedAt = ? WHERE id = ? AND (` + strings.Join(guards, " OR ") + `)`
+	args := make([]any, 0, len(setArgs)+2+len(guardArgs))
+	args = append(args, setArgs...)
+	args = append(args, now, connID)
+	args = append(args, guardArgs...)
+	res, err := r.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("clear connection success state %s: %w", connID, err)
+	}
+	for _, k := range keys {
+		r.deleteModelLockOverlay(connID, k)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		r.invalidateProviderConnections()
 	}
 	return nil
 }
@@ -270,6 +345,7 @@ func (r *Repo) UnlockConnectionModel(connID, model string) error {
 	if err != nil {
 		return fmt.Errorf("unlock connection model %s/%s: %w", connID, model, err)
 	}
+	r.invalidateProviderConnections()
 	r.deleteModelLockOverlay(connID, model)
 	return nil
 }
@@ -307,6 +383,7 @@ func (r *Repo) ResetConnectionHealthState(connID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = r.Exec("UPDATE providerConnections SET data = ?, updatedAt = ? WHERE id = ?", string(newBytes), now, connID)
 	if err == nil {
+		r.invalidateProviderConnections()
 		r.clearModelLockOverlay(connID)
 	}
 	return err

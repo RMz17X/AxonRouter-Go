@@ -10,6 +10,10 @@
 services:
   postgres:
     image: postgres:17
+    # max_connections is set explicitly so the pool equation has both
+    # sides in one file: APP_REPLICAS × PG_POOL_MAX_OPEN + 10 headroom
+    # must stay ≤ PG_MAX_CONNECTIONS (see .env.example).
+    command: postgres -c max_connections=${PG_MAX_CONNECTIONS:-100}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-9router}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -34,6 +38,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-9router}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-9router}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       INITIAL_PASSWORD: ${INITIAL_PASSWORD:-}
+      # Per-node PostgreSQL pool (code defaults 10/5). Keep
+      # APP_REPLICAS × PG_POOL_MAX_OPEN + 10 ≤ PG_MAX_CONNECTIONS.
+      PG_POOL_MAX_OPEN: ${PG_POOL_MAX_OPEN:-10}
+      PG_POOL_MAX_IDLE: ${PG_POOL_MAX_IDLE:-5}
       PORT: "20130"
       DATA_DIR: /data
       # Matches stop_grace_period below (P3 drain default is 30s).
