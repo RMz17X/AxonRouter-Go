@@ -423,51 +423,9 @@ export interface HermesSettingsResponse {
   installed: boolean
   profile?: { name: string; dir: string; isDefault: boolean }
   settings: HermesSettings | null
-  has9Router?: boolean
+  hasAxonRouter?: boolean
   configPath?: string
   message?: string
-}
-
-/** One `{ role, model }` pair in an apply payload. `default` is the main block. */
-export interface HermesSelection {
-  role: string
-  model: string
-}
-
-export interface HermesApplyPayload {
-  profile?: string
-  baseUrl: string
-  apiKey?: string | null
-  model?: string
-  selections?: HermesSelection[]
-  applyToAll?: boolean
-}
-
-export interface HermesApplyResult {
-  profile: string
-  status: 'updated' | 'skipped' | 'failed'
-  reason?: string
-}
-
-export interface HermesApplyResponse {
-  success: boolean
-  bulk?: boolean
-  results?: HermesApplyResult[]
-  updated?: number
-  skipped?: number
-  message?: string
-  error?: string
-  profile?: { name: string; dir: string; isDefault: boolean }
-  configPath?: string
-}
-
-export interface HermesResetResponse {
-  success: boolean
-  profile?: string
-  removed?: { model: boolean; delegation: boolean; auxiliary: string[] }
-  kept?: string[]
-  message?: string
-  error?: string
 }
 
 export interface HeadroomStatusResponse {
@@ -2448,26 +2406,6 @@ export const api = {
     request<HermesSettingsResponse>(
       `/api/cli-tools/hermes-settings${profile ? `?profile=${encodeURIComponent(profile)}` : ''}`
     ),
-  // `applyToAll` carries the endpoint to every 9router-wired profile; the
-  // client splits it out because the two shapes share one endpoint.
-  applyHermesSettings: (payload: HermesApplyPayload) =>
-    request<HermesApplyResponse>('/api/cli-tools/hermes-settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }),
-  applyHermesToAll: (payload: HermesApplyPayload) =>
-    request<HermesApplyResponse>('/api/cli-tools/hermes-settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...payload, applyToAll: true }),
-    }),
-  resetHermesSettings: (profile?: string) =>
-    request<HermesResetResponse>('/api/cli-tools/hermes-settings', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(profile ? { profile } : {}),
-    }),
   // Auth
   checkRequireLogin: async (): Promise<RequireLoginResponse> => {
     try {

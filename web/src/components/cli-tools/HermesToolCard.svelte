@@ -8,6 +8,10 @@
    * tokens. Upstream picks models through a `ModelSelectModal` driven by the
    * gateway's live model list; this repo has no such modal, so the model
    * fields are plain text inputs, matching the guide cards in CliToolsView.
+   *
+   * Batch 5 (P7a): the gateway no longer applies settings to the host's
+   * ~/.hermes — the card reads profile state and composes the installer
+   * command (HostSetupCommand) the user runs on their own machine.
    */
   import { untrack } from 'svelte'
   import {
@@ -15,22 +19,18 @@
     Check,
     ChevronRight,
     Copy,
-    Layers,
     Loader2,
-    RotateCcw,
-    Save,
     Terminal,
     X,
   } from 'lucide-svelte'
   import Card from '../../lib/ui/Card.svelte'
+  import HostSetupCommand from './HostSetupCommand.svelte'
   import { copyToClipboard } from '../../lib/clipboard'
   import { HERMES_ROLES, hermesRoleLabel } from '../../lib/hermesRoles'
   import {
-    activeRoleModels,
     hermesConfigYaml,
     hermesEnvContent,
     hermesHomeDir,
-    isKnown9RouterEndpoint,
     normalizeHermesEndpoint,
     profileStatus,
     type EndpointContext,
@@ -49,9 +49,6 @@
   let profiles = $state<HermesProfile[]>([])
   let activeProfile = $state('default')
   let checking = $state(false)
-  let applying = $state(false)
-  let applyingAll = $state(false)
-  let resetting = $state(false)
   let message = $state<{ type: 'success' | 'error'; text: string } | null>(null)
   let endpoint = $state('')
   let selectedApiKey = $state('')
@@ -76,13 +73,6 @@
   let runCommand = $derived(activeProfileData?.command || (activeProfile === 'default' ? 'hermes' : `hermes -p ${activeProfile}`))
   let keyToUse = $derived(selectedApiKey.trim() || apiKeys[0]?.key || '')
   let currentBaseUrl = $derived(settings?.settings?.model?.base_url ?? '')
-
-  function selections() {
-    return [
-      { role: 'default', model: selectedModel.trim() },
-      ...activeRoleModels(roleModels),
-    ]
-  }
 
   async function loadProfiles() {
     const res = await api.getHermesProfiles()
@@ -161,82 +151,6 @@
     if (await copyToClipboard(runCommand)) {
       copiedCommand = runCommand
       setTimeout(() => (copiedCommand = ''), 2000)
-    }
-  }
-
-  async function afterChange() {
-    await loadProfiles()
-    await loadSettings(activeProfile)
-  }
-
-  async function handleApply() {
-    applying = true
-    message = null
-    try {
-      const res = await api.applyHermesSettings({
-        profile: activeProfile,
-        baseUrl: effectiveEndpoint,
-        apiKey: keyToUse || null,
-        selections: selections(),
-      })
-      message = { type: 'success', text: res.message || `Settings applied to ${activeProfile === 'default' ? 'the default profile' : `profile "${activeProfile}"`}.` }
-      await afterChange()
-    } catch (err) {
-      message = { type: 'error', text: err instanceof Error ? err.message : 'Failed to apply settings' }
-    } finally {
-      applying = false
-    }
-  }
-
-  // The endpoint field mirrors whatever the active profile currently points
-  // at, so it can hold a foreign provider URL; propagating that (and its key)
-  // to every profile would be a mistake. Hence the known-endpoint guard.
-  async function handleApplyAll() {
-    if (!isKnown9RouterEndpoint(effectiveEndpoint, endpointContext)) {
-      message = {
-        type: 'error',
-        text: `"${effectiveEndpoint}" is not a 9router endpoint. Select the local, tunnel, Tailscale or a saved 9router endpoint before applying to all profiles.`,
-      }
-      return
-    }
-    applyingAll = true
-    message = null
-    try {
-      const res = await api.applyHermesToAll({
-        baseUrl: effectiveEndpoint,
-        apiKey: keyToUse || null,
-        model: selectedModel.trim(),
-      })
-      const results = res.results ?? []
-      const notUpdated = results.filter((r) => r.status !== 'updated')
-      if (notUpdated.length === 0) {
-        message = { type: 'success', text: res.message || `Endpoint and API key applied to ${res.updated ?? 0} profile(s).` }
-      } else {
-        const detail = notUpdated.map((r) => `${r.profile} — ${r.reason || r.status}`).join('; ')
-        message = {
-          type: (res.updated ?? 0) > 0 ? 'success' : 'error',
-          text: `Updated ${res.updated ?? 0} profile(s), skipped ${notUpdated.length}: ${detail}`,
-        }
-      }
-      await afterChange()
-    } catch (err) {
-      message = { type: 'error', text: err instanceof Error ? err.message : 'Failed to apply settings' }
-    } finally {
-      applyingAll = false
-    }
-  }
-
-  async function handleReset() {
-    resetting = true
-    message = null
-    try {
-      const res = await api.resetHermesSettings(activeProfile)
-      message = { type: 'success', text: res.message || `Settings reset for ${activeProfile}.` }
-      await afterChange()
-    } catch (err) {
-      message = { type: 'error', text: err instanceof Error ? err.message : 'Failed to reset settings' }
-    } finally {
-      resetting = false
     }
   }
 
@@ -407,34 +321,13 @@
         </div>
       {/if}
 
-      <div class="flex flex-col sm:flex-row sm:items-center gap-2">
-        <button
-          type="button"
-          onclick={handleApply}
-          disabled={!selectedModel.trim() || applying}
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-brand bg-brand-500 hover:bg-brand-600 text-white font-semibold text-xs disabled:opacity-50 cursor-pointer"
-        >
-          <Save class="w-3.5 h-3.5" />Apply
-        </button>
-        {#if profiles.length > 1}
-          <button
-            type="button"
-            onclick={handleApplyAll}
-            disabled={applyingAll}
-            title="Set the endpoint and API key on every profile that routes through 9router. Each profile keeps its own model."
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-brand bg-surface-2 hover:bg-surface-3 text-text-main border border-border font-semibold text-xs disabled:opacity-50 cursor-pointer"
-          >
-            <Layers class="w-3.5 h-3.5" />Apply to All Profiles
-          </button>
-        {/if}
-        <button
-          type="button"
-          onclick={handleReset}
-          disabled={!settings.has9Router || resetting}
-          class="flex items-center gap-1.5 px-3 py-1.5 rounded-brand border border-border text-text-main font-semibold text-xs disabled:opacity-50 cursor-pointer"
-        >
-          <RotateCcw class="w-3.5 h-3.5" />Reset
-        </button>
+      <div class="space-y-3">
+        <HostSetupCommand
+          toolId="hermes"
+          baseUrl={effectiveEndpoint}
+          apiKey={keyToUse}
+          params={{ model: selectedModel.trim() }}
+        />
         <button
           type="button"
           onclick={() => (showManualConfig = true)}

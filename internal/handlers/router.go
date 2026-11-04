@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"9router/proxy/internal/clientconfig"
 	"9router/proxy/internal/constants"
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/guardrails"
@@ -815,6 +814,11 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 		SetupDashboardRoutes(r, repo, engineChatH)
 	})
 
+	// One OpenCode sync handler serves both the dashboard-group
+	// routes and the public token-authenticated ones, so its token
+	// mutex covers every mutation.
+	ocH := dashboard.NewOpenCodeSyncHandler(repo)
+
 	// CLI Tools status is a dashboard read: the SPA calls it with the session
 	// cookie, never an LLM API key. It was registered inside SetupRoutes, which
 	// is mounted under RequireApiKey, so every dashboard call 401'd and the view
@@ -823,38 +827,55 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireDashboardAuth(repo))
 		r.Get("/api/cli-tools/all-statuses", media.NewCLIToolsHandler().HandleAllStatuses)
-		// Hermes configuration is per-profile and writes into ~/.hermes on the
-		// operator's disk, so it belongs to the dashboard group: the SPA reaches
-		// it with the session cookie, never an engine API key.
+		// CLI tool settings are dashboard reads (batch 5 re-score):
+		// Axon keeps a GET-only settings route per tool next to the
+		// installer, reporting install state and whether the tool's
+		// own config already points at the gateway. The host-write
+		// POST/DELETE sides were retired with the host-write model
+		// (P7a) — the dashboard composes an installer command
+		// instead of writing config files on the gateway host.
 		hermesH := media.NewHermesHandler()
 		r.Get("/api/cli-tools/hermes-profiles", hermesH.HandleProfiles)
 		r.Get("/api/cli-tools/hermes-settings", hermesH.HandleGet)
-		r.Post("/api/cli-tools/hermes-settings", hermesH.HandlePost)
-		r.Delete("/api/cli-tools/hermes-settings", hermesH.HandleDelete)
-		// pi writes the same kind of file Hermes does — a CLI agent's own
-		// config on the operator's disk — so it rides the same dashboard group.
 		piH := media.NewPiHandler(repo)
 		r.Get("/api/cli-tools/pi-settings", piH.HandleGet)
-		r.Post("/api/cli-tools/pi-settings", piH.HandlePost)
-		r.Delete("/api/cli-tools/pi-settings", piH.HandleDelete)
-		// The nine clientconfig adapters (claude, codex, opencode, droid,
-		// crush, kilo, cline, pi, omp) each answer the same three verbs.
-		// Upstream gives every client its own Next route; here one handler
-		// resolves the id out of the path, so the adapter table stays the only
-		// place a client is described.
-		cliH := media.NewCLIToolHandler(engineChatH)
-		for _, id := range clientconfig.IDs() {
-			// pi has its own handler above (it merges over a previously saved
-			// block); skip it so the two cannot disagree about the same file.
-			if id == "pi" {
-				continue
-			}
-			route := "/api/cli-tools/" + id + "-settings"
-			r.Get(route, cliH.HandleCLIToolGet)
-			r.Post(route, cliH.HandleCLIToolPost)
-			r.Delete(route, cliH.HandleCLIToolDelete)
-		}
+		settingsH := media.NewSettingsReadHandler()
+		r.Get("/api/cli-tools/claude-settings", settingsH.GetClaude)
+		r.Get("/api/cli-tools/codex-settings", settingsH.GetCodex)
+		r.Get("/api/cli-tools/cline-settings", settingsH.GetCline)
+		r.Get("/api/cli-tools/copilot-settings", settingsH.GetCopilot)
+		r.Get("/api/cli-tools/cowork-settings", settingsH.GetCowork)
+		r.Get("/api/cli-tools/deepseek-tui-settings", settingsH.GetDeepseekTui)
+		r.Get("/api/cli-tools/droid-settings", settingsH.GetDroid)
+		r.Get("/api/cli-tools/grok-build-settings", settingsH.GetGrokBuild)
+		r.Get("/api/cli-tools/jcode-settings", settingsH.GetJcode)
+		r.Get("/api/cli-tools/kilo-settings", settingsH.GetKilo)
+		r.Get("/api/cli-tools/openclaw-settings", settingsH.GetOpenclaw)
+		r.Get("/api/cli-tools/opencode-settings", settingsH.GetOpencode)
+		// Cowork MCP registry browser + tools probe.
+		coworkMcpH := media.NewCoworkMcpHandler()
+		r.Get("/api/cli-tools/cowork-mcp-registry", coworkMcpH.HandleRegistry)
+		r.Post("/api/cli-tools/cowork-mcp-tools", coworkMcpH.HandleTools)
+		// OpenCode sync management surface (Axon:
+		// requireManagementAuth — local request or dashboard session).
+		r.Get("/api/opencode/preferences", ocH.GetPreferences)
+		r.Patch("/api/opencode/preferences", ocH.PatchPreferences)
+		r.Get("/api/opencode/bundle/preview", ocH.GetBundlePreview)
+		r.Get("/api/opencode/sync/tokens", ocH.GetTokens)
+		r.Post("/api/opencode/sync/tokens", ocH.PostTokens)
 	})
+
+	// Public CLI-tool routes: the installer script endpoint is
+	// fetched by curl/irm from the user's own terminal, where no
+	// dashboard session exists (Axon lists it in the guard's public
+	// paths). The OpenCode sync bundle/version authenticate with the
+	// ocs_ token in-handler, and tokens/{id} carries no management
+	// auth in Axon's .ts source — ported as-is.
+	r.Get("/api/cli-tools/setup/{toolId}", media.NewSetupHandler().HandleSetup)
+	r.Get("/api/opencode/sync/bundle", ocH.GetSyncBundle)
+	r.Get("/api/opencode/sync/version", ocH.GetSyncVersion)
+	r.Patch("/api/opencode/sync/tokens/{id}", ocH.PatchToken)
+	r.Delete("/api/opencode/sync/tokens/{id}", ocH.DeleteToken)
 
 	SetupConsoleLogRoutes(r, repo)
 	return engineChatH
