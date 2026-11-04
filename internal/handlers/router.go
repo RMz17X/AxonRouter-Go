@@ -236,6 +236,23 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	if chatH != nil {
 		r.Post("/api/translator/send", chatH.HandleTranslatorSend)
 	}
+	// Backend parity batch 7 — credentials backup, MCP audit +
+	// transports, system info. Credentials and MCP audit add upstream's
+	// requireManagementAuth gate on top of the dashboard group gate; the
+	// MCP HTTP transports carry their own client API-key gate, and their
+	// tools are scope-gated exactly like upstream's (see
+	// batch7_mcp_transport.go).
+	r.Get("/api/credentials/export", RequireManagementAuth(repo, dashH.HandleCredentialsExport))
+	r.Post("/api/credentials/import", RequireManagementAuth(repo, dashH.HandleCredentialsImport))
+	r.Get("/api/mcp/audit", RequireManagementAuth(repo, HandleMCPAuditList(repo)))
+	r.Get("/api/mcp/audit/stats", RequireManagementAuth(repo, HandleMCPAuditStats(repo)))
+	r.Get("/api/mcp/sse", HandleMCPSSEStream(repo))
+	r.Post("/api/mcp/sse", HandleMCPSSEMessage(repo))
+	r.Post("/api/mcp/stream", HandleMCPStream(repo))
+	r.Get("/api/system/machine-id", HandleSystemMachineID)
+	r.Get("/api/system/memory", HandleSystemMemory(repo))
+	r.Get("/api/system/version", HandleSystemVersion)
+
 	r.Post("/api/morph/test-key", dashboard.HandleMorphTestKey(repo))
 	r.Get("/api/morph/usage/stats", dashboard.HandleMorphUsageStats(repo))
 	r.Get("/api/morph/usage/requests", dashboard.HandleMorphUsageRequests(repo))
@@ -564,6 +581,12 @@ func SetupConsoleLogRoutes(r chi.Router, repo *db.Repo) {
 		r.Get("/api/translator/console-logs/stream", HandleConsoleLogsStream)
 		r.Get("/api/translator/console-logs/level", HandleConsoleLogsLevelGet)
 		r.Put("/api/translator/console-logs/level", HandleConsoleLogsLevelPut)
+		// Batch 7: upstream's top-level /api/console-logs is the canonical
+		// route and the translator mount is its re-export; same handlers,
+		// same auth, no second log machinery.
+		r.Get("/api/console-logs", HandleConsoleLogsGet)
+		r.Delete("/api/console-logs", HandleConsoleLogsDelete)
+		r.Get("/api/console-logs/stream", HandleConsoleLogsStream)
 	})
 }
 
@@ -731,6 +754,20 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	r.Post("/api/auth/logout", dashH.HandleAuthLogout)
 	r.Get("/api/settings/require-login", dashH.HandleRequireLogin)
 	r.Get("/api/tunnel/status", dashH.HandleTunnelStatus)
+
+	// Backend parity batch 7 — SSO flow initiators (upstream
+	// PUBLIC_API_PATHS), the session probe, the local-only password
+	// reset (its own gate lives in the handler), and the internal
+	// WorkerProxy endpoints (handler-level x-internal-auth token gate;
+	// the intended caller holds no dashboard session — see
+	// batch7_internal_proxy.go).
+	ssoStartH := sso.NewHandler(repo)
+	r.Get("/api/auth/oidc/start", ssoStartH.HandleOidcStart)
+	r.Get("/api/auth/saml/start", ssoStartH.HandleSamlStart)
+	r.Get("/api/auth/session", HandleAuthSession)
+	r.Post("/api/auth/reset-password", HandleAuthResetPassword(repo))
+	r.Post("/api/internal/proxy/resolve", HandleInternalProxyResolve(repo))
+	r.Post("/api/internal/proxy/report", HandleInternalProxyReport(repo))
 
 	// Admin-only operations (health reset, shutdown, update) - strictly requires session cookie or CLI token.
 	// Standard client API keys are rejected, matching upstream ALWAYS_PROTECTED.

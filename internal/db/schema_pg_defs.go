@@ -236,6 +236,29 @@ func pgCoreSchema() []tableDef {
 				"CREATE INDEX IF NOT EXISTS idx_batches_input_file ON batches(input_file_id)",
 			},
 		},
+		{
+			// Batch 7 (AxonRouter parity): mcp_tool_audit, PostgreSQL dialect.
+			// created_at stays TEXT (ISO strings, string-compared by the
+			// stats window exactly as in SQLite) and the writer always
+			// supplies it, so the SQLite datetime() default has no analogue.
+			name: "mcp_tool_audit",
+			columns: [][2]string{
+				{"id", "BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY"},
+				{"tool_name", "TEXT NOT NULL"},
+				{"input_hash", "TEXT NOT NULL"},
+				{"output_summary", "TEXT"},
+				{"duration_ms", "BIGINT NOT NULL DEFAULT 0"},
+				{"api_key_id", "TEXT"},
+				{"transport", "TEXT"},
+				{"success", "INTEGER NOT NULL DEFAULT 1"},
+				{"error_code", "TEXT"},
+				{"created_at", "TEXT NOT NULL"},
+			},
+			indexes: []string{
+				"CREATE INDEX IF NOT EXISTS idx_mcp_tool_audit_created ON mcp_tool_audit(created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_mcp_tool_audit_tool ON mcp_tool_audit(tool_name)",
+			},
+		},
 	}
 }
 

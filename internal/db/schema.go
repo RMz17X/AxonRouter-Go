@@ -360,6 +360,28 @@ func coreSchema() []tableDef {
 				"CREATE INDEX IF NOT EXISTS idx_batches_input_file ON batches(input_file_id)",
 			},
 		},
+		{
+			// Batch 7 (AxonRouter parity): the MCP tool-call audit log
+			// (open-sse/mcp-server/auditRuntime.ts creates this table in the
+			// app database; /api/mcp/audit reads it back).
+			name: "mcp_tool_audit",
+			columns: [][2]string{
+				{"id", "INTEGER PRIMARY KEY AUTOINCREMENT"},
+				{"tool_name", "TEXT NOT NULL"},
+				{"input_hash", "TEXT NOT NULL"},
+				{"output_summary", "TEXT"},
+				{"duration_ms", "INTEGER NOT NULL DEFAULT 0"},
+				{"api_key_id", "TEXT"},
+				{"transport", "TEXT"},
+				{"success", "INTEGER NOT NULL DEFAULT 1"},
+				{"error_code", "TEXT"},
+				{"created_at", "TEXT NOT NULL DEFAULT (datetime('now'))"},
+			},
+			indexes: []string{
+				"CREATE INDEX IF NOT EXISTS idx_mcp_tool_audit_created ON mcp_tool_audit(created_at DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_mcp_tool_audit_tool ON mcp_tool_audit(tool_name)",
+			},
+		},
 	}
 }
 
