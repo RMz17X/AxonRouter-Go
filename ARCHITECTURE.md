@@ -280,9 +280,10 @@ backends:
   database itself; this is the **degradation** backend.
 
 Boot selection (`speedlayer/config.go`): a configured Redis becomes the
-primary behind a breaker (3 consecutive failures trip it, a 5 s prober
-heals it, both transitions logged; an eager Ping decides whether the
-breaker starts open), with the database backend armed underneath. An
+primary behind a breaker (3 failures inside a 10 s sliding window
+trip it, a 5 s prober heals it, both transitions logged; an eager Ping
+decides whether the breaker starts open), with the database backend
+armed underneath. An
 unparseable URL logs loudly and serves from the database — never silently
 from memory. No URL → memory (single-node mode). While the breaker is
 open, every operation is served by the database: the layer never falls

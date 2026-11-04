@@ -204,12 +204,20 @@ Backends, selected at boot:
 | No Redis configured | Per-node memory (single-node mode) |
 
 The degradation rule is the load-bearing one: a Redis outage moves
-serving to PostgreSQL behind a breaker (3 consecutive failures trip it,
-a 5-second prober heals it, both transitions are logged and visible as
-`speedLayer` in `GET /api/system/memory`). It **never** degrades to
-per-node memory in a cluster — divergent memory is worse than a slower
-database. An unparseable Redis URL logs loudly and serves from the
-database; it never silently selects memory.
+serving to PostgreSQL behind a breaker (3 failures inside a 10 s
+sliding window trip it, a 5-second prober heals it, both transitions are
+logged and visible as `speedLayer` in `GET /api/system/memory`). It
+**never** degrades to per-node memory in a cluster — divergent memory is
+worse than a slower database. An unparseable Redis URL logs loudly and
+serves from the database; it never silently selects memory.
+
+The same payload carries `usageWritesDropped`: the count of usage-ledger
+rows (`usageHistory` / `requestDetails`) lost since this process booted.
+The writer counts every loss path — queue-full drops on the droppable
+lane and rows its per-row fallback could not land — so the number means
+all ledger loss, not just overload loss. Zero is the only healthy value;
+nonzero means investigate, starting with the gateway log's `[usage]`
+lines.
 
 Account cooldowns, rotation stamps, and upstream leases are *not* in the
 speed layer: they were already database-serialized and stay that way.

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -341,6 +342,17 @@ func rowIdentity(raw []any) string {
 	return s
 }
 
+// notUTF8Error is the conversion failure for a text-bound value
+// carrying non-UTF-8 bytes. PostgreSQL enforces the database encoding
+// on text and jsonb input during COPY, so such a value — a latin-1
+// name, a mangled payload in a shared legacy database — would fail its
+// whole 5,000-row chunk at flush time and abort the run. Validating at
+// conversion turns the class into a per-row skip like every other
+// unrepresentable value (review cycle 3, C-1).
+func notUTF8Error(col pgColumn) error {
+	return fmt.Errorf("value for column %s is not valid UTF-8", col.name)
+}
+
 // convertValue converts one SQLite value (int64 / float64 / string /
 // []byte / nil, as the driver returns them) into the Go value pgx
 // should encode for the target column. Payload columns become jsonb per
@@ -357,6 +369,9 @@ func convertValue(v any, col pgColumn) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		if !utf8.Valid(raw) {
+			return nil, notUTF8Error(col)
+		}
 		if !json.Valid(raw) {
 			return nil, fmt.Errorf("malformed JSON payload for jsonb column %s", col.name)
 		}
@@ -364,8 +379,14 @@ func convertValue(v any, col pgColumn) (any, error) {
 	case "text", "character varying", "character":
 		switch t := v.(type) {
 		case string:
+			if !utf8.ValidString(t) {
+				return nil, notUTF8Error(col)
+			}
 			return t, nil
 		case []byte:
+			if !utf8.Valid(t) {
+				return nil, notUTF8Error(col)
+			}
 			return string(t), nil
 		case int64:
 			return strconv.FormatInt(t, 10), nil
@@ -383,6 +404,18 @@ func convertValue(v any, col pgColumn) (any, error) {
 		n, err := toInt64(v, col.name)
 		if err != nil {
 			return nil, err
+		}
+		// Go's narrowing conversion wraps modulo the target width, so an
+		// out-of-range legacy value (a millisecond epoch sitting in an
+		// integer column) would be silently mangled into a wrong value
+		// instead of skipped. Range-check first, like every other value
+		// with no faithful representation (review cycle 3, C-2).
+		if col.dataType == "smallint" {
+			if n < math.MinInt16 || n > math.MaxInt16 {
+				return nil, fmt.Errorf("value %d overflows smallint column %s", n, col.name)
+			}
+		} else if n < math.MinInt32 || n > math.MaxInt32 {
+			return nil, fmt.Errorf("value %d overflows integer column %s", n, col.name)
 		}
 		return int32(n), nil
 	case "double precision", "real":

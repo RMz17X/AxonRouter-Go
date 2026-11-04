@@ -26,6 +26,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -34,7 +35,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 // hotTables are the partitioned ledgers: they get partition routing and
@@ -52,6 +53,21 @@ func main() {
 		fmt.Fprintf(os.Stderr, "migrate-db: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// isSourceRecoveryError reports whether err is one of the two SQLite
+// classes a WAL-mode source produces when its directory is not
+// writable: SQLITE_CANTOPEN (14, "unable to open database file" — the
+// -shm/-wal sidecars cannot be created, e.g. a read-only mount) and
+// SQLITE_READONLY_RECOVERY (1544 — the file opens but WAL recovery
+// cannot write). Both mean the open failed on the sidecars, not on the
+// database itself.
+func isSourceRecoveryError(err error) bool {
+	var serr *sqlite.Error
+	if !errors.As(err, &serr) {
+		return false
+	}
+	return serr.Code() == 14 || serr.Code() == 1544
 }
 
 func run() error {
@@ -72,6 +88,14 @@ func run() error {
 	}
 	defer src.Close()
 	if err := src.PingContext(ctx); err != nil {
+		if isSourceRecoveryError(err) {
+			// On a read-only open these classes almost always mean the
+			// source is a WAL-mode database in a directory that is not
+			// writable: opening it needs to create the -shm/-wal
+			// recovery sidecars even in mode=ro. The raw driver error
+			// names none of that (review cycle 3, C-3).
+			return fmt.Errorf("open source %s: %w — a WAL-mode source needs a writable directory for its -shm/-wal recovery sidecars; mount the legacy directory writable", *sqlitePath, err)
+		}
 		return fmt.Errorf("open source %s: %w", *sqlitePath, err)
 	}
 

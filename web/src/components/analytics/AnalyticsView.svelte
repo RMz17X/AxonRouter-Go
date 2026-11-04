@@ -109,6 +109,11 @@
   let topologyNow = $state(Date.now())
   let observedActivity = $state(new Map<string, number>())
 
+  // The last errorProvider value the presence effect below has stamped.
+  // Plain (untracked) on purpose: it is bookkeeping for the effect, not
+  // rendered state.
+  let prevErrorProvider = ''
+
   $effect(() => {
     const t = setInterval(() => {
       topologyNow = Date.now()
@@ -126,7 +131,17 @@
     const now = Date.now()
     for (const r of activeRequests) stamp(r.provider || '', now)
     stamp(pulseProvider, now)
-    stamp(errorProvider, now)
+    // errorProvider is sticky — it names the most recent erroring provider
+    // and is never cleared back to '' — so it is stamped only when its
+    // value changes. Stamping it with "now" on every run (this effect
+    // re-runs on every stats poll and SSE merge) kept an errored
+    // provider's presence fresh forever, and the five-minute rule never
+    // expired it (review cycle 3, A-1). A different provider erroring
+    // re-stamps; the previous one's stamp ages out on the normal rule.
+    if (errorProvider !== prevErrorProvider) {
+      stamp(errorProvider, now)
+      prevErrorProvider = errorProvider
+    }
     for (const r of stats.recentRequests || []) {
       if (r.provider) stamp(r.provider, r.timestamp ? new Date(r.timestamp).getTime() : NaN)
     }
@@ -174,12 +189,23 @@
    * previous maps in between, so a poll that omits them must merge rather than
    * replace: replacing would blank the table for four seconds out of every
    * five.
+   *
+   * Calls overlap by design (the section/period effect, the 5 s totals
+   * poll, the 30 s full read), so each call captures a sequence number and
+   * only the latest call applies its result, its error, or the isFetching
+   * reset: a slow full read that resolves after a fresher poll would
+   * otherwise land on the wholesale path below, overwrite the poll's
+   * totals, and resurrect just-finished active requests (review cycle 3,
+   * A-2). A superseded full read's breakdown maps simply stay stale until
+   * the next 30 s read.
    */
+  let loadStatsSeq = 0
   async function loadStats(targetPeriod: Period, views?: string) {
+    const seq = ++loadStatsSeq
     isFetching = true
     try {
       const res = await api.getUsageStats(targetPeriod, views)
-      if (res) {
+      if (res && seq === loadStatsSeq) {
         statsError = ''
         // A totals-only poll carries empty breakdown maps, so only the fields
         // it actually fills are merged. A plain spread would blank the
@@ -218,14 +244,20 @@
         }
       }
     } catch (err) {
-      // A broken read used to arrive as a zeroed 200 and land on screen as
-      // "no traffic this period". The server now answers 500, so the failure
-      // has to be named here or it vanishes into the console while the
-      // previous period's numbers keep being read as current.
-      statsError = normalizeLastError(err) || 'Usage could not be loaded.'
-      console.error('Failed to load usage stats:', err)
+      // A superseded call's failure is not the screen's problem: a newer
+      // call is in flight or has already landed.
+      if (seq === loadStatsSeq) {
+        // A broken read used to arrive as a zeroed 200 and land on screen as
+        // "no traffic this period". The server now answers 500, so the failure
+        // has to be named here or it vanishes into the console while the
+        // previous period's numbers keep being read as current.
+        statsError = normalizeLastError(err) || 'Usage could not be loaded.'
+        console.error('Failed to load usage stats:', err)
+      }
     } finally {
-      isFetching = false
+      if (seq === loadStatsSeq) {
+        isFetching = false
+      }
     }
   }
 
@@ -287,6 +319,12 @@
 
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('9router_key') || '' : ''
     let streamInitialized = false
+    // Reconnect backoff for the stream: doubles from 3 s to a 30 s cap
+    // (plus jitter) across consecutive failures and resets on a successful
+    // connect. The fixed 3 s retry it replaces ran at full rate against a
+    // dead gateway forever, and every open dashboard reconnected in
+    // lockstep after an outage (review cycle 3, A-3).
+    let reconnectDelayMs = 3000
 
     const connectStream = async () => {
       if (isCancelled) return
@@ -306,6 +344,8 @@
         const reader = res.body?.getReader()
         const decoder = new TextDecoder()
         if (!reader) return
+        // The stream is up: the next failure starts the backoff over.
+        reconnectDelayMs = 3000
 
         let buffer = ''
         while (!isCancelled) {
@@ -359,7 +399,9 @@
         }
       } catch (err) {
         if (!isCancelled) {
-          reconnectTimeout = setTimeout(connectStream, 3000)
+          const jitter = Math.floor(Math.random() * 1000)
+          reconnectTimeout = setTimeout(connectStream, reconnectDelayMs + jitter)
+          reconnectDelayMs = Math.min(reconnectDelayMs * 2, 30000)
         }
       }
     }

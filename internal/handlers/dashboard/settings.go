@@ -40,6 +40,11 @@ const (
 
 // protectedSettingKeys may never be written by the dashboard client — matches
 // Next's PROTECTED_SETTING_KEYS (the hashed password lives in settings too).
+// mitmSudoEncrypted stays listed although the MITM feature is gone (its
+// export/import plumbing was removed in review cycle 3): a legacy settings
+// row can still carry the value, and the entry is a guard, not feature
+// surface — it costs one comparison on the settings-write path and keeps
+// the generic update from ever touching the stored value.
 var protectedSettingKeys = []string{"password", "mitmSudoEncrypted"}
 
 // writePlainError answers with Next's flat { error: "message" } shape instead of
@@ -586,7 +591,6 @@ type databaseExport struct {
 	Combos              []map[string]any `json:"combos"`
 	ModelAliases        map[string]any   `json:"modelAliases"`
 	CustomModels        []any            `json:"customModels"`
-	MitmAlias           map[string]any   `json:"mitmAlias"`
 	Pricing             map[string]any   `json:"pricing"`
 }
 
@@ -621,7 +625,6 @@ func (h *DashboardHandler) exportDatabase(ctx context.Context) (*databaseExport,
 		Combos:              []map[string]any{},
 		ModelAliases:        map[string]any{},
 		CustomModels:        []any{},
-		MitmAlias:           map[string]any{},
 		Pricing:             map[string]any{},
 	}
 
@@ -795,7 +798,7 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		// orphans after every import.
 		`DELETE FROM api_key_model_access`,
 		`DELETE FROM combos`,
-		`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`,
+		`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'pricing')`,
 	}
 	for _, stmt := range wipes {
 		if _, err := tx.Exec(stmt); err != nil {
@@ -992,9 +995,6 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 	if err := h.writeKVPayload(tx, "customModels", payload["customModels"], false); err != nil {
 		return nil, err
 	}
-	if err := h.writeKVPayload(tx, "mitmAlias", payload["mitmAlias"], true); err != nil {
-		return nil, err
-	}
 	if err := h.writeKVPayload(tx, "pricing", payload["pricing"], true); err != nil {
 		return nil, err
 	}
@@ -1153,8 +1153,6 @@ func loadKVScopes(db queryer, out *databaseExport) error {
 		switch scope {
 		case "modelAliases":
 			out.ModelAliases[key] = parseJSONValue(value, value)
-		case "mitmAlias":
-			out.MitmAlias[key] = parseJSONValue(value, map[string]any{})
 		case "pricing":
 			out.Pricing[key] = parseJSONValue(value, map[string]any{})
 		case "customModels":
