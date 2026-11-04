@@ -115,6 +115,8 @@ var ErrorRules = []ErrorRule{
 	{Text: "terms of service", CooldownMs: cooldownBannedAccount},
 	{Text: "tos_violation", CooldownMs: cooldownBannedAccount},
 	{Text: "disabled in this account", CooldownMs: cooldownBannedAccount},
+	{Text: "requested entity was not found", CooldownMs: cooldownBannedAccount},
+	{Text: "model_not_found", CooldownMs: cooldownBannedAccount},
 	{Text: "no credentials", CooldownMs: cooldownLong},
 	{Text: "request not allowed", CooldownMs: cooldownShort},
 	{Text: "improperly formed request", CooldownMs: cooldownLong},
@@ -144,7 +146,7 @@ var ErrorRules = []ErrorRule{
 	{Status: 401, CooldownMs: cooldownLong},
 	{Status: 402, CooldownMs: cooldownLong},
 	{Status: 403, CooldownMs: cooldownLong},
-	{Status: 404, CooldownMs: cooldownLong},
+	{Status: 404, CooldownMs: cooldownBannedAccount},
 	{Status: 429, Backoff: true},
 	{Status: 502, Backoff: true},
 	{Status: 503, Backoff: true},
@@ -458,7 +460,7 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 	// request-scoped 4xx that match no rule say nothing about the credential,
 	// so the account must not be cooled down. Account-scoped statuses keep
 	// their rules above (401/402/403/404/429 + quota/capacity text rules).
-	if statusCode >= 400 && statusCode < 500 && statusCode != 401 && statusCode != 402 && statusCode != 403 && statusCode != 429 {
+	if statusCode >= 400 && statusCode < 500 && statusCode != 401 && statusCode != 402 && statusCode != 403 && statusCode != 404 && statusCode != 429 {
 		return ErrorClassification{ShouldFallback: false}
 	}
 

@@ -1443,6 +1443,7 @@ var RetryableStatusCodes = map[int]bool{
 	http.StatusUnauthorized:       true, // 401
 	http.StatusPaymentRequired:    true, // 402 (insufficient funds on paid models)
 	http.StatusForbidden:          true, // 403 (Gemini/antigravity daily-quota errors can come as 403)
+	http.StatusNotFound:           true, // 404 (model not found / requested entity not found on upstream account)
 	http.StatusTooManyRequests:    true, // 429
 	http.StatusBadGateway:         true, // 502
 	http.StatusServiceUnavailable: true, // 503

@@ -116,3 +116,23 @@ func TestClassifyDeepSeekWebAccountRefusals(t *testing.T) {
 		t.Errorf("other provider 403 cooldown = %dms, want %dms", other.CooldownMs, cooldownLong)
 	}
 }
+
+func TestClassify404AndToSViolation24hCooldown(t *testing.T) {
+	// 404 status rule parks for 24 hours
+	c404 := ClassifyErrorForProvider(http.StatusNotFound, "Requested entity was not found.", 0, "antigravity")
+	if !c404.ShouldFallback {
+		t.Error("404 must fall back")
+	}
+	if c404.CooldownMs != cooldownBannedAccount {
+		t.Errorf("404 cooldown = %dms, want %dms (24h)", c404.CooldownMs, cooldownBannedAccount)
+	}
+
+	// ToS violation parks for 24 hours
+	tos := ClassifyErrorForProvider(http.StatusForbidden, "This service has been disabled in this account for violation of Terms of Service. TOS_VIOLATION", 0, "antigravity")
+	if !tos.ShouldFallback {
+		t.Error("TOS violation must fall back")
+	}
+	if tos.CooldownMs != cooldownBannedAccount {
+		t.Errorf("TOS cooldown = %dms, want %dms (24h)", tos.CooldownMs, cooldownBannedAccount)
+	}
+}

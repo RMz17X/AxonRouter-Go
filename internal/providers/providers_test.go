@@ -152,6 +152,9 @@ func TestRetryableStatusCodes(t *testing.T) {
 	if !RetryableStatusCodes[http.StatusTooManyRequests] {
 		t.Error("expected 429 to be retryable")
 	}
+	if !RetryableStatusCodes[http.StatusNotFound] {
+		t.Error("expected 404 to be retryable")
+	}
 	if RetryableStatusCodes[http.StatusBadRequest] {
 		t.Error("400 should not be retryable")
 	}

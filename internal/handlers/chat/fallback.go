@@ -1698,7 +1698,10 @@ func isAccountAuthFailure(lower string) bool {
 		strings.Contains(lower, "incorrect api key") ||
 		strings.Contains(lower, "invalid api key") ||
 		strings.Contains(lower, "organization is not supported") ||
-		strings.Contains(lower, "insufficient funds for organization")
+		strings.Contains(lower, "insufficient funds for organization") ||
+		strings.Contains(lower, "terms of service") ||
+		strings.Contains(lower, "tos_violation") ||
+		strings.Contains(lower, "disabled in this account")
 }
 
 // isModelQuotaText reports a refusal that names one model's quota rather than
@@ -1711,9 +1714,6 @@ func isModelQuotaText(errorText string) bool {
 	return strings.Contains(upper, "QUOTA_EXHAUSTED") ||
 		strings.Contains(errorText, "Individual quota reached") ||
 		strings.Contains(upper, "MODEL_CAPACITY_EXHAUSTED") ||
-		strings.Contains(upper, "TOS_VIOLATION") ||
-		strings.Contains(upper, "TERMS OF SERVICE") ||
-		strings.Contains(upper, "DISABLED IN THIS ACCOUNT") ||
 		// Qoder's billing envelope: code 110/112 or a pricingUrl field
 		// (qoderIsBillingBlock). The refusal is per model — the account's
 		// free models keep working while a paid one is out of credits.
@@ -1808,6 +1808,11 @@ func isModelScopedError(statusCode int, errorText string, model string, bodies .
 		if isModelQuotaText(errorText) {
 			return true
 		}
+	}
+
+	// 404: Upstream model not found is always model-scoped
+	if statusCode == http.StatusNotFound {
+		return true
 	}
 
 	// 2. Model-gate verdicts only ever arrive on 400/401/402/403.

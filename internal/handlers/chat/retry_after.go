@@ -63,6 +63,9 @@ func maxCooldownFor(provider string) time.Duration {
 	if provider == "deepseek-web" {
 		return deepSeekWebMaxMuteCooldown
 	}
+	if provider == "antigravity" || provider == "ag" {
+		return 24 * time.Hour
+	}
 	return maxResetCooldown
 }
 
