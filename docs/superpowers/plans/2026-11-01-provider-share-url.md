@@ -1,5 +1,8 @@
 # Provider Share URL — Implementation Plan (Phase 1: single key, single provider)
 
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Let an operator share a custom OpenAI/Anthropic-compatible provider node as one link (`/v1/add#prov=…&url=…&api=…&models=…`) and let a receiver turn that link into a live provider with a confirmation modal.

@@ -1,5 +1,8 @@
 # Design Spec: Combo Strategy Sync & Gemini thought_signature Fix
 
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 ## 1. Overview
 This document outlines the design for two major improvements in `9router-go`:
 1. **Combo Strategy Sync (Option A):** Syncing the intelligence of the Next.js combo strategy (per-combo state, safe auto-switch ordering, comprehensive capability detection) into Golang, while retaining Golang's advanced features like connection locking and nested combos.

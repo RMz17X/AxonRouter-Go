@@ -1,5 +1,8 @@
 # Design Spec: Default thought_signature Backfill for Gemini Sends
 
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 ## 1. Overview
 
 Add a safety net to the Gemini send path in `9router-go` so that **no `functionCall` part ever reaches a Gemini native endpoint without a `thoughtSignature`**. This mirrors the proven solution in the reference Next.js implementation (`/Users/luqmannul.hakim/htdocs/9router`), which hardcodes a default signature on every `functionCall` part and backfills one on any part that arrives unsigned. It closes the remaining 400-`thought_signature` gaps that turn-aware rotation (fix B) and the `__ts__` transport (fix A) cannot fully cover.

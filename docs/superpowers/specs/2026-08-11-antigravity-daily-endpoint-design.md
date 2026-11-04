@@ -1,5 +1,8 @@
 # Antigravity Endpoint Migration to Daily Environment
 
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 ## 1. Purpose
 The `9router-go` proxy is currently hitting severe rate limits (HTTP 429) when routing requests to the `antigravity` (Google Cloud Code) provider, particularly when used by autonomous agents like Claude Code. This happens even with 4 accounts configured in round-robin mode. The legacy Next.js codebase successfully used a staging/daily endpoint which proved more resilient to agent-level request volumes.
 

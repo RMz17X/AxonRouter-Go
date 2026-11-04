@@ -1,5 +1,8 @@
 # Prompt & Chat Script Injection + Playground Implementation Plan
 
+> **Status (2026-11-05): plan document.** Kept as a design record; not a statement of shipped behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 > **For Hermes / Operator:** Implementation plan for porting the complete prompt injection and chat script feature from `giienew/9router-pro` into `9router-go` (Golang + Svelte 5) along with a native interactive Playground.
 
 **Goal:** Upgrade `9router-go`'s injection engine from simple prepend-only system prompts into a full-featured Prompt & Chat Script Injection system (System Prepend/Append + Multi-turn Fake History Injection + Key/Model/Global scopes), and add an interactive Playground with Side-by-Side (VS) testing, SSE streaming, refusal heuristics, and wire payload inspection.

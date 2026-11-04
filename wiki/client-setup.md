@@ -32,8 +32,8 @@ curl http://localhost:20130/v1/chat/completions \
 |---|---|---|
 | `PORT` | `20130` | HTTP port |
 | `HOST` / `BIND_ADDR` | all interfaces | Listener address |
-| `DATA_DIR` | `~/.9router` (`%APPDATA%/9router` on Windows) | Data root |
-| `DB_PATH` | `$DATA_DIR/db/data.sqlite` | SQLite file |
+| `DATA_DIR` | `~/.9router` (`%APPDATA%/9router` on Windows) | Non-database state root |
+| `DATABASE_URL` | — (**required**) | PostgreSQL connection URL |
 | `INITIAL_PASSWORD` | unset (fallback `123456` locally) | First dashboard password |
 | `RTK_ENABLED` | `true` | RTK input compression |
 | `CAVEMAN_ENABLED` / `PONYTAIL_ENABLED` | `false` | Output style savers |

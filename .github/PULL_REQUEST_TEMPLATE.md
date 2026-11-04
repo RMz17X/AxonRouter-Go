@@ -97,7 +97,7 @@ body:
       label: Behaviour notes
       description: |
         For a bug fix: the failing case before, and the passing case after.
-        For a contract change: the endpoint, SSE chunk shape, status code, or SQLite schema column that moves.
+        For a contract change: the endpoint, SSE chunk shape, status code, or database schema column that moves.
     validations:
       required: false
 

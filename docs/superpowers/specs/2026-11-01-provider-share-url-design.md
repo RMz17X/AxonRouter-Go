@@ -1,4 +1,7 @@
 # Provider Share URL & Auto-Add Design
+
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
 **Date:** 2026-11-01
 **Status:** Proposed
 **Scope:** share a custom OpenAI/Anthropic-compatible provider node (endpoint + credential + models) as one link, and turn that link back into a live provider on another 9router-go instance.

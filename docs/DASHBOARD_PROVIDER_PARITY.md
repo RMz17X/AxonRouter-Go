@@ -1,5 +1,32 @@
 # Dashboard ↔ Backend Provider Parity — Breakdown & TODO
 
+> **Status (2026-11-05) — historical working record; read this banner first.**
+> This file is the September-2026 working log of the dashboard↔backend
+> *provider* parity effort; the "DIPERBAIKI" sections record work that
+> landed then. Since it was written, the **AxonRouter backend-parity
+> program (batches 1–10)** and the **platform phases P0–P5** landed on
+> top of it. Entries below that those phases supersede:
+>
+> - **mimo-free is removed** (the free endpoint's executor, registry, and
+>   catalogue entries were deleted; the paid `xiaomi-mimo` provider and
+>   OpenCode `oc/mimo-*-free` are untouched; the `mmf` shell remains as a
+>   name only). The Kelompok-3 note about the `mmf→mimo-free` alias
+>   describes the September state, not the current tree.
+> - **Dashboard OIDC SSO login is deleted entirely** (start/test/config/
+>   login UI); SAML test/metadata surfaces remain. The Kelompok-7 note
+>   "`oidcConfigured`/`samlConfigured` masih `false`" is superseded —
+>   the OIDC login surface no longer exists to configure.
+> - The **translator** gained step 2 (responses/gemini/antigravity
+>   request translation) and step 3 (the full OpenAI→Claude request
+>   port) in batches 9–10.
+> - The **runtime stack changed underneath everything**: PostgreSQL-only
+>   storage, the memory/Valkey/PG speed layer, Docker-only delivery —
+>   see `../DATABASE.md` and `../ARCHITECTURE.md`.
+>
+> The per-batch record of the newer program lives in the repo's
+> `.changes/` fragments (908–931). Treat the body below as history and
+> provenance, not as a current TODO list.
+
 > **Status**: Audit selesai 2026-09-21 (branch `backup/stitch-dashboard`, sync `main` @ `d14e116`).
 > **Sumber audit**: `web/src/lib/providers.ts` (132 entri `PROVIDER_CATALOG`) +
 > `web/src/lib/models.ts` (`BUILTIN_MODELS_BY_PROVIDER`, `PROVIDER_ID_TO_ALIAS`) vs

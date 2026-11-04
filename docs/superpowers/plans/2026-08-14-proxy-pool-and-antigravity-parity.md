@@ -1,5 +1,8 @@
 # Proxy Pool Fixes & Antigravity Parity Implementation Plan
 
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix the proxy pool parsing bug and add Edge Relay transport, Antigravity tool cloaking (21 decoy tools + `_ide` suffixing), and Antigravity native image generation to achieve full feature parity with Next.js v0.5.35.

@@ -1,5 +1,25 @@
 # LANJUT PERTAMA — buka file ini dulu
 
+> **Status (2026-11-05) — historical snapshot of the upstream-parity track.**
+> This file snapshots the *upstream* (decolua/9router) parity backlog as
+> of 2026-09-28. It is kept as the backlog record for that track; the
+> gaps listed below that were not since closed remain open.
+>
+> Two later programs changed the ground under it:
+>
+> - The **AxonRouter backend-parity program (batches 1–10)** ported the
+>   Axon API surface (usage/combos, providers, OAuth, proxy infra, CLI
+>   installers, protocol surface, session/MCP, translator steps 2–3,
+>   models/info, the videos subsystem) — a different parity axis from
+>   this file's upstream track; its record is the repo's `.changes/`
+>   fragments 908–929.
+> - **Platform phases P0–P5** replaced the storage and delivery stack:
+>   PostgreSQL-only (the file database this snapshot's test notes assume
+>   is gone; the legacy suites sit in the `sqlite_legacy` quarantine
+>   pending a harness port, decision D1), the speed layer, and Docker
+>   delivery. Any stack claim below from the file-database era is
+>   obsolete — see `../DATABASE.md` / `../ARCHITECTURE.md`.
+
 > Berkas ini tinggal di `docs/PARITY-REMAINING.md`. Sebelumnya di luar repo
 > (`~/gomod/project/PARITY-REMAINING.md`); dipindah ke sini agar ikut ter-versioning.
 

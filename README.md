@@ -13,7 +13,7 @@
 [![GitHub All Releases](https://img.shields.io/github/downloads/luqman-v1/9router-go/total.svg)](https://github.com/luqman-v1/9router-go/releases)
 [![Telegram](https://img.shields.io/badge/Telegram-Join%20Group-26A5E1?logo=telegram&logoColor=white)](https://luqman-v1.github.io/9router-go/tg)
 
-[🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [⚙️ Setup](#-setup-guide) • [🔄 Share DB with 9Router](#-sharing-a-database-with-9router) • [🌐 Upstream](https://github.com/decolua/9router)
+[🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [⚙️ Configuration](#️-configuration) • [🔄 Upgrade from the SQLite era](#-upgrading-from-the-sqlite-era) • [🌐 Upstream](https://github.com/decolua/9router)
 
 </div>
 
@@ -21,7 +21,7 @@
 
 ## 🤔 Why 9router-go?
 
-Same idea as [9Router](https://github.com/decolua/9router), minus the Node.js runtime: **one Go binary** serves the proxy APIs + an embedded Svelte dashboard.
+Same idea as [9Router](https://github.com/decolua/9router), minus the Node.js runtime: **one Go binary** serves the proxy APIs + an embedded Svelte dashboard, backed by **PostgreSQL**.
 
 **Stop wasting money, tokens and hitting limits:**
 
@@ -42,6 +42,7 @@ Same idea as [9Router](https://github.com/decolua/9router), minus the Node.js ru
 - ✅ **Custom usage ranges** — analyze any window (`14d`, `12h`), not just fixed presets
 - ✅ **Extended logging** — live console log with level filters & search, plus per-request payload inspector
 - ✅ **Single binary** — Go + embedded dashboard, works with Claude Code, Codex, Cursor, Cline, any CLI tool
+- ✅ **Cluster-ready** — run N identical nodes against one PostgreSQL; hot state is shared through Valkey and degrades to PostgreSQL, never to divergent per-node memory
 
 ---
 
@@ -75,69 +76,44 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
-**1. Install (one line):**
+The delivery is **Docker Compose**. Two stacks ship in the repo root:
+
+| Stack | File | Shape |
+| --- | --- | --- |
+| Single node | `docker-compose.single.yml` | 1 gateway + PostgreSQL 17 |
+| Cluster | `docker-compose.cluster.yml` | N gateway replicas + PostgreSQL 17 + Valkey + nginx |
+
+**1. Configure:**
 
 ```bash
-# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/luqman-v1/9router-go/main/install.sh | bash
+cp .env.example .env
+# Edit .env — at minimum set POSTGRES_PASSWORD, JWT_SECRET and INITIAL_PASSWORD
+# to long random values. Every node in a cluster must share the same JWT_SECRET.
 ```
 
-```powershell
-# Windows (PowerShell — installer writes to %LOCALAPPDATA% + user PATH, no admin needed)
-irm https://raw.githubusercontent.com/luqman-v1/9router-go/main/install.ps1 | iex
-```
-
-🎉 Then start it (defaults: port `20130`, data `~/.9router` — no flags needed):
+**2. Start (single node):**
 
 ```bash
-9router-go
-# Dashboard: http://localhost:20130 (Default password: 123456)
+docker compose -f docker-compose.single.yml up -d
+# Dashboard + gateway: http://localhost:20130
 ```
-> **Already using upstream [9Router](https://github.com/decolua/9router)?** Point 9router-go at the same data dir — it opens the **same `DATA_DIR/db/data.sqlite`**. Your providers, connections, combos, API keys, and usage history carry over as-is. No import step, no migration. See [Sharing a database with 9Router](#-sharing-a-database-with-9router) for the caveats.
 
-**Keep the terminal free (background mode):**
+Log in with the `INITIAL_PASSWORD` from your `.env` (it seeds the dashboard
+password on first boot against an empty database), then change it in
+**Settings → Profile**.
+
+**Or the cluster:**
 
 ```bash
-9router-go start          # same as: 9router-go --background   (or -d)
-9router-go status         # is it running? (pid, dashboard, log)
-9router-go restart        # replace the running daemon
-9router-go logs -n 100    # tail the background log
-9router-go stop           # stop it
+docker compose -f docker-compose.cluster.yml up -d
+# nginx publishes the same port; replica count is APP_REPLICAS in .env (default 2)
 ```
 
-The detached process records itself in `DATA_DIR/run/gateway.pid` and writes its
-output to `DATA_DIR/run/gateway.log`. A second `start` while one is running
-refuses instead of fighting over the port, and a daemon killed from Task Manager
-leaves nothing behind: the stale pid file is cleaned on the next command.
-> Windows stops the process with `TerminateProcess` instead of `SIGTERM`, so
-> stopping skips the graceful drain; use the dashboard's Shutdown button or
-> `9router-go restart` when you want in-flight streams to finish first.
-
-**Start on boot (autostart):**
-
-```bash
-9router-go service install     # systemd user unit, launchd agent, OpenRC/runit service, cron @reboot, or a Windows logon task
-9router-go service status      # which backend owns the entry, and whether it is enabled/active
-9router-go service start       # start the supervised service now (falls back to the background daemon)
-9router-go service restart     # restart it
-9router-go service stop        # stop it now but keep it enabled for boot
-9router-go service uninstall   # remove the autostart entry
-```
-
-`install` picks the native backend for the host. systemd, launchd, and cron all
-install into the **user** scope and need no root; runit's `~/service` path too.
-Two exceptions: OpenRC is a system service and needs root (`service install`
-refuses without it — run with `sudo`, or pick `--backend cron`), and on Windows
-install registers a scheduled task via `schtasks`, which requires an
-Administrator console. The Windows task runs as the current user at logon, so it
-reads that user's data dir rather than `SYSTEM`'s. Force a backend with
-`--backend systemd|launchd|openrc|runit|cron`.
-
-**2. Connect a FREE provider (no signup needed):**
+**3. Connect a FREE provider (no signup needed):**
 
 Dashboard → Providers → Connect **Kiro AI** (~50 credits/month free) or **OpenCode Free** (no auth) → Done!
 
-**3. Use in your CLI tool:**
+**4. Use in your CLI tool:**
 
 ```text
 Claude Code / Codex / OpenClaw / Cursor / Cline Settings:
@@ -148,22 +124,12 @@ Claude Code / Codex / OpenClaw / Cursor / Cline Settings:
 
 **That's it!** Start coding with FREE AI models.
 
-**Alternatives:**
+> **Upgrading an install from before the PostgreSQL cutover?** Your old
+> `data.sqlite` is migrated by the compose `migrate` profile — see
+> [Upgrading from the SQLite era](#-upgrading-from-the-sqlite-era). There is
+> no shared-database mode anymore: the gateway never opens the legacy file.
 
-```bash
-# Docker — no build needed
-docker run -d --name 9router-go --restart unless-stopped \
-  -p 20130:20130 -v "$HOME/.9router:/data" \
-  -e PORT=20130 -e DATA_DIR=/data \
-  -e INITIAL_PASSWORD=your-secure-password \
-  luqmenul/9router-go:latest
-
-# Manual download — pick your file, no command line guesswork:
-# Windows → .exe | Mac M1+ → darwin-arm64 | Mac Intel → darwin-amd64
-# Linux VPS → linux-amd64 | Raspberry Pi → linux-arm64
-```
-
-📦 [All release binaries](https://github.com/luqman-v1/9router-go/releases/latest) • 🔨 [Build from source](#-setup-guide)
+📦 [All release binaries](https://github.com/luqman-v1/9router-go/releases/latest) • 🐳 Image: `luqmenul/9router-go` • 🔨 [Build from source](#-development)
 
 ---
 
@@ -175,7 +141,7 @@ docker run -d --name 9router-go --restart unless-stopped \
 - 🔁 Combos with fallback, round-robin, sticky routing, fusion, capability-aware reordering
 - 👥 Per-provider executors, OAuth refresh, reactive 401 retry
 - 📡 Live usage + console-log SSE streams, stall detection
-- 💾 SQLite WAL persistence, outbound proxy support, self-update, MITM commands, Docker, cross-compilation
+- 🐘 PostgreSQL persistence (partitioned usage ledgers), Valkey speed layer with PostgreSQL degradation, self-update, Docker delivery, cross-compilation
 
 For sequential combo routing, set **Model response timeout** in seconds (decimals
 such as `5.3` are fine) in the combo's Edit dialog, or from the compact field on the
@@ -197,47 +163,6 @@ milliseconds as `comboStrategies[comboName].firstTokenTimeoutMs`.
 
 ---
 
-## 🔄 Sharing a database with 9Router
-
-**Already running [9Router](https://github.com/decolua/9router) (the Next.js version)? 9router-go reads that exact database. There is no import, no export, and no migration step.**
-
-Both projects default to the same file and speak the same schema:
-
-| | Path |
-|---|---|
-| macOS / Linux | `~/.9router/db/data.sqlite` |
-| Windows | `%APPDATA%\9router\db\data.sqlite` |
-| Docker | `/data/db/data.sqlite` inside the container |
-
-Stop 9Router, start 9router-go, and log in with your existing password. Your provider connections, proxy pools, combos, API keys, model aliases, and usage history are all there — 9router-go's own dashboard renders them, because it *is* the same data.
-
-**You don't even have to stop 9Router** if you want to keep the Node.js dashboard around. Run 9router-go on a different port against the same `DATA_DIR`:
-
-```bash
-# 9Router on :20128 (Next.js)  ·  9router-go on :20130 (Go, same DB)
-PORT=20130 DATA_DIR=/home/you/.9router ./9router-go
-```
-
-Both read the same tables, so a connection you add in either dashboard shows up in the other. SQLite serialises the writes; the supported setup is one active writer, so avoid editing the same combo or settings entry in both at the same moment.
-
-**Running it the other way round** (9router-go first, then pointing 9Router at the same directory) works the same way. 9router-go will have added two columns to `providerConnections` (`lastUsedAt`, `consecutiveUseCount`) and one extra table (`upstream_leases`). Upstream ignores both — its schema sync is additive and doesn't drop unknown columns — so nothing breaks.
-
-What 9router-go will **not** do:
-
-- **Import a legacy JSON export.** If your 9Router data still lives in old JSON files, start upstream once to convert them, then switch.
-- **Run destructive migrations or pre-migration backups.** Its bootstrap only ever *adds* — create missing tables, add missing columns, seed missing rows. It never drops or retypes.
-- **Interpret `_meta.schemaVersion`.** It's upstream's migration bookkeeping. A database written by a much newer 9Router release should be checked before you rely on it.
-
-Take a backup first if the database matters:
-
-```bash
-cp -r ~/.9router/db ~/9router-db-backup   # stop the daemon first — see DATABASE.md
-```
-
-Full schema, operator contract, and multi-process limits: [`DATABASE.md`](DATABASE.md). Routing internals: [`ARCHITECTURE.md`](ARCHITECTURE.md).
-
----
-
 ## 📸 Screenshots
 
 ![9router-go dashboard — Providers view](docs/screenshots/providers.png)
@@ -246,77 +171,68 @@ Full schema, operator contract, and multi-process limits: [`DATABASE.md`](DATABA
 
 ---
 
-## ⚙️ Setup Guide
+## ⚙️ Configuration
 
-### Release binary
+Configuration is by **environment variable** — there are no config files to
+edit and no database path to set. The compose stacks read `.env`;
+[`.env.example`](.env.example) is the annotated contract. A bare binary reads
+the same variables from its own environment.
 
-Download from [GitHub Releases](https://github.com/luqman-v1/9router-go/releases/latest), verify against `SHA256SUMS.txt`.
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `DATABASE_URL` | **yes** | PostgreSQL connection string, e.g. `postgres://user:pass@host:5432/9router?sslmode=disable`. A boot without it is a fatal error — there is no embedded or file database in this build. The compose stacks assemble it from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. |
+| `JWT_SECRET` | **yes** (in practice) | Signs dashboard sessions/tokens. Every cluster node must share one value. If unset, the gateway generates an ephemeral per-boot secret and logs a loud warning: sessions then survive neither a restart nor a second node. |
+| `INITIAL_PASSWORD` | first boot | Seeds the dashboard password against an empty database. Change it from the dashboard afterwards. Without it, only local access can use the temporary compatibility default; remote login is refused until a password is set. |
+| `PORT` | no (default `20130`) | HTTP port. In the cluster stack, nginx publishes it. |
+| `HOST` | no | Listener address; bind `127.0.0.1` to serve localhost only (e.g. behind your own reverse proxy). |
+| `DATA_DIR` | no | **Non-database** state root: CLI tokens/machine-id, uploads, provider instruction files, tunnel state, catalog cache. In compose it is the `appdata` volume at `/data`. The database never lives here. |
+| `VALKEY_URL` / `REDIS_URL` | no | Speed layer: share hot state (in-flight counters, rotation cursors, model locks) across nodes. `VALKEY_URL` wins. Unset = per-node memory (single-node mode). A configured-but-dead server degrades the gateway to PostgreSQL — never to divergent per-node memory. |
+| `NODE_ID` | no | Node identity in boot logs and status payloads (default: hostname). |
+| `PG_POOL_MAX_OPEN` / `PG_POOL_MAX_IDLE` | no (defaults 10 / 5) | PostgreSQL connection pool per node, sized for small hardware and a shared `max_connections` budget. |
+| `SHUTDOWN_GRACE_SECONDS` | no (default `30`) | Drain window for in-flight streams on shutdown; the compose stacks pair it with an equal `stop_grace_period`. |
+| `RTK_ENABLED` / `CAVEMAN_ENABLED` / `PONYTAIL_ENABLED` | no | Token-saver toggles (RTK defaults on). |
+| `HTTP_PROXY` / `HTTPS_PROXY` | no | Upstream egress proxy. |
 
-### 🧪 Experimental builds
+OAuth client overrides, `FORCE_FALLBACK_ON_ALL_UNAVAILABLE`, and `STRICT_SSL`
+are documented in `.env.example`.
 
-Unreleased work also ships as **experimental** builds. They are published
-separately and are never offered to a normal install:
+### First login
 
-- GitHub Releases marks them **Pre-release**, so `releases/latest` — the URL
-  `9router-go update` falls back to — keeps pointing at the stable version.
-- Docker Hub tags them `exp` (`luqmenul/9router-go:exp`), never `latest`.
+- **Compose / remote / VPS:** set `INITIAL_PASSWORD` in `.env` before the
+  first boot (recommended above). Remote access blocks the well-known
+  compatibility default password, so a fresh public install cannot be taken
+  over with a known password (CVE-2026-56679).
+- **Bare binary on your own machine:** local login can use the temporary
+  compatibility password `123456` until you set a real one in
+  **Settings → Profile** — do that first.
 
-```bash
-docker pull luqmenul/9router-go:exp
+### API surface
+
+```text
+POST /v1/chat/completions       OpenAI Chat Completions
+POST /v1/messages               Claude Messages
+POST /v1/responses              Responses API
+POST /v1/embeddings             Embeddings
+POST /api/chat                  Ollama-compatible chat
+GET  /v1/models                 Model catalog
+GET  /v1/models/{kind}          Catalog filtered by kind (image, tts, stt, embedding, ...)
+GET  /v1/models/info?id=...     One model's catalogue entry
+POST /v1/images/generations     Image generation
+POST /v1/videos/generations     Video generation
+GET  /v1/videos/{id}            Video job status (proxied from the creating connection)
+GET  /v1/videos/{id}/content    Video job content
+POST /v1/audio/speech           Text to speech
+GET  /v1/audio/voices           TTS voices (provider whitelist)
+POST /v1/audio/transcriptions   Speech to text
+POST /v1/search                 Web search
+GET  /api/usage/stream          Live usage SSE
+GET  /health                    Liveness
+GET  /api/version               Version metadata
 ```
 
-Opt in only if you want to help shake out bugs. `9router-go update` will not
-install one over a stable release — grab the asset for your platform from the
-[pre-releases page](https://github.com/luqman-v1/9router-go/releases) and
-replace the running binary with it.
+For Claude Messages clients: `ANTHROPIC_BASE_URL=http://localhost:20130/v1`.
 
-### Build from source
-
-Prerequisites: Go 1.27 and Bun 1.x (dashboard is embedded into the binary, so build web first):
-
-```bash
-git clone https://github.com/luqman-v1/9router-go.git
-cd 9router-go
-make web-build   # bun install --frozen-lockfile && bun run build
-make build       # embeds VERSION into the Go binary
-```
-
-### Run
-
-Defaults are enough for most people — plain `9router-go` listens on port `20130` with data in `~/.9router`:
-
-```bash
-9router-go
-curl http://localhost:20130/health
-./9router-go version
-```
-
-Only override when you need something different (`PORT`, `DATA_DIR`/`DB_PATH` — there are no `--port` flags):
-
-```bash
-PORT=20129 ./9router-go                        # different port
-DATA_DIR=/srv/9router ./9router-go              # different data dir
-DB_PATH=/srv/9router/data.sqlite ./9router-go   # explicit SQLite file
-HOST=127.0.0.1 ./9router-go                     # localhost only, behind a reverse proxy
-```
-
-### 🔑 Dashboard Login & Fresh Install
-
-- **Localhost (`localhost` / `127.0.0.1`)**: First login uses the default compatibility password `123456`. Once logged in, change your password in **Settings → Profile**.
-- **Remote / VPS / Docker / LAN**: For security (preventing public takeover of fresh installs with known defaults, CVE-2026-56679), remote access blocks the default `123456` password. You **must** either:
-  1. **Set `INITIAL_PASSWORD` on launch (Recommended)**:
-     ```bash
-     INITIAL_PASSWORD="your-secure-password" ./9router-go
-     # Or in your .env file:
-     # INITIAL_PASSWORD=your-secure-password
-     ```
-  2. **Or access via SSH port-forwarding first**:
-     ```bash
-     ssh -L 20130:127.0.0.1:20130 user@remote-host
-     # Open http://localhost:20130, login with 123456, then change password in Settings
-     ```
-
-### Client example
+Client example:
 
 ```bash
 curl http://localhost:20130/v1/chat/completions \
@@ -325,30 +241,14 @@ curl http://localhost:20130/v1/chat/completions \
   -d '{"model":"ag/gemini-3.8-flash-high","messages":[{"role":"user","content":"Hello"}],"stream":true}'
 ```
 
-For Claude Messages clients: `ANTHROPIC_BASE_URL=http://localhost:20130/v1`.
+### Authentication
 
-<details>
-<summary><b>Advanced: environment variables, API surface, auth, database</b></summary>
+- Public: `/health`, dashboard HTML/assets, `/login`, OAuth callbacks.
+- Proxy routes need an active client API key (`Authorization: Bearer` / `X-API-Key`).
+- Dashboard APIs need a session cookie, CLI token, or API key; destructive ops (shutdown, update, DB import) need a session or CLI token.
+- The API server defaults to all interfaces — bind localhost or protect the port outside trusted machines.
 
-### Environment
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `PORT` | `20130` | HTTP port |
-| `HOST` / `BIND_ADDR` | all interfaces | Listener address |
-| `DATA_DIR` | `~/.9router` (`%APPDATA%/9router` on Windows) | Data root |
-| `DB_PATH` | `$DATA_DIR/db/data.sqlite` | SQLite file |
-| `INITIAL_PASSWORD` | unset (fallback `123456` locally) | First dashboard password |
-| `RTK_ENABLED` | `true` | RTK input compression |
-| `CAVEMAN_ENABLED` / `PONYTAIL_ENABLED` | `false` | Style savers |
-| `AUTO_UPDATE` | `false` | Background self-update |
-| `HTTP_PROXY` / `HTTPS_PROXY` | Go defaults | Upstream egress proxy |
-| `PPROF_ENABLED` | `false` | Expose `/debug/pprof/*` (keep off on untrusted networks) |
-| `TRUST_PROXY` / `TRUST_CLOUDFLARE` | unset | Trust forwarded client-IP headers |
-| `TRUSTED_PROXIES` | unset | CIDR list of the reverse proxies whose forwarded client-IP headers are trusted |
-| `GEMINI_WEB_ROTATION` | `on` | Renew the Gemini Web session cookie in the background (see below) |
-
-#### Gemini Web session renewal
+### Gemini Web session renewal
 
 The `gemini-web` provider reaches `gemini.google.com` with a session cookie,
 and Google rotates the session's timestamp cookie (`__Secure-1PSIDTS`) every
@@ -381,7 +281,7 @@ Set `GEMINI_WEB_ROTATION=off` to run the router without renewing anything at
 all. That is the right choice when the credential belongs to a browser you
 want to keep using.
 
-`.env.example` documents the security-sensitive subset and OAuth overrides.
+### Trusted proxies and client IPs
 
 A forwarded client-IP header is only read when the TCP peer is inside the
 trusted set — otherwise a client could rotate `X-Forwarded-For` and give every
@@ -393,39 +293,119 @@ proxy connects from an address outside them.
 Behind a proxy that is *not* in the trusted set, every request is bucketed by
 the proxy's own socket address, so all users of that proxy share one login
 bucket: five failed attempts lock them all out. `TRUSTED_PROXIES` is the knob
-that separates them again.
+that separates them again. (The cluster stack's nginx is inside the compose
+network; a proxy you add in front of the stack is what this setting is for.)
 
-### API surface
+---
 
-```text
-POST /v1/chat/completions       OpenAI Chat Completions
-POST /v1/messages               Claude Messages
-POST /v1/responses              Responses API
-POST /v1/embeddings             Embeddings
-POST /api/chat                  Ollama-compatible chat
-GET  /v1/models                 Model catalog
-POST /v1/images/generations     Image generation
-POST /v1/videos/generations     Video generation
-POST /v1/audio/speech           Text to speech
-POST /v1/audio/transcriptions   Speech to text
-POST /v1/search                 Web search
-GET  /api/usage/stream          Live usage SSE
-GET  /health                    Liveness
-GET  /api/version               Version metadata
+## 🔄 Upgrading from the SQLite era
+
+Installs from before the PostgreSQL cutover keep their data in a legacy
+`data.sqlite`. The gateway no longer opens that file — a one-shot migrator
+(`tools/migrate-db`, a separate module and image) copies it into PostgreSQL
+and verifies every table (`target = source − skipped`, with malformed rows
+skipped and reported, never silently mangled).
+
+With either compose stack:
+
+```bash
+# 1. Put the legacy file in the legacy directory (default ./legacy,
+#    override with LEGACY_DIR in .env):
+mkdir -p legacy && cp /path/to/old/data.sqlite legacy/
+
+# 2. Run the migrate profile BEFORE the first app boot on the new database:
+docker compose -f docker-compose.single.yml --profile migrate run --rm migrate
+
+# 3. Start the stack normally:
+docker compose -f docker-compose.single.yml up -d
 ```
 
-### Authentication
+Notes that matter:
 
-- Public: `/health`, dashboard HTML/assets, `/login`, OAuth callbacks.
-- Proxy routes need an active client API key (`Authorization: Bearer` / `X-API-Key`).
-- Dashboard APIs need a session cookie, CLI token, or API key; destructive ops (shutdown, update, DB import) need a session or CLI token.
-- The API server defaults to all interfaces — bind localhost or protect the port outside trusted machines.
+- The migrator **refuses a non-empty target** unless `--truncate` is added to
+  its command — an accidental second run cannot silently merge two eras.
+- The legacy directory is mounted **writable** on purpose. The migrator opens
+  the database read-only (the file itself is never written — checksum-verified),
+  but a WAL-mode source needs a writable directory for its `-shm`/`-wal`
+  recovery sidecars; a read-only mount fails the open.
+- Row ids, timestamps, and JSON payloads are preserved exactly; the monthly
+  partitions for the months present in the source are created for you.
+- Upstream 9Router's own database file is the same legacy format — the same
+  profile migrates it. After migration there is **no** going back to a shared
+  file: 9Router (Next.js) cannot read PostgreSQL.
 
-### Database compatibility
+Schema, partitioning, backup/restore, and the degradation model:
+[`DATABASE.md`](DATABASE.md). Routing internals: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
-Go reads/writes the upstream 9router table/JSON shapes and bootstraps the core schema on startup (creates the 11 tables when absent, backfills missing columns, seeds an empty settings row) — a fresh `DATA_DIR` just works, no upstream install needed. Existing databases are never modified beyond additive backfills. Full contract in [`DATABASE.md`](DATABASE.md), routing internals in [`ARCHITECTURE.md`](ARCHITECTURE.md).
+---
 
-</details>
+## 🔨 Development
+
+Prerequisites: Go 1.27, Bun 1.x, and a PostgreSQL 17 to point `DATABASE_URL`
+at (the compose stacks provide one; for a bare run any reachable server
+works — the gateway creates its schema on first boot).
+
+```bash
+git clone https://github.com/luqman-v1/9router-go.git
+cd 9router-go
+
+# The supported dev loop is compose-based (same stacks as production):
+cp .env.example .env   # set POSTGRES_PASSWORD / JWT_SECRET / INITIAL_PASSWORD
+docker compose -f docker-compose.single.yml up -d
+
+# Frontend hot-reload against a running gateway:
+make web-dev           # Vite dev server on :5173, API proxied to :20130
+
+# Native build (embeds the dashboard; needs web/dist first):
+make web-build
+make build
+DATABASE_URL=postgres://user:pass@localhost:5432/9router?sslmode=disable \
+JWT_SECRET=dev-secret ./9router-go
+./9router-go version
+```
+
+The CLI is deliberately small — the binary's only run mode is the foreground
+server (on a TTY it first shows a short menu):
+
+```text
+9router-go            start the gateway in the foreground
+9router-go version    print version info
+9router-go update     check for and install a self-update
+9router-go help       show usage
+```
+
+There are no daemon/service subcommands: process supervision belongs to
+Docker (or your init system) now.
+
+Before writing code, skim [`AGENTS.md`](AGENTS.md) — provider isolation and
+the Go/Svelte conventions there are enforced by review, and the changelog
+discipline (§7.6: a `.changes/` fragment per PR, never an edit to
+`CHANGELOG.md`) is mechanical.
+
+**A note on the test fleet.** The legacy suites that were written against
+the removed file database are quarantined behind the `sqlite_legacy` build
+tag (decision D1) and the `integration`-tagged suite's harness predates the
+cutover; neither runs in the default build. Verification for new work is
+`go build ./...`, `go vet ./...`, `make vet-svelte` for dashboard changes,
+and live probes against a running gateway. See AGENTS.md §5.
+
+### Experimental builds
+
+Unreleased work also ships as **experimental** builds. They are published
+separately and are never offered to a normal install:
+
+- GitHub Releases marks them **Pre-release**, so `releases/latest` — the URL
+  `9router-go update` falls back to — keeps pointing at the stable version.
+- Docker Hub tags them `exp` (`luqmenul/9router-go:exp`), never `latest`.
+
+```bash
+docker pull luqmenul/9router-go:exp
+```
+
+Opt in only if you want to help shake out bugs. `9router-go update` will not
+install one over a stable release — grab the asset for your platform from the
+[pre-releases page](https://github.com/luqman-v1/9router-go/releases) and
+replace the running binary with it.
 
 ---
 
@@ -438,7 +418,10 @@ Issues and pull requests use templates, so pick the right one rather than openin
 - **Upstream parity** — a behaviour `decolua/9router` has and this gateway does not; link the upstream commit or PR.
 - **Question** — configuration and usage help.
 
-PRs follow the checks CI runs: `go vet ./...`, `go test -count=1 ./...`, `make test-integration`, plus `cd web && bun test` and `make vet-svelte` for anything touching the dashboard. Before writing code, skim [`AGENTS.md`](AGENTS.md) — provider isolation and the Go/Svelte conventions there are enforced by review.
+PRs target `main` (AGENTS.md §7.7) and carry a `.changes/` fragment instead
+of a `CHANGELOG.md` edit. The checks that gate a change: `go vet ./...`,
+`go build ./...`, and for dashboard work `make vet-svelte` plus a live
+check against a running gateway.
 
 Everyone whose commit landed in the repository is credited on the wiki's [**Owner & Contributors**](https://luqman-v1.github.io/9router-go/team.html) page — photo, username, and contribution count, generated from the GitHub API.
 
@@ -448,8 +431,8 @@ Everyone whose commit landed in the repository is credited on the wiki's [**Owne
 
 Repository references:
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — routing, providers, runtime layout
-- [`DATABASE.md`](DATABASE.md) — SQLite schema & operator contract
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — routing, providers, data layer, speed layer, cluster topology
+- [`DATABASE.md`](DATABASE.md) — PostgreSQL schema, partitioning, backup/restore, degradation model
 - [`ROADMAP.md`](ROADMAP.md) — proposals only, not current behavior
 - [`CHANGELOG.md`](CHANGELOG.md) — release history (Go **v1.9.15**, upstream baseline `decolua/9router`). Work merged since the last tag lives in [`.changes/`](.changes/) and is folded in at the next release; the dashboard's changelog modal shows both. Check what you are running with `9router-go version`.
 - [`docs/TELEGRAM_RELEASE_NOTIFICATIONS.md`](docs/TELEGRAM_RELEASE_NOTIFICATIONS.md) — one-time setup for the release notice posted to Telegram

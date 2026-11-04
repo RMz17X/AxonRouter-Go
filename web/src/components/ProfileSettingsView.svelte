@@ -731,7 +731,7 @@
     }
   }
   async function handleVacuum() {
-    if (!confirm('Compact SQLite database (VACUUM)? This will return unallocated pages back to disk.')) return
+    if (!confirm('Run database vacuum? On PostgreSQL this endpoint is a no-op — the server\'s autovacuum manages space.')) return
     try {
       isVacuuming = true
       await api.vacuumDatabase()
@@ -812,19 +812,19 @@
       <div class="space-y-2 text-xs">
         <div class="p-3 rounded-xl bg-bg border border-border space-y-1">
           <div class="text-[10px] text-text-subtle uppercase font-mono tracking-wider font-semibold">
-            Default Database Location
+            Database
           </div>
           <div class="font-mono text-xs text-text-main font-semibold">
-            ~/.9router/db/data.sqlite
+            PostgreSQL — configured with DATABASE_URL
           </div>
           <div class="text-[11px] text-text-muted pt-1">
-            The Go server opens the configured SQLite database in WAL mode. DB_PATH or DATA_DIR may select a different location.
+            The Go server stores everything in PostgreSQL. DATA_DIR holds non-database state only (uploads, CLI tokens, tunnel state, catalog cache).
           </div>
           <div class="text-[11px] text-text-subtle pt-1">
-            The native server does not run upstream's versioned schema migration. A new empty database must be initialized with a compatible upstream schema before use.
+            The schema bootstrap is additive and runs on every boot — a new empty PostgreSQL database initializes itself; there is no versioned migration to run. Full database backup is pg_dump (see DATABASE.md).
           </div>
           <div class="text-[11px] text-text-subtle pt-1">
-            Backups are dashboard-data payloads, not a byte-for-byte copy of the live SQLite file.
+            Backups here are dashboard-data payloads, not a byte-for-byte copy of the live database.
           </div>
         </div>
 
@@ -1247,7 +1247,7 @@
               disabled={isVacuuming}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-xs text-brand-500 font-semibold transition cursor-pointer disabled:opacity-50"
             >
-              <span>{isVacuuming ? 'Compacting...' : 'Compact Database (VACUUM)'}</span>
+              <span>{isVacuuming ? 'Vacuuming...' : 'Vacuum Database'}</span>
             </button>
           </div>
         </div>

@@ -57,7 +57,7 @@ body:
       label: Contract to preserve
       description: |
         Endpoints, request/response payloads, SSE chunk shapes, status codes, error semantics (e.g. a typed
-        `409 no_credit` must not collapse into a generic 500), and the SQLite schema at `~/.9router/db/data.sqlite`.
+        `409 no_credit` must not collapse into a generic 500), and the PostgreSQL schema (see `DATABASE.md`).
     validations:
       required: false
 

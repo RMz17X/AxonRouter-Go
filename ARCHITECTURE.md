@@ -4,7 +4,7 @@ This document describes the current Go implementation. Source code is authoritat
 
 ## Version and compatibility status
 
-- Current Go release: **v1.9.9**, declared consistently by `VERSION`, `version.json`, and `internal/updater.CurrentVersion`.
+- Current Go version: **1.9.16-exp.1** in `VERSION` (an experimental build); `version.json`'s `latestVersion` names the stable channel, **1.9.15**. `internal/updater.CurrentVersion` is stamped from `VERSION` at build time.
 - Declared upstream baseline: [`decolua/9router` v0.5.85](https://github.com/decolua/9router). The local checked-out upstream has `package.json` version `0.5.85` and a v0.5.85 changelog; published upstream npm/Docker `latest` is v0.5.86.
 - Go v1.9.0 records selected upstream v0.5.86 parity work and explicitly deferred items in `CHANGELOG.md`. Those entries do not change the v0.5.85 manifest baseline or imply complete v0.5.86 parity.
 - Upstream remains the compatibility reference. Its Next.js app and shared SSE core are historical sources for API, database, auth, and routing behavior. They are **not** the current Go runtime or dashboard.
@@ -24,8 +24,10 @@ flowchart LR
       API
       ENGINE[Routing, translation, provider executors, SSE]
       FX[Uber Fx lifecycle]
-      DB[(SQLite WAL)]
+      SPEED[Speed layer: memory / Valkey / PG degradation]
+      DB[(PostgreSQL 17)]
       FX --> ENGINE
+      ENGINE --> SPEED
       ENGINE --> DB
       API --> DB
     end
@@ -33,58 +35,58 @@ flowchart LR
     ENGINE --> Provider[Provider APIs and compatible nodes]
 ```
 
-The Go binary owns proxy routing, dashboard APIs, auth, persistence, OAuth, media/search tools, usage tracking, and static dashboard serving. The Svelte SPA calls the Go API; it does not read SQLite directly.
+The Go binary owns proxy routing, dashboard APIs, auth, persistence, OAuth, media/search tools, usage tracking, and static dashboard serving. The Svelte SPA calls the Go API; it does not read the database directly. PostgreSQL is the single source of truth; the speed layer holds only hot, reconstructible state above it (§ Data layer, speed layer, and cluster topology).
 
 ## Repository boundaries
 
 | Path | Responsibility |
 | --- | --- |
-| `cmd/9router-go/` | CLI parser, commands, daemon lifecycle sub-commands, signal handling, Fx start/stop |
+| `cmd/9router-go/` | CLI parser (`version`/`update`/`help`; the default action runs the foreground server), signal handling, Fx start/stop |
 | `internal/app/` | Fx modules, dependency graph, server and DB lifecycle |
-| `internal/config/` | Viper/env configuration, data and database path resolution, JWT secret |
+| `internal/config/` | Viper/env configuration, `DATA_DIR` state-root resolution, JWT secret from `JWT_SECRET` |
 | `internal/handlers/` | Chi route composition, chat, media, OAuth, dashboard, SSO, usage |
 | `internal/handlers/chat/` | Model resolution, combos, account fallback, translation, forwarding |
 | `internal/providers/` | Provider catalog/configuration and model capabilities |
 | `internal/proxy/executor/` | Provider-specific upstream adapters and stream handling |
 | `internal/translator/` | OpenAI/Claude/Gemini request, response, and stream transformations |
 | `internal/middleware/` | Request IDs, body limits, logging/path normalization, API/dashboard/admin auth |
-| `internal/db/` | SQLite connection, repository queries, WAL and optional Go-only leases |
+| `internal/db/` | PostgreSQL repositories (pgx via `DATABASE_URL`), partitioned usage ledgers, DB-serialized leases and rotation |
+| `internal/speedlayer/` | Hot-state store: memory / Valkey / PostgreSQL-degradation backends behind a breaker |
+| `internal/foreigndb/` | Read-only reader for *other applications'* legacy-format files (browser/Cursor/Zed imports); never opens this gateway's data |
 | `web/` | Svelte 5 + Vite + Tailwind dashboard |
 | `web/embed.go` | Embeds `web/dist` and serves the SPA with index fallback |
-| `internal/daemon/` | Background mode: detached spawn, `DATA_DIR/run/gateway.pid`, health wait, stop/restart/status |
+| `internal/daemon/`, `internal/service/` | Process primitives kept for the tray companion (`cmd/9router-tray`) and the updater; this binary exposes no daemon/service operator surface anymore |
 | `internal/proc/` | Portable process primitives (liveness, terminate, detach) shared by the daemon and headroom |
 
 ## Fx lifecycle
 
 `cmd/9router-go/main.go` builds an `urfave/cli` application. The default server action loads CLI parameters and starts `app.AppModule` with `fx.Replace(cliParams)`. Set `FX_LOGGING=true` to enable the console Fx logger; otherwise Fx logging is disabled.
 
-`--background` (alias `-d`, also the `start` sub-command) makes the CLI spawn
-this same binary detached — new session on POSIX, `CREATE_NO_WINDOW` on
-Windows — with stdout/stderr appended to `DATA_DIR/run/gateway.log`, then wait
-for `/health` before returning. The child records its PID in
-`DATA_DIR/run/gateway.pid`, which is what `stop`, `status` and `restart` read.
-`Start` refuses when the port already answers, so a second daemon never races
-the first for the bind; `Restart` stops first and waits for the socket to be
-released, because `TerminateProcess` returns before the listener is gone.
+The binary's only run mode is the **foreground server** — the daemon and
+service subcommands were removed with the Docker delivery (P5), and process
+supervision belongs to the container runtime or the host init system. The
+remaining commands are `version`, `update`, and `help`; on a TTY the default
+action first shows a short menu (start in this terminal / tray companion /
+exit). `internal/daemon` and `internal/service` survive as libraries for the
+tray companion and the updater, not as an operator surface of this binary.
 
 ```mermaid
 flowchart TD
     Main[main] --> CLI[urfave/cli]
-    CLI -->|server action| Params[CLIParams from flags]
-    CLI -->|version/update/mitm| Command[Run command directly]
-    CLI -->|start/stop/restart/status/logs| Daemon[internal/daemon + internal/proc]
+    CLI -->|server action - default| Params[CLIParams from flags]
+    CLI -->|version/update/help| Command[Run command directly]
     Params --> Fx[fx.New AppModule]
     Fx --> Config[ConfigModule: Viper + Config + CLIParams]
-    Fx --> Database[DatabaseModule: SQL DB + Repo]
+    Fx --> Database[DatabaseModule: PostgreSQL + Repo + speed layer]
     Fx --> Handlers[HandlersModule: TokenSaverConfig + Chi handler]
     Fx --> Server[ServerModule: http.Server]
     Server --> OnStart[Start updater and catalog sync; listen]
     OnStart --> Signal[Wait for SIGINT, SIGTERM, or a stop request]
     Signal --> OnStop[Cancel background work; stop SSE; shutdown HTTP]
-    OnStop --> DBClose[Close SQLite]
+    OnStop --> DBClose[Close PostgreSQL pool]
 ```
 
-Dependency order is config → database/repository → handler/server. `OnStart` has a 15-second budget and begins background updater/catalog-sync loops and `ListenAndServe`. Shutdown has a 20-second outer Fx budget. The HTTP hook disables keep-alives, cancels the shutdown context used by streams, allows 5 seconds for `http.Server.Shutdown`, then the database hook closes SQLite. A second signal exits immediately.
+Dependency order is config → database/repository → handler/server. `OnStart` has a 15-second budget and begins background updater/catalog-sync loops and `ListenAndServe`. On shutdown the HTTP layer drains in-flight streams for the configured grace window — **30 s by default**, overridable with `SHUTDOWN_GRACE_SECONDS` (the compose stacks pair it with an equal `stop_grace_period`) — before the database hook closes the pool. A second signal exits immediately.
 
 The wait is on three sources, not one: `SIGINT`/`SIGTERM`, and
 `shutdown.StopRequested()`. The stop request is how the dashboard's Shutdown
@@ -134,7 +136,7 @@ Keys are looked up in `apiKeys`; missing, invalid, and inactive keys receive 401
 
 ### Dashboard sessions
 
-Dashboard login issues a 24-hour HS256 JWT in the httpOnly `auth_token` cookie. `JWT_SECRET` is used when set; otherwise a random secret is generated and stored in `$DATA_DIR/jwt-secret`.
+Dashboard login issues a 24-hour HS256 JWT in the httpOnly `auth_token` cookie. The signing secret comes from the `JWT_SECRET` environment variable — the only durable source. When it is unset, the gateway generates an ephemeral per-boot secret and logs a loud warning: sessions then survive neither a restart nor a second node, which is why every compose stack requires the variable and every cluster node must share one value.
 
 A stored bcrypt dashboard password wins. If none is stored, `INITIAL_PASSWORD` is accepted; for compatibility, the Go implementation still accepts the well-known `123456` when `INITIAL_PASSWORD` is unset. A remote request using that compatibility default is refused a session until the password is changed or `INITIAL_PASSWORD` is configured. Local requests may use it temporarily.
 
@@ -181,7 +183,7 @@ sequenceDiagram
     participant M as Global /v1 normalization
     participant A as API-key middleware
     participant H as ChatHandler
-    participant R as SQLite Repo
+    participant R as PostgreSQL Repo
     participant P as Provider executor
     participant U as Upstream
 
@@ -205,7 +207,7 @@ sequenceDiagram
 
 1. **Normalize and authenticate.** Leading `/v1/` prefixes are removed and the client API key is checked.
 2. **Parse client format.** OpenAI Chat Completions and Claude Messages have separate handlers. Claude requests are passed through for native Anthropic targets or converted toward OpenAI format otherwise.
-3. **Resolve model.** Aliases, custom provider-node prefixes, model ownership, direct provider models, and combos are resolved from SQLite and the provider catalog.
+3. **Resolve model.** Aliases, custom provider-node prefixes, model ownership, direct provider models, and combos are resolved from PostgreSQL and the provider catalog.
 4. **Apply routing.** Capability detection can reorder/float models. Combos select fallback, round-robin, sticky, or fusion behavior. Single models still enter account fallback.
 5. **Select a connection.** Connections are ordered by priority/updated time and checked for active state, exclusions, strict model assignment, health, and per-model cooldowns.
 6. **Prepare upstream request.** OAuth tokens are refreshed when expired, provider token formats are normalized, token savers apply, and provider-specific schemas/cloaking are added. Tool schemas are sanitized where required.
@@ -237,33 +239,111 @@ Combo state, provider connection state, health, and some settings are persisted 
 
 Retryable upstream errors are classified from status and text. Capacity/rate-limit/overload conditions use exponential backoff; selected authentication/not-found conditions use longer cooldowns. Connection/model locks and backoff levels are written into `providerConnections.data`, and a success clears the selected lock. Exact thresholds are implementation policy, not a general upstream guarantee.
 
-## SQLite compatibility and bootstrap limitation
+## Data layer, speed layer, and cluster topology
 
-`internal/db.OpenDatabase`:
+### PostgreSQL is the only database
 
-- creates the parent directory;
-- opens a `modernc.org/sqlite` database in WAL mode;
-- enables foreign keys, a five-second busy timeout, normal synchronous mode, memory temp storage, and bounded connection settings;
-- chmods the directory and database to user-only permissions where supported; and
-- shares compatible rows/JSON payloads with upstream 9router.
+`internal/db` connects through pgx using `DATABASE_URL` — there is no file
+path, no embedded fallback, and a boot without the variable is fatal.
+`EnsureCoreSchema` (`internal/db/schema_pg.go`, definitions in
+`schema_pg_defs.go`) bootstraps the schema additively on every boot: it
+reads the catalog once, creates missing tables, backfills missing columns,
+ensures the current and next month's partitions, and seeds `_meta` and the
+singleton settings row. All statements are idempotent — a fresh empty
+PostgreSQL database boots into a working installation, and an existing one
+is only ever moved forward. Go does **not** import legacy JSON files or run
+destructive migrations; the one-shot legacy import is the separate
+`tools/migrate-db` module (§ Legacy data, below).
 
-`ProvideDatabase` bootstraps the upstream core schema additively via `db.EnsureCoreSchema` (`internal/db/schema.go`): creates the 11 upstream tables/indexes when absent, backfills missing columns, seeds `_meta.schemaVersion='1'` and an empty settings row, then creates the Go-only `upstream_leases` table. All statements are idempotent — a fresh `DATA_DIR` boots into a working installation. Go does **not** import legacy JSON files, run destructive migrations, or take pre-migration backups.
+The two hot ledgers — `usageHistory` and `requestDetails` — are monthly
+RANGE-partitioned tables. Provider credentials are stored in the database;
+protect the PostgreSQL credentials and volumes as secrets. `DATABASE.md`
+is the full schema and operator contract.
 
-Consequences:
+`DATA_DIR` survives as the **non-database state root**: CLI
+tokens/machine-id, uploads, provider instruction files, tunnel state, and
+the model-catalog cache (`model-catalog.json`, a rebuildable boot-fetched
+cache, never a source of truth). In the compose stacks it is the `appdata`
+volume; in the cluster stack the volume is shared across replicas.
 
-- A fresh empty file is now a supported bootstrap path; existing databases are untouched (columns backfilled, rows preserved).
-- `DB_PATH` may point to a file. If it points to a directory, resolution recognizes `db/data.sqlite`, `data.sqlite`, or `9router.db` when present, otherwise it selects `db/data.sqlite`.
-- There is no Go-side legacy-JSON import or backup transaction equivalent to upstream's schema migrator.
-- Provider credentials are stored in the database; protect the file and volume as secrets.
+### Speed layer
 
-`DATABASE.md` contains the schema inventory and known drift. Its Next.js labels are compatibility history, not a statement that Next.js is deployed with this binary.
+Hot, ephemeral state lives behind the `internal/speedlayer` `Store`
+interface (counters, KV with TTL, bounded rings, prefix scans) with three
+backends:
+
+- **memory** — the in-process state, extracted; the single-node default;
+- **Valkey/Redis** — via `VALKEY_URL` (winning over `REDIS_URL`), a minimal
+  hand-rolled RESP2 client: the layer needs a dozen commands, and the full
+  client graph is not worth its weight on the §4.G hardware (AGENTS.md);
+- **database** — `speed_kv`/`speed_counters` tables inside the application
+  database itself; this is the **degradation** backend.
+
+Boot selection (`speedlayer/config.go`): a configured Redis becomes the
+primary behind a breaker (3 consecutive failures trip it, a 5 s prober
+heals it, both transitions logged; an eager Ping decides whether the
+breaker starts open), with the database backend armed underneath. An
+unparseable URL logs loudly and serves from the database — never silently
+from memory. No URL → memory (single-node mode). While the breaker is
+open, every operation is served by the database: the layer never falls
+back to per-node memory in a cluster, because divergent memory is worse
+than a slower truth. The boot banner (node id from `NODE_ID` or hostname,
+mode single/cluster, speed primary/serving/degraded) and the `speedLayer`
+field of `GET /api/system/memory` report the state.
+
+Behind the layer: the usage tracker's live state (in-flight counters per
+model and per account×model, name entries, the recent-request ring seeded
+once from DB history, the last-error entry), the proxy-pool rotation
+cursor (an in-process atomic remains as the error fallback), and the
+model-lock hot path as a *positive-only* read shortcut — a miss, error, or
+expired entry always falls through to the DB read, so the overlay can
+never change an answer, only make it cheaper. Deliberately **not** behind
+it: account cooldowns and rotation stamps/leases (already DB-serialized —
+the row the selector loads fresh per request is the shared truth), session
+affinity (a hint whose correctness comes from re-checking the row), the
+resilience semaphore, provider quota caches, and the catalog cache
+(node-local by nature, boot-fetched and rebuildable).
+
+### Cluster topology
+
+```mermaid
+flowchart LR
+    Client[Clients] --> LB[nginx]
+    LB --> N1[9router-go node]
+    LB --> N2[9router-go node]
+    N1 --> PG[(PostgreSQL 17 - durable truth)]
+    N2 --> PG
+    N1 --> VK[(Valkey - hot state only)]
+    N2 --> VK
+```
+
+`docker-compose.cluster.yml` is this topology: N identical replicas
+(`APP_REPLICAS`, default 2) behind nginx (DNS-variable upstream, SSE-safe
+proxying), one PostgreSQL, one Valkey with no persistence configured on
+purpose — its state is reconstructible from PostgreSQL. Every node shares
+`DATABASE_URL`, `JWT_SECRET`, and the `DATA_DIR` volume. A Valkey outage
+degrades all nodes to the PostgreSQL speed backend (§ Speed layer); a
+node outage is absorbed by the LB. The single-node stack
+(`docker-compose.single.yml`) is the same shape minus Valkey and nginx,
+in memory speed mode.
+
+### Legacy data
+
+A pre-cutover install's `data.sqlite` enters through the compose
+`migrate` profile (`tools/migrate-db`): a separate module/image that
+copies every table into PostgreSQL with verification (`target = source −
+skipped`), refuses a non-empty target unless `--truncate` is passed, and
+is never linked into the gateway. The gateway's only other contact with
+the legacy file format is `internal/foreigndb`, a read-only reader for
+*other applications'* files (browser cookie stores, Cursor/Zed state)
+behind the import-from-browser features.
 
 ## Background work and observability
 
 On startup, the server starts:
 
 - a six-hour background update checker when auto-update is enabled;
-- model catalog synchronization to `model-catalog.json` beside the database; and
+- model catalog synchronization to `model-catalog.json` in `DATA_DIR` (the non-database state root); and
 - a live console-log ring used by `/translator/console-logs/stream`.
 
 The console-log ring stores `log.ConsoleEntry` — `{time, level, line}` — rather
@@ -274,7 +354,7 @@ the arrival clock because the text log format prints no timestamp of its own.
 The wire shape diverges deliberately from upstream Next, which shipped bare
 strings and no level at all; the Svelte dashboard is the only consumer.
 
-The in-memory usage tracker publishes active requests over SSE and seeds recent history from `usageHistory` once per process. SQLite usage history remains the durable source. Daily usage aggregation is process-local merge plus full-row upsert; concurrent independent writers can still overwrite one another's daily aggregate.
+The usage tracker publishes active requests over SSE; its live state rides the speed layer (§ Speed layer), so a cluster's nodes share the in-flight picture, and its recent-request ring is seeded once from `usageHistory` when empty. PostgreSQL remains the durable source for all usage history and daily aggregates.
 
 Global middleware limits request bodies to 10 MiB, recovers panics, assigns request IDs, and emits structured request logs. `LOG_FILE` can redirect the standard logger to an append-only file.
 
@@ -287,29 +367,48 @@ The project has two build-time toolchains: Bun builds the Svelte SPA, and Go emb
 FORCE=1 make web-build
 make build
 
-# Development runtime
+# Development runtime (a reachable PostgreSQL is required — the compose
+# stacks provide one; a bare run points DATABASE_URL at any server)
 make run                 # or: make dev
-PORT=3000 DATA_DIR=/path make run
+DATABASE_URL=postgres://user:pass@localhost:5432/9router JWT_SECRET=dev PORT=3000 make run
 
 # Verification
 make vet
-make test-short          # go test ./...
-make test                # go test ./... -v
+make vet-svelte          # svelte-check ratchet for dashboard changes
+go build ./...
 ```
 
-CI uses Bun 1.4.2 to run `bun install --frozen-lockfile` and `bun run build`, then Go 1.27 to run `go vet ./...`, `go test ./... -v`, and a Go binary build. Tagged release workflow builds the five platform binaries with `make cross`, uploads checksums, and publishes multi-architecture Linux images. Docker builds the SPA in a Bun stage, embeds it into a CGO-disabled Go build, and runs the resulting binary in Alpine.
+**Test-fleet state (decision D1).** The legacy suites written against the
+removed file database are quarantined behind the `sqlite_legacy` build tag
+(300 files; the five that imported the driver directly also carry `ignore`,
+because `go mod tidy` would otherwise keep the driver in the module), so
+`go test ./...` compiles and runs only the un-quarantined subset. The
+`integration`-tagged suite's harness still calls the removed file-database
+API and does not compile since the PostgreSQL cutover; porting both fleets
+to a PostgreSQL harness is future work under D1, not a property of the
+current tree. Verification of a change today is build + vet + the svelte
+ratchet + live probes against a running gateway.
+
+The tagged release workflow builds the five platform binaries with
+`make cross`, uploads checksums, and builds/pushes the multi-architecture
+Linux image (`luqmenul/9router-go`, linux/amd64 + linux/arm64) from the
+repo `Dockerfile`: Bun stage builds the SPA, a Go stage embeds it into a
+CGO-disabled binary, and the Alpine runtime runs it as a non-root user
+(uid 10001) behind `docker-entrypoint.sh`. The compose stacks
+(`docker-compose.single.yml`, `docker-compose.cluster.yml`) are the
+supported deployment shape.
 
 The web package has no frontend unit/component test script. Dashboard verification is therefore a running-server/browser exercise, while CI verifies TypeScript compilation during the Vite build plus the Go suites. The benchmark runner is a separate performance experiment, not an acceptance test.
 
 ## Current operational caveats
 
-- **Fresh database:** Go bootstraps the upstream core schema additively on startup (no legacy-JSON import or pre-migration backups — those still need upstream once).
+- **Fresh database:** Go bootstraps the PostgreSQL schema additively on startup. A legacy file-era install needs the one-shot `migrate` profile once (README's upgrade section); there is no legacy-JSON import.
 - **Compatibility:** selected upstream contracts are ported, but v0.5.86 items in the changelog are partial and the declared baseline remains v0.5.85.
 - **Network exposure:** the default listener is all interfaces. Set `HOST=127.0.0.1` behind a trusted reverse proxy or otherwise protect the port.
 - **Dashboard security:** login is required by default when settings are missing/unreadable, but compatibility still accepts the well-known password locally until rotated. Set `INITIAL_PASSWORD` explicitly.
 - **Profiling:** never enable `PPROF_ENABLED` on an untrusted network without separate access controls.
-- **Secrets:** SQLite contains provider credentials; the local CLI secret and JWT secret also live under `DATA_DIR`.
-- **Multi-process writes:** WAL improves concurrency, but daily aggregate full-row replacement and external process behavior still require care. Freebuff leases coordinate cooperating Go instances; they do not authorize policy-violating account sharing.
+- **Secrets:** PostgreSQL contains the provider credentials; the local CLI secret lives under `DATA_DIR`, and `JWT_SECRET` comes from the environment — protect all three.
+- **Multi-node writes:** the cluster topology is a supported shape — durable state is PostgreSQL's, hot state is shared or degraded to PostgreSQL by the speed layer, so nodes do not diverge. Freebuff leases coordinate cooperating Go instances; they do not authorize policy-violating account sharing.
 - **Build assets:** stale or missing `web/dist` can produce an unavailable dashboard or a compile-time embed failure. Release/CI always build the SPA first.
 - **Provider reality:** cloaking and fallback improve compatibility but do not guarantee provider availability, quota, anti-ban safety, or permission to share accounts.
 - **Updates:** release binaries are unsigned. Verify `SHA256SUMS.txt`; Windows may require explicit user action.
