@@ -1112,9 +1112,21 @@ func (h *ChatHandler) appendCombos(data []ModelInfoObject, seen map[string]bool)
 	if err != nil {
 		return data
 	}
+	// Hidden combos (dashboard-managed, see /api/combos/hidden) are excluded
+	// from the models list, as in AxonRouter. A failed read is non-fatal
+	// there and here: the list renders without the filter.
+	hiddenCombos := map[string]bool{}
+	if hidden, herr := h.Repo.GetHiddenComboNames(); herr == nil {
+		for _, name := range hidden {
+			hiddenCombos[name] = true
+		}
+	}
 	index := loadComboIndex(combos)
 	for _, combo := range combos {
 		if combo == nil || combo.Name == "" || seen[combo.Name] {
+			continue
+		}
+		if hiddenCombos[combo.Name] {
 			continue
 		}
 		// Upstream comboMatchesKinds: this endpoint is the LLM list

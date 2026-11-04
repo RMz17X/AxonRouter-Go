@@ -104,5 +104,13 @@ func (r *Repo) GetCombos() ([]*models.Combo, error) {
 	for _, combo := range combos {
 		resolveComboStrategy(combo, settings)
 	}
+
+	// A stored reorder (POST /api/combos/reorder) re-sorts the list: ids in
+	// the stored order first, everything else in createdAt order behind them.
+	// The read follows the settings precedent above — a missing or unreadable
+	// order leaves the natural order untouched rather than failing the list.
+	if orderIDs, err := r.GetComboOrderIDs(); err == nil && len(orderIDs) > 0 {
+		combos = OrderCombosByIDs(combos, orderIDs)
+	}
 	return combos, nil
 }
