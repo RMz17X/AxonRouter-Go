@@ -315,7 +315,7 @@ func (h *ChatHandler) connectedProviderIDs(conns []*models.ProviderConnection) m
 // are simply not offered, so every path that publishes a catalog skips them.
 //
 // The alias is resolved before the lookup because the publishing loops visit
-// each spelling that resolves to itself: `mimo-free` and its `mmf` alias are
+// each spelling that resolves to itself: `opencode` and its `oc` alias are
 // two separate ProviderModels keys, so an alias-only check would let one
 // spelling through while blocking the other.
 func hiddenProvider(providerID string) bool {
@@ -736,8 +736,8 @@ func appendNoAuthCatalogModels(
 			continue
 		}
 		// Hidden providers serve traffic without being offered. Checked on the
-		// canonical id so every spelling of the same provider (mimo-free and its
-		// mmf alias) leaves the catalog together — this loop publishes each
+		// canonical id so every spelling of the same provider (opencode and its
+		// oc alias) leaves the catalog together — this loop publishes each
 		// alias that resolves to itself, so an alias-only check would let one
 		// spelling through while blocking the other.
 		canonical := providers.ResolveAlias(alias)
@@ -814,8 +814,8 @@ func (h *ChatHandler) appendLooseCustomModels(
 		}
 		// Custom rows are keyed by provider, so this loop is the second way a
 		// hidden provider can reach the listing: the static dump above skips it,
-		// but an operator-pinned custom model on mimo-free would still publish
-		// `mimo-free/<id>` under ?all=1 and on a fresh install.
+		// but an operator-pinned custom model on a hidden provider would still
+		// publish `<provider>/<id>` under ?all=1 and on a fresh install.
 		if hiddenProvider(providerID) {
 			continue
 		}

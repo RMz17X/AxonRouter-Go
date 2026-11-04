@@ -121,9 +121,8 @@ export async function loadProviderCatalog(): Promise<void> {
     PROVIDER_CATALOG.length = 0
     for (const section of data.sections ?? []) {
       for (const p of section.providers ?? []) {
-        // An entry whose id is another entry's alias is dropped: `mmf` resolves
-        // to `mimo-free`, and serving both offers the same provider twice in
-        // every picker.
+        // An entry whose id is another entry's alias is dropped: serving
+        // both spellings offers the same provider twice in every picker.
         if (p.alias && p.alias !== p.id && seenAlias.has(p.alias)) continue
         if (p.alias && p.alias !== p.id) seenAlias.add(p.alias)
         PROVIDER_CATALOG.push(p)

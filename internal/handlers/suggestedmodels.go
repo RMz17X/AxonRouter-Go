@@ -108,25 +108,6 @@ func filterOpencodeFree(models []map[string]any) []suggestedModel {
 	return out
 }
 
-func filterMimoFree(models []map[string]any) []suggestedModel {
-	out := []suggestedModel{}
-	for _, m := range models {
-		id := getString(m, "id")
-		name := getString(m, "name")
-		if id == "" {
-			continue
-		}
-		if !strings.HasPrefix(id, "mimo") && !strings.Contains(strings.ToLower(name), "mimo") {
-			continue
-		}
-		if name == "" {
-			name = id
-		}
-		out = append(out, suggestedModel{ID: id, Name: name})
-	}
-	return out
-}
-
 func filterAirforceFree(models []map[string]any) []suggestedModel {
 	out := []suggestedModel{}
 	for _, m := range models {
@@ -304,8 +285,6 @@ func HandleSuggestedModels(w http.ResponseWriter, r *http.Request) {
 		filter = filterOpenRouterFree
 	case "opencode-free":
 		filter = filterOpencodeFree
-	case "mimo-free":
-		filter = filterMimoFree
 	case "airforce-free":
 		filter = filterAirforceFree
 	case "minimax-code":

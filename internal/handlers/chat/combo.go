@@ -892,20 +892,14 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 					targetWriter = streamPeeker
 				}
 				attemptStart := time.Now()
-				if modelInfo.Provider == "mimo-free" {
-					comboMetrics := &streamMetrics{}
-					upstreamJSON = clampMimoFreeReasoning(upstreamJSON, modelInfo.Model)
-					fwdErr = h.MimoFreeChat(fwdCtx, targetWriter, upstreamJSON, isStream, comboMetrics)
-				} else {
-					fwdErr = h.tryForwardWithConnection(forwardRequestParams{
-						Ctx: fwdCtx, W: targetWriter, Provider: modelInfo.Provider, Model: modelInfo.Model,
-						RequestedModel: comboName, ComboName: comboName, Attempts: attemptCount(ctx),
-						ConnectionID: connID, ConnName: connObjName(picked), ConnEmail: connObjEmail(picked),
-						ConnData: connData, Body: upstreamJSON,
-						IsStream: isStream, TranslateResponse: translateResponse,
-						Endpoint: forwardEndpoint(ctx, "/v1/chat/completions"),
-					})
-				}
+				fwdErr = h.tryForwardWithConnection(forwardRequestParams{
+					Ctx: fwdCtx, W: targetWriter, Provider: modelInfo.Provider, Model: modelInfo.Model,
+					RequestedModel: comboName, ComboName: comboName, Attempts: attemptCount(ctx),
+					ConnectionID: connID, ConnName: connObjName(picked), ConnEmail: connObjEmail(picked),
+					ConnData: connData, Body: upstreamJSON,
+					IsStream: isStream, TranslateResponse: translateResponse,
+					Endpoint: forwardEndpoint(ctx, "/v1/chat/completions"),
+				})
 				if timeoutGate != nil && timeoutGate.timedOut() && ctx.Err() == nil {
 					fwdErr = context.DeadlineExceeded
 				}

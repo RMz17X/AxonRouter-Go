@@ -86,7 +86,6 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "kimi": "kimi",
   "kiro": "kr",
   "llm7": "llm7",
-  "mimo-free": "mmf",
   "minimax": "minimax",
   "minimax-cn": "minimax-cn",
   "minimax-code": "mmc",
@@ -3271,12 +3270,6 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "rateMultiplier": 0.6,
       "upstreamModelId": "gpt-5.6-luna",
       "description": "Experimental preview of OpenAI GPT 5.6 Luna with 272k context window"
-    }
-  ],
-  "mmf": [
-    {
-      "id": "mimo-auto",
-      "name": "MiMo Auto"
     }
   ],
   "muse": [

@@ -52,7 +52,6 @@ var RegistryAliases = map[string]string{
 	"kilo-gateway":      "kgw",
 	"kilocode":          "kc",
 	"kiro":              "kr",
-	"mimo-free":         "mmf",
 	// MiniMax Code sites. "mm" belongs to the API-key `minimax` provider, so
 	// the credits lane is published under "mmc"; the global site keeps
 	// upstream's own "mmg".
