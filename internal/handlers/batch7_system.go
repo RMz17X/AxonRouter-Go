@@ -24,6 +24,7 @@ import (
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/proxy/executor"
 	"9router/proxy/internal/proxy/poolstate"
+	"9router/proxy/internal/speedlayer"
 	"9router/proxy/internal/updater"
 )
 
@@ -107,6 +108,12 @@ func HandleSystemMemory(repo *db.Repo) http.HandlerFunc {
 				"geoPools":     poolstate.GeoPoolCount(),
 				"freebuff":     executor.FreebuffSessionStateSize(),
 			},
+			// The speed layer's self-report (P3): mode, node identity,
+			// and — in cluster mode — whether the breaker has degraded
+			// serving onto the database backend. This is the dashboard
+			// surface the failover rule requires; it rides the existing
+			// system payload rather than growing a new one.
+			"speedLayer": speedlayer.CurrentStatus(),
 		})
 	}
 }

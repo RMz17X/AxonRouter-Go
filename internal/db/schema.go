@@ -672,6 +672,18 @@ func EnsureCoreSchema(db *sql.DB) error {
 	if err := EnsureAdditiveColumns(db); err != nil {
 		return err
 	}
+	// The hashed-key auth lookup (FindApiKeyByLookup) is the primary
+	// authentication path for every row created since key hashing landed,
+	// and it seq-scanned until P3's EXPLAIN pass caught it: lookupHash
+	// existed in both schemas but no index did. The index is created here,
+	// after the additive columns exist — the column itself arrives via
+	// EnsureAdditiveColumns, so the table DDL above cannot index it on a
+	// fresh database. Mirrored in EnsurePostgresSchema.
+	if _, err := db.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_ak_lookup ON apiKeys(lookupHash)`,
+	); err != nil {
+		return fmt.Errorf("core schema: create index on apiKeys(lookupHash): %w", err)
+	}
 	if _, err := db.Exec(
 		`INSERT OR IGNORE INTO _meta(key, value) VALUES('schemaVersion', '1')`,
 	); err != nil {

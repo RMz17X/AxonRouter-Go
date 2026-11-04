@@ -66,6 +66,16 @@ func EnsurePostgresSchema(db *sql.DB) error {
 	if err := ensureAdditiveColumnsPG(db, cat); err != nil {
 		return err
 	}
+	// Mirrors the SQLite bootstrap in schema.go: idx_ak_lookup serves the
+	// hashed-key auth lookup (FindApiKeyByLookup), the primary
+	// authentication path for hashed rows; it is created only after the
+	// additive columns exist because lookupHash is one of them, so the
+	// table DDL cannot index it on a fresh database.
+	if _, err := db.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_ak_lookup ON apiKeys(lookupHash)`,
+	); err != nil {
+		return fmt.Errorf("postgres schema: create index on apiKeys(lookupHash): %w", err)
+	}
 	if _, err := db.Exec(
 		`INSERT INTO _meta(key, value) VALUES('schemaVersion', '1') ON CONFLICT (key) DO NOTHING`,
 	); err != nil {

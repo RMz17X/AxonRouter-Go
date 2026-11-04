@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,16 +43,49 @@ func DialectOf(handle *sql.DB) Dialect {
 	return DialectSQLite
 }
 
-// pgMaxOpenConns bounds the PostgreSQL pool. The gateway deploys to a
-// 1 vCPU box (AGENTS.md §4.G), and PostgreSQL is a shared server rather
-// than a file this process owns, so the pool is sized for a handful of
-// concurrent dashboard polls plus the usage write path — not for the
-// hundreds of connections a default would permit across a cluster of
-// these binaries.
+// PostgreSQL pool sizing (Efficiency Mandate: deliberate config, not a
+// driver default). The defaults are sized for the deployment target in
+// AGENTS.md §4.G — a 1 vCPU box whose PostgreSQL is a shared server:
+//
+//   - 10 open connections per node covers the real concurrency shape:
+//     one usage write + a couple of reads per in-flight chat request,
+//     plus the dashboard's poll set (stats fold, connections, keys)
+//     bursting every few seconds. Measured demand in the P1 smokes
+//     never queued at 10; going higher buys nothing on 1 vCPU and
+//     spends the server's connection budget — PostgreSQL's own default
+//     max_connections is 100, so a 4-node cluster at 10 stays at 40%
+//     of it with room for the migrator and operator shells.
+//   - 5 idle keeps the dashboard's poll cadence off the dial path
+//     without holding the full pool open between polls.
+//
+// PG_POOL_MAX_OPEN / PG_POOL_MAX_IDLE override for larger nodes or a
+// bigger shared server; idle is clamped to open, and non-positive or
+// unparseable values fall back to the defaults.
 const (
-	pgMaxOpenConns = 10
-	pgMaxIdleConns = 5
+	pgDefaultMaxOpenConns = 10
+	pgDefaultMaxIdleConns = 5
 )
+
+func pgPoolSizes() (maxOpen, maxIdle int) {
+	maxOpen = envPositiveInt("PG_POOL_MAX_OPEN", pgDefaultMaxOpenConns)
+	maxIdle = envPositiveInt("PG_POOL_MAX_IDLE", pgDefaultMaxIdleConns)
+	if maxIdle > maxOpen {
+		maxIdle = maxOpen
+	}
+	return maxOpen, maxIdle
+}
+
+func envPositiveInt(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return fallback
+	}
+	return n
+}
 
 // pgStatementTimeoutMs is the per-statement ceiling applied to every
 // pooled connection unless the operator set statement_timeout in
@@ -79,8 +113,9 @@ func OpenPostgresDatabase(dsn string) (*sql.DB, error) {
 	}
 
 	handle := stdlib.OpenDB(*cfg)
-	handle.SetMaxOpenConns(pgMaxOpenConns)
-	handle.SetMaxIdleConns(pgMaxIdleConns)
+	maxOpen, maxIdle := pgPoolSizes()
+	handle.SetMaxOpenConns(maxOpen)
+	handle.SetMaxIdleConns(maxIdle)
 	handle.SetConnMaxLifetime(30 * time.Minute)
 	handle.SetConnMaxIdleTime(5 * time.Minute)
 

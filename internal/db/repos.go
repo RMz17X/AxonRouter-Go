@@ -47,6 +47,12 @@ type Repo struct {
 	// reader that already captured a *Repo. A nil value means "no vault", which
 	// is every install that never set ROUTER_MASTER_KEY.
 	vault atomic.Value // *vault.Vault
+	// speed is the optional cluster speed layer (P3), installed by the
+	// app wiring via SetSpeedStore. Like the vault it is stored rather
+	// than held by value so the wiring can install it after the Repo is
+	// constructed. A nil value means "no layer" — every consumer in
+	// speed.go then no-ops and the database reads carry the behaviour.
+	speed atomic.Value // speedlayer.Store
 	// budgetColsOnce/budgetCols cache whether the apiKeys table carries the
 	// F-2 budget columns. The answer is a property of the schema, which does
 	// not change while the process runs, and the probe sits on the dashboard's

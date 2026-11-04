@@ -55,6 +55,12 @@ func (r *Repo) LockConnectionModel(connID, model string, durationSec int, backof
 	if err != nil {
 		return fmt.Errorf("lock connection model %s/%s: %w", connID, model, err)
 	}
+	// Mirror the lock into the speed layer so the selector's per-model
+	// check can answer from the shared cache instead of a SELECT per
+	// candidate (see speed.go). The row above stays the truth.
+	if until, perr := time.Parse(time.RFC3339, lockedUntil); perr == nil {
+		r.publishModelLock(connID, model, until)
+	}
 	return nil
 }
 
@@ -224,13 +230,24 @@ func (r *Repo) ClearConnectionModelLocks(ctx context.Context, connID string) err
 	if err != nil {
 		return fmt.Errorf("clear connection model locks %s: %w", connID, err)
 	}
-	return r.UpdateConnectionData(connID, string(encoded))
+	if err := r.UpdateConnectionData(connID, string(encoded)); err != nil {
+		return err
+	}
+	r.clearModelLockOverlay(connID)
+	return nil
 }
 
 // IsConnectionModelLocked checks whether the given connection has an active
 // modelLock_<model> field in its data JSON blob. Returns true when the
 // timestamp is in the future.
 func (r *Repo) IsConnectionModelLocked(connID, model string) (bool, error) {
+	// Speed-layer shortcut (P3, see speed.go): a live overlay entry is a
+	// lock a writer already persisted to the row below, so answering
+	// from it skips this SELECT on the selection hot path. A miss falls
+	// through to the row, which stays authoritative.
+	if r.overlayModelLocked(connID, model) {
+		return true, nil
+	}
 	var rawData string
 	err := r.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&rawData)
 	if err == sql.ErrNoRows {
@@ -276,6 +293,7 @@ func (r *Repo) UnlockConnectionModel(connID, model string) error {
 	if err != nil {
 		return fmt.Errorf("unlock connection model %s/%s: %w", connID, model, err)
 	}
+	r.deleteModelLockOverlay(connID, model)
 	return nil
 }
 
@@ -311,6 +329,9 @@ func (r *Repo) ResetConnectionHealthState(connID string) error {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err = r.Exec("UPDATE providerConnections SET data = ?, updatedAt = ? WHERE id = ?", string(newBytes), now, connID)
+	if err == nil {
+		r.clearModelLockOverlay(connID)
+	}
 	return err
 }
 

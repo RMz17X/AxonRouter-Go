@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // exec.go is step 0 of the PostgreSQL dialect sweep (P1): how a statement
@@ -35,6 +36,23 @@ import (
 // itself differs — the JSON expressions in jsonexpr.go, upsert forms, and
 // PRAGMA-class maintenance, which has no PG form and is gated off instead.
 
+// rebindCache memoises rebindQuery's PostgreSQL output keyed by the
+// source statement (Efficiency Mandate, 2026-11-04: the PG layer must
+// not rescan SQL text on every execution in steady state). The corpus
+// of statements is fixed at build time — every query string in this
+// package is a source literal or a deterministic assembly of them — so
+// the working set is a few hundred entries and the cache reaches a
+// steady state where every execution is one map read. The cap is a
+// leak guard, not a sizing decision: past it the map resets and
+// rewarms, which costs one scan per distinct statement, never a wrong
+// result.
+const rebindCacheMax = 4096
+
+var (
+	rebindCacheMu sync.Mutex
+	rebindCache   = make(map[string]string, 512)
+)
+
 // rebindQuery rewrites the '?' placeholders of a statement to PostgreSQL's
 // $1..$n for the PostgreSQL dialect. Any other dialect gets the statement
 // back unchanged.
@@ -42,6 +60,24 @@ func rebindQuery(d Dialect, query string) string {
 	if d != DialectPostgres || !strings.Contains(query, "?") {
 		return query
 	}
+	rebindCacheMu.Lock()
+	cached, ok := rebindCache[query]
+	rebindCacheMu.Unlock()
+	if ok {
+		return cached
+	}
+	rebound := rebindScan(query)
+	rebindCacheMu.Lock()
+	if len(rebindCache) >= rebindCacheMax {
+		rebindCache = make(map[string]string, 512)
+	}
+	rebindCache[query] = rebound
+	rebindCacheMu.Unlock()
+	return rebound
+}
+
+// rebindScan is the quote- and comment-aware rewrite rebindQuery caches.
+func rebindScan(query string) string {
 	var b strings.Builder
 	b.Grow(len(query) + 16)
 	n := 0

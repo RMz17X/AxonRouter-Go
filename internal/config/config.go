@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/spf13/viper"
 
@@ -223,6 +224,11 @@ func LoadConfigFromViper(v *viper.Viper) *Config {
 	}
 }
 
+// jwtFileDeprecationOnce keeps the per-node jwt-secret file's
+// deprecation line to once per process: LoadConfig runs on request
+// paths, and a warning per request would bury the signal it carries.
+var jwtFileDeprecationOnce sync.Once
+
 func loadJWTSecret(v *viper.Viper, dataDir string) string {
 	var secret string
 	if v != nil {
@@ -232,9 +238,19 @@ func loadJWTSecret(v *viper.Viper, dataDir string) string {
 		secret = os.Getenv("JWT_SECRET")
 	}
 	if secret != "" {
+		// JWT_SECRET is the secret's source (P3): in a cluster every
+		// node must hold the SAME secret, and an env value is the only
+		// form that cannot drift per node.
 		return secret
 	}
 
+	// Deprecated fallback (P3; the file itself is removed in P4): a
+	// per-node file means every node mints a different secret, so
+	// sessions stop surviving a move between nodes. It stays readable
+	// so existing single-node installs boot unchanged.
+	jwtFileDeprecationOnce.Do(func() {
+		log.Warn("config", "JWT_SECRET is not set; using the per-node jwt-secret file, which is deprecated — set JWT_SECRET so every node shares one secret")
+	})
 	secretFile := filepath.Join(dataDir, "jwt-secret")
 	data, err := os.ReadFile(secretFile)
 	if err == nil {

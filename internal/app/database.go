@@ -11,7 +11,9 @@ import (
 	"9router/proxy/internal/config"
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/log"
+	"9router/proxy/internal/speedlayer"
 	"9router/proxy/internal/translator"
+	"9router/proxy/internal/usagetracker"
 	"9router/proxy/internal/vault"
 )
 
@@ -25,7 +27,37 @@ var DatabaseModule = fx.Module("database",
 	// startup side effect. As a Provide it would be rejected for returning
 	// only an error.
 	fx.Invoke(MigrateVault),
+	fx.Invoke(InitSpeedLayer),
 )
+
+// InitSpeedLayer builds the cluster speed layer (P3) over the booted
+// database handle and installs it with every consumer: the process-wide
+// default (the chat rotation cursors), the usage tracker (its live
+// state), and the Repo (the model-lock overlay). Selection lives in
+// speedlayer.Build: REDIS_URL/VALKEY_URL set → Redis primary with the
+// database as the degradation backend behind a breaker; unset → the
+// in-memory single-node store.
+//
+// The boot banner it logs is the operator's one-line answer to "what is
+// this node": its identity, its mode (single/cluster), and the backends
+// in use.
+func InitSpeedLayer(conn *sql.DB, repo *db.Repo) {
+	dialect := string(db.DialectOf(conn))
+	store := speedlayer.Build(conn, dialect)
+	speedlayer.Install(store)
+	usagetracker.SetStore(store)
+	repo.SetSpeedStore(store)
+
+	status := speedlayer.CurrentStatus()
+	log.Info("boot", "node up",
+		"node", status.NodeID,
+		"mode", string(status.Mode),
+		"db", dialect,
+		"speedPrimary", status.Primary,
+		"speedServing", status.Serving,
+		"speedDegraded", status.Degraded,
+	)
+}
 
 // ProvideDatabase initializes the global SQLite database and registers an OnStop lifecycle hook to close it cleanly.
 func ProvideDatabase(lc fx.Lifecycle, cfg *config.Config) (*sql.DB, error) {
