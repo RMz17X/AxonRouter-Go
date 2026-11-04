@@ -125,6 +125,7 @@ func SetupRoutes(r interface {
 	r.Post("/videos/edits", mediaH.HandleVideoEdits)
 	r.Post("/videos/extensions", mediaH.HandleVideoExtensions)
 	r.Get("/videos/{id}", mediaH.HandleVideoGet)
+	r.Get("/videos/{id}/content", mediaH.HandleVideoContent)
 	r.Post("/search", mediaH.HandleSearch)
 	r.Post("/scrape", mediaH.HandleScrape)
 	r.Post("/web/fetch", mediaH.HandleWebFetch)

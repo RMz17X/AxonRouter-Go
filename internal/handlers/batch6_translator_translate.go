@@ -4,21 +4,22 @@ package handlers
 // src/app/api/translator/translate/route.ts. Step 1 identifies the
 // source format of a client body (detectFormat mirrors
 // open-sse/services/provider.js heuristics) and the provider's target
-// format; step 2 converts the body to OpenAI shape; step 3 would build
-// the provider request (URL + headers + target body) through the
-// executor's buildUrl/buildHeaders/transformRequest surface.
+// format; step 2 converts the body to OpenAI shape; step 3 builds
+// the provider request (URL + headers + target body) — implemented
+// in batch10_translator_step3.go (batch 10 item 5b) as additive
+// build-only constructors over the registry + active connection,
+// without touching the live executor path.
 //
-// PARTIAL PORT (recorded in .changes/917, step 2 completed in
-// .changes/926): steps 1-2 are implemented for every source format
-// detectTranslatorFormat can return — openai = identity, claude = the
-// real Claude→OpenAI request translator, openai-responses = the chat
-// layer's Responses→Chat request translator, gemini / antigravity =
-// the dedicated request translators in internal/translator
-// (gemini_request.go). Step 3 remains deferred — Go executors expose
-// no build-only request-construction API, and adding one restructures
-// every executor (OWNER-DECISION, audit item 5b). The deferred case
-// answers Axon's catch shape {success:false, error} at 500 with the
-// reason named, never a fabricated result.
+// PORT STATUS (recorded in .changes/917, step 2 completed in
+// .changes/926, step 3 in .changes/929): steps 1-2 are implemented
+// for every source format detectTranslatorFormat can return —
+// openai = identity, claude = the real Claude→OpenAI request
+// translator, openai-responses = the chat layer's Responses→Chat
+// request translator, gemini / antigravity = the dedicated request
+// translators in internal/translator (gemini_request.go). Step 3
+// covers the providers Axon serves with its Base/DefaultExecutor;
+// specialized-executor providers answer Axon's catch shape
+// {success:false, error} at 500 with the executor named.
 
 import (
 	"encoding/json"
@@ -113,8 +114,15 @@ func HandleTranslatorTranslate(w http.ResponseWriter, r *http.Request) {
 			translatorFail(w, http.StatusBadRequest, "provider and model required")
 			return
 		}
-		translatorFail(w, http.StatusInternalServerError,
-			"step 3 is not available in the Go port: executors do not expose a build-only request-construction surface (buildUrl/buildHeaders/transformRequest)")
+		status, result, errMsg := translatorStep3(reqBody.Provider, reqBody.Model, clientBody, clientMap)
+		if errMsg != "" {
+			translatorFail(w, status, errMsg)
+			return
+		}
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"success": true,
+			"result":  result,
+		})
 	}
 }
 
