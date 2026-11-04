@@ -38,7 +38,7 @@ const (
 // GetUsageDaily returns the daily usage JSON data for a given date key.
 func (r *Repo) GetUsageDaily(dateKey string) (string, error) {
 	var data string
-	err := r.db.QueryRow(`SELECT data FROM usageDaily WHERE dateKey = ?`, dateKey).Scan(&data)
+	err := r.QueryRow(`SELECT data FROM usageDaily WHERE dateKey = ?`, dateKey).Scan(&data)
 	if err != nil {
 		return "", fmt.Errorf("get daily usage %s: %w", dateKey, err)
 	}
@@ -57,7 +57,7 @@ func (r *Repo) InsertUsageHistory(provider, model, connectionID, apiKey, endpoin
 		attributedTo = clientKey[0]
 	}
 	timestamp := time.Now().UTC().Format(time.RFC3339)
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`INSERT INTO usageHistory (timestamp, provider, model, connectionId, apiKey, clientKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		timestamp, provider, model, connectionID, apiKey, attributedTo, endpoint, promptTokens, completionTokens, cost, status, tokensJSON, meta,
@@ -75,10 +75,16 @@ func (r *Repo) InsertUsageHistory(provider, model, connectionID, apiKey, endpoin
 // concurrent writers from MULTIPLE processes can still clobber each other. This
 // is documented as single-writer unless the aggregation moves SQL-side.
 func (r *Repo) UpsertUsageDaily(dateKey string, data string) error {
-	_, err := r.db.Exec(
-		`INSERT OR REPLACE INTO usageDaily (dateKey, data) VALUES (?, ?)`,
-		dateKey, data,
-	)
+	// The PostgreSQL form of the full-row replace above: usageDaily keys
+	// on dateKey in both dialects, so the conflict target is the key
+	// itself and DO UPDATE SET is the atomic replace INSERT OR REPLACE
+	// performs (the merge still happened in-process, per the note above).
+	query := `INSERT OR REPLACE INTO usageDaily (dateKey, data) VALUES (?, ?)`
+	if r.IsPostgres() {
+		query = `INSERT INTO usageDaily (dateKey, data) VALUES (?, ?)
+		 ON CONFLICT (dateKey) DO UPDATE SET data = EXCLUDED.data`
+	}
+	_, err := r.Exec(query, dateKey, data)
 	if err != nil {
 		return fmt.Errorf("upsert daily usage %s: %w", dateKey, err)
 	}
@@ -88,10 +94,22 @@ func (r *Repo) UpsertUsageDaily(dateKey string, data string) error {
 // InsertRequestDetail logs a request detail record for the Recent Requests dashboard tab.
 func (r *Repo) InsertRequestDetail(id, provider, model, connectionID, status string, data string) error {
 	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
-	_, err := r.db.Exec(
-		`INSERT OR IGNORE INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, timestamp, provider, model, connectionID, status, data,
-	)
+	// PostgreSQL: ON CONFLICT DO NOTHING with no target. One grain of
+	// difference from OR IGNORE is deliberate and recorded in the P1
+	// fragment: requestDetails is a partitioned parent whose key is
+	// (id, timestamp) — a partitioned table cannot carry a unique index
+	// on id alone — so the skip fires on the full key, where SQLite's
+	// id-only primary key skips on id alone. The writers generate one
+	// id per request and insert it once (the chat path's success and
+	// failure branches are exclusive), so the wider grain is not
+	// reachable from the current call graph; a future caller that
+	// retries an insert must dedupe itself.
+	query := `INSERT OR IGNORE INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	if r.IsPostgres() {
+		query = `INSERT INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT DO NOTHING`
+	}
+	_, err := r.Exec(query, id, timestamp, provider, model, connectionID, status, data)
 	if err != nil {
 		return fmt.Errorf("insert request detail %s: %w", id, err)
 	}
@@ -116,7 +134,7 @@ type UsageHistoryRow struct {
 // GetUsageDailyRecent returns the most recent daily usage records up to limit.
 
 func (r *Repo) GetUsageDailyRecent(limit int) ([]string, error) {
-	rows, err := r.db.Query(`SELECT data FROM usageDaily ORDER BY dateKey DESC LIMIT ?`, limit)
+	rows, err := r.Query(`SELECT data FROM usageDaily ORDER BY dateKey DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query recent usageDaily: %w", err)
 	}
@@ -147,7 +165,7 @@ type UsageDailyRow struct {
 // GetUsageDailyRange returns the most recent daily usage rows up to limit,
 // newest first, each with its dateKey.
 func (r *Repo) GetUsageDailyRange(limit int) ([]UsageDailyRow, error) {
-	rows, err := r.db.Query(`SELECT dateKey, data FROM usageDaily ORDER BY dateKey DESC LIMIT ?`, limit) //nolint:noctx
+	rows, err := r.Query(`SELECT dateKey, data FROM usageDaily ORDER BY dateKey DESC LIMIT ?`, limit) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("query usageDaily range: %w", err)
 	}
@@ -214,7 +232,7 @@ func scanUsageGroupRows(rows interface {
 // cutoff. The model column is a constant empty string: provider rows have no
 // single model, and the shared scanner expects both key columns.
 func (r *Repo) GetUsageGroupByProviderSince(since string) ([]UsageGroupRow, error) {
-	rows, err := r.db.Query( //nolint:noctx,rowserrcheck
+	rows, err := r.Query( //nolint:noctx,rowserrcheck
 		`SELECT COALESCE(provider, ''), '', `+usageGroupStats+`
 		   FROM usageHistory WHERE timestamp >= ? GROUP BY COALESCE(provider, '')`, since)
 	if err != nil {
@@ -227,7 +245,7 @@ func (r *Repo) GetUsageGroupByProviderSince(since string) ([]UsageGroupRow, erro
 // GetUsageGroupByModelSince aggregates usageHistory per provider+model since
 // the cutoff.
 func (r *Repo) GetUsageGroupByModelSince(since string) ([]UsageGroupRow, error) {
-	rows, err := r.db.Query( //nolint:noctx,rowserrcheck
+	rows, err := r.Query( //nolint:noctx,rowserrcheck
 		`SELECT COALESCE(provider, ''), COALESCE(model, ''), `+usageGroupStats+`
 		   FROM usageHistory WHERE timestamp >= ? GROUP BY COALESCE(provider, ''), COALESCE(model, '')`, since)
 	if err != nil {
@@ -295,7 +313,7 @@ func TopUsageGroupByTokens(rows []UsageGroupRow) (provider, model string, tokens
 // the window's rows into the process to fold them there cost a transfer of
 // every row in the window for two numbers.
 func (r *Repo) GetUsageTopModelSince(since string) (provider, model string, tokens int64, ok bool, err error) {
-	err = r.db.QueryRow( //nolint:noctx
+	err = r.QueryRow( //nolint:noctx
 		`SELECT COALESCE(provider, ''), COALESCE(model, ''),
 		        SUM(COALESCE(promptTokens, 0) + COALESCE(completionTokens, 0))
 		   FROM usageHistory WHERE timestamp >= ?
@@ -310,6 +328,18 @@ func (r *Repo) GetUsageTopModelSince(since string) (provider, model string, toke
 		return "", "", 0, false, fmt.Errorf("query usage top model since %s: %w", since, err)
 	}
 	return provider, model, tokens, true, nil
+}
+
+// cacheHitTokenExpr renders one guarded token extraction of
+// GetUsageCacheHitTotalsSince for the dialect: the json_valid-guarded
+// extraction SQLite has always run, or — tokens being jsonb there, valid
+// by construction with absence as the same NULL — the PostgreSQL
+// extraction with the same COALESCE-to-zero.
+func cacheHitTokenExpr(d Dialect, field string) string {
+	if d == DialectPostgres {
+		return "COALESCE(" + jsonIntAt(d, "tokens", field) + ", 0)"
+	}
+	return "CASE WHEN json_valid(tokens) THEN COALESCE(json_extract(tokens, '$." + field + "'), 0) ELSE 0 END"
 }
 
 // GetUsageCacheHitTotalsSince returns the cached and total input tokens of the
@@ -330,13 +360,13 @@ func (r *Repo) GetUsageTopModelSince(since string) (provider, model string, toke
 //   - the denominator is max(input, cached + writes), so a cache-exclusive
 //     row counts its cached part.
 func (r *Repo) GetUsageCacheHitTotalsSince(since string) (hit, total int64, err error) {
-	err = r.db.QueryRow( //nolint:noctx
+	err = r.QueryRow( //nolint:noctx
 		`WITH raw AS (
 		   SELECT COALESCE(promptTokens, 0) AS prompt_column,
-		          CASE WHEN json_valid(tokens) THEN COALESCE(json_extract(tokens, '$.cached_tokens'), 0) ELSE 0 END AS cached_primary,
-		          CASE WHEN json_valid(tokens) THEN COALESCE(json_extract(tokens, '$.cache_read_input_tokens'), 0) ELSE 0 END AS cached_read,
-		          CASE WHEN json_valid(tokens) THEN COALESCE(json_extract(tokens, '$.cache_creation_input_tokens'), 0) ELSE 0 END AS creation,
-		          CASE WHEN json_valid(tokens) THEN COALESCE(json_extract(tokens, '$.prompt_tokens'), 0) ELSE 0 END AS prompt_json
+		          `+cacheHitTokenExpr(r.dialect, "cached_tokens")+` AS cached_primary,
+		          `+cacheHitTokenExpr(r.dialect, "cache_read_input_tokens")+` AS cached_read,
+		          `+cacheHitTokenExpr(r.dialect, "cache_creation_input_tokens")+` AS creation,
+		          `+cacheHitTokenExpr(r.dialect, "prompt_tokens")+` AS prompt_json
 		     FROM usageHistory WHERE timestamp >= ?
 		 ), resolved AS (
 		   SELECT CASE WHEN cached_primary != 0 THEN cached_primary ELSE cached_read END AS cached,
@@ -385,11 +415,29 @@ const requestDetailPerfSelect = `
 	       CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '$.tokens.output_tokens'), 0) ELSE 0 END
 	FROM requestDetails`
 
+// requestDetailPerfSelectPG is the PostgreSQL twin of
+// requestDetailPerfSelect: data is jsonb, so the json_valid guard is a
+// presence check the extraction does not need — an absent path is the
+// same NULL the guard's ELSE folds to zero. The extractions are the
+// truncating integer form of jsonexpr.go (latency and token counts are
+// integers by construction).
+const requestDetailPerfSelectPG = `
+	SELECT COALESCE(provider, ''), COALESCE(model, ''),
+	       COALESCE((trunc((data #>> '{latency,ttft}')::numeric)::bigint), 0),
+	       COALESCE((trunc((data #>> '{latency,total}')::numeric)::bigint), 0),
+	       COALESCE((trunc((data #>> '{tokens,completion_tokens}')::numeric)::bigint), 0),
+	       COALESCE((trunc((data #>> '{tokens,output_tokens}')::numeric)::bigint), 0)
+	FROM requestDetails`
+
 // GetRequestDetailPerf returns the latency observation of every request
 // detail. The ring is retention-bounded, so this stays cheap; it is the
 // gateway's only source of per-request latency for the node-health table.
 func (r *Repo) GetRequestDetailPerf() ([]RequestDetailPerfRow, error) {
-	rows, err := r.db.Query(requestDetailPerfSelect) //nolint:noctx
+	query := requestDetailPerfSelect
+	if r.IsPostgres() {
+		query = requestDetailPerfSelectPG
+	}
+	rows, err := r.Query(query) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("query request detail perf: %w", err)
 	}
@@ -505,7 +553,7 @@ const usageChartSinceQuery = `SELECT timestamp, COALESCE(model, ''),
 // GetUsageHistoryChartSince returns the chart projection of the usage history
 // since the cutoff.
 func (r *Repo) GetUsageHistoryChartSince(cutoff string) ([]UsageChartRow, error) {
-	rows, err := r.db.Query(usageChartSinceQuery, cutoff) //nolint:noctx
+	rows, err := r.Query(usageChartSinceQuery, cutoff) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("query usageHistory chart since %s: %w", cutoff, err)
 	}
@@ -527,7 +575,7 @@ func (r *Repo) GetUsageHistoryChartSince(cutoff string) ([]UsageChartRow, error)
 
 // GetUsageHistorySince returns usage history records since the cutoff timestamp.
 func (r *Repo) GetUsageHistorySince(cutoff string) ([]UsageHistoryRow, error) {
-	rows, err := r.db.Query(usageHistorySinceQuery, cutoff)
+	rows, err := r.Query(usageHistorySinceQuery, cutoff)
 	if err != nil {
 		return nil, fmt.Errorf("query usageHistory since %s: %w", cutoff, err)
 	}
@@ -558,7 +606,7 @@ func (r *Repo) GetUsageHistorySince(cutoff string) ([]UsageHistoryRow, error) {
 // read stays a single timestamp-column projection answered by idx_uh_ts
 // instead of dragging the token payload of every row in the window.
 func (r *Repo) GetUsageHistoryTimestampsSince(since string) ([]string, error) {
-	rows, err := r.db.Query(`SELECT timestamp FROM usageHistory WHERE timestamp >= ? ORDER BY timestamp ASC`, since) //nolint:noctx
+	rows, err := r.Query(`SELECT timestamp FROM usageHistory WHERE timestamp >= ? ORDER BY timestamp ASC`, since) //nolint:noctx
 	if err != nil {
 		return nil, fmt.Errorf("query usageHistory timestamps since %s: %w", since, err)
 	}
@@ -583,7 +631,7 @@ func (r *Repo) GetUsageHistoryTimestampsSince(since string) ([]string, error) {
 // refresh from a delta instead of re-reading the whole window.
 func (r *Repo) GetUsageHistoryWatermark() (string, error) {
 	var ts string
-	if err := r.db.QueryRow(`SELECT COALESCE(MAX(timestamp), '') FROM usageHistory`).Scan(&ts); err != nil {
+	if err := r.QueryRow(`SELECT COALESCE(MAX(timestamp), '') FROM usageHistory`).Scan(&ts); err != nil {
 		return "", fmt.Errorf("read usageHistory watermark: %w", err)
 	}
 	return ts, nil
@@ -593,7 +641,7 @@ func (r *Repo) GetUsageHistoryWatermark() (string, error) {
 // window aggregate has yet to fold in. The bounds are exclusive on the low end
 // so a row already folded in at the watermark is never counted twice.
 func (r *Repo) GetUsageHistoryBetween(since, until string) ([]UsageHistoryRow, error) {
-	rows, err := r.db.Query(usageHistoryBetweenQuery, since, until)
+	rows, err := r.Query(usageHistoryBetweenQuery, since, until)
 	if err != nil {
 		return nil, fmt.Errorf("query usageHistory between %s and %s: %w", since, until, err)
 	}
@@ -617,7 +665,7 @@ func (r *Repo) GetUsageHistoryBetween(since, until string) ([]UsageHistoryRow, e
 
 // GetRecentUsageHistory returns the latest N usage history records.
 func (r *Repo) GetRecentUsageHistory(limit int) ([]UsageHistoryRow, error) {
-	rows, err := r.db.Query(usageHistoryRecentQuery, limit)
+	rows, err := r.Query(usageHistoryRecentQuery, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query recent usageHistory: %w", err)
 	}
@@ -690,6 +738,29 @@ const requestDetailListSelect = `
 	ORDER BY timestamp DESC
 	LIMIT ? OFFSET ?`
 
+// requestDetailListSelectPG is the PostgreSQL twin of
+// requestDetailListSelect, same columns in the same order. The validity
+// column is a presence check (data is jsonb, valid by construction); the
+// tokens column is the jsonb sub-document, which the driver returns in
+// jsonb's canonical text form rather than the stored byte form SQLite
+// returns — the document a reader parses out of it is the same.
+const requestDetailListSelectPG = `
+	SELECT id, timestamp, COALESCE(provider, ''), COALESCE(model, ''), COALESCE(connectionId, ''),
+	       COALESCE(status, ''),
+	       COALESCE((trunc((data #>> '{latency,ttft}')::numeric)::bigint), 0),
+	       COALESCE((trunc((data #>> '{latency,total}')::numeric)::bigint), 0),
+	       COALESCE(data #> '{tokens}', '{}'::jsonb),
+	       COALESCE(data #>> '{account}', ''),
+	       COALESCE((data #>> '{cost}')::float8, 0.0),
+	       COALESCE(data #>> '{combo}', ''),
+	       COALESCE(data #>> '{protocol}', ''),
+	       COALESCE(data #>> '{loopWarning}', COALESCE(data #>> '{anomalies,0,message}', '')),
+	       CASE WHEN data IS NULL THEN 0 ELSE 1 END
+	FROM requestDetails
+	%s
+	ORDER BY timestamp DESC
+	LIMIT ? OFFSET ?`
+
 // requestDetailCount counts exactly the rows requestDetailListSelect would page.
 // The two share the predicate slot so a windowed page can never report a total
 // gathered from outside its window.
@@ -713,11 +784,15 @@ func (r *Repo) GetRequestDetailsPaged(ctx context.Context, limit, offset int, si
 		args = append(args, since)
 	}
 	var total int
-	if err := r.db.QueryRowContext(ctx, fmt.Sprintf(requestDetailCount, where), args...).Scan(&total); err != nil {
+	if err := r.QueryRowContext(ctx, fmt.Sprintf(requestDetailCount, where), args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count requestDetails: %w", err)
 	}
 
-	rows, err := r.db.QueryContext(ctx, fmt.Sprintf(requestDetailListSelect, where), append(args, limit, offset)...)
+	listSelect := requestDetailListSelect
+	if r.IsPostgres() {
+		listSelect = requestDetailListSelectPG
+	}
+	rows, err := r.QueryContext(ctx, fmt.Sprintf(listSelect, where), append(args, limit, offset)...)
 	if err != nil {
 		return nil, total, fmt.Errorf("query requestDetails paged: %w", err)
 	}
@@ -758,7 +833,7 @@ func (r *Repo) GetRequestDetailByID(id string) (string, error) {
 		return "", fmt.Errorf("get request detail: empty id")
 	}
 	var data string
-	if err := r.db.QueryRow(`SELECT data FROM requestDetails WHERE id = ?`, id).Scan(&data); err != nil {
+	if err := r.QueryRow(`SELECT data FROM requestDetails WHERE id = ?`, id).Scan(&data); err != nil {
 		return "", fmt.Errorf("get request detail %s: %w", id, err)
 	}
 	return data, nil
@@ -767,7 +842,7 @@ func (r *Repo) GetRequestDetailByID(id string) (string, error) {
 // GetRequestDetailsErrorCountSince returns the count of failed requests recorded in requestDetails since cutoff.
 func (r *Repo) GetRequestDetailsErrorCountSince(ctx context.Context, since string) (int, error) {
 	var count int
-	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM requestDetails WHERE status = 'error' AND timestamp >= ?`, since).Scan(&count)
+	err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM requestDetails WHERE status = 'error' AND timestamp >= ?`, since).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count requestDetails errors since %s: %w", since, err)
 	}
@@ -797,23 +872,31 @@ type ComboAnalyticsRow struct {
 // One grouped statement answers the whole table: averaging latency in SQL
 // keeps a long window from shipping every ledger row to the handler.
 func (r *Repo) GetComboAnalyticsSince(ctx context.Context, since string) ([]ComboAnalyticsRow, error) {
-	where := "WHERE COALESCE(json_extract(data, '$.combo'), '') <> ''"
+	// The combo name and the latency live in the stored payload; the two
+	// expressions are the only dialect-bearing parts of the statement.
+	comboExpr := "COALESCE(json_extract(data, '$.combo'), '')"
+	latencyAvg := "COALESCE(AVG(json_extract(data, '$.latency.total')), 0) / 1000.0"
+	if r.IsPostgres() {
+		comboExpr = "COALESCE(data #>> '{combo}', '')"
+		latencyAvg = "COALESCE(AVG((data #>> '{latency,total}')::float8), 0) / 1000.0"
+	}
+	where := "WHERE " + comboExpr + " <> ''"
 	var args []any
 	if since != "" {
 		where += " AND timestamp >= ?"
 		args = append(args, since)
 	}
-	query := `SELECT COALESCE(json_extract(data, '$.combo'), '') AS combo,
+	query := `SELECT ` + comboExpr + ` AS combo,
 	       COALESCE(model, ''), COALESCE(provider, ''),
 	       COUNT(*),
 	       COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0),
-	       COALESCE(AVG(json_extract(data, '$.latency.total')), 0) / 1000.0,
+	       ` + latencyAvg + `,
 	       COALESCE(MAX(timestamp), '')
 	FROM requestDetails
 	` + where + `
 	GROUP BY combo, model, provider
 	ORDER BY combo ASC, model ASC, provider ASC`
-	rows, err := r.db.QueryContext(ctx, query, args...)
+	rows, err := r.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query combo analytics since %q: %w", since, err)
 	}

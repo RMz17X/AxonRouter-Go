@@ -103,11 +103,23 @@ func (r *Repo) pruneRequestDetailsByAge(ctx context.Context, retention time.Dura
 	// Counted first so the pass can stay silent on the common case — nothing is
 	// old enough to prune — instead of logging a no-op every interval.
 	var stale int
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM requestDetails WHERE timestamp < ?`, cutoff).Scan(&stale); err != nil {
+	if err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM requestDetails WHERE timestamp < ?`, cutoff).Scan(&stale); err != nil {
 		return fmt.Errorf("count stale requestDetails: %w", err)
 	}
 	if stale == 0 {
 		return nil
+	}
+
+	// The chunk delete names the rows to drop by their identity: rowid on
+	// SQLite, the (id, timestamp) primary key on PostgreSQL, where the
+	// partitioned parent has no rowid to select by.
+	deleteChunk := `DELETE FROM requestDetails WHERE rowid IN (
+				SELECT rowid FROM requestDetails WHERE timestamp < ? LIMIT ?
+			)`
+	if r.IsPostgres() {
+		deleteChunk = `DELETE FROM requestDetails WHERE (id, timestamp) IN (
+				SELECT id, timestamp FROM requestDetails WHERE timestamp < ? LIMIT ?
+			)`
 	}
 
 	removed := 0
@@ -115,10 +127,7 @@ func (r *Repo) pruneRequestDetailsByAge(ctx context.Context, retention time.Dura
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("prune requestDetails by age: %w", err)
 		}
-		res, err := r.db.ExecContext(ctx,
-			`DELETE FROM requestDetails WHERE rowid IN (
-				SELECT rowid FROM requestDetails WHERE timestamp < ? LIMIT ?
-			)`, cutoff, retentionChunkSize)
+		res, err := r.ExecContext(ctx, deleteChunk, cutoff, retentionChunkSize)
 		if err != nil {
 			return fmt.Errorf("delete stale requestDetails: %w", err)
 		}
@@ -141,11 +150,22 @@ func (r *Repo) pruneRequestDetailsBySize(ctx context.Context, maxRows int, resul
 		maxRows = retentionMaxRows
 	}
 	var total int
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM requestDetails`).Scan(&total); err != nil {
+	if err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM requestDetails`).Scan(&total); err != nil {
 		return fmt.Errorf("count requestDetails: %w", err)
 	}
 	if total <= maxRows {
 		return nil
+	}
+
+	// Same identity rule as the age pass: rowid on SQLite, the
+	// (id, timestamp) primary key on PostgreSQL.
+	deleteChunk := `DELETE FROM requestDetails WHERE rowid IN (
+				SELECT rowid FROM requestDetails ORDER BY timestamp ASC LIMIT ?
+			)`
+	if r.IsPostgres() {
+		deleteChunk = `DELETE FROM requestDetails WHERE (id, timestamp) IN (
+				SELECT id, timestamp FROM requestDetails ORDER BY timestamp ASC LIMIT ?
+			)`
 	}
 
 	// Cut from the oldest end, which the timestamp DESC ordering of the tab
@@ -157,10 +177,7 @@ func (r *Repo) pruneRequestDetailsBySize(ctx context.Context, maxRows int, resul
 			return fmt.Errorf("prune requestDetails by size: %w", err)
 		}
 		limit := min(retentionChunkSize, overflow-removed)
-		res, err := r.db.ExecContext(ctx,
-			`DELETE FROM requestDetails WHERE rowid IN (
-				SELECT rowid FROM requestDetails ORDER BY timestamp ASC LIMIT ?
-			)`, limit)
+		res, err := r.ExecContext(ctx, deleteChunk, limit)
 		if err != nil {
 			return fmt.Errorf("delete excess requestDetails: %w", err)
 		}
@@ -197,33 +214,44 @@ type DatabaseStats struct {
 
 // GetDatabaseStats queries SQLite page counts and table row counts to measure
 // disk consumption and reclaimable space.
+//
+// The page-count half is a SQLite file report and has no PostgreSQL
+// counterpart: a PG database is not a file this process owns, and its
+// space bookkeeping (autovacuum) is the server's. On PostgreSQL the two
+// size fields therefore report zero — deliberately not a
+// pg_database_size transliteration, which would answer a different
+// question (the whole shared database, indexes included) under the
+// field that used to mean "this gateway's file". The row counts and the
+// ledger bounds below are dialect-neutral and read on both backends.
 func (r *Repo) GetDatabaseStats(ctx context.Context) (DatabaseStats, error) {
 	var stats DatabaseStats
 	if r == nil || r.db == nil {
 		return stats, fmt.Errorf("repo or db is nil")
 	}
 
-	var pageCount, pageSize, freelistCount int64
-	if err := r.db.QueryRowContext(ctx, "PRAGMA page_count;").Scan(&pageCount); err != nil {
-		return stats, fmt.Errorf("read page_count: %w", err)
-	}
-	if err := r.db.QueryRowContext(ctx, "PRAGMA page_size;").Scan(&pageSize); err != nil {
-		return stats, fmt.Errorf("read page_size: %w", err)
-	}
-	if err := r.db.QueryRowContext(ctx, "PRAGMA freelist_count;").Scan(&freelistCount); err != nil {
-		return stats, fmt.Errorf("read freelist_count: %w", err)
+	if !r.IsPostgres() {
+		var pageCount, pageSize, freelistCount int64
+		if err := r.QueryRowContext(ctx, "PRAGMA page_count;").Scan(&pageCount); err != nil {
+			return stats, fmt.Errorf("read page_count: %w", err)
+		}
+		if err := r.QueryRowContext(ctx, "PRAGMA page_size;").Scan(&pageSize); err != nil {
+			return stats, fmt.Errorf("read page_size: %w", err)
+		}
+		if err := r.QueryRowContext(ctx, "PRAGMA freelist_count;").Scan(&freelistCount); err != nil {
+			return stats, fmt.Errorf("read freelist_count: %w", err)
+		}
+
+		stats.DatabaseSizeBytes = pageCount * pageSize
+		stats.ReclaimableBytes = freelistCount * pageSize
 	}
 
-	stats.DatabaseSizeBytes = pageCount * pageSize
-	stats.ReclaimableBytes = freelistCount * pageSize
-
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM requestDetails;").Scan(&stats.RequestDetailsCount); err != nil {
+	if err := r.QueryRowContext(ctx, "SELECT COUNT(*) FROM requestDetails;").Scan(&stats.RequestDetailsCount); err != nil {
 		return stats, fmt.Errorf("count requestDetails: %w", err)
 	}
-	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM usageHistory;").Scan(&stats.UsageHistoryCount); err != nil {
+	if err := r.QueryRowContext(ctx, "SELECT COUNT(*) FROM usageHistory;").Scan(&stats.UsageHistoryCount); err != nil {
 		return stats, fmt.Errorf("count usageHistory: %w", err)
 	}
-	if err := r.db.QueryRowContext(ctx,
+	if err := r.QueryRowContext(ctx,
 		`SELECT COALESCE(MIN(timestamp), ''), COALESCE(MAX(timestamp), '') FROM usageHistory`,
 	).Scan(&stats.UsageHistoryOldestTimestamp, &stats.UsageHistoryNewestTimestamp); err != nil {
 		return stats, fmt.Errorf("read usageHistory bounds: %w", err)
@@ -234,13 +262,23 @@ func (r *Repo) GetDatabaseStats(ctx context.Context) (DatabaseStats, error) {
 
 // VacuumDatabase executes SQLite VACUUM with a bounded timeout to reclaim free
 // pages and return allocated storage to the operating system.
+//
+// On PostgreSQL it is a deliberate no-op, for the same reason
+// GetDatabaseStats reports no file size there: reclaiming space inside a
+// shared server is autovacuum's job, and the VACUUM a dashboard button
+// could run would not return storage to the operating system in any
+// case (that is VACUUM FULL, a locking operation no maintenance button
+// should fire).
 func (r *Repo) VacuumDatabase(ctx context.Context) error {
 	if r == nil || r.db == nil {
 		return fmt.Errorf("repo or db is nil")
 	}
+	if r.IsPostgres() {
+		return nil
+	}
 	vCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	if _, err := r.db.ExecContext(vCtx, "VACUUM;"); err != nil {
+	if _, err := r.ExecContext(vCtx, "VACUUM;"); err != nil {
 		return fmt.Errorf("vacuum database: %w", err)
 	}
 	return nil

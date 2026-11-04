@@ -101,6 +101,12 @@ func runRetentionPass(ctx context.Context, repo *Repo, defaultRetention time.Dur
 		return
 	}
 
+	// PRAGMA optimize is SQLite's statistics refresh; PostgreSQL's
+	// autoanalyze owns the same job server-side, so the pass ends here
+	// on that backend rather than firing a statement with no PG form.
+	if repo.IsPostgres() {
+		return
+	}
 	if _, err := repo.RawDB().ExecContext(passCtx, `PRAGMA optimize`); err != nil {
 		if ctx.Err() == nil {
 			log.Printf("[RETENTION] PRAGMA optimize failed: %v", err)

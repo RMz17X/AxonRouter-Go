@@ -715,9 +715,25 @@ func EnsureAdditiveColumns(db *sql.DB) error {
 	return nil
 }
 
-// tableExistsOnDB reports whether a table is present, probed through sqlite_master
-// so the answer does not depend on rewordable driver error strings.
+// tableExistsOnDB reports whether a table is present, probed through the
+// backend's catalog so the answer does not depend on rewordable driver
+// error strings: sqlite_master on SQLite, to_regclass on PostgreSQL
+// (which folds the name the same way the DDL did, so a camelCase probe
+// name matches the folded catalog entry). Runtime readers call this too
+// (the ledger prune's providerNodes probe), not only the bootstrap, so
+// the probe has to speak the handle's dialect rather than assume the
+// SQLite one.
 func tableExistsOnDB(db *sql.DB, table string) (bool, error) {
+	if DialectOf(db) == DialectPostgres {
+		var exists bool
+		err := db.QueryRow(
+			`SELECT to_regclass($1) IS NOT NULL`, table,
+		).Scan(&exists)
+		if err != nil {
+			return false, fmt.Errorf("core schema: inspect table %s: %w", table, err)
+		}
+		return exists, nil
+	}
 	var count int
 	err := db.QueryRow(
 		`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = ?`, table,

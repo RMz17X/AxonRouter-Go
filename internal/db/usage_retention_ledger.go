@@ -48,8 +48,15 @@ type LedgerPruneResult struct {
 }
 
 // ledgerRow is one doomed usageHistory row, reduced to what the carryover needs.
+//
+// The identity is the row's id: on SQLite id is the rowid alias (the
+// schema declares it INTEGER PRIMARY KEY), and on PostgreSQL it is the
+// identity column — one name for the same value in both dialects, which
+// is what lets the cursor, the reset marks and the chunk delete below
+// stay dialect-neutral. (The pre-sweep code selected rowid, which
+// PostgreSQL does not have.)
 type ledgerRow struct {
-	rowid     int64
+	id        int64
 	clientKey string
 	apiKey    string
 	provider  string
@@ -120,17 +127,20 @@ func (r *Repo) PruneUsageHistory(ctx context.Context, retention time.Duration) (
 		if err != nil {
 			return result, err
 		}
-		cursor = chunk[len(chunk)-1].rowid
+		cursor = chunk[len(chunk)-1].id
 		result.Rows += len(chunk)
 		result.CarriedTokens += int(carried.total())
 	}
 
-	if result.Rows > 0 {
+	if result.Rows > 0 && !r.IsPostgres() {
 		// The deleted rows left the planner's statistics describing a table that
 		// is no longer there, and the statements that read the ledger are the
 		// ones the dashboard polls. Fail-open: the rows are already gone, so a
 		// statistics refresh that cannot run costs query plans, not correctness.
-		if _, err := r.db.ExecContext(ctx, `PRAGMA optimize`); err != nil && ctx.Err() == nil {
+		// SQLite-only: PRAGMA optimize has no PostgreSQL form, and the
+		// server's autoanalyze owns the same job there — the refresh is
+		// gated off rather than transliterated (see the fragment).
+		if _, err := r.ExecContext(ctx, `PRAGMA optimize`); err != nil && ctx.Err() == nil {
 			log.Printf("[RETENTION] ledger PRAGMA optimize failed: %v", err)
 		}
 	}
@@ -149,7 +159,7 @@ func (r *Repo) CountExpiredUsageHistory(ctx context.Context, retention time.Dura
 	}
 	cutoff := ledgerCutoff(retention)
 	var rows int
-	if err := r.db.QueryRowContext(ctx,
+	if err := r.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM usageHistory WHERE timestamp < ?`, cutoff,
 	).Scan(&rows); err != nil {
 		return 0, cutoff, fmt.Errorf("count expired usageHistory: %w", err)
@@ -177,7 +187,7 @@ func ledgerCutoff(retention time.Duration) string {
 // reasoning watches every provider node, whose tokenQuota needs provider
 // carryover for exactly the same reason.
 func (r *Repo) ledgerWatchedKeys(ctx context.Context) (*ledgerWatchIndex, error) {
-	rows, err := r.db.QueryContext(ctx,
+	rows, err := r.QueryContext(ctx,
 		`SELECT id, COALESCE(key, ''), COALESCE(`+quotaResetColumn+`, 0) FROM apiKeys`)
 	if err != nil {
 		return nil, fmt.Errorf("read api keys for carryover: %w", err)
@@ -205,7 +215,7 @@ func (r *Repo) ledgerWatchedKeys(ctx context.Context) (*ledgerWatchIndex, error)
 
 	// Carryover rows orphaned by a key deletion are unreachable by the reader
 	// (which joins apiKeys) and would otherwise sit in the table forever.
-	if _, err := r.db.ExecContext(ctx,
+	if _, err := r.ExecContext(ctx,
 		`DELETE FROM usageLedgerCarryover WHERE keyId NOT IN (SELECT id FROM apiKeys)`,
 	); err != nil {
 		return nil, fmt.Errorf("drop orphaned usage carryover: %w", err)
@@ -230,7 +240,7 @@ func (r *Repo) loadProviderMarks(ctx context.Context, index *ledgerWatchIndex) e
 	if !exists {
 		return nil
 	}
-	rows, err := r.db.QueryContext(ctx,
+	rows, err := r.QueryContext(ctx,
 		`SELECT id, COALESCE(`+providerQuotaResetColumn+`, 0) FROM providerNodes`)
 	if err != nil {
 		return fmt.Errorf("read provider nodes for carryover: %w", err)
@@ -256,7 +266,7 @@ func (r *Repo) loadProviderMarks(ctx context.Context, index *ledgerWatchIndex) e
 
 	// The same orphan rule as the key dimension: the reader resolves provider
 	// carryover by node id, so a row whose node is gone can never be read again.
-	if _, err := r.db.ExecContext(ctx,
+	if _, err := r.ExecContext(ctx,
 		`DELETE FROM providerLedgerCarryover WHERE providerId NOT IN (SELECT id FROM providerNodes)`,
 	); err != nil {
 		return fmt.Errorf("drop orphaned provider carryover: %w", err)
@@ -422,7 +432,7 @@ func (w *ledgerWatchIndex) foldKeys(chunk []ledgerRow) map[string]int64 {
 				continue
 			}
 			key := &w.keys[candidates[i]]
-			if row.rowid <= key.mark {
+			if row.id <= key.mark {
 				continue
 			}
 			carried[key.id] += row.tokens
@@ -449,7 +459,7 @@ func (w *ledgerWatchIndex) foldProviders(chunk []ledgerRow) map[string]int64 {
 			continue
 		}
 		mark, watched := w.providers[row.provider]
-		if !watched || row.rowid <= mark {
+		if !watched || row.id <= mark {
 			continue
 		}
 		carried[row.provider] += row.tokens
@@ -460,20 +470,20 @@ func (w *ledgerWatchIndex) foldProviders(chunk []ledgerRow) map[string]int64 {
 	return carried
 }
 
-// readLedgerChunk reads the next chunk of doomed rows in rowid order.
+// readLedgerChunk reads the next chunk of doomed rows in id order.
 //
-// Ordered by rowid rather than by timestamp so the cursor advances monotonically
+// Ordered by id rather than by timestamp so the cursor advances monotonically
 // and the whole prune is one sequential pass, however many chunks it takes. The
 // token columns are CAST because a row whose INTEGER-affinity column holds
 // non-numeric text (an import, or a hand-edited database) would otherwise fail
 // the scan and block retention forever on every pass.
 func (r *Repo) readLedgerChunk(ctx context.Context, cursor int64, cutoff string) ([]ledgerRow, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT rowid, COALESCE(clientKey, ''), COALESCE(apiKey, ''), COALESCE(provider, ''),
+	rows, err := r.QueryContext(ctx, `
+		SELECT id, COALESCE(clientKey, ''), COALESCE(apiKey, ''), COALESCE(provider, ''),
 		       CAST(COALESCE(promptTokens, 0) AS INTEGER) + CAST(COALESCE(completionTokens, 0) AS INTEGER)
 		  FROM usageHistory
-		 WHERE rowid > ? AND timestamp < ?
-		 ORDER BY rowid
+		 WHERE id > ? AND timestamp < ?
+		 ORDER BY id
 		 LIMIT ?`, cursor, cutoff, retentionChunkSize)
 	if err != nil {
 		return nil, fmt.Errorf("read usageHistory chunk: %w", err)
@@ -483,7 +493,7 @@ func (r *Repo) readLedgerChunk(ctx context.Context, cursor int64, cutoff string)
 	var chunk []ledgerRow
 	for rows.Next() {
 		var row ledgerRow
-		if err := rows.Scan(&row.rowid, &row.clientKey, &row.apiKey, &row.provider, &row.tokens); err != nil {
+		if err := rows.Scan(&row.id, &row.clientKey, &row.apiKey, &row.provider, &row.tokens); err != nil {
 			return nil, fmt.Errorf("scan usageHistory chunk: %w", err)
 		}
 		chunk = append(chunk, row)
@@ -495,7 +505,7 @@ func (r *Repo) readLedgerChunk(ctx context.Context, cursor int64, cutoff string)
 }
 
 // deleteLedgerChunk carries the chunk's spend and deletes the chunk, in one
-// transaction. The rowids travel as a JSON array so the delete is bounded by the
+// transaction. The ids travel as a JSON array so the delete is bounded by the
 // rows that were folded: only rows whose spend was carried are removed.
 //
 // The reset marks are re-read inside this transaction rather than reused from
@@ -506,13 +516,13 @@ func (r *Repo) readLedgerChunk(ctx context.Context, cursor int64, cutoff string)
 // writes the carryover and deletes the rows — makes "which mark decided what to
 // carry" and "which rows are gone" the same instant.
 func (r *Repo) deleteLedgerChunk(ctx context.Context, chunk []ledgerRow, watched *ledgerWatchIndex) (ledgerCarry, error) {
-	rowids := make([]int64, 0, len(chunk))
+	ids := make([]int64, 0, len(chunk))
 	for _, row := range chunk {
-		rowids = append(rowids, row.rowid)
+		ids = append(ids, row.id)
 	}
-	encoded, err := json.Marshal(rowids)
+	encoded, err := json.Marshal(ids)
 	if err != nil {
-		return ledgerCarry{}, fmt.Errorf("encode usageHistory chunk rowids: %w", err)
+		return ledgerCarry{}, fmt.Errorf("encode usageHistory chunk ids: %w", err)
 	}
 
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -526,29 +536,45 @@ func (r *Repo) deleteLedgerChunk(ctx context.Context, chunk []ledgerRow, watched
 	}
 	carried := watched.fold(chunk)
 
+	// The accumulation names its target table on PostgreSQL: the bare
+	// column reads as the existing row's on SQLite, but PostgreSQL calls
+	// it ambiguous with the EXCLUDED row's same-named column (SQLSTATE
+	// 42702) and wants the table named.
+	keyAccum := `tokens = tokens + excluded.tokens`
+	providerAccum := keyAccum
+	if r.IsPostgres() {
+		keyAccum = `tokens = usageLedgerCarryover.tokens + excluded.tokens`
+		providerAccum = `tokens = providerLedgerCarryover.tokens + excluded.tokens`
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	for _, keyID := range sortedKeyIDs(carried.keys) {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, r.Rebind(`
 			INSERT INTO usageLedgerCarryover (keyId, tokens, updatedAt) VALUES (?, ?, ?)
-			ON CONFLICT(keyId) DO UPDATE SET tokens = tokens + excluded.tokens, updatedAt = excluded.updatedAt`,
+			ON CONFLICT(keyId) DO UPDATE SET `+keyAccum+`, updatedAt = excluded.updatedAt`),
 			keyID, carried.keys[keyID], now,
 		); err != nil {
 			return ledgerCarry{}, fmt.Errorf("carry usage tokens for key %s: %w", keyID, err)
 		}
 	}
 	for _, nodeID := range sortedKeyIDs(carried.providers) {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(ctx, r.Rebind(`
 			INSERT INTO providerLedgerCarryover (providerId, tokens, updatedAt) VALUES (?, ?, ?)
-			ON CONFLICT(providerId) DO UPDATE SET tokens = tokens + excluded.tokens, updatedAt = excluded.updatedAt`,
+			ON CONFLICT(providerId) DO UPDATE SET `+providerAccum+`, updatedAt = excluded.updatedAt`),
 			nodeID, carried.providers[nodeID], now,
 		); err != nil {
 			return ledgerCarry{}, fmt.Errorf("carry usage tokens for provider %s: %w", nodeID, err)
 		}
 	}
 
-	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM usageHistory WHERE rowid IN (SELECT value FROM json_each(?))`, string(encoded),
-	); err != nil {
+	// The id set travels as JSON in both dialects; only the array
+	// expansion differs (json_each on SQLite, json_array_elements_text
+	// on PostgreSQL).
+	deleteChunk := `DELETE FROM usageHistory WHERE id IN (SELECT value FROM json_each(?))`
+	if r.IsPostgres() {
+		deleteChunk = `DELETE FROM usageHistory WHERE id IN (SELECT t.elem::bigint FROM json_array_elements_text(?::json) AS t(elem))`
+	}
+	if _, err := tx.ExecContext(ctx, r.Rebind(deleteChunk), string(encoded)); err != nil {
 		return ledgerCarry{}, fmt.Errorf("delete usageHistory chunk: %w", err)
 	}
 
