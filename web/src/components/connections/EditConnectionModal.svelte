@@ -178,12 +178,12 @@
 
 <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
   <div
-    class="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in"
+    class="absolute inset-0 bg-black/50 fade-in"
     onclick={onClose}
     role="presentation"
   ></div>
   <div
-    class="relative w-full bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] fade-in max-w-md p-6"
+    class="relative w-full bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] fade-in max-w-md p-6"
   >
     <div class="flex items-center justify-between pb-3 border-b border-border-subtle mb-4">
       <h2 class="text-lg font-semibold text-text-main">Edit Connection</h2>

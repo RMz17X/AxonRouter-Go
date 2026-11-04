@@ -56,7 +56,7 @@ type customModelBatchSkip struct {
 func (h *DashboardHandler) saveCustomModelsBatch(w http.ResponseWriter, r *http.Request, data map[string]any) {
 	alias := strings.TrimSpace(stringOf(data["providerAlias"]))
 	if alias == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing providerAlias for a bulk save")
+		writePlainError(w, http.StatusBadRequest, "missing providerAlias for a bulk save")
 		return
 	}
 	batchType := strings.TrimSpace(stringOf(data["type"]))
@@ -66,7 +66,7 @@ func (h *DashboardHandler) saveCustomModelsBatch(w http.ResponseWriter, r *http.
 
 	entries, err := decodeBatchEntries(data["models"])
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		writePlainError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *DashboardHandler) saveCustomModelsBatch(w http.ResponseWriter, r *http.
 	// report them as skipped instead of silently overwriting what is there.
 	existing, err := h.Repo.GetKVScope("customModels")
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -129,7 +129,7 @@ func (h *DashboardHandler) saveCustomModelsBatch(w http.ResponseWriter, r *http.
 	}
 
 	if err := h.Repo.SetKVMany(r.Context(), "customModels", writes); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 

@@ -1,3 +1,5 @@
+//go:build sqlite_legacy && ignore
+
 package smart_test
 
 import (

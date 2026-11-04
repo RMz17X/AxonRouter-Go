@@ -57,10 +57,16 @@ type GuardrailLog struct {
 
 func scanGuardrailPolicy(s interface{ Scan(...any) error }) (*GuardrailPolicy, error) {
 	var p GuardrailPolicy
-	err := s.Scan(&p.ID, &p.TenantID, &p.Scope, &p.ScopeID, &p.Name, &p.Enabled, &p.Config, &p.CreatedAt, &p.UpdatedAt)
+	// enabled is an INTEGER column in both dialects; it crosses the driver
+	// as an int and becomes a bool here, the same convention plans.go uses
+	// for hard_cutoff (a *bool destination depends on each driver's int
+	// width, an int destination does not).
+	var enabled int
+	err := s.Scan(&p.ID, &p.TenantID, &p.Scope, &p.ScopeID, &p.Name, &enabled, &p.Config, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
+	p.Enabled = enabled != 0
 	return &p, nil
 }
 
@@ -68,7 +74,7 @@ func scanGuardrailPolicy(s interface{ Scan(...any) error }) (*GuardrailPolicy, e
 // id so the resolver's layering is deterministic. An empty scopeID lists the
 // scope-wide (not single-subject) policies.
 func (r *Repo) ListGuardrailPolicies(scope, scopeID string) ([]*GuardrailPolicy, error) {
-	rows, err := r.db.Query(
+	rows, err := r.Query(
 		`SELECT `+guardrailPolicyColumns+` FROM guardrail_policies
 		 WHERE tenant_id = ? AND scope = ? AND scope_id = ? AND enabled = 1
 		 ORDER BY id`,
@@ -98,7 +104,7 @@ func (r *Repo) ListGuardrailPolicies(scope, scopeID string) ([]*GuardrailPolicy,
 // this shape — it resolves one exact scope tuple — but the dashboard lists the
 // whole scope so a policy scoped to one model or key is visible there.
 func (r *Repo) ListGuardrailPoliciesForScope(ctx context.Context, scope string) ([]*GuardrailPolicy, error) {
-	rows, err := r.db.QueryContext(ctx,
+	rows, err := r.QueryContext(ctx,
 		`SELECT `+guardrailPolicyColumns+` FROM guardrail_policies
 		 WHERE tenant_id = ? AND scope = ? AND enabled = 1
 		 ORDER BY scope_id, id`,
@@ -125,7 +131,7 @@ func (r *Repo) ListGuardrailPoliciesForScope(ctx context.Context, scope string) 
 
 // GetGuardrailPolicy fetches one policy by id.
 func (r *Repo) GetGuardrailPolicy(id string) (*GuardrailPolicy, error) {
-	row := r.db.QueryRow(`SELECT `+guardrailPolicyColumns+` FROM guardrail_policies WHERE id = ?`, id)
+	row := r.QueryRow(`SELECT `+guardrailPolicyColumns+` FROM guardrail_policies WHERE id = ?`, id)
 	p, err := scanGuardrailPolicy(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -154,11 +160,11 @@ func (r *Repo) CreateGuardrailPolicy(p *GuardrailPolicy) error {
 	p.CreatedAt = now
 	p.UpdatedAt = now
 
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`INSERT INTO guardrail_policies
 		 (id, tenant_id, scope, scope_id, name, enabled, config, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.ID, p.TenantID, p.Scope, p.ScopeID, p.Name, p.Enabled, p.Config, p.CreatedAt, p.UpdatedAt,
+		p.ID, p.TenantID, p.Scope, p.ScopeID, p.Name, boolToInt(p.Enabled), p.Config, p.CreatedAt, p.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("create guardrail policy %s: %w", p.ID, err)
@@ -177,11 +183,11 @@ func (r *Repo) UpdateGuardrailPolicy(p *GuardrailPolicy) error {
 	}
 	p.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
-	res, err := r.db.Exec(
+	res, err := r.Exec(
 		`UPDATE guardrail_policies
 		 SET scope = ?, scope_id = ?, name = ?, enabled = ?, config = ?, updated_at = ?
 		 WHERE id = ? AND tenant_id = ?`,
-		p.Scope, p.ScopeID, p.Name, p.Enabled, p.Config, p.UpdatedAt, p.ID, DefaultGuardrailTenant,
+		p.Scope, p.ScopeID, p.Name, boolToInt(p.Enabled), p.Config, p.UpdatedAt, p.ID, DefaultGuardrailTenant,
 	)
 	if err != nil {
 		return fmt.Errorf("update guardrail policy %s: %w", p.ID, err)
@@ -198,7 +204,7 @@ func (r *Repo) UpdateGuardrailPolicy(p *GuardrailPolicy) error {
 
 // DeleteGuardrailPolicy removes a policy by id.
 func (r *Repo) DeleteGuardrailPolicy(id string) error {
-	_, err := r.db.Exec(`DELETE FROM guardrail_policies WHERE id = ? AND tenant_id = ?`, id, DefaultGuardrailTenant)
+	_, err := r.Exec(`DELETE FROM guardrail_policies WHERE id = ? AND tenant_id = ?`, id, DefaultGuardrailTenant)
 	if err != nil {
 		return fmt.Errorf("delete guardrail policy %s: %w", id, err)
 	}
@@ -220,7 +226,7 @@ func (r *Repo) InsertGuardrailLog(l *GuardrailLog) error {
 	l.TenantID = DefaultGuardrailTenant
 	l.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`INSERT INTO guardrail_logs
 		 (id, tenant_id, request_id, api_key_id, provider, model, chain_id,
 		  detector, direction, action, severity, reason, findings, created_at)
@@ -239,7 +245,7 @@ func (r *Repo) ListGuardrailLogs(limit int) ([]*GuardrailLog, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	rows, err := r.db.Query(
+	rows, err := r.Query(
 		`SELECT id, tenant_id, request_id, api_key_id, provider, model, chain_id,
 		        detector, direction, action, severity, reason, findings, created_at
 		 FROM guardrail_logs WHERE tenant_id = ?

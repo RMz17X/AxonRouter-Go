@@ -213,27 +213,18 @@
 <aside
   class="flex h-full max-h-screen {iconRail
     ? 'w-[56px]'
-    : 'w-72'} flex-col overflow-hidden border-r border-border-subtle bg-sidebar backdrop-blur-xl transition-all duration-300 flex-shrink-0 select-none z-30"
+    : 'w-64'} flex-col overflow-hidden border-r border-border bg-sidebar transition-all duration-300 flex-shrink-0 select-none z-30"
 >
-  <!-- Window control / traffic lights -->
-  {#if !iconRail}
-    <div class="flex items-center gap-2 px-6 pt-5 pb-2 shrink-0">
-      <div class="w-3 h-3 rounded-full bg-[#FF5F56]"></div>
-      <div class="w-3 h-3 rounded-full bg-[#FFBD2E]"></div>
-      <div class="w-3 h-3 rounded-full bg-[#27C93F]"></div>
-    </div>
-  {/if}
-
   <!-- Brand header: 9router-go with official favicon.svg logo -->
-  <div class="{iconRail ? 'px-2 py-4' : 'px-6 py-4'} flex flex-col gap-2 shrink-0">
+  <div class="flex flex-col shrink-0">
     <a
       href={TAB_ROUTES.endpoint}
       onclick={(e) => handleNav('endpoint', e)}
-      class="flex items-center {iconRail ? 'justify-center' : 'gap-3'} cursor-pointer group"
+      class="flex h-16 min-h-16 items-center {iconRail ? 'justify-center px-2' : 'gap-2.5 px-3.5'} border-b border-border cursor-pointer group"
       title={iconRail ? displayBrandName : undefined}
     >
       <div
-        class="flex items-center justify-center size-9 rounded-[10px] bg-surface-2 border border-border-subtle shadow-[var(--shadow-warm)] flex-shrink-0 group-hover:scale-105 transition-transform overflow-hidden p-1.5"
+        class="flex items-center justify-center size-9 rounded-sm bg-surface-2 border border-border flex-shrink-0 overflow-hidden p-1.5"
       >
         <img
           src={displayBrandLogo}
@@ -243,10 +234,10 @@
       </div>
       {#if !iconRail}
         <div class="flex flex-col min-w-0">
-          <h1 class="text-lg font-semibold tracking-tight text-text-main truncate leading-snug">
+          <h1 class="text-sm font-semibold text-text-main truncate">
             {displayBrandName}
           </h1>
-          <span class="text-xs text-text-muted leading-tight">
+          <span class="text-xs text-text-muted">
             {version ? `v${version}` : ''}
           </span>
         </div>
@@ -256,17 +247,17 @@
     <!-- Update notification banner below version (matches upstream 9router) -->
     {#if updateInfo && updateInfo.hasUpdate}
       <div
-        class="flex flex-col gap-1.5 rounded-lg p-2 bg-green-500/10 dark:bg-amber-500/10 border border-green-500/30 dark:border-amber-500/30 text-green-700 dark:text-amber-400 mt-0.5 animate-in fade-in duration-200"
+        class="mx-3.5 mt-2.5 flex flex-col gap-1.5 rounded-sm border border-border bg-surface-2 p-2 text-text-main animate-in fade-in duration-200"
       >
-        <span class="text-[11px] font-semibold text-green-700 dark:text-amber-400 flex items-center gap-1">
-          <span class="material-symbols-outlined text-[14px]">arrow_upward</span>
+        <span class="text-[11px] font-semibold text-text-main flex items-center gap-1">
+          <span class="material-symbols-outlined text-[14px] text-primary">arrow_upward</span>
           <span class="truncate">New version available: v{updateInfo.latestVersion}</span>
         </span>
         <div class="flex items-center gap-1.5">
           <button
             type="button"
             onclick={() => (showUpdateModal = true)}
-            class="px-2 py-0.5 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer shrink-0"
+            class="px-2 py-0.5 rounded-sm bg-primary hover:bg-primary-hover text-white text-[11px] font-semibold transition-colors cursor-pointer shrink-0"
           >
             Update now
           </button>
@@ -276,7 +267,7 @@
             title="Copy install command"
             class="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
           >
-            <code class="block text-[10px] text-green-700 dark:text-amber-300 font-mono truncate bg-surface/70 px-1 py-0.5 rounded">
+            <code class="block text-[10px] text-text-muted font-mono truncate bg-surface px-1 py-0.5 rounded-sm">
               {copied ? '✓ copied!' : INSTALL_CMD}
             </code>
           </button>
@@ -287,12 +278,12 @@
 
   <!-- Navigation -->
   <nav
-    class="flex-1 min-h-0 {iconRail ? 'px-2' : 'px-4'} py-2 space-y-0.5 overflow-y-auto custom-scrollbar"
+    class="flex-1 min-h-0 {iconRail ? 'px-2' : 'px-2.5'} py-2 space-y-0.5 overflow-y-auto custom-scrollbar"
   >
     {#if favoritesEnabled && visiblePins.length > 0}
       <div class="{iconRail ? '' : 'pt-1'} space-y-0.5">
         {#if !iconRail}
-          <p class="px-3 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+          <p class="px-2.5 mb-1 text-[9px] font-medium uppercase tracking-wider text-text-muted opacity-70">
             Pinned
           </p>
         {/if}
@@ -305,8 +296,8 @@
             title={iconRail ? entry.label : undefined}
             class="flex items-center {iconRail
               ? 'justify-center'
-              : 'gap-3'} px-3 py-1.5 rounded-lg transition-all group cursor-pointer {pinActive
-              ? 'bg-primary/10 text-primary font-medium'
+              : 'gap-2.5'} h-8 px-2.5 rounded-sm text-[13px] font-medium transition-colors group cursor-pointer {pinActive
+              ? 'bg-primary/10 text-primary'
               : 'text-text-muted hover:bg-surface-2 hover:text-text-main'}"
           >
             <span
@@ -320,16 +311,16 @@
             {#if pinBadge && !iconRail}
               <span
                 title={pinBadge.title}
-                class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums {pinBadge.tone ===
+                class="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] font-medium tabular-nums {pinBadge.tone ===
                 'warn'
-                  ? 'bg-warning/15 text-warning'
-                  : 'bg-surface-2 text-text-subtle'}">{pinBadge.text}</span
+                  ? 'bg-warning/10 text-warning'
+                  : 'bg-primary/10 text-primary'}">{pinBadge.text}</span
               >
             {/if}
           </a>
         {/each}
         {#if !iconRail}
-          <div class="my-2 border-t border-border-subtle"></div>
+          <div class="my-2 border-t border-border"></div>
         {/if}
       </div>
     {/if}
@@ -360,9 +351,9 @@
             type="button"
             onclick={() => toggleGroup(`group:${group.id}`)}
             aria-expanded={groupOpen}
-            class="w-full flex items-center gap-1.5 px-3 mb-2 text-text-muted/60 uppercase tracking-wider cursor-pointer"
+            class="w-full flex items-center gap-1.5 px-2.5 mb-1 text-[9px] font-medium uppercase tracking-wider text-text-muted opacity-70 cursor-pointer"
           >
-            <span class="text-xs font-semibold">{group.label}</span>
+            <span>{group.label}</span>
             <span
               class="material-symbols-outlined text-[14px] transition-transform duration-200 {groupOpen
                 ? ''
@@ -386,8 +377,8 @@
               title={iconRail ? entry.label : undefined}
               class="w-full flex items-center {iconRail
                 ? 'justify-center'
-                : 'gap-3'} px-3 py-1.5 rounded-lg transition-all group cursor-pointer {accordionActive
-                ? 'bg-primary/10 text-primary font-medium'
+                : 'gap-2.5'} h-8 px-2.5 rounded-sm text-[13px] font-medium transition-colors group cursor-pointer {accordionActive
+                ? 'bg-primary/10 text-primary'
                 : 'text-text-muted hover:bg-surface-2 hover:text-text-main'}"
             >
               <span class="material-symbols-outlined text-[18px]">{entry.icon}</span>
@@ -408,8 +399,8 @@
                   <a
                     href={TAB_ROUTES[child.id]}
                     onclick={(e) => handleNav(child.id, e)}
-                    class="flex items-center gap-3 px-3 py-1.5 rounded-lg transition-all group cursor-pointer {childActive
-                      ? 'bg-primary/10 text-primary font-medium'
+                    class="flex items-center gap-2.5 h-8 px-2.5 rounded-sm text-[13px] font-medium transition-colors group cursor-pointer {childActive
+                      ? 'bg-primary/10 text-primary'
                       : 'text-text-muted hover:bg-surface-2 hover:text-text-main'}"
                   >
                     <span
@@ -433,8 +424,8 @@
               title={iconRail ? entry.label : undefined}
               class="flex items-center {iconRail
                 ? 'justify-center'
-                : 'gap-3'} px-3 py-1.5 rounded-lg transition-all group cursor-pointer {active
-                ? 'bg-primary/10 text-primary font-medium'
+                : 'gap-2.5'} h-8 px-2.5 rounded-sm text-[13px] font-medium transition-colors group cursor-pointer {active
+                ? 'bg-primary/10 text-primary'
                 : 'text-text-muted hover:bg-surface-2 hover:text-text-main'}"
             >
               <span
@@ -450,10 +441,10 @@
               {#if badge && !iconRail}
                 <span
                   title={badge.title}
-                  class="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums {badge.tone ===
+                  class="shrink-0 rounded-sm px-1.5 py-0.5 text-[11px] font-medium tabular-nums {badge.tone ===
                   'warn'
-                    ? 'bg-warning/15 text-warning'
-                    : 'bg-surface-2 text-text-subtle'}">{badge.text}</span
+                    ? 'bg-warning/10 text-warning'
+                    : 'bg-primary/10 text-primary'}">{badge.text}</span
                 >
               {/if}
             </a>
@@ -466,9 +457,9 @@
 
   <!-- Bottom connection summary -->
   {#if !iconRail}
-    <div class="p-4 border-t border-border-subtle shrink-0">
+    <div class="px-2.5 py-2 border-t border-border shrink-0">
       <div
-        class="p-2.5 rounded-[10px] bg-surface border border-border-subtle flex items-center justify-between"
+        class="flex items-center justify-between rounded-sm border border-border bg-surface px-2.5 py-2"
       >
         <div class="min-w-0">
           <p class="text-[11px] text-text-muted uppercase tracking-wide">Providers</p>
@@ -480,7 +471,7 @@
       </div>
     </div>
   {:else}
-    <div class="p-2 border-t border-border-subtle shrink-0 flex justify-center" title="{activeConnections} / {totalConnections} active">
+    <div class="p-2 border-t border-border shrink-0 flex justify-center" title="{activeConnections} / {totalConnections} active">
       <span class="material-symbols-outlined text-primary text-[18px]">radio_button_checked</span>
     </div>
   {/if}

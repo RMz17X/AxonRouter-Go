@@ -1,5 +1,8 @@
 # Per-Custom-Provider Limits + Bulk Add Models — Rencana Implementasi
 
+> **Status (2026-11-05): implemented.** The per-provider limits described here landed (`internal/db/provider_limits.go` and its dashboard/API consumers); this document is kept as the design record. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 Status: draft rencana, belum ada kode. Ditulis 2026-10-18.
 Ruang lingkup: `providerNodes` (custom provider: `openai-compatible-*` / `anthropic-compatible-*` / `custom-embedding-*`)
 dan halaman model-nya di dashboard.

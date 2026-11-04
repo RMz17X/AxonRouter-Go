@@ -57,11 +57,11 @@ func (r *Repo) ResetProviderQuota(ctx context.Context, nodeID string) (int, erro
 
 	var watermark int64
 	if err := tx.QueryRowContext(ctx,
-		`SELECT COALESCE(MAX(id), 0) FROM usageHistory`).Scan(&watermark); err != nil {
+		r.Rebind(`SELECT COALESCE(MAX(id), 0) FROM usageHistory`)).Scan(&watermark); err != nil {
 		return 0, fmt.Errorf("reset provider quota %s: read history mark: %w", nodeID, err)
 	}
 	res, err := tx.ExecContext(ctx,
-		`UPDATE providerNodes SET `+providerQuotaResetColumn+` = ? WHERE id = ?`, watermark, nodeID)
+		r.Rebind(`UPDATE providerNodes SET `+providerQuotaResetColumn+` = ? WHERE id = ?`), watermark, nodeID)
 	if err != nil {
 		return 0, fmt.Errorf("reset provider quota %s: %w", nodeID, err)
 	}
@@ -69,7 +69,7 @@ func (r *Repo) ResetProviderQuota(ctx context.Context, nodeID string) (int, erro
 		return 0, ErrNoSuchProviderNode
 	}
 	if _, err := tx.ExecContext(ctx,
-		`DELETE FROM providerLedgerCarryover WHERE providerId = ?`, nodeID); err != nil {
+		r.Rebind(`DELETE FROM providerLedgerCarryover WHERE providerId = ?`), nodeID); err != nil {
 		return 0, fmt.Errorf("reset provider quota %s: clear carried usage: %w", nodeID, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -89,7 +89,7 @@ func (r *Repo) ProviderQuotaResetID(ctx context.Context, nodeID string) (int, er
 		return 0, nil
 	}
 	var mark sql.NullInt64
-	err := r.db.QueryRowContext(ctx,
+	err := r.QueryRowContext(ctx,
 		`SELECT `+providerQuotaResetColumn+` FROM providerNodes WHERE id = ? LIMIT 1`, nodeID,
 	).Scan(&mark)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -137,7 +137,7 @@ func (r *Repo) ProviderTokenUsage(ctx context.Context, nodeID string) (int, erro
 	args = append(args, nodeID)
 
 	var used int64
-	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&used); err != nil {
+	if err := r.QueryRowContext(ctx, query, args...).Scan(&used); err != nil {
 		return 0, fmt.Errorf("get provider token usage: %w", err)
 	}
 	return int(used), nil
@@ -172,7 +172,7 @@ func (r *Repo) ProviderTokenUsageByNode(ctx context.Context) (map[string]int, er
 	if r == nil || r.db == nil {
 		return usage, nil
 	}
-	rows, err := r.db.QueryContext(ctx, providerTokenUsageByNodeQuery)
+	rows, err := r.QueryContext(ctx, providerTokenUsageByNodeQuery)
 	if err != nil {
 		return nil, fmt.Errorf("get provider token usage by node: %w", err)
 	}

@@ -1,3 +1,5 @@
+//go:build sqlite_legacy
+
 // A dashboard model probe reaches the media handlers with a probe-tagged
 // context and must observe production state without changing it. The failure
 // path already refused to lock accounts on a probe; the success path had the

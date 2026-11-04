@@ -1,5 +1,8 @@
 # Smart Select Combo — keanggotaan otomatis lewat keyword & regex
 
+> **Status (2026-11-05): implemented.** The smart combo described here landed (`internal/proxy/smart/`); this document is kept as the design record. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 Status: draft rencana, belum ada kode. Ditulis 2026-10-23.
 Ruang lingkup: tabel `combos` + halaman Combos di dashboard + jalur tulis model di dashboard API.
 

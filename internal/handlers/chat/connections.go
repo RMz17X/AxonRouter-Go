@@ -21,6 +21,7 @@ import (
 	"9router/proxy/internal/providers"
 	internalproxy "9router/proxy/internal/proxy"
 	"9router/proxy/internal/proxy/oauth"
+	"9router/proxy/internal/speedlayer"
 	"9router/proxy/internal/translator"
 	"9router/proxy/internal/updater"
 )
@@ -104,6 +105,24 @@ func (h *ChatHandler) resolveProviderProxyPoolID(provider string, excluded map[s
 // with a different number of active pools skipped positions.
 var poolRotationCursors sync.Map // map[string]*atomic.Uint64
 
+// nextPoolCursor returns the next round-robin position for a provider's
+// proxy pools. The cursor lives in the cluster speed layer (P3) so every
+// node advances the same rotation — with no layer configured the default
+// store is in-process memory and the behaviour is exactly the atomic
+// counter this replaces. The position is a fairness hint, never a
+// correctness gate (the resolver re-validates the pool it picks), so a
+// store error falls back to the process-local atomic rather than
+// failing the request.
+func nextPoolCursor(alias string) uint64 {
+	ctx, cancel := speedlayer.OpContext(context.Background())
+	defer cancel()
+	if n, err := speedlayer.Default().AddCounter(ctx, "cursor/pool/"+alias, 1); err == nil && n > 0 {
+		return uint64(n - 1)
+	}
+	cursor, _ := poolRotationCursors.LoadOrStore(alias, new(atomic.Uint64))
+	return cursor.(*atomic.Uint64).Add(1) - 1
+}
+
 // rotatedActiveProxyPool picks the next pool for a provider under a rotation
 // strategy. The cursor is that provider's own round-robin position, so two
 // providers rotating at once advance independently.
@@ -144,8 +163,7 @@ func (h *ChatHandler) rotatedActiveProxyPoolWithin(provider, strategy string, ex
 	}
 	// Keyed on the resolved alias so `oc` and `opencode` share one cursor: they
 	// are the same provider and must advance together.
-	cursor, _ := poolRotationCursors.LoadOrStore(providers.ResolveAlias(provider), new(atomic.Uint64))
-	idx := cursor.(*atomic.Uint64).Add(1) - 1
+	idx := nextPoolCursor(providers.ResolveAlias(provider))
 	return ids[idx%uint64(len(ids))], nil
 }
 

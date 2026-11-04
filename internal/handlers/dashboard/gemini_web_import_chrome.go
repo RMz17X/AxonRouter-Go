@@ -27,7 +27,8 @@ import (
 // when it finds a browser that is running, and names the throwaway browser as
 // the way to avoid it.
 //
-// Reference: azrinaldi/gemini-stealth-bridge internal/cookies/chrome_sqlite.go
+// Reference: azrinaldi/gemini-stealth-bridge internal/cookies (the chrome
+// cookie reader)
 // and its --import-chrome flag — the reading is that project's shape.
 
 // importChromeTimeout bounds the read of a browser's cookie database.

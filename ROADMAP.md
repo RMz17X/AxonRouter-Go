@@ -1,5 +1,8 @@
 # 9Router Go — Roadmap and Acceptance Criteria
 
+> **Status (2026-11-05): partially superseded.** The platform phases of the current program (PostgreSQL cutover, speed layer, Docker delivery, Axon backend-parity batches 1–10) have landed; their authoritative record is the repo's `.changes/` fragments, not this roadmap. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 This roadmap is for the current native Go gateway and its embedded Svelte dashboard. It separates near-term hardening from optional product work; it is not a claim of upstream feature parity. The current release metadata is `v1.9.1`. The repository manifest tracks upstream `v0.5.85`; the changelog also contains separately listed `v0.5.86` parity work. That mismatch must be resolved in release metadata before describing a complete upstream baseline.
 
 ## Current baseline and known limitations

@@ -61,7 +61,8 @@ func (h *MediaHandler) HandleTestModel(w http.ResponseWriter, r *http.Request) {
 
 	var req testModelRequest
 	if err := json.Unmarshal(body, &req); err != nil || req.Model == "" {
-		handlerutil.WriteJSON(w, http.StatusBadRequest, testModelResult{Error: "Model required"})
+		// Axon's exact 400 body for this route: a bare flat {error}.
+		handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "Model required"})
 		return
 	}
 	if !isProbeKind(req.Kind) {

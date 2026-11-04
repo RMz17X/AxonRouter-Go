@@ -42,7 +42,7 @@ func NewChatHandler(repo *db.Repo, ts ...*shared.TokenSaverConfig) *ChatHandler 
 		maxEntries := cfg.SemanticCacheMaxEntries()
 		var store semanticcache.Store
 		if repo != nil && repo.RawDB() != nil {
-			store = semanticcache.NewPersistentStore(repo.RawDB(), maxEntries, ttl)
+			store = semanticcache.NewPersistentStore(repo.RawDB(), repo.Rebind, maxEntries, ttl)
 		}
 		sc = semanticcache.New(semanticcache.Config{
 			Enabled:             cfg.SemanticCacheEnabled(),

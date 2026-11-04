@@ -28,7 +28,7 @@ func parseJSONString(raw string) string {
 // It parses the stored JSON value correctly (removing JSON string quotes if present).
 func (r *Repo) GetModelAlias(alias string) (string, error) {
 	var rawVal string
-	err := r.db.QueryRow(
+	err := r.QueryRow(
 		"SELECT value FROM kv WHERE scope = 'modelAliases' AND key = ? LIMIT 1",
 		alias,
 	).Scan(&rawVal)
@@ -43,7 +43,7 @@ func (r *Repo) GetModelAlias(alias string) (string, error) {
 
 // GetModelAliases returns all model aliases as a key-value map.
 func (r *Repo) GetModelAliases() (map[mapKey]string, error) {
-	rows, err := r.db.Query("SELECT key, value FROM kv WHERE scope = 'modelAliases'")
+	rows, err := r.Query("SELECT key, value FROM kv WHERE scope = 'modelAliases'")
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (cm *CustomModel) UnmarshalJSON(data []byte) error {
 
 // GetCustomModels returns all custom models from kv scope customModels.
 func (r *Repo) GetCustomModels() ([]*CustomModel, error) {
-	rows, err := r.db.Query("SELECT key, value FROM kv WHERE scope = 'customModels'")
+	rows, err := r.Query("SELECT key, value FROM kv WHERE scope = 'customModels'")
 	if err != nil {
 		return nil, err
 	}

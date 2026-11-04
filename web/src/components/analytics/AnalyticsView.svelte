@@ -8,8 +8,6 @@
     type UsageSection,
   } from '../../lib/router'
   import {
-    fmt,
-    timeAgo,
     type Period,
     type StatsData,
     type RequestDetailItem,
@@ -20,14 +18,16 @@
   import CompressionAnalyticsView from '../CompressionAnalyticsView.svelte'
   import PeriodSelect from './PeriodSelect.svelte'
   import SectionMenu from './SectionMenu.svelte'
-  import SummaryKpiCards from './SummaryKpiCards.svelte'
-  import UsageBreakdownTable from './UsageBreakdownTable.svelte'
   import RequestDetailsTab from './RequestDetailsTab.svelte'
-  import UsageChart from './UsageChart.svelte'
+  import AxonKpiCards from './AxonKpiCards.svelte'
   import ProviderTopologyCard from './ProviderTopologyCard.svelte'
-  import ComboFlowCard from './ComboFlowCard.svelte'
-  import { usageBlocks, isPanelVisible } from '../../lib/usagePanel.svelte'
-  import Card from '../../lib/ui/Card.svelte'
+  import AxonRecentRequests from './AxonRecentRequests.svelte'
+  import AxonRequestStream from './AxonRequestStream.svelte'
+  import AxonRealtime from './AxonRealtime.svelte'
+  import AxonVolumeGrid from './AxonVolumeGrid.svelte'
+  import AxonBreakdownTable from './AxonBreakdownTable.svelte'
+  import AxonComboRouting from './AxonComboRouting.svelte'
+  import { isPanelVisible } from '../../lib/usagePanel.svelte'
   import { emailPrivacy, formatEmailLabel } from '../../lib/privacy'
   interface Props {
     connections?: ProviderConnection[]
@@ -50,35 +50,23 @@
   let period = $state<Period>('today')
   let isFetching = $state(false)
 
-  // The two optional Overview panels start collapsed and say so with a chevron,
-  // the same affordance the Details panels use. Collapsed is a view state, not a
-  // preference: the switch that hides a panel outright is the arrangement's own
-  // visibility toggle, and that one also skips the combo query below.
-  let comboFlowOpen = $state(false)
-  let usageTrendOpen = $state(false)
-  // The trend's metric switch lives in the panel header, and the header label
-  // describes the active metric — so both the mode and the hourly fact the
-  // label repeats are owned here (UsageChart reports the bucket shape back).
-  let trendMode = $state<'tokens' | 'costs'>('tokens')
-  let trendHourly = $state(false)
-  const trendLabel = $derived(
-    trendMode === 'costs'
-      ? `Estimated cost per ${trendHourly ? 'hour' : 'day'}, stacked by model family.`
-      : `Tokens per ${trendHourly ? 'hour' : 'day'}, stacked by model family.`
-  )
-  // The stats read and the live stream fill the Overview's data panels: KPI
-  // cards, topology map, Recent Requests, the breakdown table, and Combo flow.
-  // The Usage trend is not one of them — it reads its own chart endpoint, and
-  // only while it is expanded — so a section that shows nothing but the trend
-  // must not poll what none of its cards draw (issue #506).
-  const OVERVIEW_LIVE_PANELS = [
-    'overview.kpi',
-    'overview.topology',
-    'overview.recent',
-    'overview.breakdown',
-    'overview.comboFlow',
-  ] as const
-  const overviewLive = $derived(OVERVIEW_LIVE_PANELS.some((id) => isPanelVisible(id)))
+  // The Overview mirrors AxonRouter's Usage Overview tab: a fixed layout with
+  // three sub-tabs (Overview / Breakdown / Combo Routing) instead of the old
+  // arrangement-driven panels. The arrangement system now only governs the
+  // Details section's panels.
+  let overviewTab = $state<'overview' | 'breakdown' | 'combo'>('overview')
+  // Below lg the topology and Recent Requests collapse into one panel with a
+  // switch, as Axon's Overview does; at lg and up both render side by side.
+  let liveSwitch = $state<'topology' | 'recent'>('topology')
+  // Axon's Overview period set. The Details section keeps the wider
+  // PeriodSelect; both write the same `period` state.
+  const AXON_PERIODS: { value: Period; label: string }[] = [
+    { value: 'today', label: 'Today' },
+    { value: '24h', label: '24h' },
+    { value: '7d', label: '7D' },
+    { value: '30d', label: '30D' },
+    { value: '60d', label: '60D' },
+  ]
 
   // Choosing a section has to move the URL when that section owns one, or the
   // next reload silently drops back to Overview.
@@ -98,10 +86,6 @@
   // body, so the failure arrives here as a thrown error: keep the message, and
   // let the template show the stale data as stale rather than as current.
   let statsError = $state('')
-  // Combo definitions for the live map. The SSE already reports which combo a
-  // request asked for (requestedModel); these supply the members it resolved
-  // to, so the card can list models and providers instead of guessing.
-  let comboDefs = $state<{ name: string; members: string[]; strategy?: string }[]>([])
   let detailsError = $state('')
   let pulseTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -113,6 +97,49 @@
       pulseProvider = ''
     }, 3000)
   }
+
+  // Topology presence rule (Ricki, 2026-11-04): a provider belongs on the
+  // map only while it is active or its last request is under five minutes
+  // old; after five quiet minutes it leaves the map on its own. The clock
+  // below is what lets nodes expire without any new data arriving, and
+  // observedActivity remembers when each provider was last seen doing
+  // something (live requests, pulses, errors, recent rows) so the
+  // derivation in topologyProviders can judge freshness even for activity
+  // the period-scoped stats maps have already rotated past.
+  let topologyNow = $state(Date.now())
+  let observedActivity = $state(new Map<string, number>())
+
+  $effect(() => {
+    const t = setInterval(() => {
+      topologyNow = Date.now()
+    }, 5000)
+    return () => clearInterval(t)
+  })
+
+  $effect(() => {
+    const stamps = new Map<string, number>()
+    const stamp = (provider: string, at: number) => {
+      if (!provider || Number.isNaN(at)) return
+      const key = provider.trim().toLowerCase()
+      if (key && at > (stamps.get(key) || 0)) stamps.set(key, at)
+    }
+    const now = Date.now()
+    for (const r of activeRequests) stamp(r.provider || '', now)
+    stamp(pulseProvider, now)
+    stamp(errorProvider, now)
+    for (const r of stats.recentRequests || []) {
+      if (r.provider) stamp(r.provider, r.timestamp ? new Date(r.timestamp).getTime() : NaN)
+    }
+    let changed = false
+    const next = new Map(observedActivity)
+    for (const [k, v] of stamps) {
+      if (v > (next.get(k) || 0)) {
+        next.set(k, v)
+        changed = true
+      }
+    }
+    if (changed) observedActivity = next
+  })
   // mergeRecent unions an incoming SSE list with what is on screen. The SSE
   // stream carries only this process's in-memory ring, so a plain replace
   // collapses the DB-backed list (20 rows after a REST load) down to the few
@@ -172,6 +199,7 @@
                 activeRequests: res.activeRequests,
                 recentRequests: res.recentRequests,
                 errorProvider: res.errorProvider,
+                last10Minutes: res.last10Minutes,
                 pending: res.pending,
               }
             : res
@@ -225,7 +253,18 @@
   // The moved Cache and Compression sections load their own data, so the
   // Overview's read must not run behind them.
   $effect(() => {
-    if (section === 'overview' && overviewLive) loadStats(period)
+    if (section === 'overview') loadStats(period)
+  })
+
+  // The Realtime card's error modal deep-links here: it cannot route to the
+  // Details section itself (the section is state on this same path), so it
+  // dispatches a window event and this listener performs the switch.
+  $effect(() => {
+    const openDetails = () => {
+      section = 'details'
+    }
+    window.addEventListener('open-request-details', openDetails)
+    return () => window.removeEventListener('open-request-details', openDetails)
   })
 
   $effect(() => {
@@ -237,48 +276,11 @@
     }
   })
 
-  // Loaded once: editing a combo is rare, and a reload picks up the change. The
-  // query is skipped outright while the Combo flow panel is hidden — the panel
-  // draws nothing then, so the definitions would only cost a request and memory
-  // (upstream #429). `isPanelVisible` reads the arrangement, so turning the panel
-  // back on in Settings refetches without a reload.
-  $effect(() => {
-    if (!isPanelVisible('overview.comboFlow')) {
-      comboDefs = []
-      return
-    }
-    let cancelled = false
-    api
-      .getCombos()
-      .then((rows: any[]) => {
-        if (cancelled) return
-        comboDefs = (Array.isArray(rows) ? rows : [])
-          .map((c: any) => {
-            let members: string[] = []
-            try {
-              const raw = typeof c?.models === 'string' ? JSON.parse(c.models) : c?.models
-              if (Array.isArray(raw)) members = raw.map((m: any) => String(m))
-            } catch {
-              members = []
-            }
-            return { name: String(c?.name ?? ''), members, strategy: String(c?.strategy ?? '') }
-          })
-          .filter((c: { name: string }) => c.name !== '')
-      })
-      .catch(() => {
-        if (!cancelled) comboDefs = []
-      })
-    return () => {
-      cancelled = true
-    }
-  })
-
   // SSE real-time updates for activeRequests, recentRequests and error notifications
   $effect(() => {
-    // The live stream fills the Overview's data panels and nothing else. With
-    // every one of them hidden, the connection would stream numbers into a
-    // page that draws none of them (issue #506).
-    if (!overviewLive) return
+    // The live stream fills the Overview's panels and nothing else, so it only
+    // runs while the Overview section is on screen.
+    if (section !== 'overview') return
     let isCancelled = false
     let controller: AbortController | null = null
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null
@@ -377,9 +379,8 @@
       }
     }, 5000)
 
-    // The breakdown maps change slowly enough that a table four seconds stale
-    // reads the same as a fresh one, and this keeps them current without
-    // paying the per-poll cost.
+    // A full read on a slower tick keeps the topology catalog's byProvider
+    // window current (the Breakdown sub-tab fetches its own maps now).
     const breakdownTimer = setInterval(() => {
       if (section === 'overview' && (typeof document === 'undefined' || !document.hidden)) {
         loadStats(period)
@@ -434,11 +435,16 @@
     const seen = new Set<string>()
     const list: { id: string; alias?: string; name: string; color?: string; type: string }[] = []
 
-    // "Who is on the bus" is a usage question, so every source below is
-    // measured against the same window. The backend keys usage by the
-    // canonical provider id, while a connection row can hold either that or
-    // the published alias, so both are tried before a provider counts as idle.
-    const usedInPeriod = (provId: string) => {
+    // "Who is on the bus" is a presence question, and presence expires:
+    // every source below is gated on the provider's last activity being
+    // under five minutes old (the rule stated at topologyNow above), NOT
+    // on the selected stats period — the period drives the KPIs and
+    // tables, never who is on the map. The backend keys usage by the
+    // canonical provider id, while a connection row can hold either that
+    // or the published alias, so both are tried before a provider counts
+    // as idle.
+    const TOPOLOGY_RETENTION_MS = 5 * 60_000
+    const activityMs = (provId: string) => {
       const raw = provId.trim()
       const canonical = raw.toLowerCase()
       const cat = PROVIDER_CATALOG.find((p) => p.id.toLowerCase() === canonical || p.alias?.toLowerCase() === canonical)
@@ -446,7 +452,21 @@
       // so `stats.byProvider` is keyed by that raw case. Check both raw and lowercased
       // variants alongside catalog ids so mixed-case nodes aren't judged idle.
       const keys = [raw, canonical, cat?.id, cat?.alias].filter(Boolean) as string[]
-      return keys.some((k) => (stats.byProvider?.[k]?.requests || 0) > 0)
+      let latest = 0
+      for (const k of keys) {
+        const lastUsed = stats.byProvider?.[k]?.lastUsed
+        if (lastUsed) {
+          const t = Date.parse(lastUsed)
+          if (!Number.isNaN(t) && t > latest) latest = t
+        }
+        const observed = observedActivity.get(k.toLowerCase())
+        if (observed && observed > latest) latest = observed
+      }
+      return latest
+    }
+    const fresh = (provId: string) => {
+      const t = activityMs(provId)
+      return t > 0 && topologyNow - t <= TOPOLOGY_RETENTION_MS
     }
     const addProvider = (provId: string, type: string, customName?: string) => {
       if (!provId) return
@@ -480,31 +500,33 @@
       if (r.provider) addProvider(r.provider, 'active')
     }
     if (pulseProvider) addProvider(pulseProvider, 'active')
-    if (lastProvider) addProvider(lastProvider, 'recent')
-    if (errorProvider) addProvider(errorProvider, 'error')
+    if (lastProvider && fresh(lastProvider)) addProvider(lastProvider, 'recent')
+    if (errorProvider && fresh(errorProvider)) addProvider(errorProvider, 'error')
 
-    // 2. Add recent requests
+    // 2. Add recent requests — recent in the five-minute sense, not in
+    //    the "latest N rows" sense the feed itself uses.
     for (const r of stats.recentRequests || []) {
-      if (r.provider) addProvider(r.provider, 'recent')
+      if (r.provider && fresh(r.provider)) addProvider(r.provider, 'recent')
     }
 
-    // 3. Add user-configured connections, but only the ones that actually
-    //    carried traffic in the selected window. Every non-inactive row used
-    //    to be drawn here, and since that list is not usage-windowed the node
-    //    outlived both the period and the connection itself: a provider the
-    //    operator had merely configured sat on the map indefinitely as if it
-    //    were serving (#280). Gating it on the same window as every other
-    //    source is what makes the map mean what it claims to mean.
+    // 3. Add user-configured connections, but only the ones carrying
+    //    traffic inside the retention window. Every non-inactive row used
+    //    to be drawn here, and since that list is not usage-windowed the
+    //    node outlived both the period and the connection itself: a
+    //    provider the operator had merely configured sat on the map
+    //    indefinitely as if it were serving (#280). The five-minute gate
+    //    keeps that protection and tightens it — configured is not
+    //    present, and neither is "used earlier today".
     for (const c of connections) {
-      if (c.isActive !== 0 && c.provider && usedInPeriod(c.provider)) {
+      if (c.isActive !== 0 && c.provider && fresh(c.provider)) {
         addProvider(c.provider, 'connection', c.name || undefined)
       }
     }
 
-    // 4. Add historical providers with usage
+    // 4. Add providers whose latest recorded usage is still fresh
     if (stats.byProvider) {
       for (const prov of Object.keys(stats.byProvider)) {
-        addProvider(prov, 'stats')
+        if (fresh(prov)) addProvider(prov, 'stats')
       }
     }
 
@@ -516,7 +538,7 @@
     //    so this only has to cover the ids whose usage key the map lacks.
     const FREE_DEFAULTS = ['antigravity', 'opencode', 'nvidia', 'openrouter', 'clinepass']
     for (const f of FREE_DEFAULTS) {
-      if (usedInPeriod(f)) addProvider(f, 'default')
+      if (fresh(f)) addProvider(f, 'default')
     }
 
     return list
@@ -529,25 +551,6 @@
   <SectionMenu {section} onSectionChange={(next) => (section = next)} />
 {/snippet}
 
-<!-- Both optional Overview panels are collapsed by default and say so with the
-     same chevron the Details panels use, so a reader recognizes the affordance
-     without learning a second one. -->
-{#snippet panelToggle(open: boolean, label: string, onToggle: () => void)}
-  <button
-    type="button"
-    aria-expanded={open}
-    aria-label="Toggle {label}"
-    onclick={onToggle}
-    class="shrink-0 cursor-pointer self-start rounded-lg p-1 text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/50 sm:self-auto"
-  >
-    <span
-      class="material-symbols-outlined text-[18px] transition-transform duration-200"
-      style:transform={open ? 'rotate(180deg)' : 'rotate(0deg)'}
-    >
-      expand_more
-    </span>
-  </button>
-{/snippet}
 
 
 <div class="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
@@ -561,7 +564,28 @@
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       {@render sectionMenu()}
 
-      <PeriodSelect value={period} busy={isFetching} onChange={(next) => (period = next)} />
+      {#if section === 'overview'}
+        <!-- Axon's period segmented control: exactly its five windows. -->
+        <div
+          class="inline-flex rounded-xl bg-surface border border-border p-1 shadow-sm self-start sm:self-auto"
+          role="group"
+          aria-label="Usage period"
+        >
+          {#each AXON_PERIODS as p (p.value)}
+            <button
+              type="button"
+              onclick={() => (period = p.value)}
+              class="rounded-lg px-3 py-1 text-xs font-semibold transition-colors cursor-pointer {period === p.value
+                ? 'bg-brand-500 text-white shadow-sm'
+                : 'text-text-muted hover:text-text-main'}"
+            >
+              {p.label}
+            </button>
+          {/each}
+        </div>
+      {:else}
+        <PeriodSelect value={period} busy={isFetching} onChange={(next) => (period = next)} />
+      {/if}
     </div>
   {/if}
 
@@ -571,7 +595,7 @@
   {#if section === 'overview' && statsError}
     <div
       role="alert"
-      class="flex flex-col gap-2 rounded-[14px] border border-red-500/30 bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+      class="flex flex-col gap-2 rounded-brand-lg border border-red-500/30 bg-surface px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
     >
       <div class="flex min-w-0 items-start gap-2">
         <span class="material-symbols-outlined mt-px text-[18px] text-red-600 dark:text-red-400" aria-hidden="true">error</span>
@@ -592,117 +616,75 @@
   {/if}
 
   {#if section === 'overview'}
-    <!-- The panels of this section, in the arrangement Settings holds. A block
-         is one panel, except for the map + Recent Requests row: those two share
-         one grid row while both are visible and adjacent, and fall apart into
-         full-width blocks once the arrangement separates them. -->
-    {#each usageBlocks('overview') as block (block.key)}
-      {#if block.key === 'overview.kpi'}
-        <SummaryKpiCards {stats} />
-      {:else if block.key === 'overview.comboFlow'}
-        <!-- Combo flow: router -> combo -> members, only while a combo is in use
-             (or just finished). The provider map keeps its own animation. The
-             panel starts collapsed: the flow is only interesting while a request
-             is moving, and an expanded empty tree reads as a broken panel. The
-             header is the Details panels' own — same fonts, same chevron, with
-             the panel's icon in front of the title. -->
-        <Card padding="none" class="overflow-hidden border border-border">
-          <div
-            class="flex flex-col gap-3 bg-surface-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between {comboFlowOpen
-              ? 'border-b border-border'
-              : ''}"
-          >
-            <div class="flex min-w-0 items-center gap-2">
-              <span class="material-symbols-outlined text-[18px] text-text-muted" aria-hidden="true"
-                >account_tree</span
-              >
-              <div class="min-w-0">
-                <h2 class="font-headline text-sm font-bold text-text-main">Combo flow</h2>
-                <p class="font-body text-xs text-text-muted">Router → combo → members, live</p>
-              </div>
-            </div>
-            {@render panelToggle(comboFlowOpen, 'Combo flow', () => (comboFlowOpen = !comboFlowOpen))}
-          </div>
-          {#if comboFlowOpen}
-            <div class="p-5">
-              <ComboFlowCard
-                combos={comboDefs}
-                {activeRequests}
-                recentRequests={stats.recentRequests || []}
-                {errorProvider}
-              />
-            </div>
-          {/if}
-        </Card>
-      {:else if block.key === 'overview.topology+overview.recent'}
-        <div class="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-          {@render topologyMap()}
-          {@render recentRequestsCard()}
+    <!-- AxonRouter's Usage Overview tab, ported: three sub-tabs with a fixed
+         layout. Breakdown and Combo Routing fetch their own data; the
+         Overview sub-tab draws the stats this view already polls. -->
+    <div
+      class="inline-flex rounded-xl bg-surface border border-border p-1 shadow-sm self-start"
+      role="group"
+      aria-label="Overview sub-tab"
+    >
+      {#each [['overview', 'Overview'], ['breakdown', 'Breakdown'], ['combo', 'Combo Routing']] as [value, label] (value)}
+        <button
+          type="button"
+          onclick={() => (overviewTab = value as typeof overviewTab)}
+          class="rounded-lg px-3 py-1 text-xs font-semibold transition-colors cursor-pointer {overviewTab === value
+            ? 'bg-brand-500 text-white shadow-sm'
+            : 'text-text-muted hover:text-text-main'}"
+        >
+          {label}
+        </button>
+      {/each}
+    </div>
+
+    {#if overviewTab === 'overview'}
+      <AxonKpiCards {stats} />
+
+      <!-- Topology + Recent Requests: side by side at lg (2fr/1fr); below lg
+           a switch shows one at a time, as Axon's Overview does. -->
+      <div class="flex flex-col gap-2">
+        <div
+          class="inline-flex rounded-xl bg-surface border border-border p-1 shadow-sm self-start lg:hidden"
+          role="group"
+          aria-label="Live panel"
+        >
+          {#each [['topology', 'Topology'], ['recent', 'Recent']] as [value, label] (value)}
+            <button
+              type="button"
+              onclick={() => (liveSwitch = value as typeof liveSwitch)}
+              class="rounded-lg px-3 py-1 text-xs font-semibold transition-colors cursor-pointer {liveSwitch === value
+                ? 'bg-brand-500 text-white shadow-sm'
+                : 'text-text-muted hover:text-text-main'}"
+            >
+              {label}
+            </button>
+          {/each}
         </div>
-      {:else if block.key === 'overview.topology'}
-        {@render topologyMap()}
-      {:else if block.key === 'overview.recent'}
-        {@render recentRequestsCard()}
-      {:else if block.key === 'overview.trend'}
-        <!-- Usage trend: the same collapsed-by-default shape as Combo flow, so the
-             two optional panels read alike. The metric switch lives here, in the
-             header, beside the chevron — the label below it names what is drawn,
-             so the two cannot disagree. -->
-        <Card padding="none" class="overflow-hidden border border-border">
-          <div
-            class="flex flex-col gap-3 bg-surface-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between {usageTrendOpen
-              ? 'border-b border-border'
-              : ''}"
-          >
-            <div class="flex min-w-0 items-center gap-2">
-              <span class="material-symbols-outlined text-[18px] text-text-muted" aria-hidden="true"
-                >monitoring</span
-              >
-              <div class="min-w-0">
-                <h2 class="font-headline text-sm font-bold text-text-main">Usage trend</h2>
-                <p class="font-body text-xs text-text-muted">{trendLabel}</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 self-start sm:self-auto">
-              <div
-                class="inline-flex rounded-xl bg-surface border border-border p-1 shadow-sm"
-                role="group"
-                aria-label="Chart metric"
-              >
-                <button
-                  type="button"
-                  onclick={() => (trendMode = 'costs')}
-                  class="rounded-lg px-3 py-1 text-xs font-semibold transition-colors cursor-pointer {trendMode ===
-                  'costs'
-                    ? 'bg-brand-500 text-white shadow-sm'
-                    : 'text-text-muted hover:text-text-main'}"
-                >
-                  Costs
-                </button>
-                <button
-                  type="button"
-                  onclick={() => (trendMode = 'tokens')}
-                  class="rounded-lg px-3 py-1 text-xs font-semibold transition-colors cursor-pointer {trendMode ===
-                  'tokens'
-                    ? 'bg-brand-500 text-white shadow-sm'
-                    : 'text-text-muted hover:text-text-main'}"
-                >
-                  Tokens
-                </button>
-              </div>
-              {@render panelToggle(usageTrendOpen, 'Usage trend', () => (usageTrendOpen = !usageTrendOpen))}
-            </div>
+        <div class="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+          <div class="min-w-0 {liveSwitch === 'recent' ? 'hidden lg:block' : ''}">
+            <ProviderTopologyCard
+              providers={topologyProviders}
+              {activeRequests}
+              {pulseProvider}
+              {lastProvider}
+              {errorProvider}
+              onRefresh={() => loadStats(period)}
+            />
           </div>
-          {#if usageTrendOpen}
-            <div class="p-5">
-              <UsageChart {period} bind:viewMode={trendMode} bind:hourly={trendHourly} />
-            </div>
-          {/if}
-        </Card>
-      {:else if block.key === 'overview.breakdown'}
-        <UsageBreakdownTable {stats} {providerNodes} />
-      {/if}
-    {/each}
+          <div class="min-w-0 {liveSwitch === 'topology' ? 'hidden lg:block' : ''}">
+            <AxonRecentRequests recentRequests={stats.recentRequests || []} />
+          </div>
+        </div>
+      </div>
+
+      <AxonRequestStream last10Minutes={stats.last10Minutes} />
+      <AxonRealtime {activeRequests} {period} />
+    {:else if overviewTab === 'breakdown'}
+      <AxonVolumeGrid {period} />
+      <AxonBreakdownTable {period} />
+    {:else}
+      <AxonComboRouting {period} />
+    {/if}
   {:else if section === 'cache'}
     <CacheAnalyticsView>
       {#snippet headerLeft()}
@@ -729,79 +711,3 @@
     />
   {/if}
 </div>
-{#snippet topologyMap()}
-  <ProviderTopologyCard
-    providers={topologyProviders}
-    {activeRequests}
-    {pulseProvider}
-    {lastProvider}
-    {errorProvider}
-    onRefresh={() => loadStats(period)}
-  />
-{/snippet}
-
-{#snippet recentRequestsCard()}
-  <div
-    class="bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-soft)] p-4 flex min-w-0 flex-col overflow-hidden"
-    style="height: 480px"
-  >
-    <div class="px-1 py-2 border-b border-border shrink-0">
-      <span class="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
-    </div>
-
-    {#if !stats.recentRequests || stats.recentRequests.length === 0}
-      <div class="flex-1 flex items-center justify-center text-text-muted text-xs">
-        No requests recorded yet.
-      </div>
-    {:else}
-      <div class="flex-1 overflow-y-auto">
-        <table class="w-full table-fixed min-w-[280px] border-collapse text-xs">
-          <colgroup>
-            <col class="w-[20px]" />
-            <col />
-            <col class="w-[96px]" />
-            <col class="w-[56px]" />
-          </colgroup>
-          <thead class="sticky top-0 bg-bg z-10">
-            <tr class="border-b border-border">
-              <th class="py-1.5 pl-3 text-left font-semibold text-text-muted"></th>
-              <th class="py-1.5 text-left font-semibold text-text-muted">Model</th>
-              <th class="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
-              <th class="py-1.5 pr-3 text-right font-semibold text-text-muted whitespace-nowrap">When</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border/50 font-mono text-[11px]">
-            {#each stats.recentRequests as req}
-              <tr class="hover:bg-bg-subtle transition-colors">
-                <td class="py-1.5 pl-3 align-middle">
-                  <span
-                    class="mx-auto block w-1.5 h-1.5 rounded-full {req.status === 'ok' || req.status === 'success'
-                      ? 'bg-success'
-                      : req.status === 'canceled'
-                        ? 'bg-text-muted'
-                        : 'bg-red-500'}"
-                  ></span>
-                </td>
-                <td class="py-1.5 pr-2 min-w-0">
-                  <span class="inline-flex items-center gap-1 max-w-full truncate font-mono text-[11px]" title={req.loopWarning ? `⚠️ ${req.loopWarning} · ${req.model}` : req.model}>
-                    {#if req.loopWarning}
-                      <span class="text-amber-500 text-[11px] shrink-0">⚠️</span>
-                    {/if}
-                    <span class="truncate">{req.model}</span>
-                  </span>
-                </td>
-                <td class="py-1.5 pr-3 text-right whitespace-nowrap">
-                  <span class="text-primary">{fmt(req.promptTokens)}↑</span>
-                  <span class="text-success">{fmt(req.completionTokens)}↓</span>
-                </td>
-                <td class="py-1.5 pr-3 text-right text-text-muted whitespace-nowrap text-[10px]">
-                  {timeAgo(req.timestamp)}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {/if}
-  </div>
-{/snippet}

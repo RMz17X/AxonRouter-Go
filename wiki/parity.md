@@ -14,8 +14,8 @@ Both projects share the same database and schema. What differs is the runtime.
 |---|---|---|
 | Runtime | Single Go binary | Node.js + Next.js |
 | Dashboard | Embedded Svelte 5 | React 19 |
-| Database | SQLite (modernc, pure Go) | SQLite |
-| Schema | Same, additive | Same |
+| Database | PostgreSQL (pgx, via `DATABASE_URL`) | SQLite |
+| Schema | Same shapes, additive bootstrap | Same |
 | Docker | Single binary | Node |
 | Port | `20130` | `20128` |
 
@@ -27,10 +27,11 @@ Both projects share the same database and schema. What differs is the runtime.
   ProviderNodes, Usage, Auth.
 - Combo expansion, model fallback, account rotation, and strike-breaker quota
   handling.
-- SQLite database compatibility (`~/.9router/db/data.sqlite`).
+- Data-shape compatibility: the PostgreSQL schema carries the upstream table/JSON shapes. (The legacy file database is a one-way migration source via `tools/migrate-db`; the products no longer share a live database.)
 
-Both projects share the same database and schema, so a connection you add in
-either dashboard shows up in the other. The supported setup is one active writer.
+The two dashboards no longer share a live database: 9router-go moved to
+PostgreSQL while upstream keeps its file database. A legacy install's data
+crosses over once, through the migration tool.
 
 ## What version am I running?
 
@@ -48,7 +49,7 @@ since the last tag, so what you read there is current even between releases.
   JavaScript.
 - SSE streams flow directly through `io.Reader`/`io.Writer`, never buffered
   whole.
-- SQLite access: one read per page, never N+1.
+- Database access: one read per page, never N+1.
 
 ## Go-only features
 

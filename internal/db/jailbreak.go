@@ -133,7 +133,7 @@ func (r *Repo) GetJailbreakPreset(id string) (*JailbreakDoc, error) {
 
 func (r *Repo) getJailbreakDocByKey(key string) (*JailbreakDoc, error) {
 	var raw string
-	err := r.db.QueryRowContext(context.Background(),
+	err := r.QueryRowContext(context.Background(),
 		`SELECT value FROM kv WHERE scope = ? AND key = ? LIMIT 1`,
 		jailbreakScope, key,
 	).Scan(&raw)
@@ -210,7 +210,7 @@ func (r *Repo) SaveJailbreakPreset(d *JailbreakDoc) error {
 	if id == "default" {
 		key = jailbreakDocKey
 	}
-	_, err = r.db.ExecContext(context.Background(),
+	_, err = r.ExecContext(context.Background(),
 		`INSERT INTO kv (scope, key, value) VALUES (?, ?, ?)
 		 ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
 		jailbreakScope, key, string(raw),
@@ -229,13 +229,13 @@ func (r *Repo) DeleteJailbreakPreset(id string) error {
 		keys = append(keys, jailbreakDocKey)
 	}
 	for _, k := range keys {
-		if _, err := r.db.ExecContext(context.Background(), `DELETE FROM kv WHERE scope = ? AND key = ?`, jailbreakScope, k); err != nil {
+		if _, err := r.ExecContext(context.Background(), `DELETE FROM kv WHERE scope = ? AND key = ?`, jailbreakScope, k); err != nil {
 			return err
 		}
 	}
 
 	// Automatically unbind every model armed to this preset.
-	rows, err := r.db.QueryContext(context.Background(), `SELECT key, value FROM kv WHERE scope = ? AND key LIKE ?`,
+	rows, err := r.QueryContext(context.Background(), `SELECT key, value FROM kv WHERE scope = ? AND key LIKE ?`,
 		jailbreakScope, jailbreakModelPrefix+"%")
 	if err != nil {
 		return err
@@ -264,7 +264,7 @@ func (r *Repo) DeleteJailbreakPreset(id string) error {
 		return err
 	}
 	for _, k := range toDelete {
-		if _, err := r.db.ExecContext(context.Background(), `DELETE FROM kv WHERE scope = ? AND key = ?`, jailbreakScope, k); err != nil {
+		if _, err := r.ExecContext(context.Background(), `DELETE FROM kv WHERE scope = ? AND key = ?`, jailbreakScope, k); err != nil {
 			return err
 		}
 	}
@@ -275,7 +275,7 @@ func (r *Repo) DeleteJailbreakPreset(id string) error {
 
 // ListJailbreakPresets returns all available presets.
 func (r *Repo) ListJailbreakPresets() ([]*JailbreakDoc, error) {
-	rows, err := r.db.QueryContext(
+	rows, err := r.QueryContext(
 		context.Background(),
 		`SELECT key, value FROM kv WHERE scope = ? AND (key LIKE ? OR key = ?) ORDER BY key ASC`,
 		jailbreakScope, jailbreakDocPrefix+"%", jailbreakDocKey,
@@ -367,7 +367,7 @@ func (r *Repo) JailbreakModelEnabled(modelID string) (bool, error) {
 // GetJailbreakModelConfig reads one model's configuration.
 func (r *Repo) GetJailbreakModelConfig(modelID string) (JailbreakModelConfig, error) {
 	var raw string
-	err := r.db.QueryRowContext(
+	err := r.QueryRowContext(
 		context.Background(),
 		`SELECT value FROM kv WHERE scope = ? AND key = ? LIMIT 1`,
 		jailbreakScope, jailbreakModelPrefix+modelID,
@@ -413,7 +413,7 @@ func (r *Repo) SetJailbreakModelPreset(modelID string, presetID string, enabled 
 	if err != nil {
 		return err
 	}
-	_, err = r.db.ExecContext(context.Background(),
+	_, err = r.ExecContext(context.Background(),
 		`INSERT INTO kv (scope, key, value) VALUES (?, ?, ?)
 		 ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
 		jailbreakScope, jailbreakModelPrefix+modelID, string(raw),
@@ -443,7 +443,7 @@ func (r *Repo) ListJailbreakModels() (map[string]bool, error) {
 // a preset that no longer exists are cleaned up and unbound to off.
 func (r *Repo) ListJailbreakModelConfigs() (map[string]JailbreakModelConfig, error) {
 	validPresets := map[string]bool{}
-	pRows, pErr := r.db.QueryContext(
+	pRows, pErr := r.QueryContext(
 		context.Background(),
 		`SELECT key FROM kv WHERE scope = ? AND (key LIKE ? OR key = ?)`,
 		jailbreakScope, jailbreakDocPrefix+"%", jailbreakDocKey,
@@ -467,7 +467,7 @@ func (r *Repo) ListJailbreakModelConfigs() (map[string]JailbreakModelConfig, err
 		}
 	}
 
-	rows, err := r.db.QueryContext(
+	rows, err := r.QueryContext(
 		context.Background(),
 		`SELECT key, value FROM kv WHERE scope = ? AND key LIKE ?`,
 		jailbreakScope, jailbreakModelPrefix+"%",
@@ -502,7 +502,7 @@ func (r *Repo) ListJailbreakModelConfigs() (map[string]JailbreakModelConfig, err
 		out[k[len(jailbreakModelPrefix):]] = cfg
 	}
 	for _, k := range orphaned {
-		_, _ = r.db.ExecContext(context.Background(), `DELETE FROM kv WHERE scope = ? AND key = ?`, jailbreakScope, k)
+		_, _ = r.ExecContext(context.Background(), `DELETE FROM kv WHERE scope = ? AND key = ?`, jailbreakScope, k)
 	}
 	if len(orphaned) > 0 {
 		r.invalidateJailbreakRuleset()
@@ -533,7 +533,7 @@ func (r *Repo) RecordJailbreakUsage(presetID string) error {
 	}
 	key := jailbreakUsagePrefix + presetID
 	var n int64
-	row := r.db.QueryRowContext(context.Background(), `SELECT value FROM kv WHERE scope = ? AND key = ? LIMIT 1`, jailbreakScope, key)
+	row := r.QueryRowContext(context.Background(), `SELECT value FROM kv WHERE scope = ? AND key = ? LIMIT 1`, jailbreakScope, key)
 	var raw string
 	if err := row.Scan(&raw); err != nil && err != sql.ErrNoRows {
 		return err
@@ -543,7 +543,7 @@ func (r *Repo) RecordJailbreakUsage(presetID string) error {
 	}
 	n++
 	val := strconv.FormatInt(n, 10)
-	_, err := r.db.ExecContext(context.Background(),
+	_, err := r.ExecContext(context.Background(),
 		`INSERT INTO kv (scope, key, value) VALUES (?, ?, ?)
 		 ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
 		jailbreakScope, key, val,
@@ -555,7 +555,7 @@ func (r *Repo) RecordJailbreakUsage(presetID string) error {
 // keyed by preset id. A preset with no counter is absent rather than zero, so
 // the dashboard can tell "never used" from "counter cleared".
 func (r *Repo) JailbreakUsage() (map[string]int64, error) {
-	rows, err := r.db.QueryContext(context.Background(),
+	rows, err := r.QueryContext(context.Background(),
 		`SELECT key, value FROM kv WHERE scope = ? AND key LIKE ?`,
 		jailbreakScope, jailbreakUsagePrefix+"%",
 	)
@@ -610,7 +610,7 @@ func (r *Repo) DeleteJailbreakModel(modelID string) error {
 	if modelID == "" {
 		return fmt.Errorf("empty model id")
 	}
-	_, err := r.db.ExecContext(context.Background(), `DELETE FROM kv WHERE scope = ? AND key = ?`,
+	_, err := r.ExecContext(context.Background(), `DELETE FROM kv WHERE scope = ? AND key = ?`,
 		jailbreakScope, jailbreakModelPrefix+modelID)
 	if err == nil {
 		r.invalidateJailbreakRuleset()

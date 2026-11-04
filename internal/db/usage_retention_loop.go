@@ -73,11 +73,8 @@ func StartRetentionLoop(ctx context.Context, repo *Repo, retention time.Duration
 // runRetentionPass runs one tick of the retention loop: requestDetails always,
 // the usage ledger only when the operator has asked for it.
 //
-// Both prunes share a deadline and one PRAGMA optimize, so a pass that removes
-// rows leaves the planner's statistics describing the tables it now serves. Keep
-// that call here rather than inside either prune: the prune methods are also
-// called from the dashboard, and optimising once per table would analyse twice
-// for one deletion.
+// Both prunes share a deadline. Statistics freshness after a pass is
+// the server's autoanalyze job, so nothing runs here to refresh it.
 func runRetentionPass(ctx context.Context, repo *Repo, defaultRetention time.Duration) {
 	passCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
@@ -95,17 +92,11 @@ func runRetentionPass(ctx context.Context, repo *Repo, defaultRetention time.Dur
 		ledgerDays = s.UsageHistoryRetentionDays
 	}
 
-	pruned := pruneRequestDetailRows(passCtx, ctx, repo, retention, maxRows)
-	pruned = pruneUsageLedgerRows(passCtx, ctx, repo, ledgerDays) || pruned
-	if !pruned {
-		return
-	}
-
-	if _, err := repo.RawDB().ExecContext(passCtx, `PRAGMA optimize`); err != nil {
-		if ctx.Err() == nil {
-			log.Printf("[RETENTION] PRAGMA optimize failed: %v", err)
-		}
-	}
+	pruneRequestDetailRows(passCtx, ctx, repo, retention, maxRows)
+	pruneUsageLedgerRows(passCtx, ctx, repo, ledgerDays)
+	// No statistics refresh ends the pass: the server's autoanalyze
+	// owns that job (the file backend's PRAGMA optimize had no server
+	// form and was gated off rather than transliterated).
 }
 
 // pruneRequestDetailRows runs the diagnostics prune and reports whether it

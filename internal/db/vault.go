@@ -114,7 +114,7 @@ func (r *Repo) GetConnectionSealed(id, field string) (wrappedDEK, ciphertext str
 	if !known {
 		return "", "", false, fmt.Errorf("get connection sealed %s: unknown slot %q", id, field)
 	}
-	row := r.db.QueryRow(
+	row := r.QueryRow(
 		`SELECT `+cols[0]+`, `+cols[1]+` FROM providerConnections WHERE id = ? LIMIT 1`, id)
 	if err = row.Scan(&wrappedDEK, &ciphertext); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -133,7 +133,7 @@ func (r *Repo) SetConnectionSealed(id, field, wrappedDEK, ciphertext string) err
 	if !known {
 		return fmt.Errorf("set connection sealed %s: unknown slot %q", id, field)
 	}
-	res, err := r.db.Exec(
+	res, err := r.Exec(
 		`UPDATE providerConnections SET `+cols[0]+` = ?, `+cols[1]+` = ?, updatedAt = ? WHERE id = ?`,
 		wrappedDEK, ciphertext, nowUTC(), id)
 	if err != nil {
@@ -157,7 +157,7 @@ type ConnectionSealCandidate struct {
 // (i.e. missing secretCiphertext/tokenCiphertext/refreshCiphertext, or still holding plaintext nested secrets
 // even when top-level ciphertexts already exist).
 func (r *Repo) ListConnectionsNeedingSeal(ctx context.Context) ([]ConnectionSealCandidate, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, data FROM providerConnections`)
+	rows, err := r.QueryContext(ctx, `SELECT id, data FROM providerConnections`)
 	if err != nil {
 		return nil, fmt.Errorf("list connections needing seal: %w", err)
 	}
@@ -179,7 +179,7 @@ func (r *Repo) ListConnectionsNeedingSeal(ctx context.Context) ([]ConnectionSeal
 // VaultCounts reports how many connections are sealed and how many still hold a
 // plaintext credential, for the dashboard status route.
 func (r *Repo) VaultCounts(ctx context.Context) (sealed, plaintext int, err error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT data, secretCiphertext, tokenCiphertext, refreshCiphertext FROM providerConnections`)
+	rows, err := r.QueryContext(ctx, `SELECT data, secretCiphertext, tokenCiphertext, refreshCiphertext FROM providerConnections`)
 	if err != nil {
 		return 0, 0, fmt.Errorf("vault counts: %w", err)
 	}
@@ -224,7 +224,7 @@ func (r *Repo) RewrapConnectionDEKs(v *vault.Vault, newMasterKey []byte) (rewrap
 	if v == nil || !v.Enabled() {
 		return 0, nil, vault.ErrDisabled
 	}
-	rows, err := r.db.Query(`SELECT id, ` + sealedColumns + ` FROM providerConnections
+	rows, err := r.Query(`SELECT id, ` + sealedColumns + ` FROM providerConnections
 		WHERE secretWrappedDEK <> '' OR tokenWrappedDEK <> '' OR refreshWrappedDEK <> ''`)
 	if err != nil {
 		return 0, nil, fmt.Errorf("rewrap connection DEKs: %w", err)
@@ -499,7 +499,7 @@ func (r *Repo) hydrate(conn *models.ProviderConnection) {
 
 // sealedPairFor reads all three sealed column pairs for one row.
 func (r *Repo) sealedPairFor(id string) (sealed [6]string) {
-	row := r.db.QueryRow(`SELECT `+sealedColumns+` FROM providerConnections WHERE id = ? LIMIT 1`, id)
+	row := r.QueryRow(`SELECT `+sealedColumns+` FROM providerConnections WHERE id = ? LIMIT 1`, id)
 	if err := row.Scan(&sealed[0], &sealed[1], &sealed[2], &sealed[3], &sealed[4], &sealed[5]); err != nil {
 		return [6]string{}
 	}

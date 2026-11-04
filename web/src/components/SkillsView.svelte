@@ -105,7 +105,7 @@
 
 <div class="max-w-4xl mx-auto space-y-6">
   <!-- Top instruction banner -->
-  <div class="p-5 rounded-[14px] bg-surface border border-border-subtle shadow-[var(--shadow-soft)]">
+  <div class="p-5 rounded-brand-lg bg-surface border border-border-subtle shadow-[var(--shadow-soft)]">
     <div class="text-xs font-medium text-text-muted mb-2">Paste this to your AI:</div>
     <div
       class="px-3.5 py-2.5 rounded-lg bg-surface-2 border border-border-subtle font-mono text-[12px] text-text-main flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap"
@@ -131,7 +131,7 @@
       {@const rawUrl = getSkillRawUrl(skill.id)}
       {@const isCopied = !!copiedMap[skill.id]}
       <div
-        class="flex items-start gap-3.5 p-4 rounded-[14px] border shadow-[var(--shadow-soft)] transition-colors {skill.isEntry
+        class="flex items-start gap-3.5 p-4 rounded-brand-lg border shadow-[var(--shadow-soft)] transition-colors {skill.isEntry
           ? 'border-brand-500/40 bg-brand-500/5'
           : 'border-border-subtle bg-surface hover:bg-surface-2'}"
       >
@@ -196,7 +196,7 @@
   </div>
 
   <!-- Bottom card: More on GitHub -->
-  <div class="p-5 rounded-[14px] bg-surface border border-border-subtle shadow-[var(--shadow-soft)]">
+  <div class="p-5 rounded-brand-lg bg-surface border border-border-subtle shadow-[var(--shadow-soft)]">
     <div class="flex items-center justify-between gap-3 flex-wrap">
       <div>
         <h2 class="text-sm font-semibold text-text-main">More on GitHub</h2>

@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -22,6 +23,11 @@ type ModelInfoObject struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
 	OwnedBy string `json:"owned_by"`
+	// Kind is set only by the kind-filtered listings (batch 9): web
+	// lane entries (<alias>/search, <alias>/fetch) and web combos
+	// publish their service kind, exactly as Axon's buildModelsList
+	// emits for those entries. Ordinary model entries omit it.
+	Kind string `json:"kind,omitempty"`
 	// Capabilities is a per-model CapabilitiesDetail, or a ComboCapabilities
 	// for combo entries — upstream publishes those two shapes with different
 	// key sets, so the field cannot be one concrete type.
@@ -125,10 +131,13 @@ func isLLMModelEntry(outputAlias, staticAlias, providerID, modelID string, fromC
 	return isLLMModelID(modelID)
 }
 
-// nonLLMServiceKinds mirrors upstream MODEL_TYPE_TO_KIND: only these six kinds
+// nonLLMServiceKinds mirrors upstream MODEL_TYPE_TO_KIND: only these kinds
 // leave the llm list. A kind outside this set (e.g. the `systemone` marker
 // some registry entries carry) is treated as an LLM, exactly like
-// modelKind() → `MODEL_TYPE_TO_KIND[k] || LLM_KIND`.
+// modelKind() → `MODEL_TYPE_TO_KIND[k] || LLM_KIND`. `task` joined the set
+// in batch 9 together with the first registry entries that carry it (the
+// Cloudflare Workers AI task models) — before the seeding no entry could
+// resolve to it, so the addition changes nothing for existing models.
 var nonLLMServiceKinds = map[string]bool{
 	"image":       true,
 	"tts":         true,
@@ -136,6 +145,7 @@ var nonLLMServiceKinds = map[string]bool{
 	"stt":         true,
 	"imagetotext": true,
 	"video":       true,
+	"task":        true,
 }
 
 func isLLMServiceKind(kind string) bool {
@@ -315,7 +325,7 @@ func (h *ChatHandler) connectedProviderIDs(conns []*models.ProviderConnection) m
 // are simply not offered, so every path that publishes a catalog skips them.
 //
 // The alias is resolved before the lookup because the publishing loops visit
-// each spelling that resolves to itself: `mimo-free` and its `mmf` alias are
+// each spelling that resolves to itself: `opencode` and its `oc` alias are
 // two separate ProviderModels keys, so an alias-only check would let one
 // spelling through while blocking the other.
 func hiddenProvider(providerID string) bool {
@@ -497,7 +507,7 @@ func (h *ChatHandler) buildModelsListForMode(
 
 	for _, provID := range order {
 		conn := firstPerProvider[provID]
-		data = h.appendConnectionModels(ctx, data, seen, conn, provID, customs, aliases, nodePrefixes, isDisabled)
+		data = h.appendConnectionModels(ctx, data, seen, conn, provID, customs, aliases, nodePrefixes, isDisabled, nil)
 	}
 	// 4. Connected mode additionally publishes the noAuth registry providers
 	// that have no connection row, mirroring the dashboard picker, which keeps
@@ -514,7 +524,12 @@ func (h *ChatHandler) buildModelsListForMode(
 
 // appendConnectionModels reproduces the per-connection branch of upstream
 // buildModelsList: enabledModels override, else the static catalog, merged with
-// custom models and alias targets registered for that same provider.
+// custom models and alias targets registered for that same provider. kinds is
+// Axon's buildModelsList kindFilter: nil keeps the LLM-list behaviour
+// bit-for-bit; a non-nil filter (batch 9 kind listings) resolves each model's
+// kind and admits it per kindFilterIncludes, drops the token-limit keys from
+// entries that do not serve as LLM under the filter, and adds the provider's
+// web lane entries (<alias>/search, <alias>/fetch) for web filters.
 func (h *ChatHandler) appendConnectionModels(
 	ctx context.Context,
 	data []ModelInfoObject,
@@ -525,6 +540,7 @@ func (h *ChatHandler) appendConnectionModels(
 	aliases map[string]string,
 	nodePrefixes map[string]string,
 	isDisabled func(provider, modelID string) bool,
+	kinds []string,
 ) []ModelInfoObject {
 	connData := parseConnectionModelData(conn)
 
@@ -573,6 +589,9 @@ func (h *ChatHandler) appendConnectionModels(
 	merged := make([]string, 0, len(ids))
 	seenID := make(map[string]bool, len(ids))
 	typedCustom := make(map[string]bool, len(ids))
+	// typedCustomKind records each admitted custom row's own kind
+	// (Axon's customModelKindById) for the kind-filtered emit gate.
+	typedCustomKind := make(map[string]string, len(ids))
 	typedCustomLimits := make(map[string][2]int)
 	// Upstream strips the outputAlias/staticAlias/providerId qualifier only from
 	// registry + enabledModels ids and from alias targets; a custom row's id is
@@ -597,8 +616,21 @@ func (h *ChatHandler) appendConnectionModels(
 	// alias === staticAlias || outputAlias || providerId.
 	for _, key := range []string{staticAlias, outputAlias, providerID} {
 		for _, cm := range customs[key] {
-			if !isLLMCustomModel(cm.Type) {
-				continue
+			if kinds == nil {
+				if !isLLMCustomModel(cm.Type) {
+					continue
+				}
+			} else {
+				// Axon admits a custom row when its own kind
+				// (getModelKind: the row's type) passes the filter.
+				kind := cm.Type
+				if kind == "" {
+					kind = "llm"
+				}
+				if !kindFilterIncludes(kinds, kind) {
+					continue
+				}
+				typedCustomKind[cm.ID] = kind
 			}
 			// Upstream resolves custom-model capabilities from the saved caps,
 			// so publish them before the capability lookup below.
@@ -624,8 +656,24 @@ func (h *ChatHandler) appendConnectionModels(
 		// Upstream resolves kind from the custom row's own type, then the
 		// registry entry's declared kind, and only then falls back to the id
 		// heuristic (modelKind → staticModelKindById → inferKindFromUnknownModelId).
-		if !isLLMModelEntry(outputAlias, staticAlias, providerID, modelID, typedCustom[modelID]) {
-			continue
+		limit := optionalTokenLimit
+		entryKind := ""
+		if kinds == nil {
+			if !isLLMModelEntry(outputAlias, staticAlias, providerID, modelID, typedCustom[modelID]) {
+				continue
+			}
+		} else {
+			kind := resolveModelKind(outputAlias, staticAlias, providerID, modelID, typedCustomKind[modelID], typedCustom[modelID])
+			entryKind = kind
+			if !kindFilterIncludes(kinds, kind) {
+				continue
+			}
+			// Token keys belong to entries that serve as LLM under the
+			// filter (kind llm, or imageToText admitted via an llm
+			// filter); every other kind omits them, as Axon does.
+			if kind != "llm" && !(kind == "imageToText" && slices.Contains(kinds, "llm")) {
+				limit = func(int) *int { return nil }
+			}
 		}
 		fullID := outputAlias + "/" + modelID
 		if seen[fullID] {
@@ -671,9 +719,10 @@ func (h *ChatHandler) appendConnectionModels(
 				ID:                  fullID,
 				Object:              "model",
 				OwnedBy:             outputAlias,
+				Kind:                entryKind,
 				Capabilities:        live.Capabilities,
-				ContextLength:       optionalTokenLimit(ctxLen),
-				MaxCompletionTokens: optionalTokenLimit(maxOut),
+				ContextLength:       limit(ctxLen),
+				MaxCompletionTokens: limit(maxOut),
 				Pricing:             pricing.BuildOpenRouterPricing(outputAlias, modelID),
 			})
 			continue
@@ -692,11 +741,44 @@ func (h *ChatHandler) appendConnectionModels(
 			ID:                  fullID,
 			Object:              "model",
 			OwnedBy:             outputAlias,
+			Kind:                entryKind,
 			Capabilities:        &caps,
-			ContextLength:       optionalTokenLimit(ctxLen),
-			MaxCompletionTokens: optionalTokenLimit(maxOut),
+			ContextLength:       limit(ctxLen),
+			MaxCompletionTokens: limit(maxOut),
 			Pricing:             pricing.BuildOpenRouterPricing(outputAlias, modelID),
 		})
+	}
+
+	// Web lane entries (kind listings only): Axon publishes one entry
+	// per lane the provider's config declares — <alias>/search for a
+	// searchConfig, <alias>/fetch for a fetchConfig — shaped exactly
+	// {id, object, kind, owned_by}.
+	if kinds != nil {
+		cfg := providers.KnownProviders[providerID]
+		if kindFilterIncludes(kinds, "webSearch") && cfg.SearchURL != "" {
+			fullID := outputAlias + "/search"
+			if !seen[fullID] {
+				seen[fullID] = true
+				data = append(data, ModelInfoObject{
+					ID:      fullID,
+					Object:  "model",
+					OwnedBy: outputAlias,
+					Kind:    "webSearch",
+				})
+			}
+		}
+		if kindFilterIncludes(kinds, "webFetch") && cfg.FetchURL != "" {
+			fullID := outputAlias + "/fetch"
+			if !seen[fullID] {
+				seen[fullID] = true
+				data = append(data, ModelInfoObject{
+					ID:      fullID,
+					Object:  "model",
+					OwnedBy: outputAlias,
+					Kind:    "webFetch",
+				})
+			}
+		}
 	}
 	return data
 }
@@ -736,8 +818,8 @@ func appendNoAuthCatalogModels(
 			continue
 		}
 		// Hidden providers serve traffic without being offered. Checked on the
-		// canonical id so every spelling of the same provider (mimo-free and its
-		// mmf alias) leaves the catalog together — this loop publishes each
+		// canonical id so every spelling of the same provider (opencode and its
+		// oc alias) leaves the catalog together — this loop publishes each
 		// alias that resolves to itself, so an alias-only check would let one
 		// spelling through while blocking the other.
 		canonical := providers.ResolveAlias(alias)
@@ -814,8 +896,8 @@ func (h *ChatHandler) appendLooseCustomModels(
 		}
 		// Custom rows are keyed by provider, so this loop is the second way a
 		// hidden provider can reach the listing: the static dump above skips it,
-		// but an operator-pinned custom model on mimo-free would still publish
-		// `mimo-free/<id>` under ?all=1 and on a fresh install.
+		// but an operator-pinned custom model on a hidden provider would still
+		// publish `<provider>/<id>` under ?all=1 and on a fresh install.
 		if hiddenProvider(providerID) {
 			continue
 		}
@@ -1089,8 +1171,23 @@ func foldTokenMinimum(currentWindow, currentMax, candidateWindow, candidateMax i
 
 // appendCombos lists combo names with the union of their leaf capabilities,
 // matching upstream aggregateComboCapabilities, plus the combo-wide token
-// limits upstream comboSeatLimits derives.
+// limits upstream comboSeatLimits derives. It is the LLM-list pass
+// (kindFilter ["llm"]); appendCombosFiltered is the general form the
+// kind-filtered listings (batch 9) use.
 func (h *ChatHandler) appendCombos(data []ModelInfoObject, seen map[string]bool) []ModelInfoObject {
+	return h.appendCombosFiltered(data, seen, nil, nil)
+}
+
+// appendCombosFiltered is appendCombos parameterized by Axon's
+// buildModelsList kindFilter. kinds == nil keeps the LLM-list behaviour
+// bit-for-bit. In filtered mode a combo must additionally pass Axon's
+// hasActiveTarget gate (a combo with seats lists only when at least
+// one seat's provider prefix belongs to an active connection —
+// activePrefixes carries provider ids, static aliases, output aliases
+// and connection prefixes), and webSearch/webFetch combos publish the
+// bare {id, object, owned_by, kind} entry Axon emits for them instead
+// of a capability-bearing one.
+func (h *ChatHandler) appendCombosFiltered(data []ModelInfoObject, seen map[string]bool, kinds []string, activePrefixes map[string]bool) []ModelInfoObject {
 	if h.Repo == nil {
 		return data
 	}
@@ -1112,26 +1209,78 @@ func (h *ChatHandler) appendCombos(data []ModelInfoObject, seen map[string]bool)
 	if err != nil {
 		return data
 	}
+	// Hidden combos (dashboard-managed, see /api/combos/hidden) are excluded
+	// from the models list, as in AxonRouter. A failed read is non-fatal
+	// there and here: the list renders without the filter.
+	hiddenCombos := map[string]bool{}
+	if hidden, herr := h.Repo.GetHiddenComboNames(); herr == nil {
+		for _, name := range hidden {
+			hiddenCombos[name] = true
+		}
+	}
 	index := loadComboIndex(combos)
 	for _, combo := range combos {
 		if combo == nil || combo.Name == "" || seen[combo.Name] {
 			continue
 		}
-		// Upstream comboMatchesKinds: this endpoint is the LLM list
-		// (kindFilter ["llm"]), so webSearch/webFetch combos are excluded —
-		// they only appear under /v1/models/web. No kind (or an explicit
-		// "llm" kind) means an LLM combo.
+		if hiddenCombos[combo.Name] {
+			continue
+		}
+		// Upstream comboMatchesKinds: the LLM list (kindFilter ["llm"])
+		// excludes webSearch/webFetch combos — they only appear under
+		// /v1/models/web. No kind (or an explicit "llm" kind) means an
+		// LLM combo.
+		comboKind := "llm"
 		if combo.Kind != nil {
-			if kind := strings.TrimSpace(*combo.Kind); kind != "" && kind != "llm" {
+			if kind := strings.TrimSpace(*combo.Kind); kind != "" {
+				comboKind = kind
+			}
+		}
+		if kinds == nil {
+			if comboKind != "llm" {
 				continue
+			}
+		} else {
+			if !kindFilterIncludes(kinds, comboKind) {
+				continue
+			}
+			// Axon's hasActiveTarget: seat-bearing combos list only
+			// when a seat points at an active connection's provider.
+			if seats := index[combo.Name]; len(seats) > 0 {
+				active := false
+				for _, seat := range seats {
+					prefix, _, _ := strings.Cut(seat, "/")
+					if activePrefixes[prefix] {
+						active = true
+						break
+					}
+				}
+				if !active {
+					continue
+				}
 			}
 		}
 		seen[combo.Name] = true
+
+		// Web combos carry no capabilities or token limits in Axon's
+		// listing — just the kind-tagged identity entry.
+		if kinds != nil && (comboKind == "webSearch" || comboKind == "webFetch") {
+			data = append(data, ModelInfoObject{
+				ID:      combo.Name,
+				Object:  "model",
+				OwnedBy: "combo",
+				Kind:    comboKind,
+			})
+			continue
+		}
 
 		entry := ModelInfoObject{
 			ID:      combo.Name,
 			Object:  "model",
 			OwnedBy: "combo",
+		}
+		if kinds != nil && comboKind != "llm" {
+			entry.Kind = comboKind
 		}
 		if caps, ok := h.aggregateComboCapabilities(combo, connMap); ok {
 			entry.Capabilities = caps

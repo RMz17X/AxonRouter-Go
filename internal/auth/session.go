@@ -34,8 +34,9 @@ const (
 	CLITokenHeader = "x-9r-cli-token"
 )
 
-// Secret returns the HS256 signing secret: JWT_SECRET if set, otherwise the
-// persisted DATA_DIR/jwt-secret generated at config load.
+// Secret returns the HS256 signing secret: JWT_SECRET if set, otherwise
+// the ephemeral per-boot secret config generated at load (P4 removed the
+// persisted per-node secret file; see config.loadJWTSecret).
 func Secret() string {
 	return config.LoadConfig().JWTSecret
 }
@@ -60,13 +61,10 @@ func RequireLogin(repo *db.Repo) bool {
 }
 
 // SessionClaims is the JWT payload. Upstream issues {authenticated:true} with a
-// 24h expiry (plus oidc/saml identity claims on SSO logins); iat/exp are added
+// 24h expiry (plus saml identity claims on SSO logins); iat/exp are added
 // here so a token can be validated statelessly.
 type SessionClaims struct {
 	Authenticated bool   `json:"authenticated"`
-	Oidc          bool   `json:"oidc,omitempty"`
-	OidcName      string `json:"oidcName,omitempty"`
-	OidcEmail     string `json:"oidcEmail,omitempty"`
 	Saml          bool   `json:"saml,omitempty"`
 	SamlName      string `json:"samlName,omitempty"`
 	SamlEmail     string `json:"samlEmail,omitempty"`
@@ -88,9 +86,6 @@ func SignWith(secret string, now time.Time, extra SessionClaims) (string, error)
 	}
 	payload, err := json.Marshal(SessionClaims{
 		Authenticated: true,
-		Oidc:          extra.Oidc,
-		OidcName:      extra.OidcName,
-		OidcEmail:     extra.OidcEmail,
 		Saml:          extra.Saml,
 		SamlName:      extra.SamlName,
 		SamlEmail:     extra.SamlEmail,
@@ -150,7 +145,7 @@ func SessionValid(r *http.Request) bool {
 
 // SessionClaimSet decodes the verified session payload, or nil when the
 // request carries no valid auth_token cookie. The fields are the upstream SSO
-// session payload (oidc/saml identity on SSO logins).
+// session payload (saml identity on SSO logins).
 func SessionClaimSet(r *http.Request) *SessionClaims {
 	c, err := r.Cookie(CookieName)
 	if err != nil || c.Value == "" {

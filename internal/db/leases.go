@@ -56,7 +56,7 @@ type Lease struct {
 // Expired rows are treated as absent (a later Acquire overwrites them).
 func (r *Repo) ReadLease(scope, key string) (*Lease, error) {
 	var value, expiresAt, updatedAt string
-	err := r.db.QueryRow(
+	err := r.QueryRow(
 		`SELECT value, expires_at, updated_at FROM upstream_leases
 		 WHERE scope = ? AND key = ? LIMIT 1`, scope, key,
 	).Scan(&value, &expiresAt, &updatedAt)
@@ -87,7 +87,7 @@ func (r *Repo) AcquireLease(scope, key, value string, ttl time.Duration) (bool, 
 	expStr := exp.Format(time.RFC3339)
 	// Take over an expired row first (a dead holder's row must never block).
 	// The expires_at guard keeps this atomic: two racers cannot both match.
-	res, err := r.db.Exec(
+	res, err := r.Exec(
 		`UPDATE upstream_leases SET value = ?, expires_at = ?, updated_at = ?
 		 WHERE scope = ? AND key = ? AND expires_at <= ?`,
 		value, expStr, nowStr, scope, key, nowStr,
@@ -102,7 +102,7 @@ func (r *Repo) AcquireLease(scope, key, value string, ttl time.Duration) (bool, 
 	}
 	// No row at all: insert, but only when no live holder appeared meanwhile.
 	// A concurrent winner's row makes the SELECT guard miss, so we lose.
-	res, err = r.db.Exec(
+	res, err = r.Exec(
 		`INSERT INTO upstream_leases (scope, key, value, expires_at, updated_at)
 		 SELECT ?, ?, ?, ?, ?
 		 WHERE NOT EXISTS (
@@ -126,6 +126,10 @@ func (r *Repo) AcquireLease(scope, key, value string, ttl time.Duration) (bool, 
 }
 
 // isLeaseConflict reports a primary-key race lost to a concurrent inserter.
+// The spellings are per era: the file backend's constraint text (rows
+// an import can still quote), and PostgreSQL's duplicate-key report
+// (SQLSTATE 23505), which the same-instant race raises
+// once the winning transaction commits.
 func isLeaseConflict(err error) bool {
 	if err == nil {
 		return false
@@ -133,7 +137,8 @@ func isLeaseConflict(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "UNIQUE constraint failed") ||
 		strings.Contains(msg, "PRIMARY KEY") ||
-		strings.Contains(msg, "constraint failed")
+		strings.Contains(msg, "constraint failed") ||
+		strings.Contains(msg, "duplicate key value violates unique constraint")
 }
 
 // RefreshLease extends a held lease when value still matches (same holder).
@@ -141,7 +146,7 @@ func isLeaseConflict(err error) bool {
 func (r *Repo) RefreshLease(scope, key, value string, ttl time.Duration) (bool, error) {
 	now := time.Now().UTC()
 	exp := now.Add(ttl)
-	res, err := r.db.Exec(
+	res, err := r.Exec(
 		`UPDATE upstream_leases SET expires_at = ?, updated_at = ?
 		 WHERE scope = ? AND key = ? AND value = ? AND expires_at > ?`,
 		exp.Format(time.RFC3339), now.Format(time.RFC3339),
@@ -161,7 +166,7 @@ func (r *Repo) RefreshLease(scope, key, value string, ttl time.Duration) (bool, 
 // A holder releasing a stale instanceId must never delete a fresh row stored
 // by another process that re-claimed meanwhile.
 func (r *Repo) ReleaseLease(scope, key, value string) error {
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`DELETE FROM upstream_leases WHERE scope = ? AND key = ? AND value = ?`,
 		scope, key, value,
 	)

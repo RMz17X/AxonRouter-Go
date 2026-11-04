@@ -25,7 +25,8 @@ No flags required:
 | | Default |
 |---|---|
 | Port | `20130` |
-| Data | `~/.9router` (`%APPDATA%/9router` on Windows) |
+| Database | PostgreSQL, via `DATABASE_URL` (**required**) |
+| State | `DATA_DIR` — `~/.9router` (`%APPDATA%/9router` on Windows); non-database state only |
 | Dashboard | `http://localhost:20130` |
 | Initial password | `123456` (localhost only) |
 
@@ -37,59 +38,31 @@ curl http://localhost:20130/health
 ./9router-go version
 ```
 
-Override only when you need something different (`PORT`, `DATA_DIR`/`DB_PATH` — there are no `--port` flags):
+Override only when you need something different (there are no `--port` flags).
+A reachable PostgreSQL is mandatory — the binary refuses to boot without
+`DATABASE_URL`:
 
 ```bash
-PORT=20129 ./9router-go
-DATA_DIR=/srv/9router ./9router-go
-DB_PATH=/srv/9router/data.sqlite ./9router-go
-HOST=127.0.0.1 ./9router-go
+DATABASE_URL=postgres://user:pass@localhost:5432/9router JWT_SECRET=change-me ./9router-go
+PORT=20129 DATABASE_URL=... ./9router-go
+DATA_DIR=/srv/9router DATABASE_URL=... ./9router-go
+HOST=127.0.0.1 DATABASE_URL=... ./9router-go
 ```
 
-## Background mode
+## Running it persistently
 
-```bash
-9router-go start          # same as: 9router-go --background   (or -d)
-9router-go status         # pid, dashboard, log
-9router-go restart
-9router-go logs -n 100
-9router-go stop
-```
-
-The detached process records itself in `DATA_DIR/run/gateway.pid` and writes its
-output to `DATA_DIR/run/gateway.log`. A second `start` while one is running
-refuses instead of fighting over the port.
-
-> Windows stops the process with `TerminateProcess` instead of `SIGTERM`, so
-> `stop` skips the graceful drain; use the dashboard's Shutdown button or
-> `9router-go restart` when you want in-flight streams to finish first.
-
-## Start on boot
-
-```bash
-9router-go service install     # systemd user unit, launchd agent, OpenRC/runit service, cron @reboot, or Windows logon task
-9router-go service status
-9router-go service start
-9router-go service restart
-9router-go service stop
-9router-go service uninstall
-```
-
-`install` picks the native backend for the host. systemd, launchd, and cron all
-install into the **user** scope and need no root; runit's `~/service` path too.
-Two exceptions: OpenRC is a system service and needs root (run with `sudo`, or
-pick `--backend cron`), and on Windows install registers a scheduled task via
-`schtasks`, which requires an Administrator console. Force a backend with
-`--backend systemd|launchd|openrc|runit|cron`.
+The binary's only run mode is the foreground server — the daemon and
+service subcommands were removed. For a persistent install use the Docker
+stacks below (recommended), or supervise the bare binary with your host's
+init system (systemd/launchd/Task Scheduler) yourself.
 
 ## Docker
 
 ```bash
-docker run -d --name 9router-go --restart unless-stopped \
-  -p 20130:20130 -v "$HOME/.9router:/data" \
-  -e PORT=20130 -e DATA_DIR=/data \
-  -e INITIAL_PASSWORD=your-secure-password \
-  luqmenul/9router-go:latest
+# from a clone of the repo — the compose stack brings its own PostgreSQL
+cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET, INITIAL_PASSWORD
+docker compose -f docker-compose.single.yml up -d --build
+# dashboard on http://localhost:20130 (or $PORT)
 ```
 
 Experimental builds are marked **Pre-release** and never offered to a normal
@@ -104,6 +77,8 @@ git clone https://github.com/luqman-v1/9router-go.git
 cd 9router-go
 make web-build   # bun install --frozen-lockfile && bun run build
 make build       # embeds VERSION into the Go binary
+# run it (needs a reachable PostgreSQL):
+DATABASE_URL=postgres://user:pass@localhost:5432/9router JWT_SECRET=dev ./9router-go
 ```
 
 ## First login

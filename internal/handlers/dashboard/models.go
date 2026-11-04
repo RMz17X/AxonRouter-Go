@@ -19,7 +19,7 @@ import (
 func (h *DashboardHandler) HandleGetCustomModels(w http.ResponseWriter, r *http.Request) {
 	kv, err := h.Repo.GetKVScope("customModels")
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch custom models")
 		return
 	}
 
@@ -43,14 +43,14 @@ func (h *DashboardHandler) HandleGetCustomModels(w http.ResponseWriter, r *http.
 func (h *DashboardHandler) HandleSaveCustomModel(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusInternalServerError, "Failed to add custom model")
 		return
 	}
 	defer r.Body.Close()
 
 	var data map[string]any
 	if err := json.Unmarshal(body, &data); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writePlainError(w, http.StatusInternalServerError, "Failed to add custom model")
 		return
 	}
 
@@ -77,7 +77,7 @@ func (h *DashboardHandler) HandleSaveCustomModel(w http.ResponseWriter, r *http.
 	}
 
 	if key == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing custom model key or id")
+		writePlainError(w, http.StatusBadRequest, "providerAlias and id required")
 		return
 	}
 
@@ -112,7 +112,7 @@ func (h *DashboardHandler) HandleSaveCustomModel(w http.ResponseWriter, r *http.
 		default:
 			b, err := json.Marshal(val)
 			if err != nil {
-				handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to marshal model value")
+				writePlainError(w, http.StatusBadRequest, "failed to marshal model value")
 				return
 			}
 			valStr = string(b)
@@ -120,14 +120,14 @@ func (h *DashboardHandler) HandleSaveCustomModel(w http.ResponseWriter, r *http.
 	} else {
 		b, err := json.Marshal(data)
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to marshal model data")
+			writePlainError(w, http.StatusBadRequest, "failed to marshal model data")
 			return
 		}
 		valStr = string(b)
 	}
 
 	if err := h.Repo.SetKV("customModels", key, valStr); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to add custom model")
 		return
 	}
 	// A newly registered model is picked up by any rule whose pattern selects
@@ -135,9 +135,16 @@ func (h *DashboardHandler) HandleSaveCustomModel(w http.ResponseWriter, r *http.
 	// Combos page to add it.
 	h.reconcileSmartCombosBestEffort(r.Context(), "model saved")
 
+	// Axon's success shape: {success, added} — added is the stored entry
+	// (the posted "value" for the key/value form, else the posted body).
+	added := any(data)
+	if v, ok := data["value"]; ok {
+		added = v
+	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"key":    key,
+		"success": true,
+		"added":   added,
+		"key":     key,
 	})
 }
 
@@ -149,12 +156,12 @@ func (h *DashboardHandler) HandleDeleteCustomModel(w http.ResponseWriter, r *htt
 		key = unescaped
 	}
 	if key == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing model key")
+		writePlainError(w, http.StatusBadRequest, "missing model key")
 		return
 	}
 
 	if err := h.Repo.DeleteKV("customModels", key); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to delete custom model")
 		return
 	}
 	// The model is gone, so every combo a rule put it into must drop it. This
@@ -163,8 +170,8 @@ func (h *DashboardHandler) HandleDeleteCustomModel(w http.ResponseWriter, r *htt
 	h.reconcileSmartCombosBestEffort(r.Context(), "model deleted")
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"key":    key,
+		"success": true,
+		"key":     key,
 	})
 }
 
@@ -183,13 +190,13 @@ func (h *DashboardHandler) HandleDeleteProviderModels(w http.ResponseWriter, r *
 		provider = unescaped
 	}
 	if provider == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing provider")
+		writePlainError(w, http.StatusBadRequest, "missing provider")
 		return
 	}
 
 	kv, err := h.Repo.GetKVScope("customModels")
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -199,7 +206,7 @@ func (h *DashboardHandler) HandleDeleteProviderModels(w http.ResponseWriter, r *
 			continue
 		}
 		if err := h.Repo.DeleteKV("customModels", key); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writePlainError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		removedModels = append(removedModels, key)
@@ -217,7 +224,7 @@ func (h *DashboardHandler) HandleDeleteProviderModels(w http.ResponseWriter, r *
 				continue
 			}
 			if err := h.Repo.DeleteKV("modelAliases", string(alias)); err != nil {
-				handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+				writePlainError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 			removedAliases = append(removedAliases, string(alias))
@@ -263,7 +270,7 @@ func customModelBelongsToProvider(key, value, provider string) bool {
 func (h *DashboardHandler) HandleGetDisabledModels(w http.ResponseWriter, r *http.Request) {
 	kv, err := h.Repo.GetKVScope("disabledModels")
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch disabled models")
 		return
 	}
 
@@ -277,7 +284,16 @@ func (h *DashboardHandler) HandleGetDisabledModels(w http.ResponseWriter, r *htt
 		}
 	}
 
-	handlerutil.WriteJSON(w, http.StatusOK, result)
+	// Axon's envelopes: {ids} for one provider, {disabled} for the map.
+	if alias := r.URL.Query().Get("providerAlias"); alias != "" {
+		ids, _ := result[alias].([]any)
+		if ids == nil {
+			ids = []any{}
+		}
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ids": ids})
+		return
+	}
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"disabled": result})
 }
 
 // HandleSaveDisabledModels handles PUT /api/models/disabled/{provider}.
@@ -288,20 +304,20 @@ func (h *DashboardHandler) HandleSaveDisabledModels(w http.ResponseWriter, r *ht
 		provider = unescaped
 	}
 	if provider == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing provider")
+		writePlainError(w, http.StatusBadRequest, "missing provider")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusInternalServerError, "Failed to disable models")
 		return
 	}
 	defer r.Body.Close()
 
 	var raw any
 	if err := json.Unmarshal(body, &raw); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writePlainError(w, http.StatusInternalServerError, "Failed to disable models")
 		return
 	}
 
@@ -323,7 +339,7 @@ func (h *DashboardHandler) HandleSaveDisabledModels(w http.ResponseWriter, r *ht
 
 	b, err := json.Marshal(modelsArr)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to marshal models")
+		writePlainError(w, http.StatusInternalServerError, "Failed to disable models")
 		return
 	}
 
@@ -335,7 +351,7 @@ func (h *DashboardHandler) HandleSaveDisabledModels(w http.ResponseWriter, r *ht
 	prev := storedDisabledModels(h.Repo, provider)
 
 	if err := h.Repo.SetKV("disabledModels", provider, string(b)); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to disable models")
 		return
 	}
 	h.recordDisabledModelActions(provider, prev, next)
@@ -344,6 +360,7 @@ func (h *DashboardHandler) HandleSaveDisabledModels(w http.ResponseWriter, r *ht
 	h.reconcileSmartCombosBestEffort(r.Context(), "models disabled")
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+		"success":        true,
 		"status":         "ok",
 		"provider":       provider,
 		"disabledModels": modelsArr,
@@ -438,7 +455,7 @@ func modelIDSet(v any) map[string]bool {
 func (h *DashboardHandler) HandleGetModelAliases(w http.ResponseWriter, r *http.Request) {
 	aliases, err := h.Repo.GetModelAliases()
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch aliases")
 		return
 	}
 	res := make(map[string]string, len(aliases))
@@ -452,7 +469,7 @@ func (h *DashboardHandler) HandleGetModelAliases(w http.ResponseWriter, r *http.
 func (h *DashboardHandler) HandleSetModelAlias(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusInternalServerError, "Failed to update alias")
 		return
 	}
 	defer r.Body.Close()
@@ -462,11 +479,11 @@ func (h *DashboardHandler) HandleSetModelAlias(w http.ResponseWriter, r *http.Re
 		Alias string `json:"alias"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writePlainError(w, http.StatusInternalServerError, "Failed to update alias")
 		return
 	}
 	if req.Model == "" || req.Alias == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "model and alias required")
+		writePlainError(w, http.StatusBadRequest, "Model and alias required")
 		return
 	}
 
@@ -476,7 +493,7 @@ func (h *DashboardHandler) HandleSetModelAlias(w http.ResponseWriter, r *http.Re
 
 	valBytes, _ := json.Marshal(req.Model)
 	if err := h.Repo.SetKV("modelAliases", req.Alias, string(valBytes)); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to update alias")
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"success": true, "model": req.Model, "alias": req.Alias})
@@ -486,11 +503,11 @@ func (h *DashboardHandler) HandleSetModelAlias(w http.ResponseWriter, r *http.Re
 func (h *DashboardHandler) HandleDeleteModelAlias(w http.ResponseWriter, r *http.Request) {
 	alias := r.URL.Query().Get("alias")
 	if alias == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "alias required")
+		writePlainError(w, http.StatusBadRequest, "Alias required")
 		return
 	}
 	if err := h.Repo.DeleteKV("modelAliases", alias); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to delete alias")
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"success": true})

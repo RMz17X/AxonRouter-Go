@@ -74,7 +74,6 @@ var ProviderAliasMap = map[string]string{
 	// credits lane. `mmg` is upstream's own alias for the global site.
 	"mmc":               "minimax-code",
 	"mmg":               "minimax-code-global",
-	"mmf":               "mimo-free",
 	"nb":                "nanobanana",
 	"muse-ai":           "muse",
 	"meta-model-api":    "muse",

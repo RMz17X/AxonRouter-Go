@@ -627,14 +627,6 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthScheme:     "bearer",
 		ThinkingFormat: "openai",
 	},
-	"mimo-free": {
-		BaseURL:       "https://api.xiaomimimimo.com/api/free-ai/openai/chat",
-		AuthHeader:    "Authorization",
-		AuthScheme:    "bearer",
-		DefaultAPIKey: "mimo-dynamic",
-		NoAuth:        true,
-		Hidden:        true,
-	},
 	"blackbox": {
 		BaseURL:        "https://api.blackbox.ai/v1/chat/completions",
 		AuthHeader:     "Authorization",

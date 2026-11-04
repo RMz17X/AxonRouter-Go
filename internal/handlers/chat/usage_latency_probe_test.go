@@ -1,3 +1,5 @@
+//go:build sqlite_legacy
+
 package chat
 
 // Latency probe for the synchronous usage-write tail that logUsage runs on

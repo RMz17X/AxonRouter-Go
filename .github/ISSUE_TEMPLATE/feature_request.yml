@@ -64,7 +64,7 @@ body:
     id: breaking
     attributes:
       label: Compatibility impact
-      description: Does this change an existing `/v1/*` request, an SSE chunk shape, a dashboard endpoint, or the SQLite schema? If yes, say which.
+      description: Does this change an existing `/v1/*` request, an SSE chunk shape, a dashboard endpoint, or the database schema? If yes, say which.
     validations:
       required: false
 

@@ -539,7 +539,7 @@
         bind:value={searchQuery}
         placeholder="Search combos…"
         aria-label="Search combos"
-        class="w-full rounded-[10px] border border-transparent bg-surface-2 py-2 pl-9 pr-9 text-sm text-text-main transition-all duration-150 ease-out placeholder-text-muted/70 focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+        class="w-full rounded-brand border border-transparent bg-surface-2 py-2 pl-9 pr-9 text-sm text-text-main transition-all duration-150 ease-out placeholder-text-muted/70 focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
       />
       {#if searchQuery}
         <button

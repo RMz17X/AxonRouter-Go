@@ -33,7 +33,7 @@ import (
 var nodeIDSuffixPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`)
 
 // maxProviderNodeIDLength bounds the composed id. The suffix itself is capped
-// by its own pattern; this is the whole-id ceiling the SQLite primary key and
+// by its own pattern; this is the whole-id ceiling the primary key and
 // the URL path (/api/provider-nodes/{id}) have to carry comfortably.
 const maxProviderNodeIDLength = 96
 

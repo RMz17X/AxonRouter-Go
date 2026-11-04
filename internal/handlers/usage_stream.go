@@ -18,7 +18,7 @@ func HandleUsageStream(repo *db.Repo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, "streaming unsupported")
+			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "streaming unsupported"})
 			return
 		}
 
@@ -27,6 +27,12 @@ func HandleUsageStream(repo *db.Repo) http.HandlerFunc {
 		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.WriteHeader(http.StatusOK)
+
+		// Axon opens with the EventSource reconnect hint.
+		if _, err := w.Write([]byte("retry: 3000\n\n")); err != nil {
+			return
+		}
+		flusher.Flush()
 
 		tracker := usagetracker.GetTracker()
 

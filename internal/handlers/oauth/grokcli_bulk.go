@@ -262,7 +262,7 @@ func (h *OAuthHandler) HandleOAuthGrokCliBulkImport(w http.ResponseWriter, r *ht
 		}
 
 		now := currentTimestamp()
-		_, err = h.Repo.RawDB().Exec(
+		_, err = h.Repo.Exec(
 			`INSERT INTO providerConnections (id, provider, authType, name, isActive, data, createdAt, updatedAt) VALUES (?, 'grok-cli', 'oauth', ?, 1, ?, ?, ?)`,
 			connID, name, string(dataJSON), now, now,
 		)

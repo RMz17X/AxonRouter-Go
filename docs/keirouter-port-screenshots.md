@@ -1,5 +1,8 @@
 # KeiRouter port — dashboard screenshots
 
+> **Status (2026-11-05): historical record.** Screenshots of the KeiRouter port evaluation dashboard state at the time; not current product screenshots.
+
+
 Screenshots of the surfaces this port changes. Captured from the real binary on
 a throwaway `DATA_DIR` with seeded demo data (fake keys, one policy per scope) —
 no real credentials are in any of these images.

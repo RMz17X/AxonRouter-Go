@@ -19,11 +19,11 @@ import (
 	"9router/proxy/internal/providers"
 	"9router/proxy/internal/proxy/executor"
 	"9router/proxy/internal/proxy/oauth"
+	"9router/proxy/internal/proxy/smart"
 	"9router/proxy/internal/schedule"
 	"9router/proxy/internal/shutdown"
 	"9router/proxy/internal/updater"
 	"9router/proxy/internal/uptime"
-	"9router/proxy/internal/proxy/smart"
 )
 
 // ServerModule provides *http.Server and manages its lifecycle and background tasks.
@@ -52,7 +52,7 @@ type ServerParams struct {
 	//
 	// It is the SAME instance the routes are mounted on — the one
 	// handlers.SetupServerRouter returns — not a second one built here. A second
-	// chat handler is a second PersistentStore over the same SQLite file with
+	// chat handler is a second PersistentStore over the same database with
 	// its own in-memory LRU, so the dashboard would report zero entries while
 	// the engine served hits.
 	ChatHandler *chat.ChatHandler `optional:"true"`
@@ -77,6 +77,29 @@ const (
 	// here rather than a stdlib default this repo never reviewed.
 	serverMaxHeaderBytes = 1 << 20
 )
+
+// shutdownGraceSeconds is the drain window on SIGTERM/SIGINT (P3,
+// cluster readiness): how long the shutdown hook waits for in-flight
+// requests — above all SSE streams — to finish before the server is
+// force-closed. The sequence inside the window: shutdown.Cancel()
+// signals every stream to end after its current chunk (handlers emit a
+// final [DONE]), keep-alives are refused so idle connections leave at
+// once, and http.Server.Shutdown then waits only for what is genuinely
+// still running — an idle process exits immediately, the window is a
+// ceiling, not a pause. A stream or request still alive at the ceiling
+// is cut. 30 s covers a long generation's tail; the compose stacks
+// (P5) set their stop grace period to match. SHUTDOWN_GRACE_SECONDS
+// overrides for operators whose longest requests run longer.
+const defaultShutdownGraceSeconds = 30
+
+func shutdownGrace() time.Duration {
+	if raw := os.Getenv("SHUTDOWN_GRACE_SECONDS"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return defaultShutdownGraceSeconds * time.Second
+}
 
 // ProvideServer creates *http.Server and registers lifecycle hooks.
 func ProvideServer(p ServerParams) *http.Server {
@@ -108,7 +131,16 @@ func ProvideServer(p ServerParams) *http.Server {
 			updater.StartBackgroundCheck(shutdown.Context(), autoUpdate)
 			log.Printf("[config] auto-update enabled=%v", autoUpdate)
 
-			catalogPath := filepath.Join(filepath.Dir(p.Config.DatabasePath), "model-catalog.json")
+			// Node-local file state, audited for P3: model-catalog.json is
+			// a rebuildable CACHE, never a source of truth — the sync below
+			// re-fetches it from the provider catalogs at boot and refreshes
+			// it periodically, so a cluster node that starts with an empty
+			// (or absent) file converges on the same catalog as every other
+			// node on its own. It is therefore safe per-node in cluster
+			// mode; a shared volume is an optimisation (one fetch instead
+			// of N), not a correctness requirement, and P5's compose stacks
+			// may mount one over this path if the fetch cost ever matters.
+			catalogPath := filepath.Join(config.ResolveDataDir(), "model-catalog.json")
 			providers.StartBackgroundCatalogSync(shutdown.Context(), nil, catalogPath)
 			oauth.StartBackgroundRefresh(shutdown.Context(), p.Repo)
 			db.StartRetentionLoop(shutdown.Context(), p.Repo, db.DefaultRequestDetailRetention)
@@ -147,10 +179,11 @@ func ProvideServer(p ServerParams) *http.Server {
 			// Refuse NEW keep-alive reuse immediately: idle browser/dashboard
 			// connections otherwise hold Shutdown for the full deadline even
 			// when zero requests are in flight (the "shutdown takes forever"
-			// complaint). In-flight requests still drain gracefully below.
+			// complaint). In-flight requests still drain gracefully below,
+			// inside the window shutdownGrace() documents.
 			server.SetKeepAlivesEnabled(false)
 
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownGrace())
 			defer cancel()
 			if err := server.Shutdown(shutdownCtx); err != nil {
 				log.Printf("Server shutdown did not complete in time: %v", err)

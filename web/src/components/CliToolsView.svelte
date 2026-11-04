@@ -23,6 +23,7 @@
   import { copyToClipboard } from '../lib/clipboard'
   import { api, type APIKey } from '../api/client'
   import HermesToolCard from './cli-tools/HermesToolCard.svelte'
+  import HostSetupCommand from './cli-tools/HostSetupCommand.svelte'
 
   interface Props {
     apiKeys?: APIKey[]
@@ -65,6 +66,57 @@
   const API_KEY_PLACEHOLDER = '<your-9router-api-key>'
   let snippetApiKey = $derived(apiKeys[0]?.key || API_KEY_PLACEHOLDER)
   let noApiKey = $derived(!apiKeys[0]?.key)
+
+  // Installer composer state (batch 5, P7a): for tools with a
+  // /api/cli-tools/setup template, the modal composes the setup
+  // command from a user-chosen API key plus these model-mapping
+  // selections instead of applying anything on the gateway host.
+  interface SetupField {
+    key: string
+    label: string
+    placeholder: string
+  }
+  const SETUP_FIELDS: Record<string, SetupField[]> = {
+    claude: [
+      { key: 'model', label: 'Model', placeholder: 'cc/claude-sonnet-5' },
+      { key: 'sonnet', label: 'Sonnet tier', placeholder: 'cc/claude-sonnet-5' },
+      { key: 'opus', label: 'Opus tier', placeholder: 'cc/claude-opus-5' },
+      { key: 'haiku', label: 'Haiku tier', placeholder: 'cc/claude-haiku-4-5-20251001' },
+      { key: 'fable', label: 'Fable tier', placeholder: 'cc/claude-fable-5' },
+      { key: 'maxContextTokens', label: 'Max context tokens', placeholder: '200000' },
+    ],
+    codex: [
+      { key: 'model', label: 'Model', placeholder: 'gpt-5' },
+      { key: 'subagentModel', label: 'Subagent model', placeholder: 'gpt-5' },
+    ],
+    opencode: [
+      { key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' },
+      { key: 'subagentModel', label: 'Explorer model', placeholder: 'claude-sonnet-5' },
+    ],
+    droid: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'claude-sonnet-5, gpt-5' }],
+    copilot: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'gpt-5, claude-sonnet-5' }],
+    cowork: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'claude-sonnet-5' }],
+    openclaw: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
+    cline: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
+    kilo: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
+    jcode: [{ key: 'model', label: 'Model', placeholder: 'gpt-5' }],
+    qwen: [{ key: 'model', label: 'Model', placeholder: 'qwen3-coder-plus' }],
+    'deepseek-tui': [{ key: 'model', label: 'Model', placeholder: 'deepseek-chat' }],
+    'grok-build': [{ key: 'model', label: 'Model', placeholder: 'grok-4' }],
+    amp: [],
+  }
+  let setupKeyId = $state('')
+  let mapping = $state<Record<string, string>>({})
+  let setupFields = $derived(selectedTool ? SETUP_FIELDS[selectedTool.id] : undefined)
+  let setupApiKey = $derived(apiKeys.find((k) => k.id === setupKeyId)?.key || apiKeys[0]?.key || '')
+
+  $effect(() => {
+    // Switching tools resets the composer; the key defaults to the
+    // first client key.
+    void selectedTool?.id
+    mapping = {}
+    setupKeyId = apiKeys[0]?.id ?? ''
+  })
 
   async function loadStatuses() {
     isLoading = true
@@ -743,7 +795,7 @@
 <!-- MODAL: Tool Configuration Detail -->
 {#if selectedTool}
   {@const status = getToolStatus(selectedTool.id)}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
     <div class="w-full max-w-xl p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-5">
       <!-- Modal Header -->
       <div class="flex items-start justify-between pb-3 border-b border-border">
@@ -806,6 +858,43 @@
       {#if selectedTool.id === 'hermes'}
         <HermesToolCard installed={!!statuses.hermes?.installed} {apiKeys} />
       {:else}
+        <!-- Installer composer: tools with a setup template get the
+             one-command setup block (batch 5, P7a). -->
+        {#if setupFields}
+          <div class="space-y-3 p-3 rounded-xl bg-surface-2 border border-border/80">
+            <span class="text-xs font-bold text-text-main">One-Command Setup</span>
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                <span class="text-xs font-semibold text-text-main sm:w-32 sm:text-right">API Key</span>
+                <select
+                  bind:value={setupKeyId}
+                  class="flex-1 min-w-0 h-8 px-2 rounded bg-surface border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+                >
+                  {#if apiKeys.length === 0}
+                    <option value="">No key created</option>
+                  {/if}
+                  {#each apiKeys as key (key.id)}
+                    <option value={key.id}>{key.name || key.keyDisplay || key.key}</option>
+                  {/each}
+                </select>
+              </div>
+              {#each setupFields as field (field.key)}
+                <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+                  <span class="text-xs font-semibold text-text-main sm:w-32 sm:text-right">{field.label}</span>
+                  <input
+                    type="text"
+                    value={mapping[field.key] ?? ''}
+                    oninput={(e) => (mapping = { ...mapping, [field.key]: e.currentTarget.value })}
+                    placeholder={field.placeholder}
+                    class="flex-1 min-w-0 h-8 px-2 rounded bg-surface border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+                  />
+                </div>
+              {/each}
+            </div>
+            <HostSetupCommand toolId={selectedTool.id} baseUrl={localOrigin} apiKey={setupApiKey} params={mapping} />
+          </div>
+        {/if}
+
         <!-- Claude Code Specific Controls -->
         {#if selectedTool.id === 'claude'}
           <div class="p-3 rounded-xl bg-surface-2 border border-border/80 space-y-3">

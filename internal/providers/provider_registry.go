@@ -467,18 +467,6 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Website:      "https://kiro.dev",
 		Notice:       &Notice{SignupURL: "https://kiro.dev"},
 	},
-	"mimo-free": {
-		ID:            "mimo-free",
-		Name:          "MiMo Code Free",
-		Alias:         "mmf",
-		Category:      CategoryFree,
-		Color:         "#FF6900",
-		Icon:          "smart_toy",
-		NoAuth:        true,
-		Hidden:        true,
-		ServiceKinds:  []string{"llm"},
-		ModelsFetcher: &Fetcher{URL: "https://models.dev/api.json", Type: "mimo-free"},
-	},
 	"opencode": {
 		ID:            "opencode",
 		Name:          "OpenCode Free",

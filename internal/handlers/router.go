@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"9router/proxy/internal/clientconfig"
 	"9router/proxy/internal/constants"
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/guardrails"
@@ -15,6 +14,7 @@ import (
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/middleware"
 	"9router/proxy/internal/observ"
+	"9router/proxy/internal/routinglatency"
 	"9router/proxy/web"
 	json "encoding/json/v2"
 	"github.com/go-chi/chi/v5"
@@ -37,7 +37,7 @@ func NewTokenSaverConfig(rtk, caveman, ponytail bool) *TokenSaverConfig {
 // engine's chat handler, which owns the semantic cache the engine actually
 // reads and writes. The caller must pass that same handler to
 // SetupDashboardRoutes: a second NewChatHandler builds a second
-// PersistentStore over the same SQLite file with its own in-memory LRU, so the
+// PersistentStore over the same database with its own in-memory LRU, so the
 // dashboard would report zero entries while the engine served hits, and
 // clearing entries from the dashboard would leave the engine still serving them.
 func SetupRoutes(r interface {
@@ -78,8 +78,21 @@ func SetupRoutes(r interface {
 	r.Get("/api/models/catalog-sync", chatH.HandleCatalogSyncStatus)
 	r.Post("/api/models/catalog-sync", chatH.HandleCatalogSyncTrigger)
 	r.Get("/api/models", chatH.HandleModels)
-	r.Post("/chat/completions", chatH.HandleChatCompletions)
-	r.Post("/messages", chatH.HandleMessages)
+	// Backend parity batch 6 — protocol surface (see
+	// .changes/917-backend-parity-batch6-protocol-surface.md). Axon's
+	// GET /v1 re-exports its models list; the /v1beta surface is the
+	// Gemini-shaped catalogue + generateContent lane (chat package);
+	// task/unified/video-generations are Axon-only engine routes. The
+	// /api/v1 and /api/v1beta spellings reach these via the alias fold
+	// in RequestLogger.
+	r.Get("/v1", chatH.HandleModels)
+	r.Get("/v1beta/models", chatH.HandleV1BetaModels)
+	r.Post("/v1beta/models/*", chatH.HandleV1BetaModelAction)
+	r.Post("/task", mediaH.HandleTask)
+	r.Post("/unified", HandleUnified)
+	r.Post("/video/generations", HandleVideoGenerationsBaseline)
+	r.Post("/chat/completions", routinglatency.Wrap("v1", chatH.HandleChatCompletions))
+	r.Post("/messages", routinglatency.Wrap("v1", chatH.HandleMessages))
 	r.Post("/messages/count_tokens", chatH.HandleCountTokens)
 	r.Post("/api/chat", chatH.HandleOllamaChat)
 
@@ -89,14 +102,17 @@ func SetupRoutes(r interface {
 	// /v1/responses needs model resolution, combos, account fallback and usage
 	// logging, none of which the media passthrough has, so it lives with the
 	// chat handlers — the same place /v1/messages does.
-	r.Post("/responses", chatH.HandleResponses)
-	r.Post("/responses/compact", chatH.HandleResponsesCompact)
+	r.Post("/responses", routinglatency.Wrap("v1", chatH.HandleResponses))
+	r.Post("/responses/compact", routinglatency.Wrap("v1", chatH.HandleResponsesCompact))
 	r.Post("/images/generations", mediaH.HandleImages)
 	r.Post("/images/edits", mediaH.HandleImageEdits)
 	r.Post("/audio/speech", mediaH.HandleAudioSpeech)
 	r.Post("/audio/music", mediaH.HandleAudioMusic)
 	r.Post("/v1/audio/music", mediaH.HandleAudioMusic)
-	r.Get("/audio/voices", mediaH.HandleAudioVoices)
+	// Batch 9: the engine spelling gets Axon's reshaping wrapper
+	// ({object:"list", data:[...]} + provider whitelist); the dashboard
+	// spellings below keep the shared SPA-shaped handler.
+	r.Get("/audio/voices", mediaH.HandleAudioVoicesV1)
 	r.Get("/api/media-providers/tts/voices", mediaH.HandleAudioVoices)
 	r.Get("/api/media-providers/tts/inworld/voices", mediaH.HandleAudioVoices)
 	r.Get("/api/media-providers/tts/minimax/voices", mediaH.HandleAudioVoices)
@@ -109,6 +125,7 @@ func SetupRoutes(r interface {
 	r.Post("/videos/edits", mediaH.HandleVideoEdits)
 	r.Post("/videos/extensions", mediaH.HandleVideoExtensions)
 	r.Get("/videos/{id}", mediaH.HandleVideoGet)
+	r.Get("/videos/{id}/content", mediaH.HandleVideoContent)
 	r.Post("/search", mediaH.HandleSearch)
 	r.Post("/scrape", mediaH.HandleScrape)
 	r.Post("/web/fetch", mediaH.HandleWebFetch)
@@ -156,16 +173,27 @@ func SetupRoutes(r interface {
 	r.Get("/api/usage/stream", HandleUsageStream(repo))
 	r.Get("/usage/stats", HandleUsageStats(repo))
 	r.Get("/api/usage/stats", HandleUsageStats(repo))
+	r.Get("/api/combos/analytics", HandleCombosAnalytics(repo))
+	r.Get("/api/usage/active-requests", HandleUsageActiveRequests(repo))
+	r.Get("/api/usage/analytics", HandleUsageAnalytics(repo))
+	r.Get("/api/usage/analytics/failures", HandleUsageAnalyticsFailures(repo))
+	r.Get("/api/usage/history", HandleUsageHistory(repo))
+	r.Get("/api/usage/logs", HandleUsageLogs(repo))
+	r.Get("/api/usage/request-logs", HandleUsageRequestLogs(repo))
+	r.Get("/api/usage/quotas", HandleUsageQuotas(repo))
 	r.Get("/usage/chart", HandleUsageChart(repo))
 	r.Get("/api/usage/chart", HandleUsageChart(repo))
 	r.Get("/api/usage/dashboard", HandleUsageDashboard(repo))
 	r.Get("/api/usage/request-details", HandleRequestDetails(repo))
 	r.Get("/api/usage/export", HandleUsageExport(repo))
 	r.Get("/api/usage/request-details/{id}", HandleRequestDetail(repo))
+	r.Post("/api/usage/request-details/{id}/replay", HandleRequestDetailReplay(repo))
 	r.Get("/api/usage/providers", dashH.HandleGetUsageProviders)
 	r.Get("/api/usage/{connectionId}", dashH.HandleGetConnectionUsage)
 	r.Get("/api/usage/{connectionId}/reset-credits", dashH.HandleListCodexResetCredits)
 	r.Post("/api/usage/{connectionId}/reset-credits/consume", dashH.HandleConsumeCodexResetCredit)
+	r.Get("/api/usage/{connectionId}/codex-reset-credits", dashH.HandleGetCodexResetCredits)
+	r.Post("/api/usage/{connectionId}/codex-reset-credits", dashH.HandleConsumeCodexResetCredits)
 	// GLM Reset Cards (Z.ai international)
 	r.Get("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleGetGLMResetCards)
 	r.Post("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleRedeemGLMResetCard)
@@ -197,6 +225,42 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	}
 	ssoH := sso.NewHandler(repo)
 
+	// Backend parity batch 6 — dashboard-side protocol families
+	// (Axon: requireManagementAuth — local request or dashboard
+	// session; the dashboard group is the Go analogue).
+	r.Get("/api/protocols/status", HandleProtocolsStatus)
+	r.Get("/api/protocols/a2a/handshake", HandleA2AHandshake)
+	r.Post("/api/protocols/a2a/message", HandleA2AMessage)
+	r.Get("/api/protocols/mcp/handshake", HandleMCPHandshake)
+	r.Get("/api/protocols/mcp/tools", HandleMCPTools)
+	r.Post("/api/protocols/mcp/invoke", HandleMCPInvoke)
+	r.Get("/api/translator/load", HandleTranslatorLoad)
+	r.Post("/api/translator/save", HandleTranslatorSave)
+	r.Post("/api/translator/translate", HandleTranslatorTranslate)
+	if chatH != nil {
+		r.Post("/api/translator/send", chatH.HandleTranslatorSend)
+	}
+	// Backend parity batch 7 — credentials backup, MCP audit +
+	// transports, system info. Credentials and MCP audit add upstream's
+	// requireManagementAuth gate on top of the dashboard group gate; the
+	// MCP HTTP transports carry their own client API-key gate, and their
+	// tools are scope-gated exactly like upstream's (see
+	// batch7_mcp_transport.go).
+	r.Get("/api/credentials/export", RequireManagementAuth(repo, dashH.HandleCredentialsExport))
+	r.Post("/api/credentials/import", RequireManagementAuth(repo, dashH.HandleCredentialsImport))
+	r.Get("/api/mcp/audit", RequireManagementAuth(repo, HandleMCPAuditList(repo)))
+	r.Get("/api/mcp/audit/stats", RequireManagementAuth(repo, HandleMCPAuditStats(repo)))
+	r.Get("/api/mcp/sse", HandleMCPSSEStream(repo))
+	r.Post("/api/mcp/sse", HandleMCPSSEMessage(repo))
+	r.Post("/api/mcp/stream", HandleMCPStream(repo))
+	r.Get("/api/system/machine-id", HandleSystemMachineID)
+	r.Get("/api/system/memory", HandleSystemMemory(repo))
+	r.Get("/api/system/version", HandleSystemVersion)
+
+	r.Post("/api/morph/test-key", dashboard.HandleMorphTestKey(repo))
+	r.Get("/api/morph/usage/stats", dashboard.HandleMorphUsageStats(repo))
+	r.Get("/api/morph/usage/requests", dashboard.HandleMorphUsageRequests(repo))
+
 	r.Get("/api/connections", dashH.HandleGetConnections)
 	r.Get("/api/providers", dashH.HandleGetProvidersClient)
 	r.Get("/api/providers/client", dashH.HandleGetProvidersClient)
@@ -221,21 +285,71 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/providers/{id}/reorder", dashH.HandleReorderConnection)
 	r.Post("/api/providers/{id}/test", dashH.HandleTestConnection)
 	r.Get("/api/providers/suggested-models", HandleSuggestedModels)
+	// Backend parity batch 2 — providers family (AxonRouter contract ports,
+	// see axon-backend-parity-map.md). Static segments win over the {id}
+	// wildcard in chi, so stats/test-batch/bulk-*/auto-switch/kilo are safe
+	// alongside /api/providers/{id}/...
+	r.Get("/api/models/availability", dashH.HandleModelAvailability)
+	r.Post("/api/models/availability", dashH.HandleClearModelCooldown)
+	r.Get("/api/pricing", dashH.HandleGetPricing)
+	r.Patch("/api/pricing", dashH.HandleUpdatePricing)
+	r.Delete("/api/pricing", dashH.HandleResetPricing)
+	r.Get("/api/provider-models", dashH.HandleProviderModels)
+	r.Get("/api/providers/stats", dashH.HandleProviderStats)
+	r.Post("/api/providers/test-batch", dashH.HandleTestBatch)
+	r.Post("/api/providers/bulk-proxy", dashH.HandleBulkProxy)
+	r.Post("/api/providers/bulk-reset-status", dashH.HandleBulkResetStatus)
+	r.Post("/api/providers/noauth-sync", dashH.HandleNoauthSync)
+	r.Get("/api/providers/kilo/free-models", dashH.HandleKiloFreeModels)
+	r.Get("/api/providers/antigravity/auto-switch", dashH.HandleAntigravityAutoSwitchSettings)
+	r.Put("/api/providers/antigravity/auto-switch", dashH.HandleAntigravityAutoSwitchSettings)
+	r.Get("/api/providers/antigravity/auto-switch/active", dashH.HandleAntigravityAutoSwitchActive)
+	r.Put("/api/providers/antigravity/auto-switch/active", dashH.HandleAntigravityAutoSwitchActive)
+	r.Post("/api/providers/antigravity/auto-switch/rotate", dashH.HandleAntigravityAutoSwitchRotate)
+	r.Get("/api/providers/codex/auto-switch", dashH.HandleCodexAutoSwitchSettings)
+	r.Put("/api/providers/codex/auto-switch", dashH.HandleCodexAutoSwitchSettings)
+	r.Get("/api/providers/codex/auto-switch/active", dashH.HandleCodexAutoSwitchActive)
+	r.Put("/api/providers/codex/auto-switch/active", dashH.HandleCodexAutoSwitchActive)
+	r.Post("/api/providers/codex/auto-switch/rotate", dashH.HandleCodexAutoSwitchRotate)
+	r.Get("/api/providers/codex/instructions", dashH.HandleCodexInstructions)
+	r.Put("/api/providers/codex/instructions", dashH.HandleCodexInstructions)
+	r.Get("/api/providers/commandcode/instructions", dashH.HandleCommandCodeInstructions)
+	r.Put("/api/providers/commandcode/instructions", dashH.HandleCommandCodeInstructions)
+	r.Get("/api/providers/morph/instructions", dashH.HandleMorphInstructions)
+	r.Put("/api/providers/morph/instructions", dashH.HandleMorphInstructions)
+	r.Get("/api/providers/{id}/proxy-stats", dashH.HandleProviderProxyStats)
+	r.Post("/api/providers/{id}/reset-status", dashH.HandleResetConnectionStatus)
+	r.Post("/api/providers/{id}/unlock-model", dashH.HandleUnlockConnectionModel)
+	r.Post("/api/providers/{id}/scan-free-models", dashH.HandleScanFreeModels)
+	r.Post("/api/providers/{id}/sync-models", dashH.HandleSyncConnectionModels)
+	r.Post("/api/providers/{id}/test-model", dashH.HandleTestConnectionModel)
+	r.Post("/api/providers/{id}/test-models", dashH.HandleTestConnectionModels)
 	// Usage & Quota Endpoints (dashboard quota tracker, usage stats, and topology stream)
 	r.Get("/api/usage/stream", HandleUsageStream(repo))
 	r.Get("/usage/stream", HandleUsageStream(repo))
 	r.Get("/api/usage/stats", HandleUsageStats(repo))
 	r.Get("/usage/stats", HandleUsageStats(repo))
+	r.Get("/api/combos/analytics", HandleCombosAnalytics(repo))
+	r.Get("/api/usage/active-requests", HandleUsageActiveRequests(repo))
+	r.Get("/api/usage/analytics", HandleUsageAnalytics(repo))
+	r.Get("/api/usage/analytics/failures", HandleUsageAnalyticsFailures(repo))
+	r.Get("/api/usage/history", HandleUsageHistory(repo))
+	r.Get("/api/usage/logs", HandleUsageLogs(repo))
+	r.Get("/api/usage/request-logs", HandleUsageRequestLogs(repo))
+	r.Get("/api/usage/quotas", HandleUsageQuotas(repo))
 	r.Get("/api/usage/chart", HandleUsageChart(repo))
 	r.Get("/api/usage/dashboard", HandleUsageDashboard(repo))
 	r.Get("/api/usage/request-details", HandleRequestDetails(repo))
 	r.Get("/api/usage/export", HandleUsageExport(repo))
 	r.Get("/api/usage/request-details/{id}", HandleRequestDetail(repo))
+	r.Post("/api/usage/request-details/{id}/replay", HandleRequestDetailReplay(repo))
 	r.Get("/api/usage/providers", dashH.HandleGetUsageProviders)
 	r.Get("/api/usage/{connectionId}", dashH.HandleGetConnectionUsage)
 
 	r.Get("/api/usage/{connectionId}/reset-credits", dashH.HandleListCodexResetCredits)
 	r.Post("/api/usage/{connectionId}/reset-credits/consume", dashH.HandleConsumeCodexResetCredit)
+	r.Get("/api/usage/{connectionId}/codex-reset-credits", dashH.HandleGetCodexResetCredits)
+	r.Post("/api/usage/{connectionId}/codex-reset-credits", dashH.HandleConsumeCodexResetCredits)
 	// GLM Reset Cards (Z.ai international)
 	r.Get("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleGetGLMResetCards)
 	r.Post("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleRedeemGLMResetCard)
@@ -296,6 +410,11 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/combos/auto-family", dashH.HandleAutoFamilyCombos)
 	r.Get("/api/combos/presets", dashH.HandleGetComboPresets)
 	r.Post("/api/combos/presets", dashH.HandleCreateComboPresets)
+	r.Get("/api/combos/hidden", dashH.HandleGetHiddenCombos)
+	r.Post("/api/combos/hidden", dashH.HandleHideCombos)
+	r.Delete("/api/combos/hidden", dashH.HandleUnhideCombos)
+	r.Post("/api/combos/reorder", dashH.HandleReorderCombos)
+	r.Post("/api/combos/test", dashH.HandleTestCombo)
 	r.Put("/api/combos/{id}", dashH.HandleUpdateCombo)
 	// Smart select combo: dry-run a rule list, and apply every combo's rules on
 	// demand. These live here as well as in dashboard.RegisterRoutes for the
@@ -325,6 +444,28 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/proxy-pools/cloudflare-deploy", relayH.HandleCloudflareDeploy)
 	r.Post("/api/proxy-pools/netlify-deploy", relayH.HandleNetlifyDeploy)
 
+	// Backend parity batch 4 — proxy infra family (AxonRouter contract
+	// ports, see .changes/915). Static segments (fitness, health-check,
+	// recover, verify-subscription) win over {id} in chi, same as the
+	// relay-deploy routes above.
+	r.Get("/api/proxy-pools/fitness", dashH.HandleGetProxyPoolsFitness)
+	r.Post("/api/proxy-pools/fitness/clear-all", dashH.HandleClearProxyPoolsFitness)
+	r.Post("/api/proxy-pools/{id}/fitness/clear", dashH.HandleClearProxyPoolFitness)
+	r.Post("/api/proxy-pools/{id}/geo-probe", dashH.HandleGeoProbeProxyPool)
+	r.Get("/api/proxy-pools/health-check", dashH.HandleGetProxyPoolsHealthCheck)
+	r.Post("/api/proxy-pools/health-check", dashH.HandleProxyPoolsHealthCheck)
+	r.Post("/api/proxy-pools/recover", dashH.HandleRecoverProxyPools)
+	r.Get("/api/proxy-groups", dashH.HandleGetProxyGroups)
+	r.Post("/api/proxy-groups", dashH.HandleCreateProxyGroup)
+	r.Post("/api/proxy-groups/verify-subscription", dashH.HandleVerifySubscription)
+	r.Get("/api/proxy-groups/{id}", dashH.HandleGetProxyGroup)
+	r.Put("/api/proxy-groups/{id}", dashH.HandleUpdateProxyGroup)
+	r.Delete("/api/proxy-groups/{id}", dashH.HandleDeleteProxyGroup)
+	r.Post("/api/proxy-groups/{id}/remove-all", dashH.HandleRemoveAllProxyGroup)
+	r.Post("/api/proxy-groups/{id}/sync", dashH.HandleSyncProxyGroup)
+	r.Get("/api/circuit-breakers", dashH.HandleGetCircuitBreakers)
+	r.Delete("/api/circuit-breakers", dashH.HandleResetCircuitBreakers)
+	r.Get("/api/routing/latency", dashH.HandleGetRoutingLatency)
 	r.Get("/api/keys", dashH.HandleGetApiKeys)
 	r.Post("/api/keys", dashH.HandleCreateApiKey)
 	r.Delete("/api/keys/{id}", dashH.HandleDeleteApiKey)
@@ -422,7 +563,6 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/tunnel/tailscale-disable", dashH.HandleTailscaleDisable)
 
 	// Single Sign-On settings checks + SP metadata (profile page)
-	r.Post("/api/auth/oidc/test", ssoH.HandleOidcTest)
 	r.Post("/api/auth/saml/test", ssoH.HandleSamlTest)
 	r.Get("/api/auth/saml/metadata", ssoH.HandleSamlMetadata)
 
@@ -441,6 +581,12 @@ func SetupConsoleLogRoutes(r chi.Router, repo *db.Repo) {
 		r.Get("/api/translator/console-logs/stream", HandleConsoleLogsStream)
 		r.Get("/api/translator/console-logs/level", HandleConsoleLogsLevelGet)
 		r.Put("/api/translator/console-logs/level", HandleConsoleLogsLevelPut)
+		// Batch 7: upstream's top-level /api/console-logs is the canonical
+		// route and the translator mount is its re-export; same handlers,
+		// same auth, no second log machinery.
+		r.Get("/api/console-logs", HandleConsoleLogsGet)
+		r.Delete("/api/console-logs", HandleConsoleLogsDelete)
+		r.Get("/api/console-logs/stream", HandleConsoleLogsStream)
 	})
 }
 
@@ -491,6 +637,21 @@ func mountOAuthRoutes(r interface {
 	r.Post("/api/oauth/iflow/cookie", oauthH.HandleIflowCookie)
 	r.Get("/api/oauth/xiaomi-mimo/authorize", oauthH.HandleMimoAuthorize)
 	r.Post("/api/oauth/xiaomi-mimo/exchange", oauthH.HandleMimoExchange)
+	// Batch 3 (AxonRouter parity): credential import / auto-import routes
+	// and the generic {provider}/{action} dispatch. Chi resolves static
+	// segments ahead of {provider}/{action}, and the generic route only
+	// sees actions no dedicated route claims.
+	r.Post("/api/oauth/codex/import-token", oauthH.HandleCodexImportToken)
+	r.Post("/api/oauth/freebuff/import", oauthH.HandleFreebuffImport)
+	r.Get("/api/oauth/freebuff/auto-import", oauthH.HandleFreebuffAutoImport)
+	r.Post("/api/oauth/freebuff/realtest", oauthH.HandleFreebuffRealtest)
+	r.Post("/api/oauth/supergrok/import", oauthH.HandleSupergrokImport)
+	r.Post("/api/oauth/xiaomi-mimo/api-key", oauthH.HandleMimoAPIKey)
+	r.Get("/api/oauth/xiaomi-mimo/auto-import", oauthH.HandleMimoAutoImport)
+	r.Post("/api/oauth/zed/import", oauthH.HandleZedImport)
+	r.Get("/api/oauth/zed/auto-import", oauthH.HandleZedAutoImport)
+	r.Get("/api/oauth/{provider}/{action}", oauthH.HandleOAuthDynamicGet)
+	r.Post("/api/oauth/{provider}/{action}", oauthH.HandleOAuthDynamicPost)
 }
 
 // SetupServerRouter mounts public endpoints (/health, /api/hello) and
@@ -594,6 +755,16 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	r.Get("/api/settings/require-login", dashH.HandleRequireLogin)
 	r.Get("/api/tunnel/status", dashH.HandleTunnelStatus)
 
+	// Backend parity batch 7 — the session probe, the local-only
+	// password reset (its own gate lives in the handler), and the
+	// internal WorkerProxy endpoints (handler-level x-internal-auth
+	// token gate; the intended caller holds no dashboard session — see
+	// batch7_internal_proxy.go).
+	r.Get("/api/auth/session", HandleAuthSession)
+	r.Post("/api/auth/reset-password", HandleAuthResetPassword(repo))
+	r.Post("/api/internal/proxy/resolve", HandleInternalProxyResolve(repo))
+	r.Post("/api/internal/proxy/report", HandleInternalProxyReport(repo))
+
 	// Admin-only operations (health reset, shutdown, update) - strictly requires session cookie or CLI token.
 	// Standard client API keys are rejected, matching upstream ALWAYS_PROTECTED.
 	r.Group(func(r chi.Router) {
@@ -655,7 +826,7 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 		}
 		return middleware.Limits{RPM: d.RPM, TPM: d.TPM, Concurrency: d.Concurrency}
 	}
-	guardrailStore := guardrails.NewStore(repo.RawDB())
+	guardrailStore := guardrails.NewStoreWithRebind(repo.RawDB(), repo.Rebind)
 	// One switch for both taps. It reads the settings row per request, which is
 	// a single indexed read on an already-loaded connection, and buys an
 	// operator an off switch that does not require deleting their policies.
@@ -708,6 +879,11 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 		SetupDashboardRoutes(r, repo, engineChatH)
 	})
 
+	// One OpenCode sync handler serves both the dashboard-group
+	// routes and the public token-authenticated ones, so its token
+	// mutex covers every mutation.
+	ocH := dashboard.NewOpenCodeSyncHandler(repo)
+
 	// CLI Tools status is a dashboard read: the SPA calls it with the session
 	// cookie, never an LLM API key. It was registered inside SetupRoutes, which
 	// is mounted under RequireApiKey, so every dashboard call 401'd and the view
@@ -716,38 +892,55 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireDashboardAuth(repo))
 		r.Get("/api/cli-tools/all-statuses", media.NewCLIToolsHandler().HandleAllStatuses)
-		// Hermes configuration is per-profile and writes into ~/.hermes on the
-		// operator's disk, so it belongs to the dashboard group: the SPA reaches
-		// it with the session cookie, never an engine API key.
+		// CLI tool settings are dashboard reads (batch 5 re-score):
+		// Axon keeps a GET-only settings route per tool next to the
+		// installer, reporting install state and whether the tool's
+		// own config already points at the gateway. The host-write
+		// POST/DELETE sides were retired with the host-write model
+		// (P7a) — the dashboard composes an installer command
+		// instead of writing config files on the gateway host.
 		hermesH := media.NewHermesHandler()
 		r.Get("/api/cli-tools/hermes-profiles", hermesH.HandleProfiles)
 		r.Get("/api/cli-tools/hermes-settings", hermesH.HandleGet)
-		r.Post("/api/cli-tools/hermes-settings", hermesH.HandlePost)
-		r.Delete("/api/cli-tools/hermes-settings", hermesH.HandleDelete)
-		// pi writes the same kind of file Hermes does — a CLI agent's own
-		// config on the operator's disk — so it rides the same dashboard group.
 		piH := media.NewPiHandler(repo)
 		r.Get("/api/cli-tools/pi-settings", piH.HandleGet)
-		r.Post("/api/cli-tools/pi-settings", piH.HandlePost)
-		r.Delete("/api/cli-tools/pi-settings", piH.HandleDelete)
-		// The nine clientconfig adapters (claude, codex, opencode, droid,
-		// crush, kilo, cline, pi, omp) each answer the same three verbs.
-		// Upstream gives every client its own Next route; here one handler
-		// resolves the id out of the path, so the adapter table stays the only
-		// place a client is described.
-		cliH := media.NewCLIToolHandler(engineChatH)
-		for _, id := range clientconfig.IDs() {
-			// pi has its own handler above (it merges over a previously saved
-			// block); skip it so the two cannot disagree about the same file.
-			if id == "pi" {
-				continue
-			}
-			route := "/api/cli-tools/" + id + "-settings"
-			r.Get(route, cliH.HandleCLIToolGet)
-			r.Post(route, cliH.HandleCLIToolPost)
-			r.Delete(route, cliH.HandleCLIToolDelete)
-		}
+		settingsH := media.NewSettingsReadHandler()
+		r.Get("/api/cli-tools/claude-settings", settingsH.GetClaude)
+		r.Get("/api/cli-tools/codex-settings", settingsH.GetCodex)
+		r.Get("/api/cli-tools/cline-settings", settingsH.GetCline)
+		r.Get("/api/cli-tools/copilot-settings", settingsH.GetCopilot)
+		r.Get("/api/cli-tools/cowork-settings", settingsH.GetCowork)
+		r.Get("/api/cli-tools/deepseek-tui-settings", settingsH.GetDeepseekTui)
+		r.Get("/api/cli-tools/droid-settings", settingsH.GetDroid)
+		r.Get("/api/cli-tools/grok-build-settings", settingsH.GetGrokBuild)
+		r.Get("/api/cli-tools/jcode-settings", settingsH.GetJcode)
+		r.Get("/api/cli-tools/kilo-settings", settingsH.GetKilo)
+		r.Get("/api/cli-tools/openclaw-settings", settingsH.GetOpenclaw)
+		r.Get("/api/cli-tools/opencode-settings", settingsH.GetOpencode)
+		// Cowork MCP registry browser + tools probe.
+		coworkMcpH := media.NewCoworkMcpHandler()
+		r.Get("/api/cli-tools/cowork-mcp-registry", coworkMcpH.HandleRegistry)
+		r.Post("/api/cli-tools/cowork-mcp-tools", coworkMcpH.HandleTools)
+		// OpenCode sync management surface (Axon:
+		// requireManagementAuth — local request or dashboard session).
+		r.Get("/api/opencode/preferences", ocH.GetPreferences)
+		r.Patch("/api/opencode/preferences", ocH.PatchPreferences)
+		r.Get("/api/opencode/bundle/preview", ocH.GetBundlePreview)
+		r.Get("/api/opencode/sync/tokens", ocH.GetTokens)
+		r.Post("/api/opencode/sync/tokens", ocH.PostTokens)
 	})
+
+	// Public CLI-tool routes: the installer script endpoint is
+	// fetched by curl/irm from the user's own terminal, where no
+	// dashboard session exists (Axon lists it in the guard's public
+	// paths). The OpenCode sync bundle/version authenticate with the
+	// ocs_ token in-handler, and tokens/{id} carries no management
+	// auth in Axon's .ts source — ported as-is.
+	r.Get("/api/cli-tools/setup/{toolId}", media.NewSetupHandler().HandleSetup)
+	r.Get("/api/opencode/sync/bundle", ocH.GetSyncBundle)
+	r.Get("/api/opencode/sync/version", ocH.GetSyncVersion)
+	r.Patch("/api/opencode/sync/tokens/{id}", ocH.PatchToken)
+	r.Delete("/api/opencode/sync/tokens/{id}", ocH.DeleteToken)
 
 	SetupConsoleLogRoutes(r, repo)
 	return engineChatH

@@ -9,15 +9,9 @@
  * nothing has been arranged (see USAGE_PANEL_DEFAULT_ORDER).
  */
 
-export type UsagePanelGroupId = 'overview' | 'details' | 'cache' | 'compression'
+export type UsagePanelGroupId = 'details' | 'cache' | 'compression'
 
 export type UsagePanelId =
-  | 'overview.kpi'
-  | 'overview.comboFlow'
-  | 'overview.topology'
-  | 'overview.recent'
-  | 'overview.trend'
-  | 'overview.breakdown'
   | 'details.lifetime'
   | 'details.heatmap'
   | 'details.nodeHealth'
@@ -46,23 +40,12 @@ export interface UsagePanelGroup {
   items: UsagePanelItem[]
 }
 
-/** Every panel the Usage page can draw, in the order the page draws it. */
+/**
+ * Every panel the Usage page can draw, in the order the page draws it. The
+ * Overview section is not here: it mirrors AxonRouter's Overview tab with a
+ * fixed layout, so it has no arrangeable panels.
+ */
 export const USAGE_PANEL_GROUPS: UsagePanelGroup[] = [
-  {
-    id: 'overview',
-    label: 'Usage › Overview',
-    items: [
-      { id: 'overview.kpi', label: 'KPI cards' },
-      { id: 'overview.topology', label: 'Provider topology map' },
-      { id: 'overview.recent', label: 'Recent requests' },
-      { id: 'overview.breakdown', label: 'Usage breakdown table' },
-      // The two collapsed-by-default panels sit at the bottom of the declared
-      // order, the way upstream draws them: a chevron row is the last thing on
-      // the page, not something a reader scrolls past to reach the numbers.
-      { id: 'overview.trend', label: 'Usage trend chart' },
-      { id: 'overview.comboFlow', label: 'Combo flow' },
-    ],
-  },
   {
     id: 'details',
     label: 'Usage › Details',
@@ -129,34 +112,32 @@ export const USAGE_PANEL_FIXED_POSITION: Partial<Record<UsagePanelId, string>> =
  * the layout's and the Settings card says so instead of offering arrows that
  * could not be honoured.
  */
-export const USAGE_PANEL_ORDERABLE_GROUPS: UsagePanelGroupId[] = ['overview', 'details']
+export const USAGE_PANEL_ORDERABLE_GROUPS: UsagePanelGroupId[] = ['details']
 
 /**
  * The panels a dashboard that has never been arranged starts without: the
- * animated combo flow, and the three Details cards that only repeat what the
- * Overview already says. defaultLayout() hides these, and the Default preset
- * restores exactly this set.
+ * three Details cards that only repeat what the Overview already says.
+ * defaultLayout() hides these, and the Default preset restores exactly this
+ * set.
  */
 export const USAGE_PANEL_DEFAULT_HIDDEN: UsagePanelId[] = [
-  'overview.comboFlow',
   'details.lifetime',
   'details.heatmap',
   'details.nodeHealth',
 ]
 
 /**
- * Four ready-made shapes. Default is what an unarranged dashboard shows: no
- * combo flow, and the Details section down to its paged request table. Advanced
- * is everything; Simple drops the two animated maps and the operational panels;
- * Super Lite keeps only the four reads an operator checks on a phone — the KPI
- * row, the recent list, lifetime totals and the request table. A preset fills
- * the toggles only: an arrangement, once made, is kept.
+ * Four ready-made shapes. Default is what an unarranged dashboard shows: the
+ * Details section down to its paged request table. Advanced is everything;
+ * Simple drops the operational panels; Super Lite keeps only lifetime totals
+ * and the request table. A preset fills the toggles only: an arrangement,
+ * once made, is kept.
  */
 export const USAGE_PANEL_PRESETS: UsagePanelPresetDef[] = [
   {
     id: 'default',
     label: 'Default',
-    hint: 'No combo flow, no Details-only cards',
+    hint: 'No Details-only cards',
     visible: USAGE_PANEL_IDS.filter((id) => !USAGE_PANEL_DEFAULT_HIDDEN.includes(id)),
   },
   {
@@ -168,23 +149,16 @@ export const USAGE_PANEL_PRESETS: UsagePanelPresetDef[] = [
   {
     id: 'simple',
     label: 'Simple',
-    hint: 'No animated maps, no cleanup/raw-entry panels, no payload modal',
+    hint: 'No cleanup/raw-entry panels, no payload modal',
     visible: USAGE_PANEL_IDS.filter(
       (id) =>
-        ![
-          'overview.comboFlow',
-          'overview.topology',
-          'details.payload',
-          'cache.invalidation',
-          'cache.entries',
-          'compression.receipts',
-        ].includes(id)
+        !['details.payload', 'cache.invalidation', 'cache.entries', 'compression.receipts'].includes(id)
     ),
   },
   {
     id: 'super-lite',
     label: 'Super Lite',
-    hint: 'KPI row, recent requests, lifetime totals, request table only',
-    visible: ['overview.kpi', 'overview.recent', 'details.lifetime', 'details.requests'],
+    hint: 'Lifetime totals and the request table only',
+    visible: ['details.lifetime', 'details.requests'],
   },
 ]

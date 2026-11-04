@@ -2,7 +2,7 @@
 
 // Benchmark runner. It measures a gateway the operator already started
 // (G05/G00 sandbox, synthetic state). It does not boot a gateway, start or
-// kill processes, or touch SQLite — a fake in-process proxy made earlier
+// kill processes, or touch the database — a fake in-process proxy made earlier
 // results meaningless, so the target is now explicit.
 package main
 

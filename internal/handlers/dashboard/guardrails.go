@@ -30,7 +30,7 @@ func (h *DashboardHandler) HandleCreateGuardrailPolicy(w http.ResponseWriter, r 
 	if err := h.Repo.CreateGuardrailPolicy(p); err != nil {
 		// The unique (tenant, scope, scope_id) index is the only constraint a
 		// create can hit, and an operator needs the reason rather than the
-		// raw SQLite message.
+		// raw database message.
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
 			handlerutil.WriteJSONError(w, http.StatusConflict,
 				"a policy already exists for this scope; edit or delete it first")

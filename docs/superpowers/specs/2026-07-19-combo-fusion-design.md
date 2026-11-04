@@ -1,5 +1,8 @@
 # Combo Fusion — Parallel Multi-Model + Judge Synthesis
 
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 > **Design doc for combo fusion feature in 9router-go.**
 > Reference: 9router-js `open-sse/services/combo.js` `handleFusionChat()`
 

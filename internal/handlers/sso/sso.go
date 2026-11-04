@@ -1,7 +1,6 @@
 // Package sso implements the dashboard Single Sign-On settings endpoints that
-// the profile page calls: OIDC discovery + client-secret probe, SAML
-// configuration check, and SP metadata download. These mirror the Next
-// dashboard's /api/auth/oidc/test, /api/auth/saml/test and
+// the profile page calls: the SAML configuration check and SP metadata
+// download. These mirror the Next dashboard's /api/auth/saml/test and
 // /api/auth/saml/metadata routes.
 package sso
 
@@ -13,9 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strings"
-	"time"
 
 	json "encoding/json/v2"
 
@@ -24,13 +21,8 @@ import (
 )
 
 const (
-	discoveryPath    = "/.well-known/openid-configuration"
-	oidcCallback     = "/api/auth/oidc/callback"
-	samlACSPath      = "/api/auth/saml/acs"
-	samlMetadataPth  = "/api/auth/saml/metadata"
-	defaultScopes    = "openid profile email"
-	testCode         = "__oidc_test_invalid_code__"
-	testCodeVerifier = "__oidc_test_invalid_verifier__"
+	samlACSPath     = "/api/auth/saml/acs"
+	samlMetadataPth = "/api/auth/saml/metadata"
 )
 
 // Handler serves the dashboard SSO settings routes.
@@ -41,76 +33,6 @@ type Handler struct {
 // NewHandler creates an SSO settings handler bound to the repo.
 func NewHandler(repo *db.Repo) *Handler {
 	return &Handler{Repo: repo}
-}
-
-// HandleOidcTest handles POST /api/auth/oidc/test: load the issuer's OIDC
-// discovery document and, when a client secret is known, probe the token
-// endpoint with a deliberately invalid code to see whether the secret is
-// accepted.
-func (h *Handler) HandleOidcTest(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		IssuerURL    string `json:"issuerUrl"`
-		ClientID     string `json:"clientId"`
-		Scopes       string `json:"scopes"`
-		ClientSecret string `json:"clientSecret"`
-	}
-	// Next treats a missing/invalid body as {}.
-	decodeJSONBody(r, &body)
-
-	settings, _ := h.Repo.GetSettingsRaw()
-	if settings == nil {
-		settings = map[string]any{}
-	}
-
-	issuerURL := firstNonEmpty(body.IssuerURL, handlerutil.GetString(settings, "oidcIssuerUrl"))
-	clientID := firstNonEmpty(body.ClientID, handlerutil.GetString(settings, "oidcClientId"))
-	scopes := firstNonEmpty(body.Scopes, handlerutil.GetString(settings, "oidcScopes"), defaultScopes)
-	clientSecret := body.ClientSecret
-	if clientSecret == "" {
-		clientSecret = handlerutil.GetString(settings, "oidcClientSecret")
-	}
-
-	if issuerURL == "" {
-		writeError(w, http.StatusBadRequest, "Issuer URL is required")
-		return
-	}
-	if clientID == "" {
-		writeError(w, http.StatusBadRequest, "Client ID is required")
-		return
-	}
-
-	discovery, err := fetchDiscovery(issuerURL)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	redirectURI := publicOrigin(r) + oidcCallback
-	probe, err := probeClientSecret(discovery.TokenEndpoint, clientID, clientSecret, redirectURI)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	result := map[string]any{
-		"discoveryOk":           true,
-		"clientSecretTested":    probe.tested,
-		"clientSecretValid":     probe.valid,
-		"issuerUrl":             issuerURL,
-		"clientId":              clientID,
-		"scopes":                scopes,
-		"redirectUri":           redirectURI,
-		"authorizationEndpoint": discovery.AuthorizationEndpoint,
-		"tokenEndpoint":         discovery.TokenEndpoint,
-		"jwksUri":               discovery.JwksURI,
-		"message":               probe.message,
-		"ok":                    true,
-	}
-	if probe.tested && probe.valid == false {
-		result["ok"] = false
-		result["error"] = "Discovery loaded, but the client secret is not valid: " + probe.message
-	}
-	handlerutil.WriteJSON(w, http.StatusOK, result)
 }
 
 // HandleSamlTest handles POST /api/auth/saml/test: validate the SSO URL, SP
@@ -198,116 +120,6 @@ func spMetadataXML(issuer, acsURL string) string {
 		xmlEscape(issuer), xmlEscape(acsURL))
 }
 
-// discoveryDocument holds the OIDC discovery fields the dashboard displays.
-type discoveryDocument struct {
-	AuthorizationEndpoint string `json:"authorization_endpoint"`
-	TokenEndpoint         string `json:"token_endpoint"`
-	JwksURI               string `json:"jwks_uri"`
-}
-
-// probeOutcome is the client-secret probe result (valid is tri-state like Next).
-type probeOutcome struct {
-	tested  bool
-	valid   any
-	message string
-}
-
-// fetchDiscovery loads <issuer>/.well-known/openid-configuration.
-func fetchDiscovery(issuerURL string) (*discoveryDocument, error) {
-	discoveryURL := strings.TrimRight(strings.TrimSpace(issuerURL), "/") + discoveryPath
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(discoveryURL)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to load OIDC discovery document from %s", discoveryURL)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("Failed to load OIDC discovery document from %s", discoveryURL)
-	}
-	var doc discoveryDocument
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to read OIDC discovery document from %s", discoveryURL)
-	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("Failed to parse OIDC discovery document from %s", discoveryURL)
-	}
-	return &doc, nil
-}
-
-var (
-	clientInvalidRe = regexp.MustCompile(`(?i)client.*(invalid|failed|mismatch)`)
-	grantCodeRe     = regexp.MustCompile(`(?i)grant|code`)
-)
-
-// probeClientSecret exchanges a fake authorization code so the token endpoint
-// validates the client credentials without consuming a real code.
-func probeClientSecret(tokenEndpoint, clientID, clientSecret, redirectURI string) (*probeOutcome, error) {
-	if clientSecret == "" {
-		return &probeOutcome{
-			tested:  false,
-			valid:   nil,
-			message: "No client secret was provided, so secret validation was skipped.",
-		}, nil
-	}
-	if tokenEndpoint == "" {
-		return &probeOutcome{
-			tested:  true,
-			valid:   nil,
-			message: "Discovery document did not include a token endpoint.",
-		}, nil
-	}
-
-	form := url.Values{}
-	form.Set("grant_type", "authorization_code")
-	form.Set("client_id", clientID)
-	form.Set("client_secret", clientSecret)
-	form.Set("code", testCode)
-	form.Set("redirect_uri", redirectURI)
-	form.Set("code_verifier", testCodeVerifier)
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.PostForm(tokenEndpoint, form)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var data map[string]any
-	_ = json.Unmarshal(mustRead(resp), &data)
-
-	errorCode := strings.ToLower(handlerutil.GetString(data, "error"))
-	errorDescription := firstNonEmpty(handlerutil.GetString(data, "error_description"), handlerutil.GetString(data, "error"))
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return &probeOutcome{
-			tested:  true,
-			valid:   true,
-			message: "Client secret was accepted by the token endpoint.",
-		}, nil
-	}
-	switch {
-	case errorCode == "invalid_client" || errorCode == "unauthorized_client" || clientInvalidRe.MatchString(errorDescription):
-		message := errorDescription
-		if message == "" {
-			message = "Client secret is not valid."
-		}
-		return &probeOutcome{tested: true, valid: false, message: message}, nil
-	case errorCode == "invalid_grant" || errorCode == "invalid_code" || grantCodeRe.MatchString(errorDescription):
-		return &probeOutcome{
-			tested:  true,
-			valid:   true,
-			message: "Client secret was accepted; the token exchange failed only because the test authorization code is invalid.",
-		}, nil
-	}
-
-	message := errorDescription
-	if message == "" {
-		message = fmt.Sprintf("Token endpoint responded with %d", resp.StatusCode)
-	}
-	return &probeOutcome{tested: true, valid: nil, message: message}, nil
-}
-
 // validCertificate accepts a PEM block or raw base64 DER and reports whether it
 // parses as an X.509 certificate.
 func validCertificate(cert string) bool {
@@ -357,15 +169,6 @@ func decodeJSONBody(r *http.Request, dst any) {
 		return
 	}
 	_ = json.Unmarshal(body, dst)
-}
-
-// mustRead returns the raw response body bytes, empty on failure.
-func mustRead(resp *http.Response) []byte {
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil
-	}
-	return body
 }
 
 // publicOrigin resolves the externally visible origin, honoring BASE_URL and

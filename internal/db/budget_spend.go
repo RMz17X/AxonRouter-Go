@@ -53,7 +53,7 @@ func (r *Repo) SpendForKeySince(ctx context.Context, rawKey, since string) (budg
 		args = append(args, since)
 	}
 	var s budget.Spend
-	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&s.Micros, &s.Tokens); err != nil {
+	if err := r.QueryRowContext(ctx, query, args...).Scan(&s.Micros, &s.Tokens); err != nil {
 		return budget.Spend{}, fmt.Errorf("budget spend for key: %w", err)
 	}
 	return s, nil

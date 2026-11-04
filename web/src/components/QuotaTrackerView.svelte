@@ -1277,7 +1277,7 @@
         {@const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility)}
 
         <div
-          class="flex min-w-0 flex-col overflow-hidden rounded-[14px] border border-border-subtle bg-surface shadow-[var(--shadow-soft)] {isActive
+          class="flex min-w-0 flex-col overflow-hidden rounded-brand-lg border border-border-subtle bg-surface shadow-[var(--shadow-soft)] {isActive
             ? ''
             : 'opacity-60'}"
         >
@@ -1636,11 +1636,11 @@
 {#if resetCreditConn}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+      class="absolute inset-0 bg-black/50"
       onclick={closeResetCredits}
       role="presentation"
     ></div>
-    <div class="relative w-full max-w-md bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] p-6">
+    <div class="relative w-full max-w-md bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] p-6">
       <div class="flex items-center justify-between pb-3 border-b border-border-subtle mb-4">
         <h2 class="text-lg font-semibold text-text-main">Redeem a reset credit</h2>
         <button
@@ -1772,11 +1772,11 @@
 {#if glmResetCardConn}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
+      class="absolute inset-0 bg-black/50"
       onclick={closeGlmResetCards}
       role="presentation"
     ></div>
-    <div class="relative w-full max-w-md bg-surface border border-border-subtle rounded-[14px] shadow-[var(--shadow-elev)] p-6">
+    <div class="relative w-full max-w-md bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] p-6">
       <div class="flex items-center justify-between pb-3 border-b border-border-subtle mb-4">
         <h2 class="text-lg font-semibold text-text-main">Redeem a GLM reset card</h2>
         <button

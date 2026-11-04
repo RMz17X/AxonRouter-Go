@@ -72,7 +72,7 @@
         Local Mode & Gateway Configuration
       </h1>
       <p class="font-body text-xs sm:text-sm text-text-muted max-w-2xl leading-relaxed">
-        Manage persistent SQLite state, master auth credentials, and load routing algorithms.
+        Manage persistent PostgreSQL state, master auth credentials, and load routing algorithms.
       </p>
     </div>
 
@@ -107,10 +107,10 @@
         </div>
 
         <div class="p-3 rounded-lg bg-bg border border-border space-y-1 font-code text-xs">
-          <div class="text-[10px] text-text-muted uppercase">Default Database Location</div>
-          <div class="text-info font-semibold">~/.9router/db/data.sqlite</div>
-          <div class="text-[10px] text-text-subtle pt-1">SQLite WAL • Configurable with DB_PATH or DATA_DIR</div>
-          <div class="text-[10px] text-text-subtle pt-1">No automatic versioned schema migration; initialize a fresh database from a compatible upstream schema.</div>
+          <div class="text-[10px] text-text-muted uppercase">Database</div>
+          <div class="text-info font-semibold">PostgreSQL — configured with DATABASE_URL</div>
+          <div class="text-[10px] text-text-subtle pt-1">Non-database state (uploads, CLI tokens, tunnel state) lives in DATA_DIR</div>
+          <div class="text-[10px] text-text-subtle pt-1">The schema bootstrap is additive and runs on every boot; a fresh empty database initializes itself.</div>
         </div>
       </div>
 

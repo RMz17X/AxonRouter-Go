@@ -45,7 +45,7 @@ func (r *Repo) CreatePlan(p Plan) error {
 		return fmt.Errorf("plans: create: nil repo")
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := r.db.Exec( //nolint:noctx
+	_, err := r.Exec( //nolint:noctx
 		`INSERT INTO `+planTable+` (id, tenant_id, name, description, limit_micros, limit_tokens, rpm_limit, tpm_limit, concurrency_limit, period, alert_pct, hard_cutoff, allowed_models, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ID, p.TenantID, p.Name, p.Description, p.LimitMicros, p.LimitTokens,
@@ -95,18 +95,14 @@ func (r *Repo) plansTableMissing() (bool, error) {
 	if r == nil || r.db == nil {
 		return true, nil
 	}
-	var name string
-	err := r.db.QueryRow( //nolint:noctx
-		`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`,
-		planTable,
-	).Scan(&name)
-	if errors.Is(err, sql.ErrNoRows) {
-		return true, nil
-	}
+	// The catalog probe is dialect-branched inside tableExistsOnDB
+	// (to_regclass); the contract
+	// here is unchanged: a failure to answer is an error, not an absence.
+	exists, err := tableExistsOnDB(r.db, planTable)
 	if err != nil {
 		return false, err
 	}
-	return name != planTable, nil
+	return !exists, nil
 }
 
 // classifyPlanReadError turns a failed plan read into either ErrNoPlansTable
@@ -131,7 +127,7 @@ func (r *Repo) GetPlan(id string) (Plan, error) {
 	if r == nil || r.db == nil || id == "" {
 		return Plan{}, fmt.Errorf("plans: get: nil repo or empty id")
 	}
-	row := r.db.QueryRow( //nolint:noctx
+	row := r.QueryRow( //nolint:noctx
 		`SELECT `+planSelectCols+` FROM `+planTable+` WHERE id = ?`, id,
 	)
 	plan, err := scanPlanRow(row)
@@ -146,7 +142,7 @@ func (r *Repo) ListPlans(tenantID string) ([]Plan, error) {
 	if r == nil || r.db == nil {
 		return nil, fmt.Errorf("plans: list: nil repo")
 	}
-	rows, err := r.db.Query( //nolint:noctx
+	rows, err := r.Query( //nolint:noctx
 		`SELECT `+planSelectCols+` FROM `+planTable+` WHERE tenant_id = ? ORDER BY created_at DESC`,
 		tenantID,
 	)
@@ -172,7 +168,7 @@ func (r *Repo) SetApiKeyPlan(keyID, planID string) error {
 	if r == nil || r.db == nil || keyID == "" {
 		return fmt.Errorf("plans: set for key: nil repo or empty key id")
 	}
-	_, err := r.db.Exec(`UPDATE apiKeys SET planId = ? WHERE id = ?`, planID, keyID) //nolint:noctx
+	_, err := r.Exec(`UPDATE apiKeys SET planId = ? WHERE id = ?`, planID, keyID) //nolint:noctx
 	if err != nil {
 		return fmt.Errorf("plans: set for key %s: %w", keyID, err)
 	}
@@ -184,7 +180,7 @@ func (r *Repo) UpdatePlan(p Plan) error {
 	if r == nil || r.db == nil || p.ID == "" {
 		return fmt.Errorf("plans: update: nil repo or empty id")
 	}
-	res, err := r.db.Exec( //nolint:noctx
+	res, err := r.Exec( //nolint:noctx
 		`UPDATE `+planTable+` SET name = ?, description = ?, limit_micros = ?, limit_tokens = ?, rpm_limit = ?, tpm_limit = ?, concurrency_limit = ?, period = ?, alert_pct = ?, hard_cutoff = ?, allowed_models = ?, updated_at = ? WHERE id = ?`,
 		p.Name, p.Description, p.LimitMicros, p.LimitTokens,
 		p.RPMLimit, p.TPMLimit, p.ConcurrencyLimit, p.Period,
@@ -206,7 +202,7 @@ func (r *Repo) DeletePlan(id string) error {
 	if r == nil || r.db == nil || id == "" {
 		return fmt.Errorf("plans: delete: nil repo or empty id")
 	}
-	_, err := r.db.Exec(`DELETE FROM `+planTable+` WHERE id = ?`, id) //nolint:noctx
+	_, err := r.Exec(`DELETE FROM `+planTable+` WHERE id = ?`, id) //nolint:noctx
 	if err != nil {
 		return fmt.Errorf("plans: delete: %w", err)
 	}
@@ -219,7 +215,7 @@ func (r *Repo) CountPlanKeys(planID string) (int, error) {
 		return 0, fmt.Errorf("plans: count keys: nil repo or empty id")
 	}
 	var n int
-	if err := r.db.QueryRow( //nolint:noctx
+	if err := r.QueryRow( //nolint:noctx
 		`SELECT COUNT(*) FROM apiKeys WHERE planId = ?`, planID,
 	).Scan(&n); err != nil {
 		return 0, fmt.Errorf("plans: count keys: %w", err)
@@ -254,7 +250,7 @@ func (r *Repo) GetPlansForKeys(ids []string) (map[string]Plan, error) {
 	query := `SELECT k.id, ` + planSelectColsPrefixed() +
 		` FROM apiKeys k JOIN ` + planTable + ` p ON k.planId = p.id WHERE k.id IN (` +
 		strings.Join(placeholders, ",") + `)`
-	rows, err := r.db.Query(query, args...) //nolint:noctx
+	rows, err := r.Query(query, args...) //nolint:noctx
 	if err != nil {
 		return nil, r.classifyPlanReadError(fmt.Errorf("plans: get for keys: %w", err))
 	}
@@ -278,15 +274,8 @@ func (r *Repo) HasPlansTable() bool {
 	if r == nil || r.db == nil {
 		return false
 	}
-	var name string
-	err := r.db.QueryRow( //nolint:noctx
-		`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`,
-		planTable,
-	).Scan(&name)
-	if err == sql.ErrNoRows {
-		return false
-	}
-	return err == nil && name == planTable
+	exists, err := tableExistsOnDB(r.db, planTable)
+	return err == nil && exists
 }
 
 // planSelectColsPrefixed is the plan column list qualified with the p alias
@@ -379,7 +368,7 @@ func splitPlanModels(s string) []string {
 	return out
 }
 
-// boolToInt converts a bool to 0/1 for SQLite INTEGER columns.
+// boolToInt converts a bool to 0/1 for INTEGER columns.
 func boolToInt(b bool) int {
 	if b {
 		return 1

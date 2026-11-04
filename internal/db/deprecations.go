@@ -1,8 +1,8 @@
 package db
 
 import (
-	json "encoding/json/v2"
 	"database/sql"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"time"
@@ -45,7 +45,7 @@ func (r *Repo) RecordModelDeprecation(dep providers.ModelDeprecation) error {
 // GetModelDeprecation returns what is recorded for one provider/model pair.
 func (r *Repo) GetModelDeprecation(provider, model string) (*providers.ModelDeprecation, error) {
 	var raw string
-	err := r.db.QueryRow(
+	err := r.QueryRow(
 		"SELECT value FROM kv WHERE scope = ? AND key = ? LIMIT 1",
 		deprecationScope, providers.DeprecationKey(provider, model),
 	).Scan(&raw)
@@ -69,7 +69,7 @@ func (r *Repo) GetModelDeprecation(provider, model string) (*providers.ModelDepr
 // "<provider>/<model>" key so the dashboard can look up a whole model list in
 // one pass.
 func (r *Repo) ListModelDeprecations(provider string) (map[string]providers.ModelDeprecation, error) {
-	rows, err := r.db.Query(
+	rows, err := r.Query(
 		"SELECT key, value FROM kv WHERE scope = ? ORDER BY key", deprecationScope,
 	)
 	if err != nil {

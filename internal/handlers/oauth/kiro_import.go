@@ -285,12 +285,12 @@ func (h *OAuthHandler) saveKiroAPIKeyConnection(w http.ResponseWriter, connID, n
 	}
 	if h.Repo != nil && h.Repo.RawDB() != nil {
 		var existing string
-		err := h.Repo.RawDB().QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing)
+		err := h.Repo.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing)
 		if err == nil && existing != "" {
-			_, err = h.Repo.RawDB().Exec(
+			_, err = h.Repo.Exec(
 				"UPDATE providerConnections SET name = ?, data = ?, updatedAt = ? WHERE id = ?", name, string(dataBytes), now, connID)
 		} else {
-			_, err = h.Repo.RawDB().Exec(
+			_, err = h.Repo.Exec(
 				"INSERT INTO providerConnections (id, provider, authType, name, isActive, data, createdAt, updatedAt) VALUES (?, ?, 'api_key', ?, 1, ?, ?, ?)",
 				connID, "kiro", name, string(dataBytes), now, now)
 		}

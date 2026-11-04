@@ -175,7 +175,7 @@
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
-      class="absolute inset-0 bg-black/50 backdrop-blur-sm"
+      class="absolute inset-0 bg-black/50"
       onclick={dismiss}
       onkeydown={(e) => e.key === 'Escape' && dismiss()}
       role="button"
@@ -298,7 +298,7 @@
 
 <!-- Disconnected Overlay -->
 {#if isDisconnected}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
     <div class="text-center p-8 bg-surface border border-border-subtle rounded-2xl shadow-2xl max-w-sm w-full animate-in fade-in">
       <div class="flex items-center justify-center size-14 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
         <span class="material-symbols-outlined text-[28px]">power_off</span>

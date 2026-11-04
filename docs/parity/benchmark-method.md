@@ -1,5 +1,8 @@
 # Benchmark method — G25a
 
+> **Status (2026-11-05): historical method note** from the upstream-parity track (see `../PARITY-REMAINING.md`'s banner). The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 Tài liệu này ghi **cách đo**, không ghi kết quả. Số liệu thuộc
 `docs/parity/delivery-ledger.md`.
 

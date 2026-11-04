@@ -101,7 +101,7 @@ func (r *Repo) connectionOAuthState(connID string) (time.Time, int) {
 		return time.Time{}, 0
 	}
 	var rawData string
-	if err := r.db.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&rawData); err != nil {
+	if err := r.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&rawData); err != nil {
 		return time.Time{}, 0
 	}
 	raw, ok := parseConnData(rawData)
@@ -153,12 +153,13 @@ func (r *Repo) RecordConnectionOAuthFailure(connID string, status int, errText s
 	if err != nil {
 		return time.Time{}, 0, fmt.Errorf("marshal last error for %s: %w", connID, err)
 	}
-	_, err = r.db.Exec(
+	_, err = r.Exec(
 		`UPDATE providerConnections
-		 SET data = json_set(data,
-		   '$.oauthLockedUntil', ?,
-		   '$.oauthFailureCount', ?,
-		   '$.lastError', json(?)),
+		 SET data = `+jsonSetExpr("data",
+			jsonSetPairAt(jsonStringParam(), "oauthLockedUntil"),
+			jsonSetPairAt(jsonIntParam(), "oauthFailureCount"),
+			jsonSetPairAt(jsonDocParam(), "lastError"),
+		)+`,
 		     updatedAt = ?
 		 WHERE id = ?`,
 		until.UTC().Format(time.RFC3339), failures, string(lastError), stamp, connID,
@@ -179,11 +180,12 @@ func (r *Repo) ClearConnectionOAuthLock(connID string) error {
 		return nil
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE providerConnections
-		 SET data = json_set(data,
-		   '$.oauthLockedUntil', NULL,
-		   '$.oauthFailureCount', 0),
+		 SET data = `+jsonSetExpr("data",
+			jsonSetPairAt(jsonNullSQLValue(), "oauthLockedUntil"),
+			jsonSetPairAt(jsonIntLiteral(0), "oauthFailureCount"),
+		)+`,
 		     updatedAt = ?
 		 WHERE id = ?`,
 		now, connID,

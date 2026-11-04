@@ -37,6 +37,14 @@ export interface RecentRequestItem {
   provider?: string
   requestedModel?: string
   comboName?: string
+  /** Gateway route the request arrived on; the Realtime table derives capability from it. */
+  endpoint?: string
+  /** Upstream credential, always in masked form (never the raw key). */
+  apiKey?: string
+  /** Connection/account display value, resolved like the request-details rows. */
+  account?: string
+  /** Whether the client asked for a streamed response; only set on live pushes that know it. */
+  isStream?: boolean
   /** How long the request took, for completed requests only. */
   latencyMs?: number
   promptTokens?: number
@@ -141,6 +149,9 @@ export interface StatsData {
   recentRequests?: RecentRequestItem[]
   errorProvider?: string
   pending?: unknown
+  /** Request Stream series: per-minute counts over the last 30 minutes,
+   * oldest first, always 30 entries regardless of the selected period. */
+  last10Minutes?: { timestamp: string; requests: number }[]
 }
 
 export const PERIODS: { value: PeriodPreset; label: string }[] = [

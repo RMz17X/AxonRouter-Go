@@ -63,7 +63,7 @@
 {#if isOpen}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="fixed inset-0 bg-black/40 backdrop-blur-sm"
+      class="fixed inset-0 bg-black/40"
       role="button"
       tabindex="-1"
       aria-label="Close modal"

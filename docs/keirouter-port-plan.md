@@ -1,5 +1,8 @@
 # KeiRouter Feature Port Plan — 9router-go
 
+> **Status (2026-11-05): historical plan.** Kept as the design record of the KeiRouter port evaluation; not a current roadmap. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 > **Dibuat**: 2026-10-07
 > **Sumber**: KeiRouter `https://github.com/mydisha/keirouter` `backend/internal/*` (41 paket), `store/migrations/*` (MIT)
 > **Target**: `https://github.com/luqman-v1/9router-go` (Go 1.27 + Chi + Uber Fx + Svelte 5, SQLite WAL, single-binary)

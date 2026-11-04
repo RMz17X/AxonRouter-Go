@@ -691,7 +691,7 @@ func (h *MediaHandler) HandleVideoGenerations(w http.ResponseWriter, r *http.Req
 		return
 	}
 	defer r.Body.Close()
-	h.forwardMediaRequest(w, r, body, "sora", "/v1/videos/generations")
+	h.handleVideoCreate(w, r, body, "generations", "/v1/videos/generations")
 }
 
 // HandleVideoEdits handles /v1/videos/edits.
@@ -702,7 +702,7 @@ func (h *MediaHandler) HandleVideoEdits(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer r.Body.Close()
-	h.forwardMediaRequest(w, r, body, "sora", "/v1/videos/edits")
+	h.handleVideoCreate(w, r, body, "edits", "/v1/videos/edits")
 }
 
 // HandleVideoExtensions handles /v1/videos/extensions.
@@ -713,20 +713,7 @@ func (h *MediaHandler) HandleVideoExtensions(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer r.Body.Close()
-	h.forwardMediaRequest(w, r, body, "sora", "/v1/videos/extensions")
-}
-
-// HandleVideoGet handles GET /v1/videos/{id}.
-func (h *MediaHandler) HandleVideoGet(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	if strings.Contains(id, "..") || strings.Contains(id, "/") || strings.Contains(id, "\\") {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid video job id")
-		return
-	}
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"id":     id,
-		"status": "completed",
-	})
+	h.handleVideoCreate(w, r, body, "extensions", "/v1/videos/extensions")
 }
 
 // HandleSearch handles /v1/search.

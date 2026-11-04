@@ -38,7 +38,7 @@ func resolveComboStrategy(combo *models.Combo, s *SettingsData) {
 // GetComboByName retrieves a combo configuration by its name.
 func (r *Repo) GetComboByName(name string) (*models.Combo, error) {
 	var combo models.Combo
-	err := scanCombo(r.db.QueryRow(
+	err := scanCombo(r.QueryRow(
 		"SELECT "+comboColumns+" FROM combos WHERE name = ? LIMIT 1",
 		name,
 	).Scan, &combo)
@@ -57,7 +57,7 @@ func (r *Repo) GetComboByName(name string) (*models.Combo, error) {
 // GetComboById retrieves a combo configuration by its ID.
 func (r *Repo) GetComboById(id string) (*models.Combo, error) {
 	var combo models.Combo
-	err := scanCombo(r.db.QueryRow(
+	err := scanCombo(r.QueryRow(
 		"SELECT "+comboColumns+" FROM combos WHERE id = ? LIMIT 1",
 		id,
 	).Scan, &combo)
@@ -75,7 +75,7 @@ func (r *Repo) GetComboById(id string) (*models.Combo, error) {
 
 // GetCombos retrieves all combos from the database.
 func (r *Repo) GetCombos() ([]*models.Combo, error) {
-	rows, err := r.db.Query("SELECT " + comboColumns + " FROM combos ORDER BY createdAt ASC")
+	rows, err := r.Query("SELECT " + comboColumns + " FROM combos ORDER BY createdAt ASC")
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +103,14 @@ func (r *Repo) GetCombos() ([]*models.Combo, error) {
 	// read can never hold two pooled connections at once.
 	for _, combo := range combos {
 		resolveComboStrategy(combo, settings)
+	}
+
+	// A stored reorder (POST /api/combos/reorder) re-sorts the list: ids in
+	// the stored order first, everything else in createdAt order behind them.
+	// The read follows the settings precedent above — a missing or unreadable
+	// order leaves the natural order untouched rather than failing the list.
+	if orderIDs, err := r.GetComboOrderIDs(); err == nil && len(orderIDs) > 0 {
+		combos = OrderCombosByIDs(combos, orderIDs)
 	}
 	return combos, nil
 }

@@ -20,8 +20,8 @@ type ProxyPool struct {
 	Name        string   `json:"name"`
 	IsActive    bool     `json:"isActive"`
 	URLs        []string `json:"urls"`
-	Strategy    string   `json:"strategy"` // "round-robin" or "random"
-	Type        string   `json:"type"`     // "http", "vercel", "cloudflare", "deno", "netlify"
+	Strategy    string   `json:"strategy"`        // "round-robin" or "random"
+	Type        string   `json:"type"`            // "http", "vercel", "cloudflare", "deno", "netlify"
 	Group       string   `json:"group,omitempty"` // custom group label or tag
 	NoProxy     string   `json:"noProxy"`
 	StrictProxy bool     `json:"strictProxy"`
@@ -92,7 +92,7 @@ func (r *Repo) invalidateActivePoolIDs() {
 func (r *Repo) GetProxyPool(poolID string) (*ProxyPool, error) {
 	var data string
 	var isActive int
-	err := r.db.QueryRow(
+	err := r.QueryRow(
 		`SELECT data, isActive FROM proxyPools WHERE id = ?`, poolID,
 	).Scan(&data, &isActive)
 	if err != nil {
@@ -185,7 +185,7 @@ func (r *Repo) InsertProxyPool(d ProxyPoolData) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal pool data: %w", err)
 	}
-	_, err = r.db.Exec(
+	_, err = r.Exec(
 		`INSERT INTO proxyPools (id, isActive, testStatus, data, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
 		id, 1, "unknown", string(dataBytes), now, now,
 	)
@@ -227,7 +227,7 @@ func randomID() string {
 // that has simply never been probed; the missing value reads as "" here. Any
 // other scan failure still aborts: that is a broken read, not an absent value.
 func (r *Repo) ListProxyPools() ([]map[string]any, error) {
-	rows, err := r.db.Query(`SELECT id, isActive, testStatus, data, createdAt, updatedAt FROM proxyPools ORDER BY createdAt DESC`)
+	rows, err := r.Query(`SELECT id, isActive, testStatus, data, createdAt, updatedAt FROM proxyPools ORDER BY createdAt DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +285,7 @@ func (r *Repo) ActivePoolIDs() []string {
 // filter runs in SQL and the payload decodes into a typed struct, so a database
 // holding many pools does not pay for rows rotation can never pick.
 func (r *Repo) queryActivePoolIDs() []string {
-	rows, err := r.db.Query(`SELECT id, data FROM proxyPools WHERE isActive = 1 ORDER BY createdAt`)
+	rows, err := r.Query(`SELECT id, data FROM proxyPools WHERE isActive = 1 ORDER BY createdAt`)
 	if err != nil {
 		return nil
 	}
@@ -341,7 +341,7 @@ func IsProxyPoolRotation(s string) bool {
 
 // DeleteProxyPool removes a proxy pool by id.
 func (r *Repo) DeleteProxyPool(id string) error {
-	_, err := r.db.Exec(`DELETE FROM proxyPools WHERE id = ?`, id)
+	_, err := r.Exec(`DELETE FROM proxyPools WHERE id = ?`, id)
 	proxyPoolCache.Delete(id)
 	r.invalidateActivePoolIDs()
 	return err
@@ -352,7 +352,7 @@ func (r *Repo) UpdateProxyPool(id string, updates map[string]any) error {
 	var dataStr string
 	var isActive int
 	var testStatus string
-	err := r.db.QueryRow(`SELECT data, isActive, testStatus FROM proxyPools WHERE id = ?`, id).Scan(&dataStr, &isActive, &testStatus)
+	err := r.QueryRow(`SELECT data, isActive, testStatus FROM proxyPools WHERE id = ?`, id).Scan(&dataStr, &isActive, &testStatus)
 	if err != nil {
 		return err
 	}
@@ -380,7 +380,7 @@ func (r *Repo) UpdateProxyPool(id string, updates map[string]any) error {
 	}
 	updatedBytes, _ := json.Marshal(existing)
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err = r.db.Exec(`UPDATE proxyPools SET data = ?, isActive = ?, testStatus = ?, updatedAt = ? WHERE id = ?`,
+	_, err = r.Exec(`UPDATE proxyPools SET data = ?, isActive = ?, testStatus = ?, updatedAt = ? WHERE id = ?`,
 		string(updatedBytes), isActive, testStatus, now, id)
 	proxyPoolCache.Delete(id)
 	r.invalidateActivePoolIDs()
@@ -392,7 +392,7 @@ func (r *Repo) SetProxyPoolStatus(id string, status string, latencyMs int64) err
 	var dataStr string
 	var isActive int
 	var currentStatus string
-	err := r.db.QueryRow(`SELECT data, isActive, testStatus FROM proxyPools WHERE id = ?`, id).Scan(&dataStr, &isActive, &currentStatus)
+	err := r.QueryRow(`SELECT data, isActive, testStatus FROM proxyPools WHERE id = ?`, id).Scan(&dataStr, &isActive, &currentStatus)
 	if err != nil {
 		return err
 	}
@@ -405,7 +405,7 @@ func (r *Repo) SetProxyPoolStatus(id string, status string, latencyMs int64) err
 	existing["lastTestedAt"] = now
 	existing["latency"] = latencyMs
 	updatedBytes, _ := json.Marshal(existing)
-	_, err = r.db.Exec(`UPDATE proxyPools SET data = ?, testStatus = ?, updatedAt = ? WHERE id = ?`,
+	_, err = r.Exec(`UPDATE proxyPools SET data = ?, testStatus = ?, updatedAt = ? WHERE id = ?`,
 		string(updatedBytes), status, now, id)
 	proxyPoolCache.Delete(id)
 	return err

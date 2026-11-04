@@ -93,24 +93,17 @@ func SchemaStatements() []string {
 }
 
 // CreateTables creates all tables from SchemaStatements in the given database,
-// then creates the Go-only tables and applies the Go-only additive columns, so
-// a fixture matches the shape of a real database. Without this, queries that read
-// the round-robin bookkeeping columns, the KeiRouter per-key columns, or the
-// ledger carryover tables fail in tests while working in production.
+// then runs the core schema bootstrap, so a fixture matches the shape of a
+// real database. Without this, queries that read the round-robin bookkeeping
+// columns, the KeiRouter per-key columns, or the ledger carryover tables fail
+// in tests while working in production. The bootstrap is the same one
+// production boots with (internal/db's EnsureCoreSchema); the per-feature
+// Ensure* helpers it replaced are gone with the file-backend schema.
 func CreateTables(database *sql.DB) error {
 	for _, stmt := range SchemaStatements() {
 		if _, err := database.Exec(stmt); err != nil {
 			return fmt.Errorf("create table: %w\nSQL: %s", err, stmt)
 		}
 	}
-	if err := db.EnsureKeiRouterTables(database); err != nil {
-		return fmt.Errorf("create keirouter tables: %w", err)
-	}
-	// The ledger carryover tables are Go-only too, and a fixture without them
-	// fails on the first token-budget read rather than on the query shape the
-	// test is about (usageHistory versus providerLedgerCarryover).
-	if err := db.EnsureLedgerTables(database); err != nil {
-		return fmt.Errorf("create ledger tables: %w", err)
-	}
-	return db.EnsureAdditiveColumns(database)
+	return db.EnsureCoreSchema(database)
 }

@@ -22,7 +22,7 @@ Shows where your data lives and lets you move it in and out.
 
 | Field | What it is |
 |---|---|
-| Database location | Shown for reference: `~/.9router/db/data.sqlite`. Change it with `DATA_DIR` or `DB_PATH` — see [CLI](cli.html) |
+| Database | PostgreSQL, configured with `DATABASE_URL` on the server — see [Database](database.html). `DATA_DIR` holds non-database state only |
 
 Two buttons:
 
@@ -32,7 +32,7 @@ Two buttons:
 
 > A backup is a copy of your dashboard **data**, not a byte-for-byte copy of the
 > live database file. It restores your settings, connections, and keys — it is
-> not a substitute for backing up the SQLite file itself. See
+> not a substitute for a database backup (`pg_dump`). See
 > [Database](database.html).
 
 ---
@@ -118,10 +118,10 @@ Four figures, read live:
 
 | Figure | Meaning |
 |---|---|
-| Database File Size | Size of the SQLite file on disk |
+| Database Size | Size of the PostgreSQL database |
 | Request Details | How many diagnostic rows are stored, and since when |
 | Usage Ledger | How many usage rows are stored |
-| Reclaimable | Space a VACUUM would give back |
+| Reclaimable | Legacy figure; on PostgreSQL the vacuum action is a no-op and autovacuum manages space |
 
 If the numbers show `—`, the stats read failed — the card says so and offers a
 **Retry** button rather than hiding the actions.

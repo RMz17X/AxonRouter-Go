@@ -398,7 +398,7 @@
   <div class="min-h-screen flex items-center justify-center bg-bg p-4">
     <div class="text-center">
       <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-      <p class="text-text-muted mt-4">Loading...</p>
+      <p class="mt-4 font-body text-sm text-text-muted">Loading...</p>
     </div>
   </div>
 {:else if (requireLogin && !isAuthenticatedState) || activeTab === 'login'}
@@ -452,7 +452,7 @@
     <!-- Mobile sidebar drawer backdrop -->
     {#if isMobileMenuOpen}
       <div
-        class="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+        class="fixed inset-0 z-40 bg-black/60 lg:hidden"
         onclick={() => (isMobileMenuOpen = false)}
         onkeydown={(e) => e.key === 'Escape' && (isMobileMenuOpen = false)}
         role="button"
@@ -516,8 +516,6 @@
 
     <!-- Main Viewport (TopBar + Scrollable Canvas) -->
     <div class="flex-1 flex flex-col min-w-0 h-full relative isolate">
-      <!-- Faint grid background (upstream landing-grid) -->
-      <div class="landing-grid absolute inset-0 pointer-events-none -z-10" aria-hidden="true"></div>
 
       <TopBar
         {activeTab}
@@ -533,12 +531,12 @@
         onOpenSearch={() => (isPaletteOpen = true)}
       />
 
-      <main class="flex-1 overflow-y-auto custom-scrollbar p-6 lg:p-10">
-        <div class="max-w-7xl mx-auto">
+      <main class="flex-1 overflow-y-auto custom-scrollbar p-3">
+        <div class="w-full">
           {#if isLoading}
             <div class="flex flex-col items-center justify-center h-[70vh] gap-3 text-text-muted">
-              <Loader2 class="w-7 h-7 animate-spin text-brand-500" />
-              <span class="font-code text-xs">Connecting to 9router-go Localhost Gateway (:20130)...</span>
+              <Loader2 class="w-7 h-7 animate-spin text-primary" />
+              <span class="font-body text-sm text-text-muted">Connecting to 9router-go Localhost Gateway (:20130)...</span>
             </div>
           {:else}
             {#if activeTab === 'endpoint'}

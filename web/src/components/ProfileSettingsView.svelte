@@ -276,11 +276,7 @@
   let showPasswordFields = $state(false)
 
   // SSO State
-  let authMode = $state<'password' | 'oidc' | 'saml'>('password')
-  let oidcIssuerUrl = $state('')
-  let oidcClientId = $state('')
-  let oidcScopes = $state('openid profile email')
-  let oidcLoginLabel = $state('Sign in with OIDC')
+  let authMode = $state<'password' | 'saml'>('password')
 
   let samlEntryPoint = $state('')
   let samlIssuer = $state('')
@@ -323,11 +319,7 @@
       if (typeof settings.systemPromptSuffix === 'string') systemPromptSuffix = settings.systemPromptSuffix
 
       // SSO
-      if (settings.authMode === 'oidc' || settings.authMode === 'saml') authMode = settings.authMode
-      if (typeof settings.oidcIssuerUrl === 'string') oidcIssuerUrl = settings.oidcIssuerUrl
-      if (typeof settings.oidcClientId === 'string') oidcClientId = settings.oidcClientId
-      if (typeof settings.oidcScopes === 'string') oidcScopes = settings.oidcScopes
-      if (typeof settings.oidcLoginLabel === 'string') oidcLoginLabel = settings.oidcLoginLabel
+      if (settings.authMode === 'saml') authMode = settings.authMode
 
       if (typeof settings.samlEntryPoint === 'string') samlEntryPoint = settings.samlEntryPoint
       if (typeof settings.samlIssuer === 'string') samlIssuer = settings.samlIssuer
@@ -362,11 +354,7 @@
         if (typeof s.appName === 'string') appName = s.appName
         if (typeof s.appLogoUrl === 'string') appLogoUrl = s.appLogoUrl
 
-        if (s.authMode === 'oidc' || s.authMode === 'saml') authMode = s.authMode
-        if (s.oidcIssuerUrl) oidcIssuerUrl = String(s.oidcIssuerUrl)
-        if (s.oidcClientId) oidcClientId = String(s.oidcClientId)
-        if (s.oidcScopes) oidcScopes = String(s.oidcScopes)
-        if (s.oidcLoginLabel) oidcLoginLabel = String(s.oidcLoginLabel)
+        if (s.authMode === 'saml') authMode = s.authMode
 
         if (s.samlEntryPoint) samlEntryPoint = String(s.samlEntryPoint)
         if (s.samlIssuer) samlIssuer = String(s.samlIssuer)
@@ -535,10 +523,6 @@
         appName: appName.trim(),
         appLogoUrl: appLogoUrl.trim(),
         authMode,
-        oidcIssuerUrl,
-        oidcClientId,
-        oidcScopes,
-        oidcLoginLabel,
         navVisibility: { hidden: hiddenNav, order: navOrder },
         samlEntryPoint,
         samlIssuer,
@@ -747,7 +731,7 @@
     }
   }
   async function handleVacuum() {
-    if (!confirm('Compact SQLite database (VACUUM)? This will return unallocated pages back to disk.')) return
+    if (!confirm('Run database vacuum? On PostgreSQL this endpoint is a no-op — the server\'s autovacuum manages space.')) return
     try {
       isVacuuming = true
       await api.vacuumDatabase()
@@ -828,19 +812,19 @@
       <div class="space-y-2 text-xs">
         <div class="p-3 rounded-xl bg-bg border border-border space-y-1">
           <div class="text-[10px] text-text-subtle uppercase font-mono tracking-wider font-semibold">
-            Default Database Location
+            Database
           </div>
           <div class="font-mono text-xs text-text-main font-semibold">
-            ~/.9router/db/data.sqlite
+            PostgreSQL — configured with DATABASE_URL
           </div>
           <div class="text-[11px] text-text-muted pt-1">
-            The Go server opens the configured SQLite database in WAL mode. DB_PATH or DATA_DIR may select a different location.
+            The Go server stores everything in PostgreSQL. DATA_DIR holds non-database state only (uploads, CLI tokens, tunnel state, catalog cache).
           </div>
           <div class="text-[11px] text-text-subtle pt-1">
-            The native server does not run upstream's versioned schema migration. A new empty database must be initialized with a compatible upstream schema before use.
+            The schema bootstrap is additive and runs on every boot — a new empty PostgreSQL database initializes itself; there is no versioned migration to run. Full database backup is pg_dump (see DATABASE.md).
           </div>
           <div class="text-[11px] text-text-subtle pt-1">
-            Backups are dashboard-data payloads, not a byte-for-byte copy of the live SQLite file.
+            Backups here are dashboard-data payloads, not a byte-for-byte copy of the live database.
           </div>
         </div>
 
@@ -1005,45 +989,11 @@
             class="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs text-text-main focus:outline-none focus:border-brand-500"
           >
             <option value="password">Password Only</option>
-            <option value="oidc">OpenID Connect (OIDC)</option>
             <option value="saml">SAML 2.0 SSO</option>
           </select>
         </div>
 
-        {#if authMode === 'oidc'}
-          <div class="space-y-2 pt-2 border-t border-border/60">
-            <div class="space-y-1">
-              <label for="oidc-issuer" class="block font-semibold text-text-muted">Issuer URL</label>
-              <input
-                id="oidc-issuer"
-                type="text"
-                bind:value={oidcIssuerUrl}
-                placeholder="https://accounts.google.com or Okta URL"
-                class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main"
-              />
-            </div>
-            <div class="space-y-1">
-              <label for="oidc-client-id" class="block font-semibold text-text-muted">Client ID</label>
-              <input
-                id="oidc-client-id"
-                type="text"
-                bind:value={oidcClientId}
-                placeholder="client-id"
-                class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main"
-              />
-            </div>
-            <div class="space-y-1">
-              <label for="oidc-scopes" class="block font-semibold text-text-muted">Scopes</label>
-              <input
-                id="oidc-scopes"
-                type="text"
-                bind:value={oidcScopes}
-                placeholder="openid profile email"
-                class="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono text-text-main"
-              />
-            </div>
-          </div>
-        {:else if authMode === 'saml'}
+        {#if authMode === 'saml'}
           <div class="space-y-2 pt-2 border-t border-border/60">
             <div class="space-y-1">
               <label for="saml-entrypoint" class="block font-semibold text-text-muted">SAML EntryPoint (SSO URL)</label>
@@ -1297,7 +1247,7 @@
               disabled={isVacuuming}
               class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-xs text-brand-500 font-semibold transition cursor-pointer disabled:opacity-50"
             >
-              <span>{isVacuuming ? 'Compacting...' : 'Compact Database (VACUUM)'}</span>
+              <span>{isVacuuming ? 'Vacuuming...' : 'Vacuum Database'}</span>
             </button>
           </div>
         </div>
@@ -1572,7 +1522,7 @@
           <p class="text-xs text-text-main">Rates — one USD in each currency</p>
           <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {#each CURRENCY_CATALOG as option (option.code)}
-              <label class="flex items-center gap-2 rounded-[10px] border border-border-subtle px-2 py-1.5">
+              <label class="flex items-center gap-2 rounded-brand border border-border-subtle px-2 py-1.5">
                 <span class="w-9 text-[11px] font-semibold text-text-muted">{option.code}</span>
                 <input
                   type="number"
@@ -1900,7 +1850,7 @@
     {#if showSaveHint}
       <div
         role="status"
-        class="fixed bottom-5 right-5 z-40 flex items-center gap-3 rounded-[10px] border border-border bg-surface-2 px-4 py-3 shadow-[var(--shadow-elev)]"
+        class="fixed bottom-5 right-5 z-40 flex items-center gap-3 rounded-brand border border-border bg-surface-2 px-4 py-3 shadow-[var(--shadow-elev)]"
       >
         <span class="text-xs text-text-muted">Unsaved changes</span>
         <Button variant="primary" onclick={handleSaveAll} loading={isSavingSettings}>

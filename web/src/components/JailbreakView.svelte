@@ -966,12 +966,12 @@
   <!-- Summary strip: label above, number below, description last — the same
        reading order SecurityPanel uses, so the two pages scan identically. -->
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-    <div class="rounded-[14px] border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
+    <div class="rounded-brand-lg border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
       <div class="font-code text-[10px] uppercase tracking-wider text-text-subtle">Presets</div>
       <div class="mt-1 text-2xl font-semibold text-text-main">{presets.length}</div>
       <p class="mt-1 text-xs text-text-muted">Prompt presets in the library</p>
     </div>
-    <div class="rounded-[14px] border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
+    <div class="rounded-brand-lg border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
       <div class="font-code text-[10px] uppercase tracking-wider text-text-subtle">Bindings armed</div>
       <div class="mt-1 text-2xl font-semibold text-text-main">
         {Object.values(models).filter((c) => c.enabled).length}
@@ -979,7 +979,7 @@
       </div>
       <p class="mt-1 text-xs text-text-muted">Exact bindings currently injecting</p>
     </div>
-    <div class="rounded-[14px] border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
+    <div class="rounded-brand-lg border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
       <div class="font-code text-[10px] uppercase tracking-wider text-text-subtle">Injections</div>
       <div class="mt-1 text-2xl font-semibold text-text-main">
         {Object.values(presetUsage).reduce((a, b) => a + b, 0)}
@@ -1117,12 +1117,12 @@
           bind:value={presetSearch}
           placeholder="Filter presets…"
           aria-label="Filter presets"
-          class="min-w-[240px] flex-1 px-3 py-1.5 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-xs placeholder:text-text-subtle"
+          class="min-w-[240px] flex-1 px-3 py-1.5 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-xs placeholder:text-text-subtle"
         />
         <select
           bind:value={presetSort}
           aria-label="Sort presets"
-          class="px-2 py-1.5 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-xs outline-none"
+          class="px-2 py-1.5 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-xs outline-none"
         >
           <option value="name-asc">Name A→Z</option>
           <option value="name-desc">Name Z→A</option>
@@ -1134,7 +1134,7 @@
         <select
           bind:value={presetPageSize}
           aria-label="Rows per page"
-          class="px-2 py-1.5 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-xs outline-none"
+          class="px-2 py-1.5 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-xs outline-none"
         >
           <option value={10}>10 / page</option>
           <option value={20}>20 / page</option>
@@ -1311,12 +1311,12 @@
           bind:value={bindingSearch}
           placeholder="Filter bindings…"
           aria-label="Filter bindings"
-          class="min-w-[240px] flex-1 px-3 py-1.5 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-xs placeholder:text-text-subtle"
+          class="min-w-[240px] flex-1 px-3 py-1.5 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-xs placeholder:text-text-subtle"
         />
         <select
           bind:value={bindingPageSize}
           aria-label="Rows per page"
-          class="px-2 py-1.5 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-xs outline-none"
+          class="px-2 py-1.5 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-xs outline-none"
         >
           <option value={10}>10 / page</option>
           <option value={20}>20 / page</option>
@@ -1494,7 +1494,7 @@
           placeholder="providerx/deepseek-4-pro, or a combo name"
           aria-label="Model id to test"
           onkeydown={(e) => e.key === 'Enter' && runTestMatch()}
-          class="flex-1 min-w-[280px] px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-sm text-text-main font-code placeholder:text-text-subtle"
+          class="flex-1 min-w-[280px] px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-sm text-text-main font-code placeholder:text-text-subtle"
         />
         <Button variant="primary" size="md" onclick={runTestMatch} disabled={testMatchLoading}>
           {testMatchLoading ? 'Checking…' : 'Check'}
@@ -1503,7 +1503,7 @@
       {#if testMatchError}<p class="text-xs text-error">{testMatchError}</p>{/if}
       {#if testMatchResult}
         <div
-          class="p-3 rounded-[10px] border space-y-1.5 {testMatchResult.injected
+          class="p-3 rounded-brand border space-y-1.5 {testMatchResult.injected
             ? 'border-success/40 bg-success/5'
             : 'border-border bg-surface-2'}"
         >
@@ -1557,14 +1557,14 @@
             {:else if previewData}
               <div class="space-y-2">
                 {#if previewData.prompt}
-                  <div class="p-3 rounded-[10px] bg-surface-2 border border-border-subtle">
+                  <div class="p-3 rounded-brand bg-surface-2 border border-border-subtle">
                     <div class="text-[10px] font-semibold uppercase text-text-subtle mb-1">
                       Injected system prompt {previewData.presetName ? `· ${previewData.presetName}` : ''}
                     </div>
                     <pre class="text-xs text-text-main font-code whitespace-pre-wrap break-all max-h-40 overflow-y-auto">{previewData.prompt}</pre>
                   </div>
                 {/if}
-                <div class="p-3 rounded-[10px] bg-surface-2 border border-border-subtle">
+                <div class="p-3 rounded-brand bg-surface-2 border border-border-subtle">
                   <div class="text-[10px] font-semibold uppercase text-text-subtle mb-1">
                     Final messages array
                   </div>
@@ -1647,7 +1647,7 @@
           bind:value={presetForm.id}
           disabled={!!editingId}
           placeholder="expert-coder"
-          class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500 disabled:opacity-50"
+          class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500 disabled:opacity-50"
         />
         {#if editingId}
           <span class="text-[11px] text-text-subtle">
@@ -1661,7 +1661,7 @@
           type="text"
           bind:value={presetForm.name}
           placeholder="Expert Coder"
-          class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500"
+          class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500"
         />
       </label>
 
@@ -1672,7 +1672,7 @@
           <button
             type="button"
             onclick={() => (presetForm.mode = 'single')}
-            class="flex items-center justify-center gap-2 py-2 px-3 rounded-[10px] border text-xs font-medium transition-colors {presetForm.mode === 'single'
+            class="flex items-center justify-center gap-2 py-2 px-3 rounded-brand border text-xs font-medium transition-colors {presetForm.mode === 'single'
               ? 'border-brand-500 bg-brand-500/10 text-text-main font-semibold'
               : 'border-border-subtle bg-surface-2 text-text-muted hover:border-border hover:text-text-main'}"
           >
@@ -1682,7 +1682,7 @@
           <button
             type="button"
             onclick={() => (presetForm.mode = 'chat')}
-            class="flex items-center justify-center gap-2 py-2 px-3 rounded-[10px] border text-xs font-medium transition-colors {presetForm.mode === 'chat'
+            class="flex items-center justify-center gap-2 py-2 px-3 rounded-brand border text-xs font-medium transition-colors {presetForm.mode === 'chat'
               ? 'border-purple-500 bg-purple-500/10 text-purple-400 font-semibold'
               : 'border-border-subtle bg-surface-2 text-text-muted hover:border-border hover:text-text-main'}"
           >
@@ -1725,7 +1725,7 @@
             bind:value={presetForm.prompt}
             rows="6"
             placeholder="You are an expert assistant..."
-            class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm font-code outline-none focus:border-brand-500 resize-y"
+            class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-sm font-code outline-none focus:border-brand-500 resize-y"
           ></textarea>
           <button
             type="button"
@@ -1735,7 +1735,7 @@
             {promptPreviewOpen ? 'Hide preview' : 'Preview markdown'}
           </button>
           {#if promptPreviewOpen && presetForm.prompt.trim()}
-            <div class="mt-1 p-3 rounded-[10px] bg-surface-2 border border-border-subtle max-h-60 overflow-y-auto">
+            <div class="mt-1 p-3 rounded-brand bg-surface-2 border border-border-subtle max-h-60 overflow-y-auto">
               <div class="prose-jailbreak text-xs text-text-main leading-relaxed">
                 {@html marked.parse(presetForm.prompt, { async: false }) as string}
               </div>
@@ -1764,7 +1764,7 @@
 
           <div class="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
             {#each presetForm.turns as turn, idx (idx)}
-              <div class="p-2.5 rounded-[10px] bg-surface-1 border border-border-subtle space-y-2">
+              <div class="p-2.5 rounded-brand bg-surface-1 border border-border-subtle space-y-2">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
                     <span class="text-[10px] font-mono text-text-subtle">#{idx + 1}</span>
@@ -1803,7 +1803,7 @@
             type="text"
             bind:value={presetForm.source}
             placeholder="expert.md"
-            class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500"
+            class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500"
           />
         </label>
         <label class="block space-y-1.5">
@@ -1813,7 +1813,7 @@
             bind:value={presetForm.kind}
             list="jailbreak-kinds"
             placeholder="SOUL, PERSONA, AGENTS, LOAD…"
-            class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500"
+            class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-sm outline-none focus:border-brand-500"
           />
         </label>
       </div>
@@ -1880,7 +1880,7 @@
           <span class="font-code text-text-muted">LOAD.md</span>
         </div>
         <label
-          class="relative flex h-[calc(6*1.5rem+1rem+2px)] w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-[10px] border border-dashed border-border bg-surface-2 px-3 py-2 text-center transition-colors {dragging
+          class="relative flex h-[calc(6*1.5rem+1rem+2px)] w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-brand border border-dashed border-border bg-surface-2 px-3 py-2 text-center transition-colors {dragging
             ? 'border-brand-500 bg-brand-500/10'
             : 'hover:border-border'} {uploading ? 'opacity-50' : ''}"
         >
@@ -1905,7 +1905,7 @@
           </span>
         </label>
         {#if pickedFiles.length > 0}
-          <ul class="divide-y divide-border rounded-[10px] border border-border-subtle">
+          <ul class="divide-y divide-border rounded-brand border border-border-subtle">
             {#each pickedFiles as file, index (file.name + '|' + file.size)}
               <li class="flex items-center gap-3 px-3 py-2">
                 <span class="material-symbols-outlined text-[16px] text-text-subtle shrink-0">description</span>
@@ -1946,7 +1946,7 @@
           rows="6"
           placeholder={'owner/repo, owner/repo@branch\nhttps://github.com/owner/repo\nhttps://gitlab.com/owner/repo/-/raw/main/SOUL.md\nhttps://paste.example.com/abc123'}
           aria-label="Repositories or URLs to import, one per line"
-          class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm font-code placeholder:text-text-subtle outline-none focus:border-brand-500 resize-y"
+          class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-sm font-code placeholder:text-text-subtle outline-none focus:border-brand-500 resize-y"
         ></textarea>
         <div class="flex flex-wrap items-center justify-center gap-2">
           <input
@@ -1954,7 +1954,7 @@
             bind:value={importFileName}
             placeholder={importNameSuggestion || 'my-prompt.md (optional)'}
             aria-label="Custom file name for imported preset"
-            class="w-[240px] px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-sm text-text-main placeholder:text-text-subtle"
+            class="w-[240px] px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-sm text-text-main placeholder:text-text-subtle"
           />
           <Button variant="primary" size="sm" class="min-w-[140px]" onclick={importFromGithub} disabled={importing}>
             {importing ? 'Importing…' : importUrls.length > 1 ? `Import ${importUrls.length} URLs` : 'Import'}
@@ -1981,7 +1981,7 @@
           value="{importLogText}"
           rows="{Math.min(12, Math.max(4, importResult.imported.length + importResult.refused.length))}"
           aria-label="Import log"
-          class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-[11px] font-code leading-relaxed outline-none resize-y"
+          class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-[11px] font-code leading-relaxed outline-none resize-y"
         ></textarea>
       </div>
     {/if}
@@ -2042,7 +2042,7 @@
             bind:value={bindModelId}
             disabled={!!bindingEditId}
             placeholder="deepseek-v4-flash"
-            class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm font-code outline-none focus:border-brand-500 disabled:opacity-50"
+            class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-sm font-code outline-none focus:border-brand-500 disabled:opacity-50"
           />
         </label>
         <label class="block space-y-1.5">
@@ -2061,11 +2061,11 @@
               }}
               placeholder="Search presets…"
               aria-label="Search presets"
-              class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-text-main text-sm placeholder:text-text-subtle outline-none focus:border-brand-500"
+              class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-text-main text-sm placeholder:text-text-subtle outline-none focus:border-brand-500"
             />
             {#if bindPresetDropdownOpen}
               <ul
-                class="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-[10px] border border-border-subtle bg-surface shadow-lg divide-y divide-border"
+                class="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-brand border border-border-subtle bg-surface shadow-lg divide-y divide-border"
               >
                 <li>
                   <button
@@ -2136,7 +2136,7 @@
           bind:value={bulkArmSearch}
           placeholder="Filter models…  (/^deepseek for regex)"
           aria-label="Filter models"
-          class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-sm text-text-main font-code placeholder:text-text-subtle"
+          class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-sm text-text-main font-code placeholder:text-text-subtle"
         />
         <p class="text-[11px] text-text-subtle">
           Substring by default. Start with <span class="font-code text-text-muted">/</span> for an RE2 regex,
@@ -2179,7 +2179,7 @@
             Select all matches
           </button>
         </div>
-        <ul class="divide-y divide-border rounded-[10px] border border-border-subtle overflow-y-auto max-h-[40vh]">
+        <ul class="divide-y divide-border rounded-brand border border-border-subtle overflow-y-auto max-h-[40vh]">
           {#each bulkArmFiltered as id (id)}
             <li>
               <label class="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-surface-2">
@@ -2208,10 +2208,10 @@
             placeholder="Search presets…"
             aria-label="Search presets"
             onfocus={() => (bulkArmPresetDropdownOpen = true)}
-            class="w-full px-3 py-2 rounded-[10px] bg-surface-2 border border-border-subtle text-sm text-text-main placeholder:text-text-subtle outline-none focus:border-brand-500"
+            class="w-full px-3 py-2 rounded-brand bg-surface-2 border border-border-subtle text-sm text-text-main placeholder:text-text-subtle outline-none focus:border-brand-500"
           />
           {#if bulkArmPresetDropdownOpen}
-            <ul class="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-[10px] border border-border-subtle bg-surface shadow-lg divide-y divide-border">
+            <ul class="absolute z-10 mt-1 w-full max-h-48 overflow-y-auto rounded-brand border border-border-subtle bg-surface shadow-lg divide-y divide-border">
               <li>
                 <button
                   type="button"

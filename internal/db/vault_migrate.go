@@ -16,8 +16,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"path/filepath"
-	"time"
 
 	"9router/proxy/internal/log"
 )
@@ -36,14 +34,14 @@ type SealResult struct {
 // MigratePlaintextCredentials seals every connection that still holds a
 // plaintext credential.
 //
-// dbPath names the SQLite file, and is only used to take the pre-migration
-// backup. A backup that cannot be written is a hard error: sealing rewrites
-// every credential row, and the operator deserves a restore point before that
-// happens rather than after.
+// There is no pre-migration snapshot: the database is a server, not a
+// file this process owns, so the restore point before sealing rewrites
+// credential rows is the server's own backup — the operator's side of
+// the deployment. The pass says so in the log before its first write.
 //
 // A vault-less Repo is a no-op, so an install without ROUTER_MASTER_KEY pays
 // nothing and keeps behaving exactly as before.
-func (r *Repo) MigratePlaintextCredentials(ctx context.Context, dbPath string) (SealResult, error) {
+func (r *Repo) MigratePlaintextCredentials(ctx context.Context) (SealResult, error) {
 	var result SealResult
 	if !r.sealingEnabled() {
 		return result, nil
@@ -57,14 +55,10 @@ func (r *Repo) MigratePlaintextCredentials(ctx context.Context, dbPath string) (
 		return result, nil
 	}
 
-	// Backup before the first write. The snapshot is the only way back if the
-	// master key turns out to be wrong for these rows.
-	if target := preMigrationBackupPath(dbPath); target != "" {
-		if err := r.backupDatabase(ctx, target); err != nil {
-			return result, err
-		}
-		log.Info("vault", "pre-migration backup written", "path", target)
-	}
+	// No snapshot precedes the first write (see the function comment):
+	// the restore point is the server's backup, and the log records
+	// that the pass is about to rewrite credential rows without one.
+	log.Info("vault", "sealing plaintext credentials; restore point is the database server's backup")
 
 	for _, c := range candidates {
 		sealed, sErr := r.sealOnWrite(c.ID, c.Data)
@@ -82,7 +76,7 @@ func (r *Repo) MigratePlaintextCredentials(ctx context.Context, dbPath string) (
 		}
 		// sealOnWrite returns the redacted payload; the row itself still holds
 		// the credential until it is rewritten here.
-		if _, wErr := r.db.ExecContext(ctx, `UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, c.ID); wErr != nil {
+		if _, wErr := r.ExecContext(ctx, `UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, c.ID); wErr != nil {
 			result.Skipped = append(result.Skipped, fmt.Sprintf("%s: %v", c.ID, wErr))
 			log.Warn("vault", "sealed credentials not redacted in place", "conn", c.ID, "error", wErr)
 			continue
@@ -92,30 +86,4 @@ func (r *Repo) MigratePlaintextCredentials(ctx context.Context, dbPath string) (
 
 	log.Info("vault", "plaintext credential migration", "sealed", result.Sealed, "skipped", len(result.Skipped))
 	return result, nil
-}
-
-// backupDatabase snapshots the database before a migration.
-//
-// It uses VACUUM INTO rather than copying the file. The database runs in WAL
-// mode, so recent writes live in the -wal sidecar and a plain file copy would
-// capture exactly the wrong state — the older pages present, the writes the
-// migration is about to overwrite missing. VACUUM INTO takes a transactionally
-// consistent snapshot through the same connection, which is the only copy that
-// can actually restore the pre-migration state.
-//
-// The snapshot is created owner-only: it holds every provider credential in
-// the clear, exactly as the source did.
-func (r *Repo) backupDatabase(ctx context.Context, target string) error {
-	if _, err := r.db.ExecContext(ctx, `VACUUM INTO ?`, target); err != nil {
-		return fmt.Errorf("vault backup into %s: %w", target, err)
-	}
-	return nil
-}
-
-// preMigrationBackupPath names the snapshot file for a database path.
-func preMigrationBackupPath(dbPath string) string {
-	if dbPath == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s/pre-vault-%s.sqlite", filepath.Dir(dbPath), time.Now().UTC().Format("20060102-150405"))
 }

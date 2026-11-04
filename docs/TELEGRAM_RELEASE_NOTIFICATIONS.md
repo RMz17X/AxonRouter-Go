@@ -2,6 +2,17 @@
 
 Every tagged release posts a short summary to a Telegram group.
 
+> **Release flow (current).** The notification is the last step of the
+> image-based release pipeline in `.github/workflows/release.yml`: a tag
+> builds the platform binaries and the multi-architecture Docker image
+> (`luqmenul/9router-go`, pushed to Docker Hub with channel-derived tags —
+> stable tags get `latest`/minor/patch, `-exp` tags get the `exp`
+> variants), and the `notify` job runs only after both exist, so the
+> message's `docker pull` line always names a published image. Local
+> development does not use this flow — it uses the compose stacks
+> (`docker-compose.single.yml` / `docker-compose.cluster.yml`); see
+> `../README.md`.
+
 ## Setup
 
 ### 1. Create the bot

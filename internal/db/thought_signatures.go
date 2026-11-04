@@ -28,21 +28,6 @@ var thoughtSignatureTables = []tableDef{
 	},
 }
 
-// EnsureThoughtSignatureTables creates the persistent signature table. Exported
-// so a test fixture that builds only part of the schema still gets the shape
-// the runtime queries.
-func EnsureThoughtSignatureTables(db *sql.DB) error {
-	if db == nil {
-		return fmt.Errorf("thought signature tables: nil db")
-	}
-	for _, t := range thoughtSignatureTables {
-		if err := ensureTable(db, t); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // ThoughtSignatureRow is one persisted signature.
 type ThoughtSignatureRow struct {
 	Key       string
@@ -56,7 +41,7 @@ func (r *Repo) SaveThoughtSignature(ctx context.Context, key, signature, family 
 	if key == "" || signature == "" {
 		return fmt.Errorf("save thought signature: key and signature are required")
 	}
-	_, err := r.db.ExecContext(
+	_, err := r.ExecContext(
 		ctx,
 		`INSERT INTO thoughtSignatures(key, signature, family, expiresAt, updatedAt) VALUES(?, ?, ?, ?, ?)
 		 ON CONFLICT(key) DO UPDATE SET signature = excluded.signature, family = excluded.family,
@@ -75,7 +60,7 @@ func (r *Repo) GetThoughtSignature(ctx context.Context, key string) (*ThoughtSig
 		row     ThoughtSignatureRow
 		expires string
 	)
-	err := r.db.QueryRowContext(
+	err := r.QueryRowContext(
 		ctx,
 		`SELECT key, signature, family, expiresAt FROM thoughtSignatures
 		 WHERE key = ? AND expiresAt > ? LIMIT 1`,
@@ -94,16 +79,26 @@ func (r *Repo) GetThoughtSignature(ctx context.Context, key string) (*ThoughtSig
 	return &row, nil
 }
 
+// thoughtSignatureOrder is the newest-first order the load and the trim
+// share. updatedAt leads; the tiebreak is the row's identity — the
+// primary key itself (PostgreSQL has no rowid). The tiebreak only
+// decides between rows written inside the same second (updatedAt is
+// second-resolution), so it is a determinism device for the trim and
+// the hydration cap, not part of either's contract.
+func (r *Repo) thoughtSignatureOrder() string {
+	return `updatedAt DESC, key DESC`
+}
+
 // LoadThoughtSignatures returns up to limit unexpired rows, newest write first.
 // Used once at boot to hydrate the in-memory hot path.
 func (r *Repo) LoadThoughtSignatures(ctx context.Context, limit int) ([]ThoughtSignatureRow, error) {
 	if limit <= 0 {
 		limit = 2000
 	}
-	rows, err := r.db.QueryContext(
+	rows, err := r.QueryContext(
 		ctx,
 		`SELECT key, signature, family, expiresAt FROM thoughtSignatures
-		 WHERE expiresAt > ? ORDER BY updatedAt DESC, rowid DESC LIMIT ?`,
+		 WHERE expiresAt > ? ORDER BY `+r.thoughtSignatureOrder()+` LIMIT ?`,
 		nowUTC(), limit,
 	)
 	if err != nil {
@@ -137,20 +132,22 @@ func (r *Repo) LoadThoughtSignatures(ctx context.Context, limit int) ([]ThoughtS
 // that keeps serving: a tool-heavy client writes rows faster than an hour-long
 // TTL retires them, so the disk tier needs a size ceiling as well as a clock.
 //
-// The order is (updatedAt, rowid): updatedAt is stored at second resolution, so
-// a burst writes many rows that share one timestamp and the tiebreak decides
-// which survive. Without it the order is whatever the scan produced, and the
-// trim can delete the rows written last.
+// The order is (updatedAt, row identity): updatedAt is stored at second
+// resolution, so a burst writes many rows that share one timestamp and the
+// tiebreak decides which survive. Without it the order is whatever the scan
+// produced, and the trim can delete the rows written last. The
+// unbounded window is spelled LIMIT ALL — PostgreSQL rejects a
+// negative limit outright.
 func (r *Repo) TrimThoughtSignatures(ctx context.Context, keep int) (int64, error) {
 	if keep < 0 {
 		keep = 0
 	}
-	res, err := r.db.ExecContext(
+	res, err := r.ExecContext(
 		ctx,
 		`DELETE FROM thoughtSignatures WHERE key IN (
 			SELECT key FROM thoughtSignatures
-			ORDER BY updatedAt DESC, rowid DESC
-			LIMIT -1 OFFSET ?
+			ORDER BY `+r.thoughtSignatureOrder()+`
+			LIMIT ALL OFFSET ?
 		)`, keep,
 	)
 	if err != nil {
@@ -165,7 +162,7 @@ func (r *Repo) TrimThoughtSignatures(ctx context.Context, keep int) (int64, erro
 
 // PruneThoughtSignatures deletes expired rows and reports how many went.
 func (r *Repo) PruneThoughtSignatures(ctx context.Context, now time.Time) (int64, error) {
-	res, err := r.db.ExecContext(
+	res, err := r.ExecContext(
 		ctx,
 		`DELETE FROM thoughtSignatures WHERE expiresAt <= ?`,
 		now.UTC().Format(time.RFC3339),

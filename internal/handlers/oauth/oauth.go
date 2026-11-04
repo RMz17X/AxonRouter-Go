@@ -93,7 +93,7 @@ func (h *OAuthHandler) HandleOAuthImport(w http.ResponseWriter, r *http.Request)
 	}
 
 	now := currentTimestamp()
-	_, err = h.Repo.RawDB().Exec(
+	_, err = h.Repo.Exec(
 		`INSERT INTO providerConnections (id, provider, authType, name, isActive, data, createdAt, updatedAt) VALUES (?, ?, 'apikey', ?, 1, ?, ?, ?)`,
 		connID, provider, connName, string(data), now, now,
 	)
@@ -239,7 +239,7 @@ func (h *OAuthHandler) HandleOAuthKiroSocialExchange(w http.ResponseWriter, r *h
 		log.Error("oauth", "marshal Kiro social data failed", "error", err)
 	} else if h.Repo != nil && h.Repo.RawDB() != nil {
 		now := currentTimestamp()
-		if _, err := h.Repo.RawDB().Exec(
+		if _, err := h.Repo.Exec(
 			`INSERT INTO providerConnections (id, provider, authType, name, isActive, data, createdAt, updatedAt) VALUES (?, ?, 'oauth', ?, 1, ?, ?, ?)`,
 			connID, "kiro", "Kiro Social", string(data), now, now,
 		); err != nil {
@@ -293,7 +293,7 @@ func (h *OAuthHandler) HandleOAuthCodexBulkImport(w http.ResponseWriter, r *http
 			continue
 		}
 		now := currentTimestamp()
-		_, err = h.Repo.RawDB().Exec(
+		_, err = h.Repo.Exec(
 			`INSERT INTO providerConnections (id, provider, authType, name, isActive, data, createdAt, updatedAt) VALUES (?, 'codex', 'oauth', ?, 1, ?, ?, ?)`,
 			connID, name, string(data), now, now,
 		)

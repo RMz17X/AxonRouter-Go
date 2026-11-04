@@ -142,7 +142,7 @@ INSERT INTO compressionAnalytics (
 	actualTotalTokens, actualCacheReadTokens, actualCacheWriteTokens, estimatedUsdSaved, skipReason
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := r.db.ExecContext(ctx, query,
+	_, err := r.ExecContext(ctx, query,
 		rec.Timestamp,
 		rec.Provider,
 		rec.Model,
@@ -193,7 +193,7 @@ func (r *Repo) GetCompressionAnalyticsSummary(ctx context.Context, win analytics
 	// period. That fallback is what made a narrow window show all-time totals.
 	var caCount int64
 	countQuery := `SELECT COUNT(*) FROM compressionAnalytics` + windowPredicate(win)
-	if err := r.db.QueryRowContext(ctx, countQuery, windowArgs(win)...).Scan(&caCount); err != nil {
+	if err := r.QueryRowContext(ctx, countQuery, windowArgs(win)...).Scan(&caCount); err != nil {
 		return nil, fmt.Errorf("Repo.GetCompressionAnalyticsSummary count: %w", err)
 	}
 
@@ -243,13 +243,13 @@ const maxBreakdownGroups = 50
 // count is a second grouped pass over the same rows for a number that is only
 // ever read when something was dropped, and measured against a 300k-run ledger
 // it duplicated the whole cost of the breakdown it was counting.
-func countGroups(ctx context.Context, database *sql.DB, query string, args ...any) int {
+func countGroups(ctx context.Context, repo *Repo, query string, args ...any) int {
 	uncapped := query
 	if i := strings.LastIndex(uncapped, "\nLIMIT "); i >= 0 {
 		uncapped = uncapped[:i]
 	}
 	var n int
-	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM (`+uncapped+`)`, args...).Scan(&n); err != nil {
+	if err := repo.QueryRowContext(ctx, `SELECT COUNT(*) FROM (`+uncapped+`)`, args...).Scan(&n); err != nil {
 		return 0
 	}
 	return n
@@ -259,11 +259,11 @@ func countGroups(ctx context.Context, database *sql.DB, query string, args ...an
 // the count only when the cap was actually reached: a breakdown that came back
 // short dropped nothing, and a count on that path is a second pass over the
 // window for an answer already known to be zero.
-func droppedGroups(ctx context.Context, database *sql.DB, query string, args []any, kept int) int {
+func droppedGroups(ctx context.Context, repo *Repo, query string, args []any, kept int) int {
 	if kept < maxBreakdownGroups {
 		return 0
 	}
-	return dropCount(countGroups(ctx, database, query, args...), kept)
+	return dropCount(countGroups(ctx, repo, query, args...), kept)
 }
 
 // dropCount reports how many groups a capped breakdown left out: the distinct
@@ -297,7 +297,7 @@ FROM compressionAnalytics %s`, whereClause)
 		avgDur     sql.NullFloat64
 		skipped    sql.NullInt64
 	)
-	if err := r.db.QueryRowContext(ctx, scalarQuery, args...).Scan(&total, &totalSaved, &avgPct, &avgDur, &skipped); err != nil && err != sql.ErrNoRows {
+	if err := r.QueryRowContext(ctx, scalarQuery, args...).Scan(&total, &totalSaved, &avgPct, &avgDur, &skipped); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("queryCompressionAnalyticsTable scalars: %w", err)
 	}
 
@@ -318,7 +318,7 @@ SELECT
 FROM compressionAnalytics %s
 GROUP BY mode`, whereClause)
 
-	modeRows, err := r.db.QueryContext(ctx, modeQuery, args...)
+	modeRows, err := r.QueryContext(ctx, modeQuery, args...)
 	if err == nil {
 		defer modeRows.Close()
 		for modeRows.Next() {
@@ -356,7 +356,7 @@ GROUP BY prov
 ORDER BY saved DESC
 LIMIT %d`, provWhere, maxBreakdownGroups)
 
-	provRows, err := r.db.QueryContext(ctx, provQuery, args...)
+	provRows, err := r.QueryContext(ctx, provQuery, args...)
 	if err == nil {
 		defer provRows.Close()
 		for provRows.Next() {
@@ -370,7 +370,7 @@ LIMIT %d`, provWhere, maxBreakdownGroups)
 			}
 		}
 	}
-	summary.TruncatedProviders = droppedGroups(ctx, r.db, provQuery, args, len(summary.ByProvider))
+	summary.TruncatedProviders = droppedGroups(ctx, r, provQuery, args, len(summary.ByProvider))
 
 	// By Model, bounded and ranked for the same reason.
 	modelWhere := "WHERE model IS NOT NULL AND model != ''"
@@ -389,7 +389,7 @@ GROUP BY mdl
 ORDER BY saved DESC
 LIMIT %d`, modelWhere, maxBreakdownGroups)
 
-	modelRows, err := r.db.QueryContext(ctx, modelQuery, args...)
+	modelRows, err := r.QueryContext(ctx, modelQuery, args...)
 	if err == nil {
 		defer modelRows.Close()
 		for modelRows.Next() {
@@ -405,7 +405,7 @@ LIMIT %d`, modelWhere, maxBreakdownGroups)
 			}
 		}
 	}
-	summary.TruncatedModels = droppedGroups(ctx, r.db, modelQuery, args, len(summary.ByModel))
+	summary.TruncatedModels = droppedGroups(ctx, r, modelQuery, args, len(summary.ByModel))
 
 	// Hourly trend over the same window as everything else.
 	//
@@ -417,7 +417,7 @@ LIMIT %d`, modelWhere, maxBreakdownGroups)
 	// is worse than none.
 	trendQuery := `
 SELECT
-	strftime('%Y-%m-%dT%H:00:00Z', timestamp) as hr,
+	` + hourBucketExpr() + ` as hr,
 	COUNT(*) as cnt,
 	COALESCE(SUM(tokensSaved), 0) as saved
 FROM compressionAnalytics` + windowPredicate(win) + `
@@ -425,7 +425,7 @@ GROUP BY hr
 ORDER BY hr ASC`
 
 	if !win.Unbounded() {
-		trendRows, err := r.db.QueryContext(ctx, trendQuery, args...)
+		trendRows, err := r.QueryContext(ctx, trendQuery, args...)
 		if err == nil {
 			defer trendRows.Close()
 			for trendRows.Next() {
@@ -461,7 +461,7 @@ FROM compressionAnalytics
 	var (
 		rReceipts, rPrompt, rComp, rTotal, rRead, rWrite sql.NullInt64
 	)
-	if err := r.db.QueryRowContext(ctx, receiptQuery, args...).Scan(&rReceipts, &rPrompt, &rComp, &rTotal, &rRead, &rWrite); err == nil {
+	if err := r.QueryRowContext(ctx, receiptQuery, args...).Scan(&rReceipts, &rPrompt, &rComp, &rTotal, &rRead, &rWrite); err == nil {
 		summary.RealUsage.RequestsWithReceipts = rReceipts.Int64
 		summary.RealUsage.PromptTokens = rPrompt.Int64
 		summary.RealUsage.CompletionTokens = rComp.Int64
@@ -480,7 +480,7 @@ GROUP BY p, m
 HAVING s > 0
 ORDER BY s DESC
 LIMIT %d`, whereClause, maxBreakdownGroups)
-		pRows, pErr := r.db.QueryContext(ctx, pQuery, args...)
+		pRows, pErr := r.QueryContext(ctx, pQuery, args...)
 		if pErr == nil {
 			defer pRows.Close()
 			for pRows.Next() {
@@ -527,7 +527,7 @@ FROM compressionAnalytics
 ORDER BY tokensSaved DESC
 LIMIT 10`, whereClause)
 
-	topRows, err := r.db.QueryContext(ctx, topQuery, args...)
+	topRows, err := r.QueryContext(ctx, topQuery, args...)
 	if err == nil {
 		defer topRows.Close()
 		for topRows.Next() {
@@ -557,10 +557,23 @@ LIMIT 10`, whereClause)
 }
 
 func (r *Repo) queryUsageHistoryBackfill(ctx context.Context, summary *CompressionAnalyticsSummary, win analyticsrange.Window) (*CompressionAnalyticsSummary, error) {
+	// The token extractions out of the usageHistory payload, in the two
+	// forms the statements below share: coalesced (a missing field reads
+	// as zero or as the row's own prompt count) and bare (the SUM/AVG
+	// inputs, where the WHERE has already established presence). The
+	// payload is jsonb, so the fields come out through the jsonexpr.go
+	// forms with no validity guard.
+	savedTokensInt := `COALESCE(` + jsonIntAt("tokens", "saved_tokens") + `, 0)`
+	savedTokensBare := jsonIntAt("tokens", "saved_tokens")
+	savedPercentReal := `COALESCE(` + jsonRealAt("tokens", "saved_percent") + `, 0)`
+	origTokensInt := `COALESCE(` + jsonIntAt("tokens", "original_input_tokens") + `, promptTokens)`
+	compTokensInt := `COALESCE(` + jsonIntAt("tokens", "compressed_input_tokens") + `, promptTokens)`
+	validGuard := ``
+
 	// The saved-token filter is what distinguishes a compressed row, so it
 	// leads; the window is appended to it rather than replacing it, for the same
 	// reason the provider breakdown above composes its two conditions.
-	whereClause := `WHERE tokens IS NOT NULL AND json_valid(tokens) AND CAST(COALESCE(json_extract(tokens, '$.saved_tokens'), 0) AS INTEGER) > 0`
+	whereClause := `WHERE tokens IS NOT NULL AND ` + validGuard + savedTokensInt + ` > 0`
 	args := windowArgs(win)
 	if !win.Unbounded() {
 		whereClause += " AND timestamp >= ?"
@@ -569,8 +582,8 @@ func (r *Repo) queryUsageHistoryBackfill(ctx context.Context, summary *Compressi
 	scalarQuery := fmt.Sprintf(`
 SELECT
 	COUNT(*) as total,
-	COALESCE(SUM(CAST(json_extract(tokens, '$.saved_tokens') AS INTEGER)), 0) as totalSaved,
-	COALESCE(AVG(CAST(COALESCE(json_extract(tokens, '$.saved_percent'), 0) AS REAL)), 0) as avgPct
+	COALESCE(SUM(`+savedTokensBare+`), 0) as totalSaved,
+	COALESCE(AVG(`+savedPercentReal+`), 0) as avgPct
 FROM usageHistory %s`, whereClause)
 
 	var (
@@ -578,7 +591,7 @@ FROM usageHistory %s`, whereClause)
 		totalSaved sql.NullInt64
 		avgPct     sql.NullFloat64
 	)
-	if err := r.db.QueryRowContext(ctx, scalarQuery, args...).Scan(&total, &totalSaved, &avgPct); err != nil && err != sql.ErrNoRows {
+	if err := r.QueryRowContext(ctx, scalarQuery, args...).Scan(&total, &totalSaved, &avgPct); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("queryUsageHistoryBackfill scalars: %w", err)
 	}
 
@@ -600,13 +613,13 @@ FROM usageHistory %s`, whereClause)
 SELECT
 	COALESCE(provider, 'unknown') as prov,
 	COUNT(*) as cnt,
-	COALESCE(SUM(CAST(json_extract(tokens, '$.saved_tokens') AS INTEGER)), 0) as saved
+	COALESCE(SUM(`+savedTokensBare+`), 0) as saved
 FROM usageHistory %s
 GROUP BY prov
 ORDER BY saved DESC
 LIMIT %d`, whereClause, maxBreakdownGroups)
 
-	provRows, err := r.db.QueryContext(ctx, provQuery, args...)
+	provRows, err := r.QueryContext(ctx, provQuery, args...)
 	if err == nil {
 		defer provRows.Close()
 		for provRows.Next() {
@@ -620,22 +633,22 @@ LIMIT %d`, whereClause, maxBreakdownGroups)
 			}
 		}
 	}
-	summary.TruncatedProviders = droppedGroups(ctx, r.db, provQuery, args, len(summary.ByProvider))
+	summary.TruncatedProviders = droppedGroups(ctx, r, provQuery, args, len(summary.ByProvider))
 
 	// Hourly trend, bounded by the same window and skipping the unbounded one
 	// for the same reason the table path does.
-	trendQuery := fmt.Sprintf(`
+	trendQuery := `
 SELECT
-	strftime('%%Y-%%m-%%dT%%H:00:00Z', timestamp) as hr,
+	` + hourBucketExpr() + ` as hr,
 	COUNT(*) as cnt,
-	COALESCE(SUM(CAST(json_extract(tokens, '$.saved_tokens') AS INTEGER)), 0) as saved
+	COALESCE(SUM(` + savedTokensBare + `), 0) as saved
 FROM usageHistory
-%s
+` + whereClause + `
 GROUP BY hr
-ORDER BY hr ASC`, whereClause)
+ORDER BY hr ASC`
 
 	if !win.Unbounded() {
-		trendRows, err := r.db.QueryContext(ctx, trendQuery, args...)
+		trendRows, err := r.QueryContext(ctx, trendQuery, args...)
 		if err == nil {
 			defer trendRows.Close()
 			for trendRows.Next() {
@@ -668,17 +681,17 @@ SELECT
 	COALESCE(provider, 'unknown') as prov,
 	COALESCE(model, 'unknown') as mdl,
 	'rtk' as md,
-	CAST(COALESCE(json_extract(tokens, '$.original_input_tokens'), promptTokens) AS INTEGER) as origTok,
-	CAST(COALESCE(json_extract(tokens, '$.compressed_input_tokens'), promptTokens) AS INTEGER) as compTok,
-	CAST(COALESCE(json_extract(tokens, '$.saved_tokens'), 0) AS INTEGER) as savedTok,
-	CAST(COALESCE(json_extract(tokens, '$.saved_percent'), 0) AS REAL) as pct,
+	`+origTokensInt+` as origTok,
+	`+compTokensInt+` as compTok,
+	`+savedTokensInt+` as savedTok,
+	`+savedPercentReal+` as pct,
 	25 as durMs
 FROM usageHistory
 %s
 ORDER BY savedTok DESC
 LIMIT 10`, whereClause)
 
-	uhTopRows, err := r.db.QueryContext(ctx, uhTopQuery, args...)
+	uhTopRows, err := r.QueryContext(ctx, uhTopQuery, args...)
 	if err == nil {
 		defer uhTopRows.Close()
 		for uhTopRows.Next() {
@@ -709,194 +722,4 @@ LIMIT 10`, whereClause)
 	}
 
 	return summary, nil
-}
-
-// BackfillCompressionAnalytics migrates historical compression telemetry from requestDetails
-// and usageHistory into compressionAnalytics if not already performed.
-func BackfillCompressionAnalytics(db *sql.DB) error {
-	if db == nil {
-		return nil
-	}
-
-	// 1. Check if migration already ran
-	var done string
-	err := db.QueryRow(`SELECT value FROM _meta WHERE key = 'migration_compression_backfill_done'`).Scan(&done)
-	if err == nil && done == "true" {
-		return nil
-	}
-
-	// 2. Query requestDetails with compression tokens
-	rdQuery := `
-SELECT
-	id,
-	timestamp,
-	provider,
-	COALESCE(model, '') as model,
-	data,
-	CAST(COALESCE(json_extract(data, '$.tokens.original_input_tokens'), 0) AS INTEGER) as origTokens,
-	CAST(COALESCE(json_extract(data, '$.tokens.compressed_input_tokens'), 0) AS INTEGER) as compTokens,
-	CAST(COALESCE(json_extract(data, '$.tokens.saved_tokens'), 0) AS INTEGER) as savedTokens,
-	CAST(COALESCE(json_extract(data, '$.latency.total'), 0) AS INTEGER) as durMs,
-	CAST(COALESCE(json_extract(data, '$.tokens.prompt_tokens'), 0) AS INTEGER) as promptTokens,
-	CAST(COALESCE(json_extract(data, '$.tokens.completion_tokens'), 0) AS INTEGER) as compTokens2,
-	CAST(COALESCE(json_extract(data, '$.tokens.cached_tokens'), 0) AS INTEGER) as cachedTokens,
-	CAST(COALESCE(json_extract(data, '$.tokens.cache_creation_input_tokens'), 0) AS INTEGER) as cacheWriteTokens
-FROM requestDetails
-WHERE data IS NOT NULL AND json_valid(data)
-  AND CAST(COALESCE(json_extract(data, '$.tokens.saved_tokens'), 0) AS INTEGER) > 0`
-
-	rows, err := db.Query(rdQuery)
-	if err == nil {
-		defer rows.Close()
-
-		insertStmt, prepErr := db.Prepare(`
-INSERT INTO compressionAnalytics (
-	timestamp, provider, model, mode, originalTokens, compressedTokens, tokensSaved,
-	durationMs, requestId, actualPromptTokens, actualCompletionTokens,
-	actualTotalTokens, actualCacheReadTokens, actualCacheWriteTokens, estimatedUsdSaved, skipReason
-)
-SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ''
-WHERE NOT EXISTS (SELECT 1 FROM compressionAnalytics ca WHERE ca.requestId = ?)`)
-
-		if prepErr == nil {
-			defer insertStmt.Close()
-			for rows.Next() {
-				var (
-					id, ts, prov, mdl, data                    string
-					origTok, compTok, savedTok, durMs          int
-					promptTok, compTok2, cachedTok, cacheWrTok int
-				)
-				if scanErr := rows.Scan(
-					&id, &ts, &prov, &mdl, &data,
-					&origTok, &compTok, &savedTok, &durMs,
-					&promptTok, &compTok2, &cachedTok, &cacheWrTok,
-				); scanErr == nil {
-					mode := classifyHistoricalMode(data, savedTok)
-					totalTok := promptTok + compTok2
-					mp, _ := pricing.GetPricingForModel(prov, mdl)
-					rate := mp.InputPer1M
-					if rate <= 0 {
-						rate = defaultAvgInputPricePerMillion
-					}
-					estUsd := math.Round((float64(savedTok)/1_000_000.0)*rate*100) / 100
-					_, _ = insertStmt.Exec(
-						ts, prov, mdl, mode, origTok, compTok, savedTok,
-						durMs, id, promptTok, compTok2,
-						totalTok, cachedTok, cacheWrTok, estUsd,
-						id,
-					)
-				}
-			}
-		}
-	}
-
-	// 3. Fallback: also backfill from usageHistory for rows not covered by requestDetails
-	uhQuery := `
-SELECT
-	COALESCE(timestamp, ''),
-	COALESCE(provider, 'unknown'),
-	COALESCE(model, 'unknown'),
-	CAST(COALESCE(json_extract(tokens, '$.original_input_tokens'), promptTokens) AS INTEGER) as origTok,
-	CAST(COALESCE(json_extract(tokens, '$.compressed_input_tokens'), promptTokens) AS INTEGER) as compTok,
-	CAST(COALESCE(json_extract(tokens, '$.saved_tokens'), 0) AS INTEGER) as savedTok,
-	promptTokens,
-	completionTokens,
-	CAST(COALESCE(json_extract(tokens, '$.cached_tokens'), 0) AS INTEGER) as cachedTok,
-	CAST(COALESCE(json_extract(tokens, '$.cache_creation_input_tokens'), 0) AS INTEGER) as cacheWrTok
-FROM usageHistory
-WHERE tokens IS NOT NULL AND json_valid(tokens)
-  AND CAST(COALESCE(json_extract(tokens, '$.saved_tokens'), 0) AS INTEGER) > 0`
-
-	uhRows, err := db.Query(uhQuery)
-	if err == nil {
-		defer uhRows.Close()
-
-		uhInsertStmt, prepErr := db.Prepare(`
-INSERT INTO compressionAnalytics (
-	timestamp, provider, model, mode, originalTokens, compressedTokens, tokensSaved,
-	durationMs, requestId, actualPromptTokens, actualCompletionTokens,
-	actualTotalTokens, actualCacheReadTokens, actualCacheWriteTokens, estimatedUsdSaved, skipReason
-)
-SELECT ?, ?, ?, 'stacked', ?, ?, ?, 25, '', ?, ?, ?, ?, ?, ?, ''
-WHERE NOT EXISTS (
-	SELECT 1 FROM compressionAnalytics ca
-	WHERE ca.timestamp = ? AND ca.provider = ? AND ca.tokensSaved = ?
-)`)
-
-		if prepErr == nil {
-			defer uhInsertStmt.Close()
-			for uhRows.Next() {
-				var (
-					ts, prov, mdl                              string
-					origTok, compTok, savedTok                 int
-					promptTok, compTok2, cachedTok, cacheWrTok int
-				)
-				if scanErr := uhRows.Scan(
-					&ts, &prov, &mdl,
-					&origTok, &compTok, &savedTok,
-					&promptTok, &compTok2, &cachedTok, &cacheWrTok,
-				); scanErr == nil {
-					totalTok := promptTok + compTok2
-					mp, _ := pricing.GetPricingForModel(prov, mdl)
-					rate := mp.InputPer1M
-					if rate <= 0 {
-						rate = defaultAvgInputPricePerMillion
-					}
-					estUsd := math.Round((float64(savedTok)/1_000_000.0)*rate*100) / 100
-					_, _ = uhInsertStmt.Exec(
-						ts, prov, mdl, origTok, compTok, savedTok,
-						promptTok, compTok2, totalTok, cachedTok, cacheWrTok, estUsd,
-						ts, prov, savedTok,
-					)
-				}
-			}
-		}
-	}
-
-	// 4. Mark migration done in _meta
-	_, err = db.Exec(`INSERT OR REPLACE INTO _meta (key, value) VALUES ('migration_compression_backfill_done', 'true')`)
-	if err != nil {
-		return fmt.Errorf("BackfillCompressionAnalytics mark done: %w", err)
-	}
-
-	return nil
-}
-
-func classifyHistoricalMode(data string, savedTokens int) string {
-	hasCaveman := strings.Contains(data, "terse caveman") || strings.Contains(data, "Caveman")
-	hasADHD := strings.Contains(data, "ADHD") || strings.Contains(data, "action-first")
-	hasPonytail := strings.Contains(data, "ponytail") || strings.Contains(data, "Ponytail")
-
-	personaCount := 0
-	if hasCaveman {
-		personaCount++
-	}
-	if hasADHD {
-		personaCount++
-	}
-	if hasPonytail {
-		personaCount++
-	}
-
-	// A persona is present whenever any of the three prompts matched. "stacked"
-	// is RTK compression applied *on top of* a persona prompt, so it needs both
-	// savings and a persona; a lone persona prompt with no measurable savings is
-	// classified by the persona alone.
-	if personaCount > 0 {
-		if savedTokens > 0 {
-			return "stacked"
-		}
-		switch {
-		case hasCaveman:
-			return "caveman"
-		case hasADHD:
-			return "adhd"
-		case hasPonytail:
-			return "ponytail"
-		}
-	}
-	if savedTokens > 0 {
-		return "rtk"
-	}
-	return "none"
 }

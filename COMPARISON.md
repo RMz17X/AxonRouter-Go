@@ -1,5 +1,8 @@
 # 9router-go vs Historical Upstream 9Router
 
+> **Status (2026-11-05): point-in-time comparison.** The feature and behaviour rows describe the v1.9.1-era snapshot they were measured in. Since then the gateway changed platform: it is PostgreSQL-only and Docker-delivered (phases P0–P5), and the Axon backend-parity batches 1–10 closed most of the Axon-column gaps this table records. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 This document compares the current native `9router-go` v1.9.1 with the local historical upstream checkout (`decolua/9router` v0.5.85, Next.js dashboard and gateway). It is not a provider-by-provider certification.
 
 ## Version and comparison scope

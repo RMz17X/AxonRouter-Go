@@ -37,20 +37,28 @@ func parseStoredAt(value string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// PersistentLRUStore wraps an in-memory LRUStore with SQLite disk persistence.
+// PersistentLRUStore wraps an in-memory LRUStore with database persistence.
 type PersistentLRUStore struct {
 	lru         *LRUStore
 	db          *sql.DB
+	rebind      func(string) string
 	ttl         time.Duration
 	stopJanitor chan struct{}
 	closeOnce   sync.Once
 }
 
-// NewPersistentStore creates an LRUStore backed by SQLite disk persistence.
-func NewPersistentStore(db *sql.DB, maxEntries int, ttl time.Duration) *PersistentLRUStore {
+// NewPersistentStore creates an LRUStore backed by database persistence.
+// The handle is the gateway's main database handle — this store's table
+// lives in the main database (internal/db's schema creates it there) and
+// the store opens no file of its own. Statements are authored in the '?'
+// form and rebound through the rebind function (the Repo's) to the '$n'
+// placeholders the driver needs; this package stays independent of the
+// repository layer.
+func NewPersistentStore(db *sql.DB, rebind func(string) string, maxEntries int, ttl time.Duration) *PersistentLRUStore {
 	store := &PersistentLRUStore{
 		lru:         NewLRUStore(maxEntries, ttl),
 		db:          db,
+		rebind:      rebind,
 		ttl:         ttl,
 		stopJanitor: make(chan struct{}),
 	}
@@ -59,6 +67,15 @@ func NewPersistentStore(db *sql.DB, maxEntries int, ttl time.Duration) *Persiste
 		store.startJanitor(1 * time.Hour)
 	}
 	return store
+}
+
+// stmt renders one statement: the text is authored in the '?' form and
+// rebound to the '$n' placeholders the driver needs.
+func (p *PersistentLRUStore) stmt(query string) string {
+	if p.rebind != nil {
+		return p.rebind(query)
+	}
+	return query
 }
 
 func (p *PersistentLRUStore) startJanitor(interval time.Duration) {
@@ -90,7 +107,7 @@ func (p *PersistentLRUStore) Close() {
 	})
 }
 
-// Hydrate preloads unexpired entries from SQLite into the in-memory LRU cache.
+// Hydrate preloads unexpired entries from the database into the in-memory LRU cache.
 func (p *PersistentLRUStore) Hydrate(ctx context.Context) error {
 	if p.db == nil {
 		return nil
@@ -110,7 +127,7 @@ FROM semanticCacheEntries`
 		args = append(args, cutoff)
 	}
 
-	rows, err := p.db.QueryContext(ctx, query, args...)
+	rows, err := p.db.QueryContext(ctx, p.stmt(query), args...)
 	if err != nil {
 		return fmt.Errorf("PersistentLRUStore.Hydrate: %w", err)
 	}
@@ -119,8 +136,8 @@ FROM semanticCacheEntries`
 	for rows.Next() {
 		var (
 			key, model, contentType, storedAtStr string
-			body                                  []byte
-			hitCount, tokensSaved                 int64
+			body                                 []byte
+			hitCount, tokensSaved                int64
 		)
 		if err := rows.Scan(&key, &model, &body, &contentType, &storedAtStr, &hitCount, &tokensSaved); err == nil {
 			storedAt, ok := parseStoredAt(storedAtStr)
@@ -146,28 +163,36 @@ func (p *PersistentLRUStore) Get(ctx context.Context, key string) (Entry, bool) 
 	return p.lru.Get(ctx, key)
 }
 
-// Put updates in-memory LRU and writes through to SQLite.
+// Put updates in-memory LRU and writes through to the database.
 func (p *PersistentLRUStore) Put(ctx context.Context, key string, e Entry) error {
 	if err := p.lru.Put(ctx, key, e); err != nil {
 		return err
 	}
 	if p.db != nil {
 		storedAtStr := formatStoredAt(e.StoredAt)
-		_, _ = p.db.ExecContext(ctx, `
-INSERT OR REPLACE INTO semanticCacheEntries (
+		// The insert names every column, so ON CONFLICT DO UPDATE lands
+		// the same row a full replace would (no foreign keys exist for a
+		// cascade to fire through).
+		upsert := `
+INSERT INTO semanticCacheEntries (
 	key, model, responseBody, contentType, storedAt, hitCount, tokensSaved
-) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (key) DO UPDATE SET model = EXCLUDED.model,
+	responseBody = EXCLUDED.responseBody, contentType = EXCLUDED.contentType,
+	storedAt = EXCLUDED.storedAt, hitCount = EXCLUDED.hitCount,
+	tokensSaved = EXCLUDED.tokensSaved`
+		_, _ = p.db.ExecContext(ctx, p.stmt(upsert),
 			key, e.Model, e.ResponseBody, e.ContentType, storedAtStr, e.HitCount, e.TokensSaved,
 		)
 	}
 	return nil
 }
 
-// Delete removes from in-memory LRU and SQLite.
+// Delete removes from in-memory LRU and the database.
 func (p *PersistentLRUStore) Delete(ctx context.Context, key string) bool {
 	ok := p.lru.Delete(ctx, key)
 	if p.db != nil {
-		_, _ = p.db.ExecContext(ctx, `DELETE FROM semanticCacheEntries WHERE key = ?`, key)
+		_, _ = p.db.ExecContext(ctx, p.stmt(`DELETE FROM semanticCacheEntries WHERE key = ?`), key)
 	}
 	return ok
 }
@@ -177,7 +202,7 @@ func (p *PersistentLRUStore) Len() int {
 	return p.lru.Len()
 }
 
-// DBLen returns the persistent SQLite entry count.
+// DBLen returns the persistent entry count.
 func (p *PersistentLRUStore) DBLen() int {
 	if p.db == nil {
 		return 0
@@ -187,7 +212,7 @@ func (p *PersistentLRUStore) DBLen() int {
 	return count
 }
 
-// Clear removes all entries from both memory and SQLite.
+// Clear removes all entries from both memory and the database.
 func (p *PersistentLRUStore) Clear() {
 	p.lru.Clear()
 	if p.db != nil {
@@ -200,32 +225,32 @@ func (p *PersistentLRUStore) Entries() []Entry {
 	return p.lru.Entries()
 }
 
-// InvalidateByModel deletes matching entries in both memory and SQLite.
+// InvalidateByModel deletes matching entries in both memory and the database.
 func (p *PersistentLRUStore) InvalidateByModel(ctx context.Context, model string) int {
 	count := p.lru.InvalidateByModel(ctx, model)
 	if p.db != nil {
-		_, _ = p.db.ExecContext(ctx, `DELETE FROM semanticCacheEntries WHERE model = ?`, model)
+		_, _ = p.db.ExecContext(ctx, p.stmt(`DELETE FROM semanticCacheEntries WHERE model = ?`), model)
 	}
 	return count
 }
 
-// InvalidateOlderThan deletes expired entries in both memory and SQLite.
+// InvalidateOlderThan deletes expired entries in both memory and the database.
 func (p *PersistentLRUStore) InvalidateOlderThan(ctx context.Context, d time.Duration) int {
 	count := p.lru.InvalidateOlderThan(ctx, d)
 	if p.db != nil {
 		cutoff := formatStoredAt(time.Now().Add(-d))
-		_, _ = p.db.ExecContext(ctx, `DELETE FROM semanticCacheEntries WHERE storedAt < ?`, cutoff)
+		_, _ = p.db.ExecContext(ctx, p.stmt(`DELETE FROM semanticCacheEntries WHERE storedAt < ?`), cutoff)
 	}
 	return count
 }
 
-// RecordHit increments hit counters in memory and SQLite.
+// RecordHit increments hit counters in memory and the database.
 func (p *PersistentLRUStore) RecordHit(ctx context.Context, key string, tokensSaved int64) {
 	p.lru.RecordHit(ctx, key, tokensSaved)
 	if p.db != nil {
-		_, _ = p.db.ExecContext(ctx, `
+		_, _ = p.db.ExecContext(ctx, p.stmt(`
 UPDATE semanticCacheEntries
 SET hitCount = hitCount + 1, tokensSaved = tokensSaved + ?
-WHERE key = ?`, tokensSaved, key)
+WHERE key = ?`), tokensSaved, key)
 	}
 }

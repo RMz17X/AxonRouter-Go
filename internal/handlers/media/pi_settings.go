@@ -1,9 +1,6 @@
 package media
 
 import (
-	"errors"
-	"fmt"
-	"maps"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,32 +9,29 @@ import (
 
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/handlerutil"
-	"encoding/json/jsontext"
 	json "encoding/json/v2"
 )
 
-// Pi settings API. Port of upstream
-// `src/app/api/cli-tools/pi-settings/route.js`, including the POST merge that
-// commit 342ecb0d fixed there: previously saved fields of the 9router block
-// (a stored key, a custom `api`) survive an apply instead of being dropped.
+// Pi settings API — read side. Port of upstream
+// `src/app/api/cli-tools/pi-settings/route.ts` GET (Axon's pi route is
+// TypeScript-only; the .ts is the contract).
 //
-// The config is the pi coding agent's models.json, read and rewritten whole;
-// everything else in the file belongs to pi or the user and is preserved.
+// Batch 5 (P7a) retired the host-write model: the POST/DELETE apply
+// and reset handlers are gone, and the dashboard composes an
+// installer command instead of writing models.json on the gateway
+// host.
+//
+// Axon reads only the agent-scoped models.json; the Go read keeps
+// this gateway's historical root-file fallback (resolvePiModelsPath
+// precedence) — recorded as a deviation in the batch fragment.
 
-const piProviderName = "9router"
-
-// piPlaceholderKey is the fake key old clients sent when they could not read
-// the stored one back. It was never a real credential and must never be
-// written into a config.
-const piPlaceholderKey = "sk_9router"
-
-// PiHandler serves the pi settings API. repo backs the API-key fallback for a
-// caller that sends none.
+// PiHandler serves the pi settings API.
 type PiHandler struct {
 	repo *db.Repo
 }
 
-// NewPiHandler returns a PiHandler reading dashboard keys from repo.
+// NewPiHandler returns a PiHandler. repo is retained for wiring
+// compatibility with the pre-batch-5 constructor.
 func NewPiHandler(repo *db.Repo) *PiHandler { return &PiHandler{repo: repo} }
 
 // piModelsPaths are the two locations pi reads, in upstream precedence order:
@@ -50,7 +44,7 @@ func piModelsPaths() (agent, root string) {
 	return filepath.Join(home, ".pi", "agent", "models.json"), filepath.Join(home, ".pi", "models.json")
 }
 
-// resolvePiModelsPath picks the file a write targets: an existing agent-scoped
+// resolvePiModelsPath picks the file a read targets: an existing agent-scoped
 // file wins, then an existing root file, then the agent path pi reads first.
 func resolvePiModelsPath() string {
 	agent, root := piModelsPaths()
@@ -64,23 +58,22 @@ func resolvePiModelsPath() string {
 }
 
 // piInstalled reports whether pi is on PATH or has left a models.json behind,
-// so an install without a PATH entry is still recognised (upstream
-// checkPiInstalled).
+// so an install without a PATH entry is still recognised.
 func piInstalled() bool {
 	if _, err := exec.LookPath("pi"); err == nil {
 		return true
 	}
 	agent, root := piModelsPaths()
-	_, err := os.Stat(agent)
-	if err == nil {
+	if _, err := os.Stat(agent); err == nil {
 		return true
 	}
-	_, err = os.Stat(root)
+	_, err := os.Stat(root)
 	return err == nil
 }
 
 // readPiConfig parses models.json whole. An unreadable or unparsable file
-// reads as "no config", which is how upstream readConfig behaves.
+// reads as "no config", matching Axon's readPiModels behaviour
+// (ENOENT and SyntaxError both yield null).
 func readPiConfig() map[string]any {
 	agent, root := piModelsPaths()
 	for _, path := range []string{agent, root} {
@@ -99,12 +92,15 @@ func readPiConfig() map[string]any {
 	return nil
 }
 
-// piHas9RouterConfig reports whether any provider block points at a local
-// 9router: the named block with a baseUrl, or any block carrying one of the
-// two default gateway ports (20128 upstream's, 20130 this gateway's).
+// piHas9RouterConfig backs the all-statuses card (a pre-batch-5
+// surface kept unchanged): whether any provider block points at a
+// local gateway — the named block with a baseUrl, or any block
+// carrying one of the two default gateway ports (20128 upstream's,
+// 20130 this gateway's). The settings GET itself uses Axon's
+// providers["axonrouter"]-presence rule instead.
 func piHas9RouterConfig(config map[string]any) bool {
 	providers, _ := config["providers"].(map[string]any)
-	if p, ok := providers[piProviderName].(map[string]any); ok {
+	if p, ok := providers["9router"].(map[string]any); ok {
 		if b, _ := p["baseUrl"].(string); strings.TrimSpace(b) != "" {
 			return true
 		}
@@ -122,7 +118,9 @@ func piHas9RouterConfig(config map[string]any) bool {
 	return false
 }
 
-// HandleGet serves GET /api/cli-tools/pi-settings.
+// HandleGet serves GET /api/cli-tools/pi-settings, in Axon's shape:
+// the axonrouter provider block drives hasAxonRouter and the pi{}
+// summary (model ids + baseUrl).
 func (h *PiHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	if !piInstalled() {
 		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
@@ -133,231 +131,33 @@ func (h *PiHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	config := readPiConfig()
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"installed":  true,
-		"config":     config,
-		"has9Router": piHas9RouterConfig(config),
-		"configPath": resolvePiModelsPath(),
-	})
-}
+	providers, _ := config["providers"].(map[string]any)
+	provider, _ := providers["axonrouter"].(map[string]any)
 
-// piSettingsRequest is the POST body. models entries arrive as ids or as
-// objects, which piModelList normalizes.
-type piSettingsRequest struct {
-	BaseURL string `json:"baseUrl"`
-	APIKey  string `json:"apiKey"`
-	Model   string `json:"model"`
-	Models  []any  `json:"models"`
-}
-
-// HandlePost serves POST /api/cli-tools/pi-settings — writes the 9router
-// provider block into models.json, merging over the previously saved one.
-func (h *PiHandler) HandlePost(w http.ResponseWriter, r *http.Request) {
-	var req piSettingsRequest
-	if err := json.UnmarshalRead(r.Body, &req); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "Invalid JSON body")
-		return
+	models := []any{}
+	if list, ok := provider["models"].([]any); ok {
+		for _, entry := range list {
+			if m, ok := entry.(map[string]any); ok {
+				if id, ok := m["id"].(string); ok {
+					models = append(models, id)
+					continue
+				}
+			}
+			models = append(models, nil)
+		}
 	}
-	baseURL := strings.TrimSpace(req.BaseURL)
-	if baseURL == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "baseUrl is required")
-		return
-	}
-	if !strings.HasSuffix(baseURL, "/v1") {
-		baseURL += "/v1"
-	}
-
-	configPath := resolvePiModelsPath()
-	if configPath == "" {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "Failed to update pi settings")
-		return
-	}
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "Failed to update pi settings")
-		return
-	}
-
-	existing := readPiConfig()
-	if existing == nil {
-		existing = map[string]any{}
-	}
-	providers, _ := existing["providers"].(map[string]any)
-	if providers == nil {
-		providers = map[string]any{}
-	}
-
-	previous, _ := providers[piProviderName].(map[string]any)
-	if previous == nil {
-		previous = map[string]any{}
-	}
-	updated := maps.Clone(previous)
-	updated["baseUrl"] = baseURL
-	updated["apiKey"] = h.resolveAPIKey(req.APIKey, previous["apiKey"])
-	if api, _ := updated["api"].(string); strings.TrimSpace(api) == "" {
-		updated["api"] = "openai-completions"
-	}
-	updated["models"] = piModelList(req)
-
-	providers[piProviderName] = updated
-	existing["providers"] = providers
-	if err := writePiConfig(configPath, existing); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "Failed to update pi settings")
-		return
+	var baseURL any
+	if b, _ := provider["baseUrl"].(string); b != "" {
+		baseURL = b
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success":    true,
-		"message":    "Pi settings applied! Use /model in Pi to select the 9Router model.",
-		"configPath": configPath,
+		"installed":     true,
+		"config":        config,
+		"hasAxonRouter": provider != nil,
+		"configPath":    resolvePiModelsPath(),
+		"pi": map[string]any{
+			"models":  models,
+			"baseURL": baseURL,
+		},
 	})
-}
-
-// HandleDelete serves DELETE /api/cli-tools/pi-settings — removes the 9router
-// block and leaves every other provider untouched.
-func (h *PiHandler) HandleDelete(w http.ResponseWriter, r *http.Request) {
-	configPath := resolvePiModelsPath()
-	raw, err := os.ReadFile(configPath)
-	if err != nil {
-		if !errors.Is(err, os.ErrNotExist) {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, "Failed to reset pi settings")
-			return
-		}
-		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"message": "No config file to reset",
-		})
-		return
-	}
-	var existing map[string]any
-	if json.Unmarshal(raw, &existing) != nil || existing == nil {
-		// A file pi cannot parse back is not ours to rewrite; the block the
-		// dashboard would remove is not in there.
-		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-			"success": true,
-			"message": "9Router removed from Pi",
-		})
-		return
-	}
-
-	providers, _ := existing["providers"].(map[string]any)
-	if block, ok := providers[piProviderName]; ok && block != nil {
-		delete(providers, piProviderName)
-		if len(providers) == 0 {
-			delete(existing, "providers")
-		}
-		if err := writePiConfig(configPath, existing); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, "Failed to reset pi settings")
-			return
-		}
-	}
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success": true,
-		"message": "9Router removed from Pi",
-	})
-}
-
-// piModelList normalizes the requested models: a bare id becomes a full entry,
-// an object keeps the caller's values where set, and the single `model` field
-// fills in when no list arrived (upstream POST defaults).
-func piModelList(req piSettingsRequest) []map[string]any {
-	const (
-		defaultModelID    = "provider/model-id"
-		defaultContextWin = 128000
-		defaultMaxTokens  = 16384
-	)
-	out := make([]map[string]any, 0, len(req.Models))
-	for _, m := range req.Models {
-		switch entry := m.(type) {
-		case string:
-			if id := strings.TrimSpace(entry); id != "" {
-				out = append(out, piModelEntry(id, id, defaultContextWin, defaultMaxTokens))
-			}
-		case map[string]any:
-			id, _ := entry["id"].(string)
-			if strings.TrimSpace(id) == "" {
-				id = defaultModelID
-			}
-			name, _ := entry["name"].(string)
-			if strings.TrimSpace(name) == "" {
-				name = id
-			}
-			contextWindow := piIntOr(entry["contextWindow"], defaultContextWin)
-			maxTokens := piIntOr(entry["maxTokens"], defaultMaxTokens)
-			out = append(out, piModelEntry(id, name, contextWindow, maxTokens))
-		}
-	}
-	if len(out) > 0 {
-		return out
-	}
-	id := strings.TrimSpace(req.Model)
-	if id == "" {
-		id = defaultModelID
-	}
-	return []map[string]any{piModelEntry(id, id, defaultContextWin, defaultMaxTokens)}
-}
-
-func piModelEntry(id, name string, contextWindow, maxTokens int) map[string]any {
-	return map[string]any{
-		"id":            id,
-		"name":          name,
-		"contextWindow": contextWindow,
-		"maxTokens":     maxTokens,
-	}
-}
-
-// piIntOr reads a JSON number, falling back when absent or not a number.
-func piIntOr(v any, fallback int) int {
-	if n, ok := v.(int64); ok {
-		return int(n)
-	}
-	if n, ok := v.(float64); ok {
-		return int(n)
-	}
-	return fallback
-}
-
-// resolveAPIKey ports resolveCliApiKey (resolveApiKey.js): the caller's key,
-// then the previously stored one, then the first active dashboard key, then ""
-// — a deployment without requireApiKey works with no key at all, and the
-// placeholder is never written.
-func (h *PiHandler) resolveAPIKey(caller, stored any) string {
-	if key := strings.TrimSpace(strAny(caller)); key != "" && key != piPlaceholderKey {
-		return key
-	}
-	if key := strings.TrimSpace(strAny(stored)); key != "" && key != piPlaceholderKey {
-		return key
-	}
-	if h.repo == nil {
-		return ""
-	}
-	keys, err := h.repo.GetApiKeys()
-	if err != nil {
-		return ""
-	}
-	for _, k := range keys {
-		if k.IsActive == 1 {
-			if key := strings.TrimSpace(k.Key); key != "" {
-				return key
-			}
-		}
-	}
-	return ""
-}
-
-// strAny reads the string a config value decodes to, "" otherwise.
-func strAny(v any) string {
-	s, _ := v.(string)
-	return s
-}
-
-// writePiConfig marshals with the two-space indent pi's own tooling writes and
-// hands the file back with the same permissions upstream writes it with.
-func writePiConfig(path string, config map[string]any) error {
-	out, err := json.Marshal(config, jsontext.WithIndent("  "))
-	if err != nil {
-		return fmt.Errorf("marshal pi models.json: %w", err)
-	}
-	if err := os.WriteFile(path, out, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return nil
 }

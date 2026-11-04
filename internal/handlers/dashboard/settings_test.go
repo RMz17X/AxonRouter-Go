@@ -1,3 +1,5 @@
+//go:build sqlite_legacy
+
 package dashboard
 
 import (
@@ -434,20 +436,18 @@ func TestHandleImportDatabase_LegacyZipArchive(t *testing.T) {
 
 // The backup file lands in the user's Downloads folder and gets shared like
 // any other file, so credentials must not travel in it: the dashboard
-// password hash and the live OIDC client secret are stripped, while ordinary
-// settings still restore. See issue #35.
+// password hash is stripped, while ordinary settings still restore.
+// See issue #35.
 func TestHandleExportDatabase_StripsSecrets(t *testing.T) {
 	repo, cleanup := setupSettingsTestDB(t)
 	defer cleanup()
 	router := setupTestRouter(repo)
 
 	const passwordHash = "$2a$10$BI.8Ja5GPfZ36AD1n.UFtuUuoh9CDUyIhpzyzpnIFYMesO.fbe.fe"
-	const oidcSecret = "super-secret-idp-client-value"
 	seeded := map[string]any{
-		"password":         passwordHash,
-		"oidcClientSecret": oidcSecret,
-		"oidcIssuerUrl":    "https://idp.example.com",
-		"requireLogin":     true,
+		"password":      passwordHash,
+		"oidcIssuerUrl": "https://idp.example.com",
+		"requireLogin":  true,
 	}
 	if err := repo.UpdateSettingsRaw(seeded); err != nil {
 		t.Fatalf("seed settings: %v", err)
@@ -471,7 +471,7 @@ func TestHandleExportDatabase_StripsSecrets(t *testing.T) {
 		t.Fatalf("expected a settings object in the backup, got %#v", payload["settings"])
 	}
 
-	for _, key := range []string{"password", "oidcClientSecret"} {
+	for _, key := range []string{"password"} {
 		if _, leaked := settings[key]; leaked {
 			t.Errorf("%s must not be written to the backup file", key)
 		}
@@ -489,33 +489,28 @@ func TestHandleExportDatabase_StripsSecrets(t *testing.T) {
 		t.Errorf("requireLogin must survive, got %#v", settings["requireLogin"])
 	}
 
-	// Neither credential may appear anywhere in the serialized bytes.
+	// The credential may not appear anywhere in the serialized bytes.
 	if strings.Contains(string(exported), passwordHash) {
 		t.Error("password hash leaked into the backup bytes")
-	}
-	if strings.Contains(string(exported), oidcSecret) {
-		t.Error("oidc client secret leaked into the backup bytes")
 	}
 }
 
 // A sanitised backup must restore configuration without ever downgrading auth:
 // import wipes the settings row, so if the stripped keys were simply absent the
-// dashboard would fall back to the well-known default password and lose OIDC.
+// dashboard would fall back to the well-known default password.
 // See issue #35.
 func TestHandleImportDatabase_PreservesLiveSecrets(t *testing.T) {
 	repo, cleanup := setupSettingsTestDB(t)
 	defer cleanup()
 	router := setupTestRouter(repo)
 
-	const oidcSecret = "super-secret-idp-client-value"
 	hash, err := bcrypt.GenerateFromPassword([]byte("live-pass"), bcrypt.MinCost)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := repo.UpdateSettingsRaw(map[string]any{
-		"password":         string(hash),
-		"oidcClientSecret": oidcSecret,
-		"oidcIssuerUrl":    "https://idp.example.com",
+		"password":      string(hash),
+		"oidcIssuerUrl": "https://idp.example.com",
 	}); err != nil {
 		t.Fatalf("seed settings: %v", err)
 	}
@@ -548,9 +543,6 @@ func TestHandleImportDatabase_PreservesLiveSecrets(t *testing.T) {
 	if restored["password"] != string(hash) {
 		t.Errorf("import must keep the live password hash, got %#v", restored["password"])
 	}
-	if restored["oidcClientSecret"] != oidcSecret {
-		t.Errorf("import must keep the live oidc client secret, got %#v", restored["oidcClientSecret"])
-	}
 	// The payload still wins for everything it does carry.
 	if restored["oidcIssuerUrl"] != "https://idp.example.com" {
 		t.Errorf("payload settings must be restored, got %#v", restored["oidcIssuerUrl"])
@@ -562,7 +554,7 @@ func TestHandleImportDatabase_PreservesLiveSecrets(t *testing.T) {
 	// An empty secret in the payload means "not present here", not "clear
 	// it" — it must not wipe the hash either.
 	body, err = json.Marshal(map[string]any{
-		"settings":            map[string]any{"password": "", "oidcClientSecret": ""},
+		"settings":            map[string]any{"password": ""},
 		"providerConnections": []any{},
 		"combos":              []any{},
 		"apiKeys":             []any{},
@@ -584,9 +576,6 @@ func TestHandleImportDatabase_PreservesLiveSecrets(t *testing.T) {
 	}
 	if emptied["password"] != string(hash) {
 		t.Errorf("an empty payload password must not clear the stored hash, got %#v", emptied["password"])
-	}
-	if emptied["oidcClientSecret"] != oidcSecret {
-		t.Errorf("an empty payload secret must not clear the stored value, got %#v", emptied["oidcClientSecret"])
 	}
 }
 

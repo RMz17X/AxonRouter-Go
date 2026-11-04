@@ -220,7 +220,7 @@
 </script>
 
 <header
-  class="h-16 bg-vibrancy backdrop-blur-xl border-b border-border-subtle px-4 lg:px-8 flex items-center justify-between gap-4 flex-shrink-0 z-20 transition-colors"
+  class="flex h-16 min-h-16 shrink-0 items-center gap-3 border-b border-border bg-bg px-3.5 z-20"
 >
   <!-- Left: Mobile menu toggle + Dynamic Title & Description -->
   <div class="flex items-center gap-3 min-w-0 flex-1">
@@ -228,7 +228,7 @@
       <button
         type="button"
         onclick={onMenuClick}
-        class="lg:hidden p-1.5 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors cursor-pointer"
+        class="lg:hidden size-8 flex items-center justify-center rounded-sm text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors cursor-pointer"
         aria-label="Toggle menu"
       >
         <span class="material-symbols-outlined text-[22px]">menu</span>
@@ -241,16 +241,16 @@
           <button
             type="button"
             onclick={onBackToProviders}
-            class="text-text-muted hover:text-primary transition-colors cursor-pointer text-sm font-normal"
+            class="text-sm text-text-muted hover:text-primary transition-colors cursor-pointer"
           >
             Providers
           </button>
         </div>
         <div class="flex items-center gap-2 min-w-0">
-          <span class="material-symbols-outlined text-text-muted text-base">chevron_right</span>
+          <span class="material-symbols-outlined text-text-subtle text-base">chevron_right</span>
           <div class="flex items-center gap-2 min-w-0">
             <ProviderIcon id={selectedProvider.id} size="sm" />
-            <h1 class="text-base lg:text-2xl font-semibold text-text-main tracking-tight truncate">
+            <h1 class="text-sm font-medium text-text-main truncate">
               {selectedProvider.name}
             </h1>
           </div>
@@ -258,11 +258,11 @@
       </div>
     {:else}
       <div class="flex items-center gap-2.5 min-w-0">
-        <span class="material-symbols-outlined text-primary text-xl lg:text-2xl flex-shrink-0">
+        <span class="material-symbols-outlined text-primary text-[20px] flex-shrink-0">
           {currentMeta.icon}
         </span>
         <div class="min-w-0">
-          <h1 class="text-base lg:text-lg font-semibold text-text-main truncate leading-tight tracking-tight">
+          <h1 class="text-sm font-medium text-text-main truncate leading-tight">
             {displayTitle}
           </h1>
           {#if displayDescription}
@@ -288,12 +288,12 @@
       onclick={() => onOpenSearch?.()}
       title="Search models, providers, pages and settings (Ctrl+K)"
       aria-label="Open search"
-      class="flex items-center gap-1.5 rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:border-brand-500/40 hover:text-text-main cursor-pointer"
+      class="flex h-8 items-center gap-1.5 rounded-sm border border-border/80 bg-surface-2/50 px-2.5 text-xs text-text-muted transition-colors hover:border-primary/60 hover:bg-surface-2 hover:text-text-main focus:border-primary/60 focus:bg-surface focus:ring-2 focus:ring-primary/15 cursor-pointer"
     >
       <span class="material-symbols-outlined text-[16px]">search</span>
       <span class="hidden sm:inline">Search</span>
       <kbd
-        class="hidden lg:inline rounded border border-border bg-bg px-1 font-code text-[10px] text-text-subtle"
+        class="hidden lg:inline rounded-[3px] border border-border/70 bg-surface px-1 font-mono text-[10px] text-text-muted/70"
         >Ctrl K</kbd
       >
     </button>
@@ -304,7 +304,7 @@
         <MenuItem label="Install App" icon="install_desktop" onSelect={promptInstall} />
       {/if}
 
-      <div class="my-1 border-t border-border-subtle" role="separator"></div>
+      <div class="my-1 border-t border-border" role="separator"></div>
 
       <MenuItem
         label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -313,7 +313,7 @@
       />
       <MenuItem label="Change Log" icon="history" onSelect={() => (isChangelogOpen = true)} />
 
-      <div class="my-1 border-t border-border-subtle" role="separator"></div>
+      <div class="my-1 border-t border-border" role="separator"></div>
 
       <MenuItem label="Logout" icon="logout" danger onSelect={handleLogout} />
     </Menu>
@@ -329,7 +329,7 @@
 {#if isDonateOpen}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
     <div
-      class="absolute inset-0 bg-black/40 backdrop-blur-sm"
+      class="absolute inset-0 bg-black/60"
       onclick={() => (isDonateOpen = false)}
       role="button"
       tabindex="-1"
@@ -337,9 +337,9 @@
     ></div>
 
     <div
-      class="relative w-full max-w-lg bg-surface border border-border-subtle rounded-2xl shadow-2xl p-6 flex flex-col gap-5 z-10 animate-in fade-in zoom-in-95"
+      class="relative w-full max-w-lg bg-surface border border-border rounded-brand-lg shadow-[var(--shadow-elevated)] p-6 flex flex-col gap-5 z-10 animate-in fade-in zoom-in-95"
     >
-      <div class="flex items-center justify-between pb-3 border-b border-border-subtle">
+      <div class="flex items-center justify-between pb-3 border-b border-border">
         <h2 class="text-lg font-semibold text-text-main flex items-center gap-2">
           <span class="material-symbols-outlined text-pink-500">volunteer_activism</span>
           Support 9router-go
@@ -347,7 +347,7 @@
         <button
           type="button"
           onclick={() => (isDonateOpen = false)}
-          class="p-1 rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors cursor-pointer"
+          class="size-8 flex items-center justify-center rounded-sm text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors cursor-pointer"
           aria-label="Close"
         >
           <span class="material-symbols-outlined text-[20px]">close</span>
@@ -366,7 +366,7 @@
           href="https://github.com/luqman-v1/9router-go"
           target="_blank"
           rel="noopener noreferrer"
-          class="flex items-center gap-3 p-3.5 rounded-xl border border-border-subtle bg-surface-2 hover:border-brand-500/40 transition-colors group"
+          class="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-surface-2 hover:border-brand-500/40 transition-colors group"
         >
           <div class="size-10 rounded-full flex items-center justify-center bg-brand-500/10 text-brand-500">
             <span class="material-symbols-outlined text-[22px]">star</span>
@@ -383,7 +383,7 @@
           href="https://github.com/luqman-v1/9router-go/releases"
           target="_blank"
           rel="noopener noreferrer"
-          class="flex items-center gap-3 p-3.5 rounded-xl border border-border-subtle bg-surface-2 hover:border-pink-500/40 transition-colors group"
+          class="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-surface-2 hover:border-pink-500/40 transition-colors group"
         >
           <div class="size-10 rounded-full flex items-center justify-center bg-pink-500/10 text-pink-500">
             <span class="material-symbols-outlined text-[22px]">rocket_launch</span>
@@ -403,7 +403,7 @@
           href={TELEGRAM_GROUP_URL}
           target="_blank"
           rel="noopener noreferrer"
-          class="flex items-center gap-3 p-3.5 rounded-xl border border-border-subtle bg-surface-2 hover:border-sky-600/50 dark:hover:border-sky-400/50 transition-colors group"
+          class="flex items-center gap-3 p-3.5 rounded-xl border border-border bg-surface-2 hover:border-sky-600/50 dark:hover:border-sky-400/50 transition-colors group"
         >
           <div class="size-10 rounded-full flex items-center justify-center bg-sky-500/10 text-sky-600 dark:text-sky-400">
             <span class="material-symbols-outlined text-[22px]">send</span>
@@ -421,7 +421,7 @@
         <button
           type="button"
           onclick={() => (isDonateOpen = false)}
-          class="px-4 py-2 text-sm rounded-lg bg-surface-2 hover:bg-surface-3 text-text-main font-medium transition-colors cursor-pointer"
+          class="h-8 px-3 text-[13px] rounded-sm bg-surface-2 hover:bg-surface-3 text-text-main font-medium transition-colors cursor-pointer"
         >
           Close
         </button>

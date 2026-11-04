@@ -1,5 +1,13 @@
 # 9Router Benchmark: Go Proxy vs Legacy Next.js
 
+> **Status (2026-11-05): historical results.** These numbers were measured
+> against the file-database-era server. The harness scripts in this
+> directory (`run_benchmark.sh`, `run_comparison.sh`, `run_perf_test.py`,
+> `live_provider_smoke.py`) seed and read a legacy database file and do
+> **not** run against the current PostgreSQL-only server; porting the
+> harness is future work. The DB line below describes the 2026-07-18 run,
+> not the current stack.
+
 > **Date:** 2026-07-18
 > **Machine:** macOS Darwin 25.5.0, Apple Silicon
 > **Go version:** 1.26.0

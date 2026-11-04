@@ -1,0 +1,95 @@
+# 9router-go — cluster stack: N gateway replicas behind nginx, one
+# PostgreSQL 17 (the durable truth), one Valkey (the speed layer —
+# ephemeral hot state only; a Valkey outage degrades the gateways to
+# PostgreSQL, never to per-node memory).
+#
+#   cp .env.example .env   # set POSTGRES_PASSWORD and JWT_SECRET
+#   docker compose -f docker-compose.cluster.yml up -d
+#
+# Replica count: APP_REPLICAS in .env (default 2).
+# SQLite-era upgrade: same migrate profile as the single stack, run
+# before first boot against an existing database volume.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-9router}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-9router}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-9router} -d ${POSTGRES_DB:-9router}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    # Speed-layer state is reconstructible from PostgreSQL; no
+    # persistence is configured on purpose.
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  app:
+    build: .
+    image: 9router-go:local
+    deploy:
+      replicas: ${APP_REPLICAS:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-9router}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-9router}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      INITIAL_PASSWORD: ${INITIAL_PASSWORD:-}
+      PORT: "20130"
+      DATA_DIR: /data
+      # Speed layer (P3): VALKEY_URL wins over REDIS_URL; with it set the
+      # nodes boot in cluster mode and share hot state through Valkey.
+      VALKEY_URL: valkey://valkey:6379
+      SHUTDOWN_GRACE_SECONDS: ${SHUTDOWN_GRACE_SECONDS:-30}
+    volumes:
+      # Shared non-DB state root across replicas (catalog cache and the
+      # other DATA_DIR state are volume-shared in this topology).
+      - appdata:/data
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - app
+    ports:
+      - "${PORT:-20130}:80"
+    volumes:
+      - ./nginx.cluster.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+
+  migrate:
+    profiles: ["migrate"]
+    build:
+      context: tools/migrate-db
+    image: 9router-go-migrate:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Writable for WAL sidecars only — see docker-compose.single.yml.
+      - ${LEGACY_DIR:-./legacy}:/legacy
+    command:
+      - --sqlite
+      - /legacy/data.sqlite
+      - --pg
+      - postgres://${POSTGRES_USER:-9router}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-9router}?sslmode=disable
+
+volumes:
+  pgdata:
+  appdata:

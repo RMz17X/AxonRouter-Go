@@ -1,5 +1,8 @@
 # Session Affinity Sticky Round-Robin Implementation Plan
 
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement Session Affinity Sticky Round-Robin in 9router-go to bind client conversation sessions (`session_id`) to upstream accounts, maximizing prompt cache hit rate across multi-turn sessions while balancing load across multiple accounts.

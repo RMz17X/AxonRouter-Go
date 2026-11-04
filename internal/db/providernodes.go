@@ -42,7 +42,7 @@ func parseProviderNodeData(raw string) *ProviderNodeData {
 // Returns nil, nil when no row matches.
 func (r *Repo) GetProviderNodeByID(id string) (*models.ProviderNode, *ProviderNodeData, error) {
 	var node models.ProviderNode
-	err := scanProviderNode(r.db.QueryRow(
+	err := scanProviderNode(r.QueryRow(
 		"SELECT "+providerNodeColumns+" FROM providerNodes WHERE id = ? LIMIT 1",
 		id,
 	).Scan, &node)
@@ -61,7 +61,7 @@ func (r *Repo) GetProviderNodeByID(id string) (*models.ProviderNode, *ProviderNo
 // GetProviderNodeByPrefix searches providerNodes for one whose data JSON "prefix" field matches.
 // Returns nil, nil when no row matches.
 func (r *Repo) GetProviderNodeByPrefix(prefix string) (*models.ProviderNode, *ProviderNodeData, error) {
-	rows, err := r.db.Query("SELECT " + providerNodeColumns + " FROM providerNodes")
+	rows, err := r.Query("SELECT " + providerNodeColumns + " FROM providerNodes")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,7 +86,7 @@ func (r *Repo) GetProviderNodeByPrefix(prefix string) (*models.ProviderNode, *Pr
 
 // GetProviderNodePrefixMap returns a mapping of providerNode.id -> prefix from the data JSON.
 func (r *Repo) GetProviderNodePrefixMap() (map[string]string, error) {
-	rows, err := r.db.Query("SELECT id, data FROM providerNodes")
+	rows, err := r.Query("SELECT id, data FROM providerNodes")
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (r *Repo) GetProviderNodePrefixMap() (map[string]string, error) {
 
 // GetProviderNodes returns all provider nodes from the database.
 func (r *Repo) GetProviderNodes() ([]*models.ProviderNode, error) {
-	rows, err := r.db.Query(
+	rows, err := r.Query(
 		"SELECT " + providerNodeColumns + " FROM providerNodes ORDER BY createdAt ASC",
 	)
 	if err != nil {
@@ -143,7 +143,7 @@ func (r *Repo) CreateProviderNode(id, nodeType, name, data string) (*models.Prov
 	if nodeType != "" {
 		typeVal = nodeType
 	}
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		"INSERT INTO providerNodes (id, type, name, data, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)",
 		id, typeVal, nameVal, data, now, now,
 	)
@@ -171,14 +171,14 @@ func (r *Repo) UpdateProviderNode(id, name, data string) (*models.ProviderNode, 
 	if name != "" {
 		nameVal = name
 	}
-	if _, err := r.db.Exec(
+	if _, err := r.Exec(
 		"UPDATE providerNodes SET name = ?, data = ?, updatedAt = ? WHERE id = ?",
 		nameVal, data, now, id,
 	); err != nil {
 		return nil, fmt.Errorf("update provider node %s: %w", id, err)
 	}
 	var node models.ProviderNode
-	if err := scanProviderNode(r.db.QueryRow(
+	if err := scanProviderNode(r.QueryRow(
 		"SELECT "+providerNodeColumns+" FROM providerNodes WHERE id = ? LIMIT 1",
 		id,
 	).Scan, &node); err != nil {
@@ -197,21 +197,21 @@ func (r *Repo) DeleteProviderNode(ctx context.Context, id string) error {
 	defer func() { _ = tx.Rollback() }()
 
 	var exists int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM providerNodes WHERE id = ?`, id).Scan(&exists); err != nil {
+	if err := tx.QueryRowContext(ctx, r.Rebind(`SELECT COUNT(1) FROM providerNodes WHERE id = ?`), id).Scan(&exists); err != nil {
 		return fmt.Errorf("delete provider node %s: check existence: %w", id, err)
 	}
 	if exists == 0 {
 		return nil
 	}
 
-	if _, err := tx.ExecContext(ctx, "DELETE FROM providerNodes WHERE id = ?", id); err != nil {
+	if _, err := tx.ExecContext(ctx, r.Rebind("DELETE FROM providerNodes WHERE id = ?"), id); err != nil {
 		return fmt.Errorf("delete provider node %s: %w", id, err)
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM providerConnections WHERE provider = ?", id); err != nil {
+	if _, err := tx.ExecContext(ctx, r.Rebind("DELETE FROM providerConnections WHERE provider = ?"), id); err != nil {
 		return fmt.Errorf("delete provider node %s: delete connections: %w", id, err)
 	}
 
-	if err := pruneCustomModels(ctx, tx, id); err != nil {
+	if err := pruneCustomModels(ctx, tx, r.Rebind, id); err != nil {
 		return fmt.Errorf("delete provider node %s: prune custom models: %w", id, err)
 	}
 
@@ -223,7 +223,9 @@ func (r *Repo) DeleteProviderNode(ctx context.Context, id string) error {
 
 // pruneCustomModels removes any customModels kv rows whose key starts with the
 // node's alias or whose JSON value declares the node as its providerAlias.
-func pruneCustomModels(ctx context.Context, tx *sql.Tx, id string) error {
+// Statements run on the caller's transaction, so they rebind through the
+// function the Repo hands in (a transaction does not know its dialect).
+func pruneCustomModels(ctx context.Context, tx *sql.Tx, rebind func(string) string, id string) error {
 	rows, err := tx.QueryContext(ctx, `SELECT key, value FROM kv WHERE scope = 'customModels'`)
 	if err != nil {
 		return err
@@ -253,7 +255,7 @@ func pruneCustomModels(ctx context.Context, tx *sql.Tx, id string) error {
 	}
 
 	for _, k := range toDelete {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM kv WHERE scope = 'customModels' AND key = ?`, k); err != nil {
+		if _, err := tx.ExecContext(ctx, rebind(`DELETE FROM kv WHERE scope = 'customModels' AND key = ?`), k); err != nil {
 			return err
 		}
 	}

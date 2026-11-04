@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +33,9 @@ func stdinIsTerminal() bool {
 
 // runMenu is the bare-`9router-go` entry point on a terminal: the same
 // interface picker the Node CLI shows instead of silently booting a server.
+// Since P5 the foreground server is the binary's only run mode, so the
+// picker offers exactly that, plus the tray companion (which manages its
+// own gateway through internal/daemon, outside this binary's surface).
 func runMenu(cCtx *cli.Context) error {
 	in := bufio.NewReader(os.Stdin)
 	first := true
@@ -56,21 +58,9 @@ func runMenu(cCtx *cli.Context) error {
 		first = false
 		choice := parseChoice(line)
 		switch choice {
-		case "1":
-			return openDashboard(cCtx)
-		case "2":
-			return startDetached(cCtx)
-		case "3":
-			return runServer(cCtx)
-		case "4":
-			if err := stopDetached(cCtx); err != nil {
-				return err
-			}
-		case "5":
-			if err := statusDetached(cCtx); err != nil {
-				return err
-			}
-		case "6":
+		case "1", "3":
+			return foregroundStart(cCtx)
+		case "2", "6":
 			return startTray(cCtx)
 		default:
 			return nil
@@ -78,8 +68,8 @@ func runMenu(cCtx *cli.Context) error {
 	}
 }
 
-// menuText renders the header plus the numbered items, with the live daemon
-// state in front of the choice so the pick is informed.
+// menuText renders the header plus the numbered items, with the live state
+// of any tray-managed gateway in front of the choice so the pick is informed.
 func menuText() string {
 	state := "stopped"
 	if pid := daemon.RunningPID(); pid != 0 {
@@ -87,16 +77,57 @@ func menuText() string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n  %s v%s (%s/%s)\n", binaryName(), updater.CurrentVersion, runtime.GOOS, runtime.GOARCH)
-	fmt.Fprintf(&b, "  Server: %s  [%s]\n\n", daemonURL(), state)
-	b.WriteString("  1) Open dashboard (Web UI)\n")
-	b.WriteString("  2) Start in background\n")
-	b.WriteString("  3) Start in this terminal (foreground)\n")
-	b.WriteString("  4) Stop background server\n")
-	b.WriteString("  5) Show status\n")
-	b.WriteString("  6) Run in background with tray icon (frees the terminal)\n")
+	fmt.Fprintf(&b, "  Server: %s  [%s]\n\n", serverURL(), state)
+	b.WriteString("  1) Start in this terminal (foreground)\n")
+	b.WriteString("  2) Run in background with tray icon (frees the terminal)\n")
 	b.WriteString("  0) Exit\n\n")
 	b.WriteString("  Choose [1]: ")
 	return b.String()
+}
+
+// foregroundStart boots the server in this terminal, printing the dashboard
+// URL first so the operator can open it while the server runs.
+func foregroundStart(cCtx *cli.Context) error {
+	fmt.Printf("  Dashboard: %s/dashboard\n", serverURL())
+	fmt.Println("  Starting in this terminal — Ctrl+C to stop.")
+	return runServer(cCtx)
+}
+
+// serverURL is the address the gateway is expected to answer on.
+//
+// The port comes from the same resolved config the server binds, not from
+// os.Getenv. A deployment that sets PORT in .env — the common case, and every
+// compose file — was probed on 20130 while the server bound its real port.
+func serverURL() string {
+	cfg := config.LoadConfig()
+	if cfg.Port <= 0 {
+		return "http://127.0.0.1:20130"
+	}
+	port := strconv.Itoa(cfg.Port)
+	// BIND_ADDR defaults to a wildcard bind, which is not dialable; only an
+	// explicit loopback address is used to build the URL.
+	if host := strings.TrimSpace(cfg.Host); host != "" && !isWildcardHost(host) {
+		return "http://" + joinHostPort(host, port)
+	}
+	return "http://127.0.0.1:" + port
+}
+
+// isWildcardHost reports whether a bind address accepts every interface, in
+// which case the URL would target 0.0.0.0 rather than the local listener.
+func isWildcardHost(host string) bool {
+	switch host {
+	case "0.0.0.0", "::", "[::]", "*":
+		return true
+	}
+	return false
+}
+
+// joinHostPort wraps bare IPv6 literals in brackets.
+func joinHostPort(host, port string) string {
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		return "[" + host + "]:" + port
+	}
+	return host + ":" + port
 }
 
 // readChoice blocks for one line. ok is false when the stream ended without
@@ -148,8 +179,8 @@ func startTray(cCtx *cli.Context) error {
 		exe += ".exe"
 	}
 	if _, err := os.Stat(exe); err != nil {
-		fmt.Printf("tray companion %s not found next to %s; falling back to background server...\n", filepath.Base(exe), filepath.Base(self))
-		return startDetached(cCtx)
+		fmt.Printf("tray companion %s not found next to %s; starting in this terminal instead...\n", filepath.Base(exe), filepath.Base(self))
+		return foregroundStart(cCtx)
 	}
 	// CommandContext with a context that is never cancelled, not a deadline:
 	// this process is released immediately below and is meant to outlive the
@@ -170,40 +201,4 @@ func startTray(cCtx *cli.Context) error {
 // `opencode-go` install looks for `opencode-go-tray`.
 func trayBinaryName() string {
 	return binaryName() + "-tray"
-}
-
-// openDashboard makes sure the daemon is up, then hands the dashboard URL to
-// the platform browser.
-func openDashboard(cCtx *cli.Context) error {
-	url := daemonURL()
-	target := url + "/dashboard"
-	if daemon.RunningPID() == 0 {
-		res, err := daemon.Start(url, forwardArgs(cCtx))
-		if err != nil && !errors.Is(err, daemon.ErrAlreadyRunning) {
-			return err
-		}
-		if res.URL != "" {
-			target = res.URL
-		}
-	}
-	fmt.Printf("Opening %s\n", target)
-	return openInBrowser(cCtx.Context, target)
-}
-
-// openInBrowser uses the OS opener so no dependency is pulled in.
-//
-// CommandContext rather than Command: the linters require a context, and it
-// costs nothing here — the opener is detached from the caller and the process
-// outlives the call either way. The dashboard URL is built from the daemon's
-// own listen address, never from client input, so it cannot smuggle an
-// argument to the opener.
-func openInBrowser(ctx context.Context, target string) error {
-	switch runtime.GOOS {
-	case "windows":
-		return exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", target).Start()
-	case "darwin":
-		return exec.CommandContext(ctx, "open", target).Start()
-	default:
-		return exec.CommandContext(ctx, "xdg-open", target).Start()
-	}
 }

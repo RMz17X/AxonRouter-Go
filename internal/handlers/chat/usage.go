@@ -204,6 +204,9 @@ func (h *ChatHandler) LogFailure(
 		ComboName:        info.ComboName,
 		LatencyMs:        latencyMs,
 		LoopWarning:      loopWarning,
+		Endpoint:         info.Endpoint,
+		APIKey:           maskAPIKey(info.APIKey),
+		Account:          info.AccountLabel(),
 	}, h.Repo)
 
 	observ.RecordRequest(info.Provider, info.Model, info.Endpoint, statusCode)
@@ -491,6 +494,9 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		CachedTokens:     cachedTokens,
 		Status:           "ok",
 		LoopWarning:      loopWarning,
+		Endpoint:         info.Endpoint,
+		APIKey:           maskAPIKey(info.APIKey),
+		Account:          info.AccountLabel(),
 	}, h.Repo)
 }
 

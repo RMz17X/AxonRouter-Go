@@ -1,7 +1,6 @@
 package db
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -29,7 +28,7 @@ func (r *Repo) GetAllowedModels(apiKeyID string) ([]string, error) {
 	if r == nil || r.db == nil || apiKeyID == "" {
 		return []string{}, nil
 	}
-	rows, err := r.db.Query(
+	rows, err := r.Query(
 		`SELECT model FROM `+modelAccessTable+` WHERE api_key_id = ? ORDER BY model`,
 		apiKeyID,
 	)
@@ -82,7 +81,7 @@ func (r *Repo) GetAllowedModelsForKeys(ids []string) (map[string][]string, error
 
 	query := `SELECT api_key_id, model FROM ` + modelAccessTable +
 		` WHERE api_key_id IN (` + strings.Join(placeholders, ",") + `) ORDER BY api_key_id, model`
-	rows, err := r.db.Query(query, args...)
+	rows, err := r.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get allowed models for keys: %w", err)
 	}
@@ -121,7 +120,7 @@ func (r *Repo) SetAllowedModels(apiKeyID string, models []string) error {
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after a successful Commit
 
-	if _, err := tx.Exec(`DELETE FROM `+modelAccessTable+` WHERE api_key_id = ?`, apiKeyID); err != nil {
+	if _, err := tx.Exec(r.Rebind(`DELETE FROM `+modelAccessTable+` WHERE api_key_id = ?`), apiKeyID); err != nil {
 		return fmt.Errorf("set allowed models %s: clear: %w", apiKeyID, err)
 	}
 
@@ -134,7 +133,7 @@ func (r *Repo) SetAllowedModels(apiKeyID string, models []string) error {
 		}
 		seen[m] = true
 		if _, err := tx.Exec(
-			`INSERT INTO `+modelAccessTable+` (api_key_id, model, created_at) VALUES (?, ?, ?)`,
+			r.Rebind(`INSERT INTO `+modelAccessTable+` (api_key_id, model, created_at) VALUES (?, ?, ?)`),
 			apiKeyID, m, now,
 		); err != nil {
 			return fmt.Errorf("set allowed models %s: insert %q: %w", apiKeyID, m, err)
@@ -154,13 +153,6 @@ func (r *Repo) HasAllowedModelsTable() bool {
 	if r == nil || r.db == nil {
 		return false
 	}
-	var name string
-	err := r.db.QueryRow(
-		`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`,
-		modelAccessTable,
-	).Scan(&name)
-	if err == sql.ErrNoRows {
-		return false
-	}
-	return err == nil && name == modelAccessTable
+	exists, err := tableExistsOnDB(r.db, modelAccessTable)
+	return err == nil && exists
 }

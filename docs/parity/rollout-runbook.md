@@ -1,5 +1,8 @@
 # Rollout runbook — G25b
 
+> **Status (2026-11-05): historical runbook** from the upstream-parity track (see `../PARITY-REMAINING.md`'s banner); its rollout steps describe the file-database-era deployment and must not be run against the current stack. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 Tài liệu này ghi **trình tự chạy** một lần chuyển đổi từ Node sang bản Go, và
 **cái gì chặn từng bước**. Bằng chứng đo thuộc `docs/parity/delivery-ledger.md`.
 

@@ -1,144 +1,98 @@
-# 9router-go Native Embedded Dashboard: Build and Architecture Guide
+# 9router-go: Build and Architecture Guide
 
-This document describes the current native Go gateway and its embedded Svelte/Vite dashboard. It is a build and operations guide, not a feature-compatibility checklist. The current release metadata is `v1.9.1`; the repository manifest tracks upstream `v0.5.85`, while the changelog separately lists `v0.5.86` parity items. Do not treat those statements as a complete upstream-parity guarantee.
+This document describes how the gateway and its embedded Svelte/Vite
+dashboard are built and run. For the architecture itself see
+[`../ARCHITECTURE.md`](../ARCHITECTURE.md); for operating the stacks see
+[`../README.md`](../README.md); for the database contract see
+[`../DATABASE.md`](../DATABASE.md).
 
-> **Pengembangan berikutnya**: Lihat [`docs/keirouter-port-plan.md`](keirouter-port-plan.md) untuk rencana port fitur KeiRouter → 9router-go (governance, security, resale).
+Version facts: `VERSION` declares the build version (currently an
+experimental `1.9.16-exp.1`); `version.json`'s `latestVersion` is the
+stable channel (`1.9.15`). The repository manifest tracks upstream
+`v0.5.85`, while the changelog separately lists `v0.5.86` parity items —
+not a complete upstream-parity guarantee.
 
-## Architecture
+---
 
-The Go process owns the HTTP server, SQLite repository, authentication, proxy handlers, and lifecycle. The dashboard is a Svelte 5 + TypeScript + Vite SPA. During a build, Vite writes optimized static files to `web/dist`; `web/embed.go` embeds `dist/*` into the Go executable. At runtime the browser receives the embedded files and calls the Go HTTP API.
+## 1. The supported build: Docker
 
-```mermaid
-graph LR
-  S[Svelte/Vite source] -->|bun run build| D[web/dist]
-  D -->|go:embed| B[9router-go executable]
-  B --> H[Go HTTP server and SQLite]
-  B --> W[Embedded dashboard assets]
-```
+The `Dockerfile` is the build. Three stages:
 
-Production does not need Node.js, Bun, or Vite after the binary is built. The generated `web/dist` directory is ignored by Git and may be absent in a fresh checkout. A Go build therefore needs the frontend prerequisites and a successful frontend build first. `go build` is not a self-sufficient substitute for that prerequisite.
+1. **Web stage** (`oven/bun:1`, on the build platform): `bun install
+   --frozen-lockfile` in `web/`, then `bun run build`, producing
+   `web/dist`.
+2. **Go stage** (`golang:1.27.3-alpine`): copies `web/dist` into place
+   and cross-builds the target binary with `CGO_ENABLED=0`; `VERSION`
+   is stamped into `internal/updater.CurrentVersion` via `-ldflags`.
+3. **Runtime stage** (`alpine:3.21`): the binary runs as a non-root user
+   (uid 10001) behind `docker-entrypoint.sh`, which fixes `DATA_DIR`
+   volume ownership and drops privileges. The image is ~82 MB and
+   health-checks `GET /api/auth/status`.
 
-## Prerequisites
-
-Install the versions used by the repository before building:
-
-- Go **1.27** (from `go.mod` and the release workflow).
-- Bun **1.4.2** (from `.github/workflows/ci.yml` and `release.yml`).
-- A writable `DATA_DIR`, or the default platform data directory (`~/.9router` on Unix-like systems, `%APPDATA%/9router` on Windows).
-- Configuration for `JWT_SECRET` and `INITIAL_PASSWORD` when deploying. The application can generate a JWT secret when one is not supplied, but operators should set a strong value explicitly. Do not ship a known initial password.
-- For optional release/cross-build work: the target Go toolchains and the platform-specific tools required by the selected build path. `RTK` is optional and is not required to build.
-
-## Build the frontend
-
-From the repository root:
-
-```bash
-cd web
-bun install --frozen-lockfile
-bun run lint
-bun run build
-cd ..
-```
-
-`bun run build` runs the TypeScript project build and Vite production build. It must produce at least `web/dist/index.html` and the referenced assets. The current `web/package.json` does not define a `test` script; do not document `bun run test` as an available build prerequisite. Frontend test automation is tracked in `ROADMAP.md` until the manifest and CI provide a test command.
-
-`web/dist` is generated, not source. Remove or rebuild it when diagnosing stale assets. A stale dashboard on a running binary has a third cause worth checking first: the process was started before the rebuild and still has the previous bundle embedded, so restart it before suspecting the build.
+Build and run it through the compose stacks (the only supported
+deployment shape):
 
 ```bash
-rm -f web/.dist-stamp
-FORCE=1 make web-build
+cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET, INITIAL_PASSWORD
+docker compose -f docker-compose.single.yml up -d --build
+docker compose -f docker-compose.cluster.yml up -d --build   # APP_REPLICAS nodes + Valkey + nginx
 ```
 
-## Build the Go binary
+The release workflow (`.github/workflows/release.yml`) builds this same
+Dockerfile for `linux/amd64` + `linux/arm64` and pushes
+`luqmenul/9router-go` with channel-derived tags (§4).
 
-The normal path is the repository Makefile. It rebuilds `web/dist` when the frontend inputs have changed since the last build, then embeds it and compiles the binary with the version from `VERSION` (or the documented fallback):
+## 2. Native build (development)
+
+For a fast edit loop you can build natively — know that the binary then
+needs a reachable PostgreSQL at runtime; there is no embedded database
+to fall back to.
 
 ```bash
-make build
+make web-build     # bun install (frozen) + bun run build -> web/dist
+make build         # stamps VERSION, produces ./9router-go
+DATABASE_URL=postgres://user:pass@localhost:5432/9router JWT_SECRET=dev ./9router-go
 ```
 
-`make web-build` is a prerequisite-only target. It runs `bun install --frozen-lockfile` and `bun run build` when the fingerprint of every frontend build input changes — `web/src`, `web/public`, `package.json`, `bun.lock`, the tsconfigs, `vite.config.ts`, and `web/index.html` — and skips the build when that fingerprint still matches the one recorded in `web/.dist-stamp`. The old guard rebuilt only when `web/dist/index.html` was missing, which skipped every rebuild on a machine that already had a `dist` and embedded a stale SPA until `FORCE=1` was passed. Set `FORCE=1` to rebuild regardless:
+`make dev` runs the same binary via `go run` with `PORT=20130` and an
+env file at `~/.9router.env` when present. Go builds need `web/dist` to
+exist (it is embedded via `web/embed.go` and gitignored) — build the
+dashboard first on a fresh clone.
 
-```bash
-FORCE=1 make web-build
-```
+## 3. Dashboard architecture (unchanged by the platform work)
 
-It is not a substitute for an explicit frontend verification.
+- **Frontend:** Svelte 5 + Vite + Tailwind in `web/`; the SPA is
+  embedded into the Go binary and served by it, with an index fallback
+  for client-side routes.
+- **Parity discipline:** the dashboard mirrors the upstream (Next.js)
+  dashboard's behavior and API contracts; the working record of that
+  parity effort is [`DASHBOARD_PROVIDER_PARITY.md`](DASHBOARD_PROVIDER_PARITY.md)
+  and [`PARITY-REMAINING.md`](PARITY-REMAINING.md) (both carry status
+  banners — read those first).
+- **Verification for dashboard changes:** `make vet-svelte` runs
+  `svelte-check` as a **ratchet** — the change must not increase the
+  error/warning counts over the recorded baseline (AGENTS.md §5.B).
 
-For a direct build, complete the frontend step first and then run:
+## 4. Versioning and releases
 
-```bash
-test -f web/dist/index.html
-go build -ldflags="-s -w -X '9router/proxy/internal/updater.CurrentVersion=$(cat VERSION)'" -o 9router-go ./cmd/9router-go
-```
+- `scripts/bump-version.sh major|minor|patch [--exp]` updates `VERSION`
+  and pushes the git tag; the tag alone determines the release channel
+  (a tag containing `-exp` is experimental; the workflow never reads
+  `version.json` to decide).
+- `version.json` is the **stable channel's** manifest: the release
+  workflow rewrites it on stable tags only, so during an experimental
+  run it deliberately still names the previous stable version.
+- Tagged releases build the five platform binaries (`make cross`),
+  checksums, and the multi-arch Docker image; the Telegram notification
+  runs after both the binaries and the image exist — see
+  [`TELEGRAM_RELEASE_NOTIFICATIONS.md`](TELEGRAM_RELEASE_NOTIFICATIONS.md).
 
-RTK may wrap the Go command in a developer environment, but it is optional and must not obscure failures from `go build`.
+## 5. Historical note
 
-## Run and verify
-
-Configure a data directory and secrets, then start the binary:
-
-```bash
-export DATA_DIR="$HOME/.9router"
-export JWT_SECRET="$(openssl rand -hex 32)" # use a persistent, protected value in deployments
-export INITIAL_PASSWORD='set-a-unique-local-password'
-PORT=20130 ./9router-go
-```
-
-The server listens on `http://localhost:20130` by default. Check both the gateway and the embedded dashboard:
-
-```bash
-curl -i http://127.0.0.1:20130/health
-curl -i http://127.0.0.1:20130/api/hello
-curl -I http://127.0.0.1:20130/
-```
-
-With a fresh, valid embedded bundle, `/` and client-side dashboard routes return the SPA; missing asset paths return 404 rather than silently becoming HTML. Browser dashboard routes may redirect to `/login` when login is required. The login/session API is separate from the client API-key routes; do not infer authorization from the fact that a page loads.
-
-Before using an existing SQLite file, verify that its schema is compatible with the current Go handlers. The Go database layer currently has an idempotent `upstream_leases` table bootstrap, not the full upstream versioned migration runner. Fresh-database schema bootstrap and legacy migration are therefore explicit hardening work in `ROADMAP.md`; this guide does not promise a no-action migration.
-
-## Docker build
-
-The Dockerfile is self-contained for a normal image build: its frontend stage installs Bun dependencies and builds `web/dist`, and the Go stage downloads modules and embeds the generated assets. It still requires network access to fetch Go and Bun modules, sufficient build resources, and a valid `VERSION` argument/fallback.
-
-```bash
-VERSION="$(cat VERSION)" docker build -t 9router-go .
-```
-
-The runtime image contains the Go binary and CA/time-zone support; it does not require a JavaScript runtime. Persistent application data must be mounted outside the container image and passed with `DATA_DIR`.
-
-## Release channels
-
-The channel is derived from the tag and nothing else, so what you tag is what
-you publish:
-
-| Tag | Channel | GitHub Release | Docker tags |
-|---|---|---|---|
-| `v1.10.0` | stable | final | `latest`, `1.10`, `1.10.0` |
-| `v1.10.0-exp.1` | experimental | **Pre-release** | `exp`, `1.10-exp`, `1.10.0-exp.1` |
-
-GitHub excludes prereleases from `releases/latest`, which is the endpoint
-`internal/updater` falls back to, so a stable install is never offered an
-experimental build. `autoApplyAllowed` in `internal/updater/updater.go` is the
-second guard: even a manual check will not swap a running final release for a
-prerelease unattended.
-
-`version.json` is the stable channel's manifest. `scripts/bump-version.sh`
-leaves it alone for an experimental bump, and `release.yml` fails the release if
-the two disagree in either direction — an experimental version in the manifest
-reaches every install, and a stable release without a manifest bump reaches
-nobody.
-
-```bash
-./scripts/bump-version.sh 1.10.0-exp.1   # experimental: VERSION + updater only
-./scripts/bump-version.sh 1.10.0         # stable: also moves version.json
-```
-
-## Release and CI notes
-
-CI runs the frontend build, `bun test`, the `svelte-check` ratchet, `go vet`,
-`go test ./...`, the race detector, the `integration`-tagged suite, and a
-verify-only Docker build. It does not currently run a coverage gate or a
-release-time vulnerability scan.
-
-For a release candidate, reproduce the relevant checks in a clean environment, record toolchain versions and the exact frontend build, and verify the embedded dashboard with a running binary. Do not report a successful frontend build as proof that a Go build, migration, auth boundary, or release artifact succeeded.
+This guide previously described a Bun-compiled standalone dashboard
+binary, a greenfield SPA scaffold, and a file-database runtime. All
+three are gone: the dashboard has been the embedded Svelte SPA for a
+long time, and the runtime is PostgreSQL-only behind the compose
+stacks. The KeiRouter port plan that used to be linked from here is
+[`keirouter-port-plan.md`](keirouter-port-plan.md), a historical plan
+document.

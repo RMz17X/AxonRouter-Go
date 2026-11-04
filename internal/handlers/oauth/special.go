@@ -16,7 +16,7 @@ import (
 
 	"9router/proxy/internal/handlerutil"
 
-	_ "modernc.org/sqlite"
+	_ "9router/proxy/internal/foreigndb"
 )
 
 // ---------- cursor: import + auto-import from local state.vscdb ----------
@@ -120,7 +120,7 @@ func readCursorStateDB() (token, machineID string, err error) {
 			lastErr = "not found: " + p
 			continue
 		}
-		db, oerr := sql.Open("sqlite", "file:"+p+"?mode=ro&immutable=1")
+		db, oerr := sql.Open("foreigndb", "file:"+p+"?mode=ro&immutable=1")
 		if oerr != nil {
 			lastErr = oerr.Error()
 			continue
@@ -423,12 +423,12 @@ func (h *OAuthHandler) saveSpecialConnection(w http.ResponseWriter, provider, co
 	}
 	if h.Repo != nil && h.Repo.RawDB() != nil {
 		var existing string
-		err := h.Repo.RawDB().QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing)
+		err := h.Repo.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existing)
 		if err == nil && existing != "" {
-			_, err = h.Repo.RawDB().Exec(
+			_, err = h.Repo.Exec(
 				"UPDATE providerConnections SET name = ?, data = ?, updatedAt = ? WHERE id = ?", name, string(dataBytes), now, connID)
 		} else {
-			_, err = h.Repo.RawDB().Exec(
+			_, err = h.Repo.Exec(
 				"INSERT INTO providerConnections (id, provider, authType, name, isActive, data, createdAt, updatedAt) VALUES (?, ?, 'oauth', ?, 1, ?, ?, ?)",
 				connID, provider, name, string(dataBytes), now, now)
 		}

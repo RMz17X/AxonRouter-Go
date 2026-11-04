@@ -81,11 +81,11 @@
       onkeydown={(e) => {
         if (e.key === 'Enter') add()
       }}
-      class="flex-1 px-3 py-2 rounded-[10px] bg-surface-2 border border-border text-text-main text-sm outline-none focus:border-brand-500"
+      class="flex-1 px-3 py-2 rounded-brand bg-surface-2 border border-border text-text-main text-sm outline-none focus:border-brand-500"
     />
     <select
       bind:value={mode}
-      class="px-3 py-2 rounded-[10px] bg-surface-2 border border-border text-text-main text-sm outline-none focus:border-brand-500"
+      class="px-3 py-2 rounded-brand bg-surface-2 border border-border text-text-main text-sm outline-none focus:border-brand-500"
     >
       <option value={JAILBREAK_KEYWORD_WORD}>word</option>
       <option value={JAILBREAK_KEYWORD_PARTIAL}>partial</option>
@@ -94,7 +94,7 @@
     <button
       type="button"
       onclick={add}
-      class="px-3 py-2 rounded-[10px] border border-border text-text-main text-sm font-medium hover:bg-surface-2"
+      class="px-3 py-2 rounded-brand border border-border text-text-main text-sm font-medium hover:bg-surface-2"
     >
       Add
     </button>

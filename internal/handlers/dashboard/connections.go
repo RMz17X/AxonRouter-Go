@@ -67,7 +67,7 @@ func (h *DashboardHandler) HandleGetProvidersClient(w http.ResponseWriter, r *ht
 
 	conns, err := h.Repo.GetProviderConnections("", false)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch providers")
 		return
 	}
 	eligible := make([]*models.ProviderConnection, 0, len(conns))
@@ -872,7 +872,7 @@ func (h *DashboardHandler) HandleUpdateConnection(w http.ResponseWriter, r *http
 // HandleReorderConnection handles POST /api/connections/{id}/reorder.
 // Body: {"direction": "up"|"down"}.
 //
-// The whole swap plus the 1..N renumbering happens in one SQLite transaction,
+// The whole swap plus the 1..N renumbering happens in one transaction,
 // so the pool can never end up with two rows sharing a priority. See
 // Repo.ReorderProviderConnections for why the previous two-PUT client swap was
 // not safe.

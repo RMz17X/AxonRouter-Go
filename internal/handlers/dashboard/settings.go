@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -48,18 +49,25 @@ func writePlainError(w http.ResponseWriter, status int, message string) {
 }
 
 // secretSettingKeys are stripped from responses so credentials never leave the
-// server (Next strips password + oidcClientSecret from GET /api/settings).
-var secretSettingKeys = []string{"password", "oidcClientSecret"}
+// server (Next strips the password from GET /api/settings).
+var secretSettingKeys = []string{"password"}
 
 // HandleGetSettings handles GET /api/settings.
 // Reads raw settings data map minus secret keys, mirroring the Next dashboard.
 func (h *DashboardHandler) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 	raw, err := h.Repo.GetSettingsRaw()
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		// Axon answers dashboard errors flat ({error: message}); the
+		// nested engine envelope is for /v1 routes only (batch 9, G1).
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	handlerutil.WriteJSON(w, http.StatusOK, sanitizeSettings(raw))
+	out := sanitizeSettings(raw)
+	// Axon derives these two from the process env on every GET.
+	out["enableRequestLogs"] = os.Getenv("ENABLE_REQUEST_LOGS") == "true"
+	out["enableTranslator"] = os.Getenv("ENABLE_TRANSLATOR") == "true"
+	noStore(w)
+	handlerutil.WriteJSON(w, http.StatusOK, out)
 }
 
 // HandleUpdateSettings handles PUT/PATCH /api/settings.
@@ -67,14 +75,14 @@ func (h *DashboardHandler) HandleGetSettings(w http.ResponseWriter, r *http.Requ
 func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusBadRequest, "failed to read body")
 		return
 	}
 	defer r.Body.Close()
 
 	var updates map[string]any
 	if err := json.Unmarshal(body, &updates); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writePlainError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if updates == nil {
@@ -88,11 +96,21 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 		delete(updates, "currentPassword")
 		delete(updates, "newPassword")
 		if newPassword == "" {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "newPassword is required")
+			writePlainError(w, http.StatusBadRequest, "newPassword is required")
+			return
+		}
+		// Axon: with a stored hash, a missing current password is a
+		// 400 of its own, distinct from a wrong one (401).
+		if currentPassword == "" && hasStoredPassword(settingsOrEmpty(h)) {
+			writePlainError(w, http.StatusBadRequest, "Current password required")
 			return
 		}
 		if err := h.changeDashboardPassword(currentPassword, newPassword); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusUnauthorized, err.Error())
+			if err.Error() == "Invalid current password" {
+				writePlainError(w, http.StatusUnauthorized, err.Error())
+			} else {
+				writePlainError(w, http.StatusInternalServerError, err.Error())
+			}
 			return
 		}
 	} else {
@@ -100,21 +118,20 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 		delete(updates, "newPassword")
 	}
 
+	// Axon strips protected keys from the payload silently
+	// (PROTECTED_SETTING_KEYS) instead of failing the whole save.
 	for _, key := range protectedSettingKeys {
-		if _, ok := updates[key]; ok {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "setting "+key+" is read-only")
-			return
-		}
+		delete(updates, key)
 	}
 
 	if err := validateProviderThinking(updates["providerThinking"]); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		writePlainError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	normalizeProviderThinking(updates)
 
 	if err := validateNumericSettings(updates); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		writePlainError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -131,7 +148,7 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 	// every switch. Refused here, before the write, so a bad payload leaves
 	// the settings row untouched.
 	if err := h.mergeAutoPingSchedules(updates); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		writePlainError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// White-label branding is rendered by the sidebar, so the stored shape is
@@ -143,7 +160,7 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 	// and its file in agreement, not one pointing at a deleted asset.
 	previousLogo, clearLogo := logoClearedByUpdate(h, updates)
 	if err := h.Repo.UpdateSettingsRaw(updates); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if clearLogo {
@@ -156,6 +173,7 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 		}
 	}
 
+	noStore(w)
 	updated, err := h.Repo.GetSettingsRaw()
 	if err != nil {
 		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -198,7 +216,7 @@ func (h *DashboardHandler) HandleExportDatabase(w http.ResponseWriter, r *http.R
 func (h *DashboardHandler) HandleImportDatabase(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusBadRequest, "failed to read body")
 		return
 	}
 	defer r.Body.Close()
@@ -727,6 +745,23 @@ func getSettingsRawTx(ctx context.Context, tx *sql.Tx) (map[string]any, error) {
 	return raw, nil
 }
 
+// importExec runs one statement of the import transaction with its
+// placeholders rebound (the transaction does not rebind; the Repo does).
+//
+// The import statements use the ON CONFLICT upsert form. That lands the
+// same row a replace would here: the import wipes every table before
+// inserting, so a conflict can only be with a row this same import
+// wrote moments earlier through the same column list, and the schema
+// declares no foreign keys, so a replace's delete would have no
+// cascades to fire that DO UPDATE skips. The two tables with a second
+// unique index (apiKeys.key, combos.name) are the exception — a single
+// ON CONFLICT target cannot resolve a conflict on the other index —
+// and emulate replace with an explicit delete-then-insert at their
+// call sites instead.
+func (h *DashboardHandler) importExec(tx *sql.Tx, query string, args ...any) (sql.Result, error) {
+	return tx.Exec(h.Repo.Rebind(query), args...)
+}
+
 // importDatabase wipes the dashboard tables and restores a backup payload,
 // matching Next's importDb transaction.
 //
@@ -743,8 +778,8 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 	defer tx.Rollback()
 	// Secrets are stripped from the backup, so a restore must not let their
 	// absence delete the live credentials: wiping the settings row without
-	// them would silently reset the dashboard to the default password and
-	// disable OIDC. Read them inside the transaction before the wipe.
+	// them would silently reset the dashboard to the default password.
+	// Read them inside the transaction before the wipe.
 	liveSecrets, err := readSettingsSecrets(tx)
 	if err != nil {
 		return nil, err
@@ -786,7 +821,7 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		if err != nil {
 			return nil, err
 		}
-		if _, err := tx.Exec(
+		if _, err := h.importExec(tx,
 			`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, string(b),
 		); err != nil {
 			return nil, err
@@ -800,9 +835,12 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 			continue
 		}
 		data := restData(c, "id", "provider", "authType", "name", "email", "priority", "isActive", "createdAt", "updatedAt")
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
-			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		if _, err := h.importExec(tx, `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
+			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (id) DO UPDATE SET provider = EXCLUDED.provider, authType = EXCLUDED.authType,
+				name = EXCLUDED.name, email = EXCLUDED.email, priority = EXCLUDED.priority,
+				isActive = EXCLUDED.isActive, data = EXCLUDED.data, createdAt = EXCLUDED.createdAt,
+				updatedAt = EXCLUDED.updatedAt`,
 			c["id"], c["provider"], stringDefault(c["authType"], "oauth"), stringDefault(c["name"], nil),
 			stringDefault(c["email"], nil), c["priority"], boolToInt(c["isActive"]), data,
 			stringDefault(c["createdAt"], nowISO()), stringDefault(c["updatedAt"], nowISO()),
@@ -826,11 +864,16 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		data := restData(n, "id", "type", "name", "createdAt", "updatedAt",
 			"rpmLimit", "tpmLimit", "concurrencyLimit", "tokenQuota", "queueTimeoutMs",
 			"quotaResetId", "contractExpiresAt")
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt,
+		if _, err := h.importExec(tx, `INSERT INTO providerNodes(id, type, name, data, createdAt, updatedAt,
 			        rpmLimit, tpmLimit, concurrencyLimit, tokenQuota, queueTimeoutMs, quotaResetId,
 			        contractExpiresAt)
-			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (id) DO UPDATE SET type = EXCLUDED.type, name = EXCLUDED.name,
+				data = EXCLUDED.data, createdAt = EXCLUDED.createdAt, updatedAt = EXCLUDED.updatedAt,
+				rpmLimit = EXCLUDED.rpmLimit, tpmLimit = EXCLUDED.tpmLimit,
+				concurrencyLimit = EXCLUDED.concurrencyLimit, tokenQuota = EXCLUDED.tokenQuota,
+				queueTimeoutMs = EXCLUDED.queueTimeoutMs, quotaResetId = EXCLUDED.quotaResetId,
+				contractExpiresAt = EXCLUDED.contractExpiresAt`,
 			n["id"], stringDefault(n["type"], nil), stringDefault(n["name"], nil), data,
 			stringDefault(n["createdAt"], nowISO()), stringDefault(n["updatedAt"], nowISO()),
 			intDefault(n["rpmLimit"], 0), intDefault(n["tpmLimit"], 0),
@@ -849,8 +892,9 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 			continue
 		}
 		data := restData(p, "id", "isActive", "testStatus", "createdAt", "updatedAt")
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+		if _, err := h.importExec(tx, `INSERT INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)
+			 ON CONFLICT (id) DO UPDATE SET isActive = EXCLUDED.isActive, testStatus = EXCLUDED.testStatus,
+				data = EXCLUDED.data, createdAt = EXCLUDED.createdAt, updatedAt = EXCLUDED.updatedAt`,
 			p["id"], boolToInt(p["isActive"]), stringDefault(p["testStatus"], "unknown"), data,
 			stringDefault(p["createdAt"], nowISO()), stringDefault(p["updatedAt"], nowISO()),
 		); err != nil {
@@ -868,8 +912,18 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		if keyID == "" {
 			continue
 		}
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt,
+		// apiKeys has a second unique index (key): a replace resolves a
+		// conflict on either index by deleting the conflicting row,
+		// which one ON CONFLICT target cannot express, so the import
+		// deletes-then-inserts (importExec's comment covers why that is
+		// the same outcome here).
+		if _, err := h.importExec(tx,
+			`DELETE FROM apiKeys WHERE id = ? OR key = ?`, k["id"], k["key"],
+		); err != nil {
+			return nil, err
+		}
+		if _, err := h.importExec(tx,
+			`INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt,
 			        rateLimitRPM, rateLimitTPM, rateLimitConcurrency, tokenQuota, queueTimeoutMs,
 			        limitMicros, limitTokens, budgetPeriod, alertPct, hardCutoff)
 			 VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -893,8 +947,8 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 			return nil, err
 		}
 		for _, model := range importAllowlist(k) {
-			if _, err := tx.Exec(
-				`INSERT OR REPLACE INTO api_key_model_access(api_key_id, model, created_at) VALUES(?, ?, ?)`,
+			if _, err := h.importExec(tx, `INSERT INTO api_key_model_access(api_key_id, model, created_at) VALUES(?, ?, ?)
+				 ON CONFLICT (api_key_id, model) DO UPDATE SET created_at = EXCLUDED.created_at`,
 				keyID, model, stringDefault(k["createdAt"], nowISO()),
 			); err != nil {
 				return nil, err
@@ -916,8 +970,15 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		if err != nil || string(rules) == "null" {
 			rules = []byte("[]")
 		}
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO combos(id, name, kind, models, matchRules, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+		// combos has a second unique index (name) — the same replace
+		// emulation as apiKeys above.
+		if _, err := h.importExec(tx,
+			`DELETE FROM combos WHERE id = ? OR name = ?`, c["id"], c["name"],
+		); err != nil {
+			return nil, err
+		}
+		if _, err := h.importExec(tx,
+			`INSERT INTO combos(id, name, kind, models, matchRules, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
 			c["id"], c["name"], stringDefault(c["kind"], nil), string(models), string(rules),
 			stringDefault(c["createdAt"], nowISO()), stringDefault(c["updatedAt"], nowISO()),
 		); err != nil {
@@ -925,16 +986,16 @@ func (h *DashboardHandler) importDatabase(ctx context.Context, payload map[strin
 		}
 	}
 
-	if err := writeKVPayload(tx, "modelAliases", payload["modelAliases"], true); err != nil {
+	if err := h.writeKVPayload(tx, "modelAliases", payload["modelAliases"], true); err != nil {
 		return nil, err
 	}
-	if err := writeKVPayload(tx, "customModels", payload["customModels"], false); err != nil {
+	if err := h.writeKVPayload(tx, "customModels", payload["customModels"], false); err != nil {
 		return nil, err
 	}
-	if err := writeKVPayload(tx, "mitmAlias", payload["mitmAlias"], true); err != nil {
+	if err := h.writeKVPayload(tx, "mitmAlias", payload["mitmAlias"], true); err != nil {
 		return nil, err
 	}
-	if err := writeKVPayload(tx, "pricing", payload["pricing"], true); err != nil {
+	if err := h.writeKVPayload(tx, "pricing", payload["pricing"], true); err != nil {
 		return nil, err
 	}
 
@@ -1034,7 +1095,9 @@ func importReport(payload map[string]any) map[string]any {
 
 // writeKVPayload restores kv rows for one scope. keyed scopes store a map of
 // key → value; customModels stores a list keyed by providerAlias|id|type.
-func writeKVPayload(tx *sql.Tx, scope string, value any, keyed bool) error {
+func (h *DashboardHandler) writeKVPayload(tx *sql.Tx, scope string, value any, keyed bool) error {
+	kvUpsert := `INSERT INTO kv(scope, key, value) VALUES(?, ?, ?)
+		 ON CONFLICT (scope, key) DO UPDATE SET value = EXCLUDED.value`
 	if keyed {
 		m, ok := value.(map[string]any)
 		if !ok {
@@ -1045,9 +1108,7 @@ func writeKVPayload(tx *sql.Tx, scope string, value any, keyed bool) error {
 			if err != nil {
 				continue
 			}
-			if _, err := tx.Exec(
-				`INSERT OR REPLACE INTO kv(scope, key, value) VALUES(?, ?, ?)`, scope, k, string(b),
-			); err != nil {
+			if _, err := h.importExec(tx, kvUpsert, scope, k, string(b)); err != nil {
 				return err
 			}
 		}
@@ -1069,9 +1130,7 @@ func writeKVPayload(tx *sql.Tx, scope string, value any, keyed bool) error {
 		if err != nil {
 			continue
 		}
-		if _, err := tx.Exec(
-			`INSERT OR REPLACE INTO kv(scope, key, value) VALUES(?, ?, ?)`, scope, key, string(b),
-		); err != nil {
+		if _, err := h.importExec(tx, kvUpsert, scope, key, string(b)); err != nil {
 			return err
 		}
 	}
@@ -1105,8 +1164,40 @@ func loadKVScopes(db queryer, out *databaseExport) error {
 	return rows.Err()
 }
 
+// canonicalColumnNames maps a lowercased column name to the schema's
+// camelCase spelling. PostgreSQL folds unquoted identifiers to lowercase,
+// so a column the DDL spells createdAt arrives from the driver as
+// "createdat"; the file backend returned the DDL case untouched. The export builds
+// row maps keyed by column name and looks the canonical names up in them
+// (mergeDataColumn's keep list, normalizeBool, the access join), so the
+// folded forms are restored in selectRows — the one place every export
+// read flows through. A name absent from the map passes through as-is.
+var canonicalColumnNames = func() map[string]string {
+	names := []string{
+		"id", "provider", "authType", "name", "email", "priority", "isActive",
+		"data", "createdAt", "updatedAt", "type", "testStatus", "key",
+		"machineId", "rateLimitRPM", "rateLimitTPM", "rateLimitConcurrency",
+		"tokenQuota", "queueTimeoutMs", "rpmLimit", "tpmLimit",
+		"concurrencyLimit", "quotaResetId", "contractExpiresAt",
+		"limitMicros", "limitTokens", "budgetPeriod", "alertPct", "hardCutoff",
+		"api_key_id", "model", "kind", "models", "matchRules", "scope", "value",
+	}
+	m := make(map[string]string, len(names))
+	for _, n := range names {
+		m[strings.ToLower(n)] = n
+	}
+	return m
+}()
+
+func canonicalColumnName(name string) string {
+	if canon, ok := canonicalColumnNames[strings.ToLower(name)]; ok {
+		return canon
+	}
+	return name
+}
+
 // selectRows runs a query and returns every row as a column → value map, with
-// SQLite BLOB values surfaced as strings (they hold JSON columns).
+// BLOB values surfaced as strings (they hold JSON columns).
 func selectRows(db queryer, query string) ([]map[string]any, error) {
 	rows, err := db.Query(query)
 	if err != nil {
@@ -1135,7 +1226,7 @@ func selectRows(db queryer, query string) ([]map[string]any, error) {
 			if b, ok := v.([]byte); ok {
 				v = string(b)
 			}
-			row[col] = v
+			row[canonicalColumnName(col)] = v
 		}
 		out = append(out, row)
 	}
@@ -1198,7 +1289,7 @@ func parseJSONValue(value any, fallback any) any {
 	return out
 }
 
-// normalizeBool converts SQLite 0/1 integers to JSON booleans on export.
+// normalizeBool converts 0/1 integers to JSON booleans on export.
 func normalizeBool(row map[string]any, key string) {
 	switch v := row[key].(type) {
 	case int64:
@@ -1210,7 +1301,7 @@ func normalizeBool(row map[string]any, key string) {
 	}
 }
 
-// boolToInt converts a JSON boolean backup value back to SQLite 0/1.
+// boolToInt converts a JSON boolean backup value back to 0/1.
 func boolToInt(v any) int {
 	if b, ok := v.(bool); ok && !b {
 		return 0

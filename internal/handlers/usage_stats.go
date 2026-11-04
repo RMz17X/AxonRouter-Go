@@ -168,6 +168,20 @@ type UsageStatsResponse struct {
 	RecentRequests        []usagetracker.RecentRequest `json:"recentRequests"`
 	ErrorProvider         string                       `json:"errorProvider"`
 	Pending               usagetracker.PendingState    `json:"pending"`
+	// Last10Minutes is the Request Stream series: per-minute request counts
+	// over the last 30 minutes, oldest first, always exactly 30 entries. The
+	// name is AxonRouter's field name (its stats payload carries the same
+	// series); the window does not follow ?period — the card always shows the
+	// last 30 minutes (see last30MinuteBuckets). It is deliberately not part
+	// of the SSE StreamPayload: the stats poll refreshes it.
+	Last10Minutes []MinuteRequestCount `json:"last10Minutes"`
+}
+
+// MinuteRequestCount is one per-minute bucket of the Request Stream series.
+// Timestamp is RFC3339 and minute-aligned (seconds always :00, UTC).
+type MinuteRequestCount struct {
+	Timestamp string `json:"timestamp"`
+	Requests  int    `json:"requests"`
 }
 
 // HandleUsageStats aggregates usage over the window named by ?period. Besides the
@@ -240,9 +254,17 @@ func parseUsageStatsViews(raw string) usageStatsViews {
 	return v
 }
 
+// writeDashboardError writes Axon's flat dashboard error shape
+// ({error: message}); the nested engine envelope that
+// handlerutil.WriteJSONError emits is the /v1 shape (batch 9, G1).
+func writeDashboardError(w http.ResponseWriter, status int, message string) {
+	handlerutil.WriteJSON(w, status, map[string]any{"error": message})
+}
+
 func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		window := resolveUsagePeriod(r.URL.Query().Get("period"), time.Now())
+		now := time.Now()
+		window := resolveUsagePeriod(r.URL.Query().Get("period"), now)
 		views := parseUsageStatsViews(r.URL.Query().Get("views"))
 
 		tracker := usagetracker.GetTracker()
@@ -356,7 +378,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 		if window.daily {
 			dailyRows, err := repo.GetUsageDailyRecent(window.days)
 			if err != nil {
-				handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+				writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
 				return
 			}
 			for _, rowJSON := range dailyRows {
@@ -524,7 +546,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			// the rows written since the previous poll.
 			agg, err := rawWindows.getRawWindow(repo, window)
 			if err != nil {
-				handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+				writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
 				return
 			}
 			applyRawAggregate(&resp, agg, nodeNameMap, connMap, keyNames, views)
@@ -554,7 +576,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 		// Build recent requests list (20 deduped from usageHistory)
 		recentHistory, err := repo.GetRecentUsageHistory(60)
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
 			return
 		}
 		var dedupedRecent []usagetracker.RecentRequest
@@ -580,6 +602,16 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 
 			cachedTok := int(translator.CachedTokensFromJSON([]byte(rh.Tokens)))
 
+			// Account mirrors newDetailListItem's resolution for the same
+			// request: a history row carries no stored account label, so the
+			// chain lands on the connection id, or "Default" for a direct
+			// request. APIKey passes through the same mask the byApiKey
+			// breakdown derives, so a row the Next.js dashboard stored with a
+			// full key never reaches the wire unmasked.
+			account := rh.ConnectionID
+			if account == "" {
+				account = "Default"
+			}
 			dedupedRecent = append(dedupedRecent, usagetracker.RecentRequest{
 				Timestamp:        rh.Timestamp,
 				Model:            rh.Model,
@@ -588,6 +620,9 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 				CompletionTokens: int(complTok),
 				CachedTokens:     cachedTok,
 				Status:           status,
+				Endpoint:         rh.Endpoint,
+				APIKey:           maskAPIKeyForStats(rh.APIKey),
+				Account:          account,
 			})
 			if len(dedupedRecent) >= 20 {
 				break
@@ -595,8 +630,52 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 		}
 		resp.RecentRequests = dedupedRecent
 
+		last10, err := last30MinuteBuckets(repo, now)
+		if err != nil {
+			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
+			return
+		}
+		resp.Last10Minutes = last10
+
 		handlerutil.WriteJSON(w, http.StatusOK, resp)
 	}
+}
+
+// requestStreamBuckets is the number of per-minute buckets in the Request
+// Stream series: the last 30 minutes, one bucket per minute.
+const requestStreamBuckets = 30
+
+// last30MinuteBuckets folds usageHistory timestamps into exactly
+// requestStreamBuckets per-minute counts ending at the current minute,
+// oldest first, zero-filling minutes with no requests. The window is fixed —
+// it does not follow the stats ?period, matching AxonRouter, whose Request
+// Stream card always reads the last 30 minutes. Bucketing parses each stored
+// timestamp (the usage_chart.go pattern) rather than slicing the string, so
+// rows written with a UTC offset still land in their UTC minute.
+func last30MinuteBuckets(repo *db.Repo, now time.Time) ([]MinuteRequestCount, error) {
+	end := now.UTC().Truncate(time.Minute)
+	start := end.Add(-(requestStreamBuckets - 1) * time.Minute)
+
+	buckets := make([]MinuteRequestCount, requestStreamBuckets)
+	for i := range buckets {
+		buckets[i].Timestamp = start.Add(time.Duration(i) * time.Minute).Format(time.RFC3339)
+	}
+
+	stamps, err := repo.GetUsageHistoryTimestampsSince(start.Format("2006-01-02T15:04:05.000Z"))
+	if err != nil {
+		return nil, err
+	}
+	for _, raw := range stamps {
+		ts, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			continue
+		}
+		idx := int(ts.UTC().Truncate(time.Minute).Sub(start) / time.Minute)
+		if idx >= 0 && idx < requestStreamBuckets {
+			buckets[idx].Requests++
+		}
+	}
+	return buckets, nil
 }
 
 // detailListItem is one collapsed Details-tab row.
@@ -638,7 +717,7 @@ func HandleRequestDetails(repo *db.Repo) http.HandlerFunc {
 
 		rows, total, err := repo.GetRequestDetailsPaged(r.Context(), limit, offset, detailsSince(r.URL.Query().Get("period"), time.Now()))
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch request details")
 			return
 		}
 
@@ -729,7 +808,7 @@ func HandleRequestDetail(repo *db.Repo) http.HandlerFunc {
 		// every such request.
 		id, err := url.PathUnescape(r.PathValue("id"))
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid request id")
+			writeDashboardError(w, http.StatusBadRequest, "invalid request id")
 			return
 		}
 		raw, err := repo.GetRequestDetailByID(id)
@@ -737,16 +816,16 @@ func HandleRequestDetail(repo *db.Repo) http.HandlerFunc {
 			// A detail that was never recorded, or has since been pruned by
 			// retention, is a 404 rather than a server fault.
 			if errors.Is(err, sql.ErrNoRows) {
-				handlerutil.WriteJSONError(w, http.StatusNotFound, "request detail not found")
+				writeDashboardError(w, http.StatusNotFound, "Request detail not found")
 				return
 			}
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch request details")
 			return
 		}
 
 		var item map[string]any
 		if err := json.Unmarshal([]byte(raw), &item); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, "stored request detail is unreadable")
+			writeDashboardError(w, http.StatusInternalServerError, "stored request detail is unreadable")
 			return
 		}
 		if tokens, ok := item["tokens"].(map[string]any); ok {

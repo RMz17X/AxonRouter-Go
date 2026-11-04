@@ -54,14 +54,19 @@ func (r *Repo) UpdateConnectionLastUsed(connectionID string) error {
 
 // stampConnection writes a rotation stamp strictly greater than every stamp
 // already stored, reading the current maximum and writing the new value under a
-// single SQLite write lock.
+// single write lock.
 //
-// The lock is taken up front by BEGIN IMMEDIATE. A deferred transaction would
-// only acquire it at the UPDATE — after MAX had been read — so two processes
-// sharing one database could both read the same maximum and mint the same stamp
-// for two different rows, reintroducing the tie the selector cannot break. Under
-// this the guarantee also survives a restart, because the stamps live in the rows
-// and not in process memory.
+// The lock is taken up front: an explicit table lock inside a plain
+// BEGIN (PostgreSQL has no BEGIN IMMEDIATE form; the EXCLUSIVE table
+// lock conflicts with the row-exclusive lock every UPDATE takes, so it
+// serializes stamp writers against all other writers of the table for
+// the transaction's duration). A deferred transaction would only
+// acquire it at the UPDATE —
+// after MAX had been read — so two processes sharing one database could both
+// read the same maximum and mint the same stamp for two different rows,
+// reintroducing the tie the selector cannot break. Under this the guarantee
+// also survives a restart, because the stamps live in the rows and not in
+// process memory.
 func (r *Repo) stampConnection(connectionID string, consecutive int, increment bool) (string, error) {
 	ctx := context.Background()
 
@@ -71,7 +76,7 @@ func (r *Repo) stampConnection(connectionID string, consecutive int, increment b
 	}
 	defer func() { _ = conn.Close() }()
 
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
 		return "", fmt.Errorf("stamp connection %s: begin: %w", connectionID, err)
 	}
 	committed := false
@@ -80,9 +85,12 @@ func (r *Repo) stampConnection(connectionID string, consecutive int, increment b
 			_, _ = conn.ExecContext(context.Background(), "ROLLBACK")
 		}
 	}()
+	if _, err := conn.ExecContext(ctx, "LOCK TABLE providerConnections IN EXCLUSIVE MODE"); err != nil {
+		return "", fmt.Errorf("stamp connection %s: lock: %w", connectionID, err)
+	}
 
 	var previous sql.NullString
-	if err := conn.QueryRowContext(ctx, `SELECT MAX(lastUsedAt) FROM providerConnections`).Scan(&previous); err != nil {
+	if err := conn.QueryRowContext(ctx, r.Rebind(`SELECT MAX(lastUsedAt) FROM providerConnections`)).Scan(&previous); err != nil {
 		return "", fmt.Errorf("stamp connection %s: read stored stamp: %w", connectionID, err)
 	}
 	stamp := nextRotationStamp(previous.String)
@@ -97,7 +105,7 @@ func (r *Repo) stampConnection(connectionID string, consecutive int, increment b
 		query = `UPDATE providerConnections SET lastUsedAt = ?, consecutiveUseCount = COALESCE(consecutiveUseCount, 0) + 1 WHERE id = ?`
 		args = []any{stamp, connectionID}
 	}
-	if _, err := conn.ExecContext(ctx, query, args...); err != nil {
+	if _, err := conn.ExecContext(ctx, r.Rebind(query), args...); err != nil {
 		return "", fmt.Errorf("stamp connection %s: write stamp: %w", connectionID, err)
 	}
 	if _, err := conn.ExecContext(ctx, "COMMIT"); err != nil {

@@ -6,60 +6,49 @@ section: Under the Hood
 
 # Database
 
-9router-go reads the upstream 9Router database as-is. There is no import, export,
-or migration.
+9router-go stores everything in **PostgreSQL** — there is no database file.
+The server connects with `DATABASE_URL` and refuses to boot without it.
 
-## Location
+## Where the data lives
 
-| | Path |
-|---|---|
-| macOS / Linux | `~/.9router/db/data.sqlite` |
-| Windows | `%APPDATA%\9router\db\data.sqlite` |
-| Docker | `/data/db/data.sqlite` inside the container |
+- **PostgreSQL** holds all durable state: settings, provider connections,
+  API keys, combos, and the usage ledgers. In the Docker stacks it is the
+  `postgres` service and its `pgdata` volume.
+- **`DATA_DIR`** (the `appdata` volume in Docker) holds non-database state
+  only: uploads, CLI tokens/machine-id, provider instruction files, tunnel
+  state, and the model-catalog cache.
 
-## Sharing with 9Router
+The schema bootstrap is additive and runs on every boot — missing tables
+and columns are created, the current and next month's partitions of the
+two hot ledgers (`usageHistory`, `requestDetails`) are ensured, and seed
+rows are inserted. A fresh empty PostgreSQL database initializes itself;
+there is no versioned migration to run. The full contract is `DATABASE.md`
+in the repository.
 
-Stop 9Router, run 9router-go, and log in with your existing password. Your
-provider connections, proxy pools, combos, API keys, model aliases, and usage
-history are all there — 9router-go's dashboard renders them because it *is* the
-same data.
+## Coming from the SQLite era
 
-You **do not have to stop 9Router** if you want to keep the Node.js dashboard
-around. Run 9router-go on a different port against the same `DATA_DIR`:
-
-```bash
-# 9Router on :20128 (Next.js)  ·  9router-go on :20130 (Go, same DB)
-PORT=20130 DATA_DIR=/home/you/.9router ./9router-go
-```
-
-Both read the same tables, so a connection you add in either dashboard shows up
-in the other. SQLite serialises the writes; the supported setup is one active
-writer, so avoid editing the same combo or settings entry in both at the same
-moment.
-
-**Running it the other way round** (9router-go first, then pointing 9Router at the
-same directory) works the same way. 9router-go will have added two columns to
-`providerConnections` (`lastUsedAt`, `consecutiveUseCount`) and one extra table
-(`upstream_leases`). Upstream ignores both — its schema sync is additive and
-doesn't drop unknown columns.
-
-## What it does not do
-
-- **No legacy JSON import.** If your 9Router data still lives in old JSON files,
-  start upstream once to convert them, then switch.
-- **No destructive migrations or pre-migration backups.** Its bootstrap only ever
-  *adds* — create missing tables, add missing columns, seed missing rows.
-- **No interpretation of `_meta.schemaVersion`.** That is upstream's migration
-  bookkeeping. A database written by a much newer 9Router release should be
-  checked before you rely on it.
+Older installs kept everything in `~/.9router/db/data.sqlite`. That file
+is now a **migration source only**: the compose `migrate` profile
+(`tools/migrate-db`, a separate tool that is never part of the server)
+copies it into PostgreSQL with verification, preserving ids, timestamps,
+and payloads. Sharing one database file with the Node.js 9Router is no
+longer possible — the two products' storage has diverged. See the
+"Upgrading from the SQLite era" section of the repository README for the
+steps.
 
 ## Backup
 
-Take a backup first if the database matters:
+Back up the database with `pg_dump` and the `DATA_DIR` volume with any
+file backup tool:
 
 ```bash
-cp -r ~/.9router/db ~/9router-db-backup   # stop the daemon first
+docker compose -f docker-compose.single.yml exec postgres \
+  pg_dump -U 9router -d 9router -Fc -f /tmp/9router.dump
 ```
+
+The dashboard's Download Backup is a different thing: a portable payload
+of your dashboard data (settings, connections, keys), not a database
+backup.
 
 ## Binary portability
 

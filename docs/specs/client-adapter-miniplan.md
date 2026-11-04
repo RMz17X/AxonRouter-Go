@@ -1,5 +1,8 @@
 # Mini-Plan Triển khai — Task 3: Bộ Adapter 9 Client (G24b)
 
+> **Status (2026-11-05): dated design/plan document.** Kept as a historical record of the work it describes; not a statement of current behaviour. The platform has since moved to PostgreSQL-only storage and Docker delivery (phases P0–P5); any file-database-era stack details in this document are obsolete.
+
+
 **Repo:** `9router-go` · **Ngày:** 2026-10-23
 **Đặc tả chi tiết:** `docs/specs/client-schema-matrix.md` (553 dòng, Discovery Gate)
 **Đặc tả phụ thuộc:** `docs/specs/safe-file-operations.md` (Task 1) · `docs/specs/config-patch-spec.md` (Task 2) · `connect-cli-spec.md` §3.2.4 (Task 5, tier precedence)

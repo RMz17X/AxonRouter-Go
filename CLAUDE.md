@@ -1,5 +1,7 @@
 # 9router-go — Agent & Developer Guide
 
+> **Stack note (post-cutover):** the gateway is **PostgreSQL-only** (`DATABASE_URL` required; `JWT_SECRET` from the environment), deploys via the Docker compose stacks (`docker-compose.single.yml` / `docker-compose.cluster.yml`), and its binary exposes only `version`/`update`/`help` beside the foreground server. The legacy file database survives only as the `tools/migrate-db` import source, the `internal/foreigndb` reader for other apps' files, and the `sqlite_legacy`-quarantined test fleet. `AGENTS.md` is the rulebook and carries the same facts; `README.md` / `DATABASE.md` / `ARCHITECTURE.md` are the operator docs.
+
 > **Upstream Source of Truth**: This repository (`9router-go`) is the high-performance Go implementation of [**decolua/9router**](https://github.com/decolua/9router).
 > The upstream reference implementation is cloned locally at `/Users/luqmannul.hakim/htdocs/9router`.
 > For complete codebase mapping, Golang optimization standards, Svelte 5 frontend standards, standard Go unit testing conventions, and upstream sync protocols, **ALWAYS READ `AGENTS.md`**.

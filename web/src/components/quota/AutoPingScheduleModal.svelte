@@ -129,7 +129,7 @@
       mode.
     </p>
 
-    <div class="grid grid-cols-3 gap-1 rounded-[10px] bg-surface-2 p-1">
+    <div class="grid grid-cols-3 gap-1 rounded-brand bg-surface-2 p-1">
       {#each MODE_OPTIONS as option (option.value)}
         {@const isSelected = mode === option.value}
         <button
@@ -184,7 +184,7 @@
       </div>
 
       {#if previewSlots.length > 0}
-        <div class="rounded-[10px] bg-surface-2 px-3 py-2.5">
+        <div class="rounded-brand bg-surface-2 px-3 py-2.5">
           <p class="text-xs font-medium uppercase tracking-wide text-text-muted">
             Daily slots ({timezone})
           </p>

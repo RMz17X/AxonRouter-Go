@@ -19,7 +19,7 @@ Whenever you implement features, fix bugs, add providers, update routing logic, 
    - Request and response schemas for `/v1/*` (Chat Completions, Messages, Embeddings, Audio, Models).
    - Dashboard endpoints `/api/*` (Connections, Combos, ProxyPools, Settings, ProviderNodes, Usage, Auth).
    - Combo expansion, model fallback, account rotation, and strike-breaker quota handling.
-   - SQLite database compatibility (`~/.9router/db/data.sqlite`).
+   - Data-shape compatibility: the PostgreSQL schema (`internal/db/schema_pg_defs.go`) carries the upstream table/JSON shapes. The legacy file database (`~/.9router/db/data.sqlite`) is no longer opened by the gateway — it is a migration *source* only, read by the separate `tools/migrate-db` module (and by `internal/foreigndb` when the source is another application's file).
 3. **Changelog Tracking**:
    - When porting features or fixes, reference the upstream commit/issue/PR in
      your `.changes/<pr-number>-<slug>.md` fragment (e.g. `upstream
@@ -53,9 +53,9 @@ Some feature issues in this repo are not parity requests against `decolua/9route
 | `open-sse/handlers/chatCore.js`, `src/sse/handlers/chat.js` | `internal/handlers/chat/` | Chat routing, combo fallback, fusion, resolution, quota handling. |
 | `open-sse/rtk/` | `internal/tokensaver/` | Prompt token compression (RTK), Caveman, and Ponytail system prompts. |
 | `src/app/api/` (Next.js API routes) | `internal/handlers/dashboard/`, `internal/handlers/` | Dashboard REST & SSE APIs (connections, combos, proxypools, usage, settings). |
-| `src/lib/db/` | `internal/db/` | SQLite database layer (using pure-Go `modernc.org/sqlite`). |
+| `src/lib/db/` | `internal/db/` | PostgreSQL database layer (pgx via `DATABASE_URL`; schema bootstrap in `schema_pg.go` / `schema_pg_defs.go`). |
 | `src/app/` (Next.js React 19 Frontend) | `web/src/` | Dashboard UI: Built with **Svelte 5 + Vite 8**, embedded into the binary via `web/embed.go`. |
-| `cli/` (npm launcher package) | `cmd/9router-go/main.go` | Single-binary CLI launcher and runtime daemon. |
+| `cli/` (npm launcher package) | `cmd/9router-go/main.go` | Single-binary CLI. The default action runs the foreground server; the only subcommands are `version`/`update`/`help` (daemon/service subcommands were removed with the Docker delivery — compose supervises the process). |
 | `tests/` (Vitest suites) | `*_test.go` | Go unit and integration test suites. |
 
 ---
@@ -117,12 +117,12 @@ Every upstream provider in this repository (`antigravity`, `opencode`, `claude`,
   - Use `json.RawMessage` to forward opaque/passthrough payload segments without unmarshaling into generic intermediate `map[string]any`.
 - **HTTP Transport Hygiene**:
   - Reuse `*http.Client` instances with pooled `http.Transport` (`MaxIdleConnsPerHost`, keep-alives enabled, appropriate response header timeouts). Never instantiate an unconfigured `&http.Client{}` per request.
-- **SQLite Access: One Read Per Page, Never N+1 (STRICTLY MANDATORY)**:
+- **Database Access (PostgreSQL): One Read Per Page, Never N+1 (STRICTLY MANDATORY)**:
   - Never issue a query per row inside a loop over query results. A list endpoint that reads related data per row pays 1 + N statements and one ledger pass per row; on the §4.G hardware that pattern measured ~700 ms for one dashboard list (GET /api/keys on a 108k-row ledger, fixed 2026-10-29).
   - Batch the read: one statement over the whole page with an `IN (...)` list or a `VALUES` CTE. In-repo patterns to copy: `GetAllowedModelsForKeys` (`internal/db/modelaccess.go`), `GetPlansForKeys` (`internal/db/plans.go`), `GetApiKeyTokenUsageForKeys` (`internal/db/quota_reset.go`).
-  - The batched statement must be answered from an index, not a scan. Run `EXPLAIN QUERY PLAN` before merging; any `SCAN <table>` on a large table means stop and reshape or add the index. Covering composites beat bare equality indexes when the statement aggregates columns (see the `idx_uh_apikey_tok` / `idx_uh_clientkey_tok` pair and `supersededIndexes` in `internal/db/schema.go`).
-  - Pin the plan with a unit test so a later schema edit cannot silently reintroduce the scan (patterns: `TestGetApiKeyTokenUsageForKeysQueryPlan`, `TestUsageHistoryClientKeyIndexExists`).
-  - Hoist correlated scalar subqueries out of per-row predicates: SQLite re-evaluates them for every candidate row, which cost 2.5x the whole per-key path on that same ledger. Read such a value once per page and pass it as a CTE column or bound parameter instead.
+  - The batched statement must be answered from an index, not a scan. Run `EXPLAIN (ANALYZE, BUFFERS)` before merging; a `Seq Scan` on a large table means stop and reshape or add the index. Covering composites beat bare equality indexes when the statement aggregates columns (see the `idx_uh_apikey_tok` / `idx_uh_clientkey_tok` pair, declared on the partitioned parent in `internal/db/schema_pg.go`).
+  - Pin the plan with a unit test so a later schema edit cannot silently reintroduce the scan (patterns: `TestGetApiKeyTokenUsageForKeysQueryPlan`, `TestUsageHistoryClientKeyIndexExists` — both currently sit in the `sqlite_legacy`-quarantined fleet, §5.D note, until the D1 harness port re-homes them).
+  - Hoist correlated scalar subqueries out of per-row predicates: a per-row re-evaluation cost 2.5x the whole per-key path on that same ledger. Read such a value once per page and pass it as a CTE column or bound parameter instead.
 
 ### B. Concurrency & Goroutine Safety
 - **Context Propagation**:
@@ -257,11 +257,13 @@ Use `net/http/httptest` (`httptest.NewRecorder()`, `httptest.NewRequest()`, and 
    - Use `httptest.NewServer` or mock clients to simulate upstream LLM providers and OAuth endpoints.
    - Tag live/upstream-dependent network tests clearly (e.g. `live_e2e_test.go` or guard with env checks) so that standard unit tests pass completely offline.
 4. **Deterministic & Isolated**:
-   - Tests must clean up temporary database files or use in-memory SQLite (`:memory:`) where applicable.
+   - Database-backed tests run against a real PostgreSQL test database (the compose stack's server or any reachable instance via `DATABASE_URL`) and must clean up the rows they create. There is no in-memory or file database anymore: the legacy suites written against one are quarantined behind the `sqlite_legacy` build tag (decision D1, §5.D note) and do not run until they are ported to this harness.
 
 ### D. Feature Integration Tests (`internal/integration`, `integration` build tag)
 
-Unit tests call handlers directly or mount a hand-built router, so they cannot see a regression in the wiring production actually uses. The suite in `internal/integration/` closes that gap: it boots `app.ProvideRouter` (the real middleware stack and route table) on a real HTTP listener against a temporary SQLite database, with every provider call intercepted by a fake `httptest` upstream seeded through `providerConnections.data.baseUrl`. `internal/integration/bootfx/` boots the full fx graph — `DatabaseModule` and `ServerModule` included — once, in its own test binary.
+Unit tests call handlers directly or mount a hand-built router, so they cannot see a regression in the wiring production actually uses. The suite in `internal/integration/` closes that gap: it boots `app.ProvideRouter` (the real middleware stack and route table) on a real HTTP listener against a temporary database, with every provider call intercepted by a fake `httptest` upstream seeded through `providerConnections.data.baseUrl`. `internal/integration/bootfx/` boots the full fx graph — `DatabaseModule` and `ServerModule` included — once, in its own test binary.
+
+> **Harness status (post-P4):** the suite's bootstrap (`internal/integration/harness_test.go`) still calls the removed file-database API (`db.OpenDatabase`), so the suite **does not compile** against the PostgreSQL-only tree, and rule 1's command does not currently run. Porting the harness to boot on a throwaway PostgreSQL database is pending under decision D1 — the same decision that quarantined the per-package suites behind the `sqlite_legacy` tag. Until that port lands, the rules below describe how the suite is written and must be preserved by the port.
 
 1. **Run them with `make test-integration`** (or `go test -tags=integration ./internal/integration/...`). The tag keeps `go test ./...` fast; the CI `integration` job runs the suite on every PR, so a regression in routing, auth, account rotation, or usage accounting fails on the PR that introduces it instead of on a user's next request.
 2. **Use the harness helpers, never raw setup.** `newProviderEnv(t)` is the common fixture: an `Env` with one DeepSeek connection aimed at a fake upstream. `newEnv(t)` is the bare gateway. Both open the database, apply the real schema bootstrap, and seed a client API key; `newEnv` also pins the token savers off so upstream payloads stay comparable byte for byte. Add connections with `env.AddConnection(t, ...)` and combos with `env.AddCombo(t, ...)`.
@@ -359,12 +361,13 @@ Always write modern Svelte 5 code using Runes. **Never use legacy Svelte 3/4 syn
 
 Always use the established design tokens defined in `web/src/index.css` for consistent appearance across light and dark themes:
 
-- **Brand (Terracotta)**: `bg-brand-500`, `text-brand-500`, `bg-primary`, `text-primary`, `hover:bg-primary-hover` (`#e56a4a`).
-- **Surfaces**: `bg-surface`, `bg-surface-2`, `bg-surface-3`, `bg-sidebar`.
+- **Brand (Axon cyan)**: `bg-brand-500`, `text-brand-500`, `bg-primary`, `text-primary`, `hover:bg-primary-hover`. The palette is the AxonRouter design system: primary `#06B6D4` on the dark theme (near-black surfaces: bg `#000000`, surface `#121212`), `#0891B2` on the light theme (cool slate surfaces). Status tokens: `danger` `#FF5555`/`#cf222e`, `success` `#22C55E`/`#0F766E`, `warning` `#FFB86C`/`#B45309` (dark/light).
+- **Surfaces**: `bg-bg`, `bg-bg-alt`, `bg-surface`, `bg-surface-2`, `bg-surface-3`, `bg-sidebar` (solid, no translucency/blur).
 - **Borders**: `border-border`, `border-border-subtle`.
 - **Text**: `text-text-main`, `text-text-muted`, `text-text-subtle`.
-- **Radii**: `rounded-[10px]`, `rounded-[14px]`, `rounded-2xl`.
-- **Shadows**: `shadow-[var(--shadow-warm)]`, `shadow-[var(--shadow-elev)]`.
+- **Radii**: `rounded-brand` (4px), `rounded-brand-lg` (6px); the Tailwind radius scale is Axon's (`sm` 4px, `md` 6px, `lg` 8px, `xl` 10px, `2xl` 12px). Do not reintroduce `rounded-[10px]`/`rounded-[14px]`.
+- **Shadows**: `shadow-[var(--shadow-soft)]`, `shadow-[var(--shadow-warm)]`, `shadow-[var(--shadow-elev)]`, `shadow-[var(--shadow-elevated)]`, `shadow-[var(--shadow-focus)]`.
+- **Tables**: shared `.data-table` / `.data-table-plain` / `.data-cards` classes in `index.css` carry Axon's grid lines and zebra striping from the `--color-table-*` tokens.
 - **Icons**:
   - Google Material Symbols: `<span class="material-symbols-outlined text-[18px]">icon_name</span>`
   - Lucide Svelte: `import { IconName } from 'lucide-svelte'; <IconName size={18} />`
@@ -657,8 +660,17 @@ for pair in $(grep -E '^CROSS_TARGETS *:=' Makefile | sed 's/.*:=[[:space:]]*//'
     go build -o /dev/null ./cmd/9router-go/ || echo "FAIL $pair"
 done
 
-# Run dev server with live go run (PORT=20130 default)
+# Run dev server with live go run (PORT=20130 default; needs a reachable
+# PostgreSQL — DATABASE_URL/JWT_SECRET from ~/.9router.env or the shell):
 make dev
+
+# Or run the supported deployment shape (Docker):
+#   cp .env.example .env   # set POSTGRES_PASSWORD / JWT_SECRET / INITIAL_PASSWORD
+#   docker compose -f docker-compose.single.yml up -d --build      # single node
+#   docker compose -f docker-compose.cluster.yml up -d --build     # cluster (APP_REPLICAS nodes)
+# Import a legacy SQLite-era install into PostgreSQL (one-shot; the file
+# goes in ./legacy/, or point LEGACY_DIR at its directory first):
+#   docker compose -f docker-compose.single.yml --profile migrate run --rm migrate
 
 # Changelog. Per PR: write .changes/<pr-number>-<slug>.md, never CHANGELOG.md.
 # Preview what the next release will contain (writes nothing):

@@ -11,76 +11,32 @@ Every command comes from the single binary.
 ## Running the gateway
 
 ```bash
-9router-go                  # foreground (port 20130, data ~/.9router)
-9router-go --background     # detach and return; same as `9router-go start`
-9router-go -d               # short alias
+9router-go                  # foreground server (port 20130) — the only run mode
 9router-go version          # version details, plus an update check
 9router-go update           # check and self-update
 curl http://localhost:20130/health
 ```
 
-## Background daemon
+## Supervision
 
-```bash
-9router-go start          # run in the background and return
-9router-go status         # is it running? pid, dashboard, log
-9router-go restart        # replace the running daemon
-9router-go logs -n 100    # tail the run log (default 40 lines)
-9router-go stop           # stop it
-```
-
-The detached process records itself in `DATA_DIR/run/gateway.pid` and writes its
-output to `DATA_DIR/run/gateway.log`. A second `start` while one is running
-refuses rather than fighting over the port. A daemon killed from Task Manager
-leaves nothing behind: the stale pid file is cleaned on the next command.
-
-`status`, `stop`, and `logs` resolve the port from the same config the server
-binds — including a `.env` file — so they never probe the wrong address.
-
-> Windows stops the process with `TerminateProcess` instead of `SIGTERM`, so
-> `stop` skips the graceful drain. Use the dashboard's Shutdown button or
-> `9router-go restart` when you want in-flight streams to finish first.
-
-## Service (start on boot)
-
-```bash
-9router-go service install     # pick the host's native backend
-9router-go service status      # which entry is in effect, and whether it is active
-9router-go service start       # start the supervised service now
-9router-go service restart
-9router-go service stop        # stop now, stay enabled for boot
-9router-go service uninstall   # remove the entry
-```
-
-Force a backend: `--backend systemd|launchd|openrc|runit|cron`.
-
-| Backend | Scope | Needs root |
-|---|---|---|
-| systemd | user unit | no |
-| launchd | user agent | no |
-| OpenRC | system service | **yes** — use `sudo` or `--backend cron` |
-| runit | `~/service` | no |
-| cron `@reboot` | user crontab | no |
-| Windows | scheduled task via `schtasks` | **yes** — Administrator console |
-
-The Windows task runs as the current user at logon, so it reads that user's data
-dir rather than `SYSTEM`'s.
+There are no daemon or service subcommands anymore: the binary runs in the
+foreground, and supervision belongs to the deployment — the Docker compose
+stacks (`docker-compose.single.yml` / `docker-compose.cluster.yml`) for
+containers, or the host's init system for a bare binary. Removed commands
+(`start`, `stop`, `restart`, `status`, `logs`, `service`, `mitm`) answer
+`unknown command`.
 
 ## Interactive menu
 
 Running `9router-go` with no arguments in a terminal opens a menu:
 
 ```text
-1) Start the gateway
-2) Start in the background
-3) Show status
-4) Stop
-5) Show status
-6) Run in the background with a tray icon (frees the terminal)
+1) Start in this terminal (foreground)
+2) Run in background with tray icon (frees the terminal)
 0) Exit
 ```
 
-**Option 6 — tray.** The tray icon lives in a companion binary
+**Option 2 — tray.** The tray icon lives in a companion binary
 (`cmd/9router-tray`), not the main one: a GUI toolkit cannot be linked into the
 gateway without breaking the `CGO_ENABLED=0` cross-build for every target. Only
 the *sibling* binary is tried, so a PATH lookup cannot pick up another install's
@@ -92,16 +48,6 @@ or quit.
 9router-tray --port 20130
 ```
 
-## MITM proxy
-
-Intercepts CLI tool traffic so it can be routed through the gateway:
-
-```bash
-9router-go mitm enable     # DNS redirect + TLS intercept on :443
-9router-go mitm status
-9router-go mitm disable    # stop the proxy and remove DNS entries
-```
-
 ## Flags
 
 There are no `--port` flags; use environment variables.
@@ -111,15 +57,13 @@ There are no `--port` flags; use environment variables.
 | Variable | Default | Effect |
 |---|---|---|
 | `PORT` | `20130` | HTTP port |
-| `DATA_DIR` | `~/.9router` (`%APPDATA%/9router` on Windows) | Data root |
-| `DB_PATH` | `$DATA_DIR/db/data.sqlite` | SQLite file |
+| `DATA_DIR` | `~/.9router` (`%APPDATA%/9router` on Windows) | Non-database state root (uploads, CLI tokens, tunnel state, catalog cache) |
+| `DATABASE_URL` | — (**required**) | PostgreSQL connection URL; the server refuses to boot without it |
 | `HOST` / `BIND_ADDR` | all interfaces | Listener address |
 | `INITIAL_PASSWORD` | unset (`123456` on localhost) | First dashboard password |
-| `JWT_SECRET` | generated | Session signing secret — set it in production |
 | `API_KEY_SECRET` | built-in default | API key hashing secret |
 | `MACHINE_ID_SALT` | built-in default | Machine identity salt |
-| `9ROUTER_BACKGROUND` | unset | Same as `--background` |
-| `JWT_SECRET` | generated at `$DATA_DIR/jwt-secret` | Session signing secret — set it in production so a restart does not invalidate sessions |
+| `JWT_SECRET` | ephemeral per-boot secret when unset (loud warning) | Session signing secret — env-only; set it in production so restarts and extra nodes do not invalidate sessions |
 | `AUTH_COOKIE_SECURE` | unset | Set the `Secure` flag on session cookies (behind TLS) |
 | `FX_LOGGING` | unset | Log Fx dependency-injection events |
 | `NINEROUTER_PEER_TOKEN` | unset | Peer token for internal routing |

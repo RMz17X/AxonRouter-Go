@@ -15,7 +15,7 @@ const (
 	maxMemorySignatures = 2000
 	memoryTTL           = time.Hour
 
-	// persistentTTL is how long an entry survives in SQLite. It is longer than
+	// persistentTTL is how long an entry survives in the database. It is longer than
 	// memoryTTL on purpose: memory is the hot path and can afford to forget,
 	// while the disk tier exists to answer after a restart, so it has to
 	// outlive the session that wrote it. The discovery doc's L2 contract is
@@ -93,7 +93,7 @@ type thoughtSignatureStore struct {
 	order   []string // FIFO / LRU approximation
 
 	// persist is the optional backing store. Nil keeps the historical
-	// process-local behaviour; the gateway attaches the SQLite repo at boot.
+	// process-local behaviour; the gateway attaches the database repo at boot.
 	// All persistence calls are fail-open: a dead database must never turn a
 	// translation into an error.
 	persist thoughtSignaturePersister
@@ -101,7 +101,7 @@ type thoughtSignatureStore struct {
 	pruneStop chan struct{}
 
 	// writeQueue is the bounded async write path. Persisting inline put a
-	// SQLite round-trip on the request that produced each signature, so a
+	// database round-trip on the request that produced each signature, so a
 	// burst of tool calls serialised on the database's write lock in the
 	// middle of a live turn.
 	writeQueue chan asyncWriteTask
@@ -171,7 +171,7 @@ func SetThoughtSignaturePersistence(p thoughtSignaturePersister) {
 	}
 
 	// A hydrate failure is not a reason to give up on the pruner. persist is
-	// already attached, so writes still land in SQLite; returning here used to
+	// already attached, so writes still land in the database; returning here used to
 	// leave those rows with no pruner for the life of the process, and the
 	// table grew without bound after a single transient read error.
 	if rows, err := p.LoadThoughtSignatures(context.Background(), maxMemorySignatures); err != nil {
@@ -214,7 +214,7 @@ func SetThoughtSignaturePersistence(p thoughtSignaturePersister) {
 }
 
 // writeLoop is the single background writer. One goroutine owns every insert,
-// so two tool calls in flight never contend for SQLite's write lock on the
+// so two tool calls in flight never contend for the write lock on the
 // request path (discovery doc §3.2).
 func (s *thoughtSignatureStore) writeLoop(p thoughtSignaturePersister, queue <-chan asyncWriteTask, stop <-chan struct{}) {
 	writes := 0
