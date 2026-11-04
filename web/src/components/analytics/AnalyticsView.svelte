@@ -20,7 +20,7 @@
   import SectionMenu from './SectionMenu.svelte'
   import RequestDetailsTab from './RequestDetailsTab.svelte'
   import AxonKpiCards from './AxonKpiCards.svelte'
-  import AxonTopology from './AxonTopology.svelte'
+  import ProviderTopologyCard from './ProviderTopologyCard.svelte'
   import AxonRecentRequests from './AxonRecentRequests.svelte'
   import AxonRequestStream from './AxonRequestStream.svelte'
   import AxonRealtime from './AxonRealtime.svelte'
@@ -598,11 +598,13 @@
         </div>
         <div class="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <div class="min-w-0 {liveSwitch === 'recent' ? 'hidden lg:block' : ''}">
-            <AxonTopology
-              providerNodes={topologyProviders}
+            <ProviderTopologyCard
+              providers={topologyProviders}
               {activeRequests}
-              recentRequests={stats.recentRequests || []}
+              {pulseProvider}
+              {lastProvider}
               {errorProvider}
+              onRefresh={() => loadStats(period)}
             />
           </div>
           <div class="min-w-0 {liveSwitch === 'topology' ? 'hidden lg:block' : ''}">
