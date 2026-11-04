@@ -557,6 +557,21 @@ func mountOAuthRoutes(r interface {
 	r.Post("/api/oauth/iflow/cookie", oauthH.HandleIflowCookie)
 	r.Get("/api/oauth/xiaomi-mimo/authorize", oauthH.HandleMimoAuthorize)
 	r.Post("/api/oauth/xiaomi-mimo/exchange", oauthH.HandleMimoExchange)
+	// Batch 3 (AxonRouter parity): credential import / auto-import routes
+	// and the generic {provider}/{action} dispatch. Chi resolves static
+	// segments ahead of {provider}/{action}, and the generic route only
+	// sees actions no dedicated route claims.
+	r.Post("/api/oauth/codex/import-token", oauthH.HandleCodexImportToken)
+	r.Post("/api/oauth/freebuff/import", oauthH.HandleFreebuffImport)
+	r.Get("/api/oauth/freebuff/auto-import", oauthH.HandleFreebuffAutoImport)
+	r.Post("/api/oauth/freebuff/realtest", oauthH.HandleFreebuffRealtest)
+	r.Post("/api/oauth/supergrok/import", oauthH.HandleSupergrokImport)
+	r.Post("/api/oauth/xiaomi-mimo/api-key", oauthH.HandleMimoAPIKey)
+	r.Get("/api/oauth/xiaomi-mimo/auto-import", oauthH.HandleMimoAutoImport)
+	r.Post("/api/oauth/zed/import", oauthH.HandleZedImport)
+	r.Get("/api/oauth/zed/auto-import", oauthH.HandleZedAutoImport)
+	r.Get("/api/oauth/{provider}/{action}", oauthH.HandleOAuthDynamicGet)
+	r.Post("/api/oauth/{provider}/{action}", oauthH.HandleOAuthDynamicPost)
 }
 
 // SetupServerRouter mounts public endpoints (/health, /api/hello) and
