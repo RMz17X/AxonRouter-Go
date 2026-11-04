@@ -28,13 +28,13 @@ func (r *Repo) SaveFile(ctx context.Context, f *File) error {
 		INSERT INTO files (id, filename, bytes, purpose, created_at, content)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`
-	_, err := r.db.ExecContext(ctx, q, f.ID, f.Filename, f.Bytes, f.Purpose, f.CreatedAt, f.Content)
+	_, err := r.ExecContext(ctx, q, f.ID, f.Filename, f.Bytes, f.Purpose, f.CreatedAt, f.Content)
 	return err
 }
 
 func (r *Repo) GetFile(ctx context.Context, id string) (*File, error) {
 	const q = `SELECT id, filename, bytes, purpose, created_at FROM files WHERE id = ?`
-	row := r.db.QueryRowContext(ctx, q, id)
+	row := r.QueryRowContext(ctx, q, id)
 	var f File
 	err := row.Scan(&f.ID, &f.Filename, &f.Bytes, &f.Purpose, &f.CreatedAt)
 	if err == sql.ErrNoRows {
@@ -46,7 +46,7 @@ func (r *Repo) GetFile(ctx context.Context, id string) (*File, error) {
 func (r *Repo) GetFileContent(ctx context.Context, id string) ([]byte, error) {
 	const q = `SELECT content FROM files WHERE id = ?`
 	var content []byte
-	err := r.db.QueryRowContext(ctx, q, id).Scan(&content)
+	err := r.QueryRowContext(ctx, q, id).Scan(&content)
 	if err == sql.ErrNoRows {
 		return nil, ErrFileNotFound
 	}
@@ -62,7 +62,7 @@ func (r *Repo) ListFiles(ctx context.Context, purpose string) ([]*File, error) {
 	} else {
 		q = `SELECT id, filename, bytes, purpose, created_at FROM files ORDER BY created_at DESC`
 	}
-	rows, err := r.db.QueryContext(ctx, q, args...)
+	rows, err := r.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (r *Repo) ListFiles(ctx context.Context, purpose string) ([]*File, error) {
 
 func (r *Repo) DeleteFile(ctx context.Context, id string) error {
 	const q = `DELETE FROM files WHERE id = ?`
-	res, err := r.db.ExecContext(ctx, q, id)
+	res, err := r.ExecContext(ctx, q, id)
 	if err != nil {
 		return err
 	}

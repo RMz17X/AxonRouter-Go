@@ -61,7 +61,7 @@ func (r *Repo) ResetApiKeyQuota(ctx context.Context, keyID string) (int, error) 
 		return 0, fmt.Errorf("reset api key quota %s: read history mark: %w", keyID, err)
 	}
 
-	res, err := tx.ExecContext(ctx, `UPDATE apiKeys SET `+quotaResetColumn+` = ? WHERE id = ?`, watermark, keyID)
+	res, err := tx.ExecContext(ctx, r.Rebind(`UPDATE apiKeys SET `+quotaResetColumn+` = ? WHERE id = ?`), watermark, keyID)
 	if err != nil {
 		return 0, fmt.Errorf("reset api key quota %s: %w", keyID, err)
 	}
@@ -75,7 +75,7 @@ func (r *Repo) ResetApiKeyQuota(ctx context.Context, keyID string) (int, error) 
 	// for tokens it had just been forgiven, so it is cleared in the same
 	// transaction as the mark: the reader can never observe a new mark with the
 	// old carryover still counted.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM usageLedgerCarryover WHERE keyId = ?`, keyID); err != nil {
+	if _, err := tx.ExecContext(ctx, r.Rebind(`DELETE FROM usageLedgerCarryover WHERE keyId = ?`), keyID); err != nil {
 		return 0, fmt.Errorf("reset api key quota %s: clear carried usage: %w", keyID, err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -93,7 +93,7 @@ func (r *Repo) QuotaResetID(ctx context.Context, keyID string) (int, error) {
 		return 0, nil
 	}
 	var mark sql.NullInt64
-	err := r.db.QueryRowContext(ctx,
+	err := r.QueryRowContext(ctx,
 		`SELECT `+quotaResetColumn+` FROM apiKeys WHERE id = ? LIMIT 1`, keyID,
 	).Scan(&mark)
 	if err == sql.ErrNoRows {
@@ -116,7 +116,7 @@ func (r *Repo) quotaResetIDForKey(ctx context.Context, rawKey string) (int, erro
 		return 0, nil
 	}
 	var mark sql.NullInt64
-	err := r.db.QueryRowContext(ctx,
+	err := r.QueryRowContext(ctx,
 		`SELECT `+quotaResetColumn+` FROM apiKeys WHERE key = ? LIMIT 1`, rawKey,
 	).Scan(&mark)
 	if err == sql.ErrNoRows {
@@ -136,9 +136,24 @@ func (r *Repo) quotaResetIDForKey(ctx context.Context, rawKey string) (int, erro
 // runs: the OR must stay answerable through idx_uh_clientkey and
 // idx_uh_apikey, or the statement degrades to a ledger scan per key again.
 func apiKeyTokenUsageBatchQuery(n int) string {
+	return apiKeyTokenUsageBatchQueryFor(DialectSQLite, n)
+}
+
+// apiKeyTokenUsageBatchQueryFor is apiKeyTokenUsageBatchQuery in the form a
+// dialect runs. The PostgreSQL row casts every VALUES parameter: a parameter
+// inside a CTE's VALUES list has no column context to infer its type from,
+// so PostgreSQL types the mark as text and the history sum's `u.id > k.mark`
+// then has no operator (bigint > text, SQLSTATE 42883). The casts state the
+// types the comparisons already assume; the SQLite form needs none and is
+// unchanged.
+func apiKeyTokenUsageBatchQueryFor(d Dialect, n int) string {
+	row := "(?,?,?,?)"
+	if d == DialectPostgres {
+		row = "(?::text,?::text,?::text,?::bigint)"
+	}
 	rows := make([]string, n)
 	for i := range rows {
-		rows[i] = "(?,?,?,?)"
+		rows[i] = row
 	}
 	return `WITH k(keyId, rawKey, maskedKey, mark) AS (VALUES ` + strings.Join(rows, ",") + `)
 SELECT k.keyId,
@@ -200,7 +215,7 @@ func (r *Repo) GetApiKeyTokenUsageForKeys(ctx context.Context, keys []*models.AP
 	// declares itself: that failure falls back to the per-key reader, which
 	// already degrades the missing column to a lifetime sum.
 	marks := make(map[string]int64, len(ids))
-	markRows, err := r.db.QueryContext(ctx,
+	markRows, err := r.QueryContext(ctx,
 		`SELECT id, `+quotaResetColumn+` FROM apiKeys WHERE id IN (`+strings.Join(placeholders, ",")+`)`,
 		ids...)
 	if err != nil {
@@ -229,7 +244,7 @@ func (r *Repo) GetApiKeyTokenUsageForKeys(ctx context.Context, keys []*models.AP
 		args = append(args, k.ID, k.Key, handlerutil.MaskAPIKey(k.Key), marks[k.ID])
 	}
 
-	rows, err := r.db.QueryContext(ctx, apiKeyTokenUsageBatchQuery(len(cteRows)), args...)
+	rows, err := r.QueryContext(ctx, apiKeyTokenUsageBatchQueryFor(r.dialect, len(cteRows)), args...)
 	if err != nil {
 		return r.apiKeyTokenUsageByRow(ctx, pending, out)
 	}
@@ -333,7 +348,7 @@ func (r *Repo) tokenUsageSince(ctx context.Context, rawKey string, mark int) (in
 	args = append(args, rawKey)
 
 	var used int64
-	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&used); err != nil {
+	if err := r.QueryRowContext(ctx, query, args...).Scan(&used); err != nil {
 		return 0, fmt.Errorf("get api key token usage: %w", err)
 	}
 	return int(used), nil

@@ -86,7 +86,7 @@ func (r *Repo) LogMCPToolCall(toolName string, input any, output any, durationMs
 	}
 	createdAt := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
 
-	_, err = r.db.Exec(
+	_, err = r.Exec(
 		`INSERT INTO mcp_tool_audit (tool_name, input_hash, output_summary, duration_ms, api_key_id, transport, success, error_code, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		toolName, hex.EncodeToString(hash[:]), summary, durationMs, apiKeyVal, transportVal, successInt, errCodeVal, createdAt,
@@ -147,11 +147,11 @@ func (r *Repo) QueryMCPToolAudit(f MCPToolAuditFilter) ([]MCPToolAuditEntry, int
 	}
 
 	var total int64
-	if err := r.db.QueryRow(`SELECT COUNT(*) FROM mcp_tool_audit `+where, args...).Scan(&total); err != nil {
+	if err := r.QueryRow(`SELECT COUNT(*) FROM mcp_tool_audit `+where, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count mcp tool audit: %w", err)
 	}
 
-	rows, err := r.db.Query(
+	rows, err := r.Query(
 		`SELECT id, tool_name, input_hash, output_summary, duration_ms, api_key_id, transport, success, error_code, created_at
 		 FROM mcp_tool_audit `+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
 		append(args, f.Limit, f.Offset)...,
@@ -197,7 +197,7 @@ func (r *Repo) MCPToolAuditStats() (*MCPToolAuditStats, error) {
 
 	stats := &MCPToolAuditStats{TopTools: []MCPToolTopTool{}}
 	var avgDuration, successRate sql.NullFloat64
-	err := r.db.QueryRow(
+	err := r.QueryRow(
 		`SELECT COUNT(*),
 		        COALESCE(AVG(duration_ms), 0),
 		        COALESCE(AVG(CASE WHEN success = 1 THEN 100.0 ELSE 0 END), 0)
@@ -209,7 +209,7 @@ func (r *Repo) MCPToolAuditStats() (*MCPToolAuditStats, error) {
 	stats.AvgDurationMs = avgDuration.Float64
 	stats.SuccessRate = successRate.Float64
 
-	rows, err := r.db.Query(
+	rows, err := r.Query(
 		`SELECT tool_name, COUNT(*) FROM mcp_tool_audit WHERE created_at >= ?
 		 GROUP BY tool_name ORDER BY COUNT(*) DESC LIMIT 5`, cutoff,
 	)

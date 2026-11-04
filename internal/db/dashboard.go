@@ -25,7 +25,7 @@ func (r *Repo) UpdateProviderConnection(id string, name string, priority *int, i
 	if name != "" {
 		nameVal = name
 	}
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE providerConnections SET name = ?, priority = ?, isActive = ?, data = ?, updatedAt = ? WHERE id = ?`,
 		nameVal, priority, activeInt, data, now, id,
 	)
@@ -60,7 +60,7 @@ func (r *Repo) UpdateConnectionData(id string, data string) error {
 
 // DeleteProviderConnection deletes a provider connection by its ID.
 func (r *Repo) DeleteProviderConnection(id string) error {
-	_, err := r.db.Exec(`DELETE FROM providerConnections WHERE id = ?`, id)
+	_, err := r.Exec(`DELETE FROM providerConnections WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete provider connection %s: %w", id, err)
 	}
@@ -74,7 +74,7 @@ func (r *Repo) SetConnectionStatus(id string, isActive bool) error {
 		activeInt = 1
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE providerConnections SET isActive = ?, updatedAt = ? WHERE id = ?`,
 		activeInt, now, id,
 	)
@@ -87,7 +87,7 @@ func (r *Repo) SetConnectionStatus(id string, isActive bool) error {
 // SetConnectionPriority updates the priority and updatedAt of a provider connection.
 func (r *Repo) SetConnectionPriority(id string, priority int) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE providerConnections SET priority = ?, updatedAt = ? WHERE id = ?`,
 		priority, now, id,
 	)
@@ -115,8 +115,8 @@ func (r *Repo) ReorderProviderConnections(provider, id string, direction int) er
 	defer func() { _ = tx.Rollback() }()
 
 	rows, err := tx.Query(
-		`SELECT id FROM providerConnections WHERE provider = ?
-		 ORDER BY CASE WHEN priority IS NULL THEN 999999 ELSE priority END ASC, updatedAt DESC, id ASC`,
+		r.Rebind(`SELECT id FROM providerConnections WHERE provider = ?
+		 ORDER BY CASE WHEN priority IS NULL THEN 999999 ELSE priority END ASC, updatedAt DESC, id ASC`),
 		provider,
 	)
 	if err != nil {
@@ -153,7 +153,7 @@ func (r *Repo) ReorderProviderConnections(provider, id string, direction int) er
 	now := time.Now().UTC().Format(time.RFC3339)
 	for i, rowID := range order {
 		if _, err = tx.Exec(
-			`UPDATE providerConnections SET priority = ?, updatedAt = ? WHERE id = ?`,
+			r.Rebind(`UPDATE providerConnections SET priority = ?, updatedAt = ? WHERE id = ?`),
 			i+1, now, rowID,
 		); err != nil {
 			return fmt.Errorf("reorder %s/%s: write rank %d: %w", provider, id, i+1, err)
@@ -172,7 +172,7 @@ func (r *Repo) CreateCombo(id, name, kind, modelsJSON, strategy string) error {
 	if kind != "" {
 		kindVal = kind
 	}
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`INSERT INTO combos (id, name, kind, models, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)`,
 		id, name, kindVal, modelsJSON, now, now,
 	)
@@ -181,7 +181,7 @@ func (r *Repo) CreateCombo(id, name, kind, modelsJSON, strategy string) error {
 	}
 	if strategy != "" {
 		// Update strategy if column exists in the schema
-		_, _ = r.db.Exec(`UPDATE combos SET strategy = ? WHERE id = ?`, strategy, id)
+		_, _ = r.Exec(`UPDATE combos SET strategy = ? WHERE id = ?`, strategy, id)
 	}
 	return nil
 }
@@ -193,7 +193,7 @@ func (r *Repo) UpdateCombo(id, name, kind, modelsJSON, strategy string) error {
 	if kind != "" {
 		kindVal = kind
 	}
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE combos SET name = ?, kind = ?, models = ?, updatedAt = ? WHERE id = ?`,
 		name, kindVal, modelsJSON, now, id,
 	)
@@ -202,14 +202,14 @@ func (r *Repo) UpdateCombo(id, name, kind, modelsJSON, strategy string) error {
 	}
 	if strategy != "" {
 		// Update strategy if column exists in the schema
-		_, _ = r.db.Exec(`UPDATE combos SET strategy = ? WHERE id = ?`, strategy, id)
+		_, _ = r.Exec(`UPDATE combos SET strategy = ? WHERE id = ?`, strategy, id)
 	}
 	return nil
 }
 
 // DeleteCombo deletes a combo configuration by its ID.
 func (r *Repo) DeleteCombo(id string) error {
-	_, err := r.db.Exec(`DELETE FROM combos WHERE id = ?`, id)
+	_, err := r.Exec(`DELETE FROM combos WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete combo %s: %w", id, err)
 	}
@@ -222,7 +222,7 @@ func (r *Repo) DeleteCombo(id string) error {
 // governance column is added in exactly one place; a hand-copied SELECT here
 // is how a column silently stops being returned to the dashboard.
 func (r *Repo) GetApiKeys() ([]*models.APIKey, error) {
-	rows, err := r.db.QueryContext(context.Background(), r.apiKeyColumnsFor()+` FROM apiKeys ORDER BY createdAt DESC`)
+	rows, err := r.QueryContext(context.Background(), r.apiKeyColumnsFor()+` FROM apiKeys ORDER BY createdAt DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("get api keys: %w", err)
 	}
@@ -255,7 +255,7 @@ func (r *Repo) CreateApiKey(id, key, name, machineID string) error {
 	if machineID != "" {
 		machineVal = machineID
 	}
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`INSERT INTO apiKeys (id, key, name, machineId, isActive, createdAt) VALUES (?, ?, ?, ?, 1, ?)`,
 		id, key, nameVal, machineVal, now,
 	)
@@ -267,7 +267,7 @@ func (r *Repo) CreateApiKey(id, key, name, machineID string) error {
 
 // DeleteApiKey deletes a client API key by its ID.
 func (r *Repo) DeleteApiKey(id string) error {
-	_, err := r.db.Exec(`DELETE FROM apiKeys WHERE id = ?`, id)
+	_, err := r.Exec(`DELETE FROM apiKeys WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete api key %s: %w", id, err)
 	}
@@ -280,7 +280,7 @@ func (r *Repo) SetApiKeyStatus(id string, isActive bool) error {
 	if isActive {
 		activeInt = 1
 	}
-	_, err := r.db.Exec(`UPDATE apiKeys SET isActive = ? WHERE id = ?`, activeInt, id)
+	_, err := r.Exec(`UPDATE apiKeys SET isActive = ? WHERE id = ?`, activeInt, id)
 	if err != nil {
 		return fmt.Errorf("set api key status %s: %w", id, err)
 	}
@@ -290,7 +290,7 @@ func (r *Repo) SetApiKeyStatus(id string, isActive bool) error {
 // UpdateApiKeyUsage increments usedCount and sets lastUsedAt.
 func (r *Repo) UpdateApiKeyUsage(keyID string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE apiKeys SET lastUsedAt = ?, usedCount = usedCount + 1 WHERE id = ?`,
 		now, keyID,
 	)
@@ -302,7 +302,7 @@ func (r *Repo) UpdateApiKeyUsage(keyID string) error {
 
 // SetApiKeyRateLimit updates rate limit columns for an API key.
 func (r *Repo) SetApiKeyRateLimit(keyID string, rpm, tpm, concurrency int) error {
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE apiKeys SET rateLimitRPM = ?, rateLimitTPM = ?, rateLimitConcurrency = ? WHERE id = ?`,
 		rpm, tpm, concurrency, keyID,
 	)
@@ -319,7 +319,7 @@ func (r *Repo) SetApiKeyRateLimit(keyID string, rpm, tpm, concurrency int) error
 // unlimited and a queue timeout of 0 falls back to the server default, exactly
 // as the dashboard's own columns read them.
 func (r *Repo) SetApiKeyBudget(keyID string, tokenQuota, queueTimeoutMs int) error {
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE apiKeys SET tokenQuota = ?, queueTimeoutMs = ? WHERE id = ?`,
 		tokenQuota, queueTimeoutMs, keyID,
 	)
@@ -337,7 +337,7 @@ func (r *Repo) SetApiKeyBudget(keyID string, tokenQuota, queueTimeoutMs int) err
 // budget) in charge — the same convention rateLimitRPM uses, so a dashboard
 // dialog that blanks a field disables that axis rather than setting it to zero.
 func (r *Repo) SetApiKeyPeriodBudget(keyID string, limitMicros, limitTokens int64, period string, alertPct int, hardCutoff bool) error {
-	_, err := r.db.ExecContext(context.Background(),
+	_, err := r.ExecContext(context.Background(),
 		`UPDATE apiKeys SET limitMicros = ?, limitTokens = ?, budgetPeriod = ?, alertPct = ?, hardCutoff = ? WHERE id = ?`,
 		limitMicros, limitTokens, period, alertPct, boolToInt(hardCutoff), keyID,
 	)
@@ -372,7 +372,7 @@ func (r *Repo) GetApiKeyTokenUsage(rawKey string) (int, error) {
 
 // SetApiKeyExpiry sets expiresAt for an API key.
 func (r *Repo) SetApiKeyExpiry(keyID, expiresAt string) error {
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE apiKeys SET expiresAt = ? WHERE id = ?`,
 		expiresAt, keyID,
 	)
@@ -384,7 +384,7 @@ func (r *Repo) SetApiKeyExpiry(keyID, expiresAt string) error {
 
 // SetApiKeyMetadata sets metadata JSON for an API key.
 func (r *Repo) SetApiKeyMetadata(keyID, metadata string) error {
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE apiKeys SET metadata = ? WHERE id = ?`,
 		metadata, keyID,
 	)
@@ -398,7 +398,7 @@ func (r *Repo) SetApiKeyMetadata(keyID, metadata string) error {
 // reaches the wire — so an empty value clears it and the UI falls back to the
 // masked display.
 func (r *Repo) SetApiKeyName(keyID, name string) error {
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`UPDATE apiKeys SET name = ? WHERE id = ?`,
 		name, keyID,
 	)
@@ -410,7 +410,7 @@ func (r *Repo) SetApiKeyName(keyID, name string) error {
 
 // GetKVScope retrieves all key-value pairs for a given scope.
 func (r *Repo) GetKVScope(scope string) (map[string]string, error) {
-	rows, err := r.db.Query(`SELECT key, value FROM kv WHERE scope = ?`, scope)
+	rows, err := r.Query(`SELECT key, value FROM kv WHERE scope = ?`, scope)
 	if err != nil {
 		return nil, fmt.Errorf("get kv scope %s: %w", scope, err)
 	}
@@ -432,7 +432,7 @@ func (r *Repo) GetKVScope(scope string) (map[string]string, error) {
 
 // SetKV inserts or updates a key-value pair for a given scope.
 func (r *Repo) SetKV(scope, key, value string) error {
-	_, err := r.db.Exec(
+	_, err := r.Exec(
 		`INSERT INTO kv (scope, key, value) VALUES (?, ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
 		scope, key, value,
 	)
@@ -468,7 +468,7 @@ func (r *Repo) SetKVMany(ctx context.Context, scope string, entries []KVEntry) e
 
 	for _, entry := range entries {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO kv (scope, key, value) VALUES (?, ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
+			r.Rebind(`INSERT INTO kv (scope, key, value) VALUES (?, ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`),
 			scope, entry.Key, entry.Value,
 		); err != nil {
 			return fmt.Errorf("set kv batch [%s] %s: %w", scope, entry.Key, err)
@@ -482,7 +482,7 @@ func (r *Repo) SetKVMany(ctx context.Context, scope string, entries []KVEntry) e
 
 // DeleteKV removes a key-value pair for a given scope.
 func (r *Repo) DeleteKV(scope, key string) error {
-	_, err := r.db.Exec(`DELETE FROM kv WHERE scope = ? AND key = ?`, scope, key)
+	_, err := r.Exec(`DELETE FROM kv WHERE scope = ? AND key = ?`, scope, key)
 	if err != nil {
 		return fmt.Errorf("delete kv [%s] %s: %w", scope, key, err)
 	}
@@ -493,7 +493,7 @@ func (r *Repo) DeleteKV(scope, key string) error {
 // Returns an empty map if no settings row exists.
 func (r *Repo) GetSettingsRaw() (map[string]any, error) {
 	var rawData string
-	err := r.db.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&rawData)
+	err := r.QueryRow(`SELECT data FROM settings WHERE id = 1`).Scan(&rawData)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return make(map[string]any), nil

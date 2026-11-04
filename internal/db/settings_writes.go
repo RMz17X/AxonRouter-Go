@@ -38,7 +38,7 @@ func (r *Repo) updateSettings(merge func(existing map[string]any) error) error {
 	// The write carries no request context: a settings save that is cancelled
 	// with the caller leaves the operator with a half-applied change, and the
 	// statement itself is atomic.
-	if _, err := r.db.ExecContext(
+	if _, err := r.ExecContext(
 		context.Background(),
 		`INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
 		string(b),

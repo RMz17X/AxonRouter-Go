@@ -82,7 +82,7 @@ func (r *Repo) MigratePlaintextCredentials(ctx context.Context, dbPath string) (
 		}
 		// sealOnWrite returns the redacted payload; the row itself still holds
 		// the credential until it is rewritten here.
-		if _, wErr := r.db.ExecContext(ctx, `UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, c.ID); wErr != nil {
+		if _, wErr := r.ExecContext(ctx, `UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, c.ID); wErr != nil {
 			result.Skipped = append(result.Skipped, fmt.Sprintf("%s: %v", c.ID, wErr))
 			log.Warn("vault", "sealed credentials not redacted in place", "conn", c.ID, "error", wErr)
 			continue
@@ -105,7 +105,18 @@ func (r *Repo) MigratePlaintextCredentials(ctx context.Context, dbPath string) (
 //
 // The snapshot is created owner-only: it holds every provider credential in
 // the clear, exactly as the source did.
+//
+// PostgreSQL has no in-process equivalent: the database is a server, not a
+// file under the data directory, so there is no snapshot this process can
+// take — the restore point there is the server's own backup, which is the
+// operator's side of a PostgreSQL deployment. The branch therefore skips
+// the snapshot on PostgreSQL (and says so in the log) rather than inventing
+// a file form; the sealing pass itself is identical on both dialects.
 func (r *Repo) backupDatabase(ctx context.Context, target string) error {
+	if r.IsPostgres() {
+		log.Info("vault", "pre-migration backup skipped on PostgreSQL; the server backup is the restore point")
+		return nil
+	}
 	if _, err := r.db.ExecContext(ctx, `VACUUM INTO ?`, target); err != nil {
 		return fmt.Errorf("vault backup into %s: %w", target, err)
 	}

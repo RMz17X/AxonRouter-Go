@@ -28,7 +28,7 @@ const rulesColumn = "matchRules"
 // installation with no rules pays one scan of a small table and nothing else,
 // so saving a model stays as cheap as it was before this feature existed.
 func (r *Repo) ComboIDsWithRules(ctx context.Context) ([]string, error) {
-	rows, err := r.db.QueryContext(ctx,
+	rows, err := r.QueryContext(ctx,
 		`SELECT id FROM combos WHERE `+rulesColumn+` IS NOT NULL AND `+rulesColumn+
 			` NOT IN ('', '[]', 'null')`,
 	)
@@ -54,7 +54,7 @@ func (r *Repo) ComboIDsWithRules(ctx context.Context) ([]string, error) {
 // row with no rules both return "".
 func (r *Repo) GetComboRules(ctx context.Context, id string) (string, error) {
 	var raw string
-	err := r.db.QueryRowContext(ctx,
+	err := r.QueryRowContext(ctx,
 		`SELECT `+rulesColumn+` FROM combos WHERE id = ? LIMIT 1`, id,
 	).Scan(&raw)
 	if err == sql.ErrNoRows {
@@ -69,7 +69,7 @@ func (r *Repo) GetComboRules(ctx context.Context, id string) (string, error) {
 // ComboRulesByID returns the raw rule column of every combo, keyed by combo id.
 // Combos without rules are absent from the map rather than present and empty.
 func (r *Repo) ComboRulesByID(ctx context.Context) (map[string]string, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT id, `+rulesColumn+` FROM combos`)
+	rows, err := r.QueryContext(ctx, `SELECT id, `+rulesColumn+` FROM combos`)
 	if err != nil {
 		return nil, fmt.Errorf("combo rules by id: %w", err)
 	}
@@ -93,7 +93,7 @@ func (r *Repo) ComboRulesByID(ctx context.Context) (map[string]string, error) {
 
 // SetComboRules replaces the rule list of one combo.
 func (r *Repo) SetComboRules(ctx context.Context, id, raw string) error {
-	if _, err := r.db.ExecContext(ctx, `UPDATE combos SET `+rulesColumn+` = ? WHERE id = ?`, raw, id); err != nil {
+	if _, err := r.ExecContext(ctx, `UPDATE combos SET `+rulesColumn+` = ? WHERE id = ?`, raw, id); err != nil {
 		return fmt.Errorf("set combo rules %s: %w", id, err)
 	}
 	return nil
@@ -127,7 +127,7 @@ func (r *Repo) ReconcileCombo(
 
 	var modelsJSON, rulesJSON string
 	if err := tx.QueryRowContext(ctx,
-		`SELECT models, `+rulesColumn+` FROM combos WHERE id = ?`, id,
+		r.Rebind(`SELECT models, `+rulesColumn+` FROM combos WHERE id = ?`), id,
 	).Scan(&modelsJSON, &rulesJSON); err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -161,7 +161,7 @@ func (r *Repo) ReconcileCombo(
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE combos SET models = ?, `+rulesColumn+` = ?, updatedAt = ? WHERE id = ?`,
+		r.Rebind(`UPDATE combos SET models = ?, `+rulesColumn+` = ?, updatedAt = ? WHERE id = ?`),
 		string(encodedModels), encodedRules, now, id,
 	); err != nil {
 		return false, fmt.Errorf("reconcile combo %s: write: %w", id, err)

@@ -18,7 +18,7 @@ var errNoSuchApiKey = errors.New("no such api key")
 // FindApiKeyByLookup plus an argon2id verification.
 func (r *Repo) ValidateApiKey(key string) (bool, error) {
 	var active int
-	err := r.db.QueryRow("SELECT isActive FROM apiKeys WHERE key = ? LIMIT 1", key).Scan(&active)
+	err := r.QueryRow("SELECT isActive FROM apiKeys WHERE key = ? LIMIT 1", key).Scan(&active)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -52,6 +52,23 @@ func (r *Repo) budgetColumnsPresent() bool {
 		return false
 	}
 	r.budgetColsOnce.Do(func() {
+		if r.IsPostgres() {
+			// PostgreSQL has no PRAGMA; the catalog is the probe. The
+			// question is the same one the SQLite arm asks — does the
+			// limitMicros column exist — so a hand-made PostgreSQL schema
+			// without the F-2 columns still degrades every key read to
+			// the legacy query, exactly as a pre-F-2 SQLite file does.
+			// The names are the folded forms the unquoted DDL stored.
+			var present int
+			err := r.QueryRowContext(context.Background(),
+				`SELECT COUNT(*) FROM information_schema.columns
+				 WHERE table_schema = current_schema() AND table_name = 'apikeys'
+				   AND column_name = 'limitmicros'`).Scan(&present)
+			if err == nil && present > 0 {
+				r.budgetCols = true
+			}
+			return
+		}
 		rows, err := r.db.QueryContext(context.Background(), `PRAGMA table_info(apiKeys)`)
 		if err != nil {
 			return
@@ -210,7 +227,7 @@ func (r *Repo) queryApiKey(whereClause string, arg string) (*models.APIKey, erro
 	var apiKey models.APIKey
 	withBudget := r.budgetColumnsPresent()
 	dest, apply := apiKeyScan(&apiKey, withBudget)
-	err := r.db.QueryRowContext(context.Background(), r.apiKeyColumnsFor()+" "+whereClause, arg).Scan(dest...)
+	err := r.QueryRowContext(context.Background(), r.apiKeyColumnsFor()+" "+whereClause, arg).Scan(dest...)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -229,8 +246,26 @@ func (r *Repo) queryApiKey(whereClause string, arg string) (*models.APIKey, erro
 // legacy `WHERE key = ?` lookup can never authenticate against it.
 const hashedKeyPrefix = "\x00argon2id:"
 
+// hashedKeyPrefixPG is the PostgreSQL spelling of the sentinel. PostgreSQL
+// text cannot store the NUL byte at all (SQLSTATE 22021), so the prefix
+// there starts with 0x01 instead: the same class of character — a control
+// byte no HTTP header value can carry, so no client can send it either —
+// in a form the column accepts. Each dialect writes only its own spelling;
+// IsHashedKeyRow recognises both, so a row keeps its meaning whichever
+// backend wrote it.
+const hashedKeyPrefixPG = "\x01argon2id:"
+
 func hashedKeySentinel(lookupHash string) string {
 	return hashedKeyPrefix + lookupHash
+}
+
+// hashedKeySentinelFor returns the sentinel in the spelling the dialect
+// can store.
+func (r *Repo) hashedKeySentinelFor(lookupHash string) string {
+	if r.IsPostgres() {
+		return hashedKeyPrefixPG + lookupHash
+	}
+	return hashedKeySentinel(lookupHash)
 }
 
 // IsHashedKeyRow reports whether a row is a pre-#199 hashed row: its `key`
@@ -238,7 +273,7 @@ func hashedKeySentinel(lookupHash string) string {
 // unrecoverable. Such a row still authenticates through its argon2id verifier
 // (see middleware.resolveApiKey) but cannot be revealed in the dashboard.
 func IsHashedKeyRow(k *models.APIKey) bool {
-	return k != nil && strings.HasPrefix(k.Key, hashedKeyPrefix)
+	return k != nil && (strings.HasPrefix(k.Key, hashedKeyPrefix) || strings.HasPrefix(k.Key, hashedKeyPrefixPG))
 }
 
 // HashApiKeyRow fills the F-6 hash columns for a row and replaces the
@@ -247,9 +282,9 @@ func IsHashedKeyRow(k *models.APIKey) bool {
 // authenticate through GetApiKeyByKey until this runs. After it runs the secret
 // exists only as an argon2id verifier and a masked display value.
 func (r *Repo) HashApiKeyRow(id, keyHash, lookupHash, keyDisplay string) error {
-	res, err := r.db.Exec(
+	res, err := r.Exec(
 		`UPDATE apiKeys SET key = ?, keyHash = ?, lookupHash = ?, keyDisplay = ? WHERE id = ?`,
-		hashedKeySentinel(lookupHash), keyHash, lookupHash, keyDisplay, id,
+		r.hashedKeySentinelFor(lookupHash), keyHash, lookupHash, keyDisplay, id,
 	)
 	if err != nil {
 		return fmt.Errorf("hash api key row %s: %w", id, err)
@@ -275,7 +310,7 @@ func (r *Repo) GetApiKeyByID(id string) (*models.APIKey, error) {
 // argon2id path, so its new secret would never be found and the key would
 // appear dead to every client holding it.
 func (r *Repo) RotateApiKeySecret(id, plaintext, keyDisplay string) error {
-	res, err := r.db.Exec(
+	res, err := r.Exec(
 		`UPDATE apiKeys SET key = ?, keyDisplay = ?, keyHash = '', lookupHash = '' WHERE id = ?`,
 		plaintext, keyDisplay, id,
 	)
@@ -291,7 +326,7 @@ func (r *Repo) RotateApiKeySecret(id, plaintext, keyDisplay string) error {
 // SetApiKeyDisplay records the masked form of a row's secret without touching
 // the secret itself.
 func (r *Repo) SetApiKeyDisplay(id, keyDisplay string) error {
-	res, err := r.db.Exec(`UPDATE apiKeys SET keyDisplay = ? WHERE id = ?`, keyDisplay, id)
+	res, err := r.Exec(`UPDATE apiKeys SET keyDisplay = ? WHERE id = ?`, keyDisplay, id)
 	if err != nil {
 		return fmt.Errorf("set api key display %s: %w", id, err)
 	}
