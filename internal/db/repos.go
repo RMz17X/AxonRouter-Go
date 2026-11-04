@@ -20,6 +20,12 @@ import (
 type Repo struct {
 	db *sql.DB
 
+	// dialect records which SQL dialect the handle speaks, decided once at
+	// construction from the driver (DialectOf). The dialect sweep branches
+	// on it statement by statement; caching it here keeps that branch off
+	// the reflect-and-format path DialectOf walks.
+	dialect Dialect
+
 	// activePoolIDs caches ActivePoolIDs. It lives on the Repo rather than in
 	// package state because the answer belongs to one database: two Repos over
 	// different handles would otherwise read each other's pool list.
@@ -61,10 +67,23 @@ func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 
 // NewRepo creates a new repository instance using the provided SQL database connection.
 func NewRepo(db *sql.DB) *Repo {
-	return &Repo{db: db}
+	return &Repo{db: db, dialect: DialectOf(db)}
 }
 
 // RawDB returns the underlying *sql.DB connection for direct queries.
 func (r *Repo) RawDB() *sql.DB {
 	return r.db
+}
+
+// Dialect reports the SQL dialect of the underlying handle (WS2). Query
+// code that must differ per backend branches on this rather than on
+// configuration, so a Repo always describes the handle it actually wraps.
+func (r *Repo) Dialect() Dialect {
+	return r.dialect
+}
+
+// IsPostgres reports whether the underlying handle is the PostgreSQL
+// backend selected by DATABASE_URL.
+func (r *Repo) IsPostgres() bool {
+	return r.dialect == DialectPostgres
 }

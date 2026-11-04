@@ -599,6 +599,12 @@ func EnsureCoreSchema(db *sql.DB) error {
 	if db == nil {
 		return fmt.Errorf("core schema: nil db")
 	}
+	// WS2: a PostgreSQL handle gets the ported schema (schema_pg.go) — the
+	// same table set in PostgreSQL dialect. Every other handle keeps the
+	// SQLite bootstrap below, unchanged.
+	if DialectOf(db) == DialectPostgres {
+		return EnsurePostgresSchema(db)
+	}
 	for _, t := range coreSchema() {
 		if err := ensureTable(db, t); err != nil {
 			return err

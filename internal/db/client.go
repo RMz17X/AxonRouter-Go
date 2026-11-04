@@ -97,10 +97,18 @@ func RestrictSQLiteModes(dbDir, path string) {
 // boot would silently reopen the same SQLite file behind the first one's
 // pooled connections. Tests are the one place that legitimately needs a fresh
 // handle, which is what ResetGlobalDatabaseForTest is for.
+//
+// A non-empty DATABASE_URL selects the PostgreSQL backend instead of the
+// SQLite file at path (WS2); the path then names no database at all, though
+// its directory still holds the process's non-database state.
 func InitGlobalDatabase(path string) error {
 	dbMu.Lock()
 	defer dbMu.Unlock()
 	if dbInstance != nil {
+		return initErr
+	}
+	if dsn := databaseURL(); dsn != "" {
+		dbInstance, initErr = OpenPostgresDatabase(dsn)
 		return initErr
 	}
 	dbInstance, initErr = OpenDatabase(path)
