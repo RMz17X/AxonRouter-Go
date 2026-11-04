@@ -199,10 +199,10 @@ func (h *DashboardHandler) HandleProviderStats(w http.ResponseWriter, r *http.Re
 // [id]/proxy-stats route + analyticsRepo.getProviderProxyStats, with the
 // per-attempt analytics_events stream replaced by this codebase's
 // per-request ledger (db.GetAnalyticsEvents — the batch-1 precedent).
-// Custom proxy groups have no storage in this codebase yet (that is the
-// proxy-infrastructure batch), so group mode always resolves pools by the
-// group/type name match — AxonRouter's own fallback when no custom group
-// exists — with isSticky=false / stickyLimit=3 defaults.
+// Group mode resolves custom proxy groups (batch 4 store) by name, then
+// id: a group with poolIds owns its membership by id set and contributes
+// its sticky settings; otherwise the group/type label match applies —
+// AxonRouter's own fallback — with isSticky=false / stickyLimit=3.
 // ---------------------------------------------------------------------------
 
 type windowStats struct {
@@ -403,18 +403,43 @@ func (h *DashboardHandler) HandleProviderProxyStats(w http.ResponseWriter, r *ht
 	if poolsErr == nil {
 		switch routingMode {
 		case "group":
+			var customGroup *db.ProxyGroup
+			if g, err := h.Repo.GetProxyGroupByName(proxyGroup); err == nil && g != nil {
+				customGroup = g
+			} else if g, err := h.Repo.GetProxyGroupByID(proxyGroup); err == nil && g != nil {
+				customGroup = g
+			}
 			matching := make([]map[string]any, 0)
-			for _, p := range pools {
-				group, _ := p["group"].(string)
-				typ, _ := p["type"].(string)
-				if strings.EqualFold(group, proxyGroup) || strings.EqualFold(typ, proxyGroup) {
-					matching = append(matching, p)
+			if customGroup != nil && len(customGroup.PoolIDs) > 0 {
+				idSet := make(map[string]bool, len(customGroup.PoolIDs))
+				for _, pid := range customGroup.PoolIDs {
+					idSet[pid] = true
+				}
+				for _, p := range pools {
+					if idSet[handlerutil.GetString(p, "id")] {
+						matching = append(matching, p)
+					}
+				}
+			} else {
+				for _, p := range pools {
+					group, _ := p["group"].(string)
+					typ, _ := p["type"].(string)
+					if strings.EqualFold(group, proxyGroup) || strings.EqualFold(typ, proxyGroup) {
+						matching = append(matching, p)
+					}
 				}
 			}
 			active, degraded, unhealthy := poolHealthCounts(matching, true)
 			healthRate := 0
 			if len(matching) > 0 {
 				healthRate = int(math.Round(float64(active) / float64(len(matching)) * 100))
+			}
+			isSticky, stickyLimit := false, 3
+			if customGroup != nil {
+				isSticky = customGroup.IsSticky
+				if customGroup.StickyLimit > 0 {
+					stickyLimit = customGroup.StickyLimit
+				}
 			}
 			groupHealth = map[string]any{
 				"name":           proxyGroup,
@@ -423,8 +448,8 @@ func (h *DashboardHandler) HandleProviderProxyStats(w http.ResponseWriter, r *ht
 				"degradedPools":  degraded,
 				"unhealthyPools": unhealthy,
 				"healthRate":     healthRate,
-				"isSticky":       false,
-				"stickyLimit":    3,
+				"isSticky":       isSticky,
+				"stickyLimit":    stickyLimit,
 			}
 		case "all":
 			active, degraded, unhealthy := poolHealthCounts(pools, false)

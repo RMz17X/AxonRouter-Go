@@ -259,6 +259,11 @@ type BreakerStatus struct {
 	SuccessCount int    `json:"successCount"`
 	RetryAfterMs int64  `json:"retryAfterMs"`
 	OpenedAt     string `json:"openedAt,omitempty"`
+	// LastFailureAt is the most recent recorded failure (RFC3339), empty
+	// when the breaker has not failed since boot. Added for the
+	// Axon-shaped /api/circuit-breakers surface, which reports it as
+	// epoch milliseconds.
+	LastFailureAt string `json:"lastFailureAt,omitempty"`
 }
 
 // Status returns a snapshot of the breaker.
@@ -270,6 +275,9 @@ func (b *Breaker) Status() BreakerStatus {
 		State:        b.state,
 		FailureCount: b.failureCount,
 		SuccessCount: b.successCount,
+	}
+	if !b.lastFailure.IsZero() {
+		st.LastFailureAt = b.lastFailure.UTC().Format(time.RFC3339)
 	}
 	if b.state == StateOpen {
 		remaining := b.effectiveTimeout() - b.now().Sub(b.openedAt)

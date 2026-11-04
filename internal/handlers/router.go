@@ -15,6 +15,7 @@ import (
 	"9router/proxy/internal/handlerutil"
 	"9router/proxy/internal/middleware"
 	"9router/proxy/internal/observ"
+	"9router/proxy/internal/routinglatency"
 	"9router/proxy/web"
 	json "encoding/json/v2"
 	"github.com/go-chi/chi/v5"
@@ -78,8 +79,8 @@ func SetupRoutes(r interface {
 	r.Get("/api/models/catalog-sync", chatH.HandleCatalogSyncStatus)
 	r.Post("/api/models/catalog-sync", chatH.HandleCatalogSyncTrigger)
 	r.Get("/api/models", chatH.HandleModels)
-	r.Post("/chat/completions", chatH.HandleChatCompletions)
-	r.Post("/messages", chatH.HandleMessages)
+	r.Post("/chat/completions", routinglatency.Wrap("v1", chatH.HandleChatCompletions))
+	r.Post("/messages", routinglatency.Wrap("v1", chatH.HandleMessages))
 	r.Post("/messages/count_tokens", chatH.HandleCountTokens)
 	r.Post("/api/chat", chatH.HandleOllamaChat)
 
@@ -89,8 +90,8 @@ func SetupRoutes(r interface {
 	// /v1/responses needs model resolution, combos, account fallback and usage
 	// logging, none of which the media passthrough has, so it lives with the
 	// chat handlers — the same place /v1/messages does.
-	r.Post("/responses", chatH.HandleResponses)
-	r.Post("/responses/compact", chatH.HandleResponsesCompact)
+	r.Post("/responses", routinglatency.Wrap("v1", chatH.HandleResponses))
+	r.Post("/responses/compact", routinglatency.Wrap("v1", chatH.HandleResponsesCompact))
 	r.Post("/images/generations", mediaH.HandleImages)
 	r.Post("/images/edits", mediaH.HandleImageEdits)
 	r.Post("/audio/speech", mediaH.HandleAudioSpeech)
@@ -390,6 +391,31 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/proxy-pools/deno-deploy", relayH.HandleDenoDeploy)
 	r.Post("/api/proxy-pools/cloudflare-deploy", relayH.HandleCloudflareDeploy)
 	r.Post("/api/proxy-pools/netlify-deploy", relayH.HandleNetlifyDeploy)
+
+	// Backend parity batch 4 — proxy infra family (AxonRouter contract
+	// ports, see .changes/915). Static segments (fitness, health-check,
+	// recover, verify-subscription) win over {id} in chi, same as the
+	// relay-deploy routes above.
+	r.Get("/api/proxy-pools/fitness", dashH.HandleGetProxyPoolsFitness)
+	r.Post("/api/proxy-pools/fitness/clear-all", dashH.HandleClearProxyPoolsFitness)
+	r.Post("/api/proxy-pools/{id}/fitness/clear", dashH.HandleClearProxyPoolFitness)
+	r.Post("/api/proxy-pools/{id}/geo-probe", dashH.HandleGeoProbeProxyPool)
+	r.Get("/api/proxy-pools/health-check", dashH.HandleGetProxyPoolsHealthCheck)
+	r.Post("/api/proxy-pools/health-check", dashH.HandleProxyPoolsHealthCheck)
+	r.Post("/api/proxy-pools/recover", dashH.HandleRecoverProxyPools)
+	r.Get("/api/proxy-groups", dashH.HandleGetProxyGroups)
+	r.Post("/api/proxy-groups", dashH.HandleCreateProxyGroup)
+	r.Post("/api/proxy-groups/verify-subscription", dashH.HandleVerifySubscription)
+	r.Get("/api/proxy-groups/{id}", dashH.HandleGetProxyGroup)
+	r.Put("/api/proxy-groups/{id}", dashH.HandleUpdateProxyGroup)
+	r.Delete("/api/proxy-groups/{id}", dashH.HandleDeleteProxyGroup)
+	r.Post("/api/proxy-groups/{id}/remove-all", dashH.HandleRemoveAllProxyGroup)
+	r.Post("/api/proxy-groups/{id}/sync", dashH.HandleSyncProxyGroup)
+	r.Get("/api/circuit-breakers", dashH.HandleGetCircuitBreakers)
+	r.Delete("/api/circuit-breakers", dashH.HandleResetCircuitBreakers)
+	r.Get("/api/routing/latency", dashH.HandleGetRoutingLatency)
+	r.Post("/api/tunnel/ngrok/start", dashH.HandleStartNgrokTunnel)
+	r.Post("/api/tunnel/ngrok/stop", dashH.HandleStopNgrokTunnel)
 
 	r.Get("/api/keys", dashH.HandleGetApiKeys)
 	r.Post("/api/keys", dashH.HandleCreateApiKey)

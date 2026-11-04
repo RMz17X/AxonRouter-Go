@@ -92,6 +92,19 @@ func pgCoreSchema() []tableDef {
 			},
 		},
 		{
+			name: "proxyGroups",
+			columns: [][2]string{
+				{"id", "TEXT PRIMARY KEY"},
+				{"name", "TEXT"},
+				{"data", "JSONB NOT NULL"},
+				{"createdAt", "TEXT NOT NULL"},
+				{"updatedAt", "TEXT NOT NULL"},
+			},
+			indexes: []string{
+				"CREATE INDEX IF NOT EXISTS idx_pg_name ON proxyGroups(name)",
+			},
+		},
+		{
 			name: "apiKeys",
 			columns: [][2]string{
 				{"id", "TEXT PRIMARY KEY"},
