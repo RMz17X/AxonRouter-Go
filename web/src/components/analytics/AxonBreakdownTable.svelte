@@ -3,6 +3,9 @@
   // Account / API Key / Endpoint — Axon has no Provider dimension here),
   // expandable group rows over per-model detail rows, Costs/Tokens modes with
   // token-share cost allocation (cached tokens peeled out of input first).
+  // Owner-ordered addition (Ricki, 2026-11-04): a Provider dimension on top
+  // of Axon's four — it regroups the byModel leaf map by each leaf's provider,
+  // with the models that ran on it as the detail rows.
   //
   // Grouping follows the stats payload's own shape, the same one the previous
   // breakdown table consumed: every map entry is one (dimension value × model
@@ -20,12 +23,15 @@
 
   let { period }: Props = $props()
 
-  type Dimension = 'model' | 'account' | 'apiKey' | 'endpoint'
+  type Dimension = 'model' | 'provider' | 'account' | 'apiKey' | 'endpoint'
   type Mode = 'tokens' | 'costs'
   type SortKey = 'name' | 'requests' | 'in' | 'cached' | 'out' | 'total'
 
   const DIMENSIONS: { value: Dimension; label: string; view: string; empty: string }[] = [
     { value: 'model', label: 'Model', view: 'model', empty: 'No usage recorded yet.' },
+    // Provider reuses the model view: its groups are derived from the same
+    // leaf map, keyed by each leaf's provider instead of its model.
+    { value: 'provider', label: 'Provider', view: 'model', empty: 'No provider usage recorded yet.' },
     { value: 'account', label: 'Account', view: 'account', empty: 'No account-specific usage recorded yet.' },
     { value: 'apiKey', label: 'API Key', view: 'apiKey', empty: 'No API key usage recorded yet.' },
     { value: 'endpoint', label: 'Endpoint', view: 'endpoint', empty: 'No endpoint usage recorded yet.' },
@@ -96,6 +102,8 @@
     switch (dim) {
       case 'model':
         return item.rawModel || key
+      case 'provider':
+        return item.provider || 'unknown'
       case 'account':
         return item.accountName || key
       case 'apiKey':
@@ -113,13 +121,15 @@
   }
 
   function detailSubOf(dim: Dimension, item: UsageItem): string | undefined {
-    if (dim === 'model') return undefined
+    // Provider groups already name the provider; repeating it as every
+    // row's sub would be noise. Model rows carry no sub either.
+    if (dim === 'model' || dim === 'provider') return undefined
     return item.provider || undefined
   }
 
   const groups = $derived.by((): Group[] => {
     const sourceMap =
-      statsDim === 'model'
+      statsDim === 'model' || statsDim === 'provider'
         ? stats.byModel
         : statsDim === 'account'
           ? stats.byAccount
