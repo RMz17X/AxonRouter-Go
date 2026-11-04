@@ -27,7 +27,9 @@ import (
 func (h *DashboardHandler) HandleGetApiKeys(w http.ResponseWriter, r *http.Request) {
 	keys, err := h.Repo.GetApiKeys()
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		// Axon's fixed message (no internal error leak) in the flat
+		// dashboard shape (batch 9, G1).
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch keys")
 		return
 	}
 	privileged := middleware.CallerIsDashboardPrivileged(h.Repo, r)
@@ -207,7 +209,7 @@ func stringOrEmpty(v *string) string {
 func (h *DashboardHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusBadRequest, "failed to read body")
 		return
 	}
 	defer r.Body.Close()
@@ -220,7 +222,7 @@ func (h *DashboardHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Req
 	}
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
+			writePlainError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 	}
@@ -230,8 +232,13 @@ func (h *DashboardHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Req
 	// stores a whitespace-only name as empty rather than as a row the table
 	// renders blank, which is what the operator typed by accident.
 	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		// Axon requires a name (400, flat).
+		writePlainError(w, http.StatusBadRequest, "Name is required")
+		return
+	}
 	if len(req.Name) > maxAPIKeyNameLen {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "name is too long")
+		writePlainError(w, http.StatusBadRequest, "name is too long")
 		return
 	}
 	if req.ID == "" {
@@ -242,7 +249,7 @@ func (h *DashboardHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.Repo.CreateApiKey(req.ID, req.Key, req.Name, req.MachineID); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to create key")
 		return
 	}
 
@@ -255,14 +262,19 @@ func (h *DashboardHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Req
 	// identifier, and a row that predates this change has no plaintext to show.
 	if err := h.Repo.SetApiKeyDisplay(req.ID, keikey.Mask(req.Key)); err != nil {
 		log.Error("apikeys", "store api key display failed", "error", err)
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to create key")
 		return
 	}
 
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-		"id":     req.ID,
-		"key":    req.Key,
+	// Axon's create payload (201): exactly {key, name, id, machineId}.
+	// The SPA reads only `key` from it. machineId is the value stored
+	// with the row — Go's create accepts it from the caller (the bulk
+	// flow assigns one per entry) where Axon derives it server-side.
+	handlerutil.WriteJSON(w, http.StatusCreated, map[string]any{
+		"key":       req.Key,
+		"name":      req.Name,
+		"id":        req.ID,
+		"machineId": req.MachineID,
 	})
 }
 
@@ -274,23 +286,23 @@ func (h *DashboardHandler) HandleCreateApiKey(w http.ResponseWriter, r *http.Req
 func (h *DashboardHandler) HandleRotateApiKey(w http.ResponseWriter, r *http.Request) {
 	id := getURLParam(r, "id")
 	if id == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing apiKey id")
+		writePlainError(w, http.StatusBadRequest, "missing apiKey id")
 		return
 	}
 	existing, err := h.Repo.GetApiKeyByID(id)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if existing == nil {
-		handlerutil.WriteJSONError(w, http.StatusNotFound, "api key not found")
+		writePlainError(w, http.StatusNotFound, "api key not found")
 		return
 	}
 
 	plaintext := "sk-" + strings.ReplaceAll(uuid.New().String(), "-", "")
 	if err := h.Repo.RotateApiKeySecret(id, plaintext, keikey.Mask(plaintext)); err != nil {
 		log.Error("apikeys", "rotate: store secret failed", "error", err)
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	// The old key is live in the auth cache for its TTL; without this the
@@ -314,23 +326,23 @@ func (h *DashboardHandler) HandleRotateApiKey(w http.ResponseWriter, r *http.Req
 func (h *DashboardHandler) HandleResetApiKeyQuota(w http.ResponseWriter, r *http.Request) {
 	id := getURLParam(r, "id")
 	if id == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing apiKey id")
+		writePlainError(w, http.StatusBadRequest, "missing apiKey id")
 		return
 	}
 	existing, err := h.Repo.GetApiKeyByID(id)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if existing == nil {
-		handlerutil.WriteJSONError(w, http.StatusNotFound, "api key not found")
+		writePlainError(w, http.StatusNotFound, "api key not found")
 		return
 	}
 
 	mark, err := h.Repo.ResetApiKeyQuota(r.Context(), id)
 	if err != nil {
 		log.Error("apikeys", "quota reset failed", "error", err, "apiKeyId", id)
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -359,12 +371,12 @@ func (h *DashboardHandler) HandleResetApiKeyQuota(w http.ResponseWriter, r *http
 func (h *DashboardHandler) HandleDeleteApiKey(w http.ResponseWriter, r *http.Request) {
 	id := getURLParam(r, "id")
 	if id == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing apiKey id")
+		writePlainError(w, http.StatusBadRequest, "missing apiKey id")
 		return
 	}
 
 	if err := h.Repo.DeleteApiKey(id); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -380,7 +392,7 @@ func (h *DashboardHandler) HandleDeleteApiKey(w http.ResponseWriter, r *http.Req
 func (h *DashboardHandler) HandleToggleApiKey(w http.ResponseWriter, r *http.Request) {
 	id := getURLParam(r, "id")
 	if id == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing apiKey id")
+		writePlainError(w, http.StatusBadRequest, "missing apiKey id")
 		return
 	}
 
@@ -401,7 +413,7 @@ func (h *DashboardHandler) HandleToggleApiKey(w http.ResponseWriter, r *http.Req
 	} else {
 		keys, err := h.Repo.GetApiKeys()
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writePlainError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		found := false
@@ -413,13 +425,13 @@ func (h *DashboardHandler) HandleToggleApiKey(w http.ResponseWriter, r *http.Req
 			}
 		}
 		if !found {
-			handlerutil.WriteJSONError(w, http.StatusNotFound, "api key not found")
+			writePlainError(w, http.StatusNotFound, "api key not found")
 			return
 		}
 	}
 
 	if err := h.Repo.SetApiKeyStatus(id, newStatus); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 

@@ -26,10 +26,15 @@ type ComboAnalyticsMember struct {
 // combosAnalyticsResponse is the endpoint payload. Combos is part of the
 // AxonRouter contract (its client fetches it alongside the members) but no
 // surface renders it, so it is always the empty array rather than an invented
-// aggregate.
+// aggregate. Period and RoutingMetrics complete Axon's envelope
+// ({period, routingMetrics, ...result}): Go has no routing-metrics
+// service, so the latter is null — the same value Axon itself emits
+// when its metrics read fails.
 type combosAnalyticsResponse struct {
-	Members []ComboAnalyticsMember `json:"members"`
-	Combos  []any                  `json:"combos"`
+	Period         string                 `json:"period"`
+	RoutingMetrics any                    `json:"routingMetrics"`
+	Members        []ComboAnalyticsMember `json:"members"`
+	Combos         []any                  `json:"combos"`
 }
 
 // HandleCombosAnalytics serves GET /api/combos/analytics?period= — per-member
@@ -39,11 +44,19 @@ type combosAnalyticsResponse struct {
 // `all`) reads the whole ledger.
 func HandleCombosAnalytics(repo *db.Repo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		since := detailsSince(r.URL.Query().Get("period"), time.Now())
+		period := r.URL.Query().Get("period")
+		since := detailsSince(period, time.Now())
 		rows, err := repo.GetComboAnalyticsSince(r.Context(), since)
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			// Axon's flat shape for this route, including its details key.
+			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+				"error":   "Failed to fetch combo analytics",
+				"details": err.Error(),
+			})
 			return
+		}
+		if period == "" {
+			period = "today"
 		}
 
 		members := make([]ComboAnalyticsMember, 0, len(rows))
@@ -61,8 +74,10 @@ func HandleCombosAnalytics(repo *db.Repo) http.HandlerFunc {
 		}
 
 		handlerutil.WriteJSON(w, http.StatusOK, combosAnalyticsResponse{
-			Members: members,
-			Combos:  []any{},
+			Period:         period,
+			RoutingMetrics: nil,
+			Members:        members,
+			Combos:         []any{},
 		})
 	}
 }

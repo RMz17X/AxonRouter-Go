@@ -1,7 +1,6 @@
 package handlerutil
 
 import (
-	"bytes"
 	"context"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
@@ -133,24 +132,15 @@ func WriteJSONIndented(w http.ResponseWriter, status int, data any) {
 	}
 }
 
-func WriteModelsList(w http.ResponseWriter, status int, meta any, modelsJSON []byte) {
-	metaJSON, err := json.Marshal(meta, deterministicJSON)
-	if err != nil {
-		WriteJSONError(w, http.StatusInternalServerError, "failed to encode models")
-		return
-	}
-	trimmed := bytes.TrimRight(metaJSON, " 	\r\n")
-	if !bytes.HasSuffix(trimmed, []byte("}")) {
-		WriteJSONError(w, http.StatusInternalServerError, "failed to encode models")
-		return
-	}
+// WriteModelsListExact streams Axon's engine models envelope —
+// {"object":"list","data":[...]} and nothing else — around an
+// already-marshaled data array, so a large catalog is never marshaled
+// twice (batch 9, E1; replaces the former meta+data+models writer,
+// whose extra keys no consumer read).
+func WriteModelsListExact(w http.ResponseWriter, status int, modelsJSON []byte) {
 	w.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
 	w.WriteHeader(status)
-	trimmed = trimmed[:len(trimmed)-1]
-	_, _ = w.Write(trimmed)
-	_, _ = w.Write([]byte(`,"data":`))
-	_, _ = w.Write(modelsJSON)
-	_, _ = w.Write([]byte(`,"models":`))
+	_, _ = w.Write([]byte(`{"object":"list","data":`))
 	_, _ = w.Write(modelsJSON)
 	_, _ = w.Write([]byte(`}`))
 }

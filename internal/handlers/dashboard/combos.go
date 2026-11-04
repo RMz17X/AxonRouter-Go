@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -18,6 +19,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// validComboName is Axon's combo-name rule (combos/route.js):
+// letters, numbers, "-", "_", "." and "/" only.
+var validComboName = regexp.MustCompile(`^[a-zA-Z0-9_.\-/]+$`)
+
 // HandleGetCombos handles GET /api/combos.
 //
 // Every combo carries its smart rules and the members those rules currently
@@ -27,7 +32,7 @@ import (
 func (h *DashboardHandler) HandleGetCombos(w http.ResponseWriter, r *http.Request) {
 	combos, err := h.Repo.GetCombos()
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch combos")
 		return
 	}
 	if combos == nil {
@@ -35,7 +40,7 @@ func (h *DashboardHandler) HandleGetCombos(w http.ResponseWriter, r *http.Reques
 	}
 	rulesByID, err := h.Repo.ComboRulesByID(r.Context())
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch combos")
 		return
 	}
 	for _, combo := range combos {
@@ -54,7 +59,7 @@ func (h *DashboardHandler) HandleGetCombos(w http.ResponseWriter, r *http.Reques
 		}
 		combo.AutoMembers = smart.AutoMembers(rules)
 	}
-	handlerutil.WriteJSON(w, http.StatusOK, combos)
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"combos": combos})
 }
 
 // HandleCreateCombo handles POST /api/combos.
@@ -62,7 +67,7 @@ func (h *DashboardHandler) HandleGetCombos(w http.ResponseWriter, r *http.Reques
 func (h *DashboardHandler) HandleCreateCombo(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusInternalServerError, "Failed to create combo")
 		return
 	}
 	defer r.Body.Close()
@@ -76,12 +81,23 @@ func (h *DashboardHandler) HandleCreateCombo(w http.ResponseWriter, r *http.Requ
 		MatchRules any    `json:"matchRules"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writePlainError(w, http.StatusInternalServerError, "Failed to create combo")
 		return
 	}
 
 	if req.Name == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing combo name")
+		writePlainError(w, http.StatusBadRequest, "Name is required")
+		return
+	}
+	if !validComboName.MatchString(req.Name) {
+		writePlainError(w, http.StatusBadRequest, "Name can only contain letters, numbers, -, _, . and /")
+		return
+	}
+	if existing, err := h.Repo.GetComboByName(req.Name); err != nil {
+		writePlainError(w, http.StatusInternalServerError, "Failed to create combo")
+		return
+	} else if existing != nil {
+		writePlainError(w, http.StatusBadRequest, "Combo name already exists")
 		return
 	}
 	if req.ID == "" {
@@ -94,13 +110,13 @@ func (h *DashboardHandler) HandleCreateCombo(w http.ResponseWriter, r *http.Requ
 	modelsJSON := "[]"
 	modelIDs, ok := normalizeComboModelIDs(req.Models)
 	if !ok {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "models must contain valid model IDs")
+		writePlainError(w, http.StatusBadRequest, "models must contain valid model IDs")
 		return
 	}
 	if len(modelIDs) > 0 {
 		encoded, err := json.Marshal(modelIDs)
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writePlainError(w, http.StatusInternalServerError, "Failed to create combo")
 			return
 		}
 		modelsJSON = string(encoded)
@@ -119,12 +135,12 @@ func (h *DashboardHandler) HandleCreateCombo(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := h.Repo.CreateCombo(req.ID, req.Name, req.Kind, modelsJSON, req.Strategy); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to create combo")
 		return
 	}
 	if rulesJSON != "" {
 		if err := h.Repo.SetComboRules(r.Context(), req.ID, rulesJSON); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writePlainError(w, http.StatusInternalServerError, "Failed to create combo")
 			return
 		}
 	}
@@ -132,7 +148,12 @@ func (h *DashboardHandler) HandleCreateCombo(w http.ResponseWriter, r *http.Requ
 	// the members the patterns selected rather than an empty list.
 	h.reconcileSmartCombosBestEffort(r.Context(), "combo created")
 
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "id": req.ID})
+	// Axon answers a create with the combo itself, at 201.
+	if created, err := h.Repo.GetComboById(req.ID); err == nil && created != nil {
+		handlerutil.WriteJSON(w, http.StatusCreated, created)
+		return
+	}
+	handlerutil.WriteJSON(w, http.StatusCreated, map[string]any{"id": req.ID, "name": req.Name})
 }
 
 // HandleUpdateCombo handles PUT /api/combos/{id}.
@@ -140,13 +161,13 @@ func (h *DashboardHandler) HandleCreateCombo(w http.ResponseWriter, r *http.Requ
 func (h *DashboardHandler) HandleUpdateCombo(w http.ResponseWriter, r *http.Request) {
 	id := getURLParam(r, "id")
 	if id == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing combo id")
+		writePlainError(w, http.StatusBadRequest, "missing combo id")
 		return
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusBadRequest, "failed to read body")
 		return
 	}
 	defer r.Body.Close()
@@ -159,17 +180,17 @@ func (h *DashboardHandler) HandleUpdateCombo(w http.ResponseWriter, r *http.Requ
 		MatchRules any    `json:"matchRules"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writePlainError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
 	existing, err := h.Repo.GetComboById(id)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to update combo")
 		return
 	}
 	if existing == nil {
-		handlerutil.WriteJSONError(w, http.StatusNotFound, "combo not found")
+		writePlainError(w, http.StatusNotFound, "Combo not found")
 		return
 	}
 
@@ -188,12 +209,12 @@ func (h *DashboardHandler) HandleUpdateCombo(w http.ResponseWriter, r *http.Requ
 	if req.Models != nil {
 		modelIDs, ok := normalizeComboModelIDs(req.Models)
 		if !ok {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "models must contain valid model IDs")
+			writePlainError(w, http.StatusBadRequest, "models must contain valid model IDs")
 			return
 		}
 		encoded, err := json.Marshal(modelIDs)
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writePlainError(w, http.StatusInternalServerError, "Failed to update combo")
 			return
 		}
 		modelsJSON = string(encoded)
@@ -254,12 +275,12 @@ func (h *DashboardHandler) HandleUpdateCombo(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := h.Repo.UpdateCombo(id, name, kind, modelsJSON, strategy); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to update combo")
 		return
 	}
 	if hasRules {
 		if err := h.Repo.SetComboRules(r.Context(), id, rulesJSON); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writePlainError(w, http.StatusInternalServerError, "Failed to update combo")
 			return
 		}
 	}
@@ -290,34 +311,34 @@ const AutoFreeComboID = "auto-free-tier"
 func (h *DashboardHandler) HandleAutoFreeCombo(w http.ResponseWriter, r *http.Request) {
 	models, err := h.freeTierComboModels(r.Context())
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if len(models) == 0 {
-		handlerutil.WriteJSONError(w, http.StatusConflict,
+		writePlainError(w, http.StatusConflict,
 			"no free-tier models found among providers with connections")
 		return
 	}
 
 	modelsJSON, err := json.Marshal(models)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to encode models")
+		writePlainError(w, http.StatusInternalServerError, "failed to encode models")
 		return
 	}
 
 	name := "Auto Free Tier"
 	existing, err := h.Repo.GetComboById(AutoFreeComboID)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if existing == nil {
 		if err := h.Repo.CreateCombo(AutoFreeComboID, name, autoFreeComboKind, string(modelsJSON), "fallback"); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writePlainError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 	} else if err := h.Repo.UpdateCombo(AutoFreeComboID, name, autoFreeComboKind, string(modelsJSON), "fallback"); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
@@ -470,14 +491,14 @@ func comboModelID(entry any) (string, bool) {
 func (h *DashboardHandler) HandleDeleteCombo(w http.ResponseWriter, r *http.Request) {
 	id := getURLParam(r, "id")
 	if id == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing combo id")
+		writePlainError(w, http.StatusBadRequest, "missing combo id")
 		return
 	}
 
 	if err := h.Repo.DeleteCombo(id); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to delete combo")
 		return
 	}
 
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "id": id})
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
 }

@@ -172,7 +172,7 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 func (h *DashboardHandler) HandleGetUsageProviders(w http.ResponseWriter, r *http.Request) {
 	conns, err := h.Repo.GetProviderConnections("", false)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch providers")
 		return
 	}
 

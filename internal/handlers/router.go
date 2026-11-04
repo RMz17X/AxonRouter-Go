@@ -109,7 +109,10 @@ func SetupRoutes(r interface {
 	r.Post("/audio/speech", mediaH.HandleAudioSpeech)
 	r.Post("/audio/music", mediaH.HandleAudioMusic)
 	r.Post("/v1/audio/music", mediaH.HandleAudioMusic)
-	r.Get("/audio/voices", mediaH.HandleAudioVoices)
+	// Batch 9: the engine spelling gets Axon's reshaping wrapper
+	// ({object:"list", data:[...]} + provider whitelist); the dashboard
+	// spellings below keep the shared SPA-shaped handler.
+	r.Get("/audio/voices", mediaH.HandleAudioVoicesV1)
 	r.Get("/api/media-providers/tts/voices", mediaH.HandleAudioVoices)
 	r.Get("/api/media-providers/tts/inworld/voices", mediaH.HandleAudioVoices)
 	r.Get("/api/media-providers/tts/minimax/voices", mediaH.HandleAudioVoices)

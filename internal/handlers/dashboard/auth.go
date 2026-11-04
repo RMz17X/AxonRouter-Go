@@ -42,7 +42,15 @@ func (h *DashboardHandler) HandleAuthLogin(w http.ResponseWriter, r *http.Reques
 		NewPassword string `json:"newPassword"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
-		writePlainError(w, http.StatusBadRequest, "invalid JSON")
+		// Axon: a malformed body is a 400 with this message (and
+		// no-store), not a 500 from the bcrypt compare it used to hit.
+		noStore(w)
+		writePlainError(w, http.StatusBadRequest, "Malformed JSON body")
+		return
+	}
+	if payload.Password == "" {
+		noStore(w)
+		writePlainError(w, http.StatusBadRequest, "Password is required")
 		return
 	}
 

@@ -41,7 +41,7 @@ type hermesSettings struct {
 func (h *HermesHandler) HandleProfiles(w http.ResponseWriter, r *http.Request) {
 	profiles, err := listHermesProfiles()
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "Failed to list hermes profiles")
+		handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to list hermes profiles"})
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"profiles": profiles})
@@ -65,7 +65,7 @@ func (h *HermesHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	yaml, err := readHermesText(home.ConfigPath)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "Failed to check hermes settings")
+		handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to check hermes settings"})
 		return
 	}
 	settings := parseHermesSettings(yaml)
@@ -105,13 +105,13 @@ func (s hermesSettings) has9RouterConfig() bool {
 func resolveHermesHomeParam(w http.ResponseWriter, profile string) (hermesHome, bool) {
 	home, err := resolveHermesHome(profile)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 		return hermesHome{}, false
 	}
 	// Named profile homes are created by `hermes profile create`, never by us.
 	// A missing one is 404, so the dashboard can fall back to default.
 	if !home.IsDefault && !dirExists(home.Dir) {
-		handlerutil.WriteJSONError(w, http.StatusNotFound, fmt.Sprintf("Hermes profile %q not found", home.Name))
+		handlerutil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": fmt.Sprintf("Hermes profile %q not found", home.Name)})
 		return hermesHome{}, false
 	}
 	return home, true

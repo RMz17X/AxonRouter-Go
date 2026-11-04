@@ -19,7 +19,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 	"time"
 )
@@ -580,7 +579,13 @@ func (h *ChatHandler) HandleToggleAutoUpdate(w http.ResponseWriter, r *http.Requ
 func (h *ChatHandler) HandleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 	info, err := updater.CheckUpdate(r.Context())
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadGateway, fmt.Sprintf("check update failed: %v", err))
+		// The version family's failure shape is {success:false,
+		// message} (Axon's /api/version/update 403), not the nested
+		// engine envelope (batch 9, G1).
+		handlerutil.WriteJSON(w, http.StatusBadGateway, map[string]any{
+			"success": false,
+			"message": fmt.Sprintf("check update failed: %v", err),
+		})
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, info)
@@ -590,7 +595,10 @@ func (h *ChatHandler) HandleCheckUpdate(w http.ResponseWriter, r *http.Request) 
 func (h *ChatHandler) HandleTriggerUpdate(w http.ResponseWriter, r *http.Request) {
 	info, err := updater.CheckUpdate(r.Context())
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadGateway, fmt.Sprintf("check update failed: %v", err))
+		handlerutil.WriteJSON(w, http.StatusBadGateway, map[string]any{
+			"success": false,
+			"message": fmt.Sprintf("check update failed: %v", err),
+		})
 		return
 	}
 	if !info.HasUpdate {
@@ -602,7 +610,10 @@ func (h *ChatHandler) HandleTriggerUpdate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := updater.PerformSelfUpdate(info.DownloadURL, info.SHA256); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, fmt.Sprintf("self-update failed: %v", err))
+		handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
+			"success": false,
+			"message": fmt.Sprintf("self-update failed: %v", err),
+		})
 		return
 	}
 
@@ -655,8 +666,16 @@ func queryFlagEnabled(v string) bool {
 //     noAuth providers — the set a client can actually call
 //   - ?all=1         always the full static catalog, connections ignored
 //
-// The response always carries `mode` and `connections` so a caller can tell a
-// candidate catalog from a usable model list.
+// The wire envelope is Axon's per spelling (batch 9, E1): the dashboard
+// spelling /api/models answers {models}, while the engine spellings
+// (/v1/models, /api/v1/models, /models, /v1) answer exactly
+// {object: "list", data} — plus Axon's ?provider= post-filter
+// (owned_by equals, or the id starts with "<provider>/"). The builder's
+// mode/connections metadata stays server-side: no consumer reads it
+// (the SPA takes its model data from /api/models/meta and the catalog).
+// Axon's "Cache-Control: public, max-age=60" is deliberately NOT
+// adopted: this list is filtered by the caller's API key, so a shared
+// cache must never store it.
 func (h *ChatHandler) HandleModels(w http.ResponseWriter, r *http.Request) {
 	mode := modelsListModeFromQuery(r)
 	result := h.buildModelsListResult(r.Context(), mode)
@@ -665,16 +684,29 @@ func (h *ChatHandler) HandleModels(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	if r.URL.Path == "/api/models" {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"models": visible})
+		return
+	}
+
+	if p := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("provider"))); p != "" {
+		filtered := make([]ModelInfoObject, 0, len(visible))
+		for _, m := range visible {
+			if strings.ToLower(m.OwnedBy) == p || strings.HasPrefix(strings.ToLower(m.ID), p+"/") {
+				filtered = append(filtered, m)
+			}
+		}
+		visible = filtered
+	}
+
 	modelsJSON, err := json.Marshal(visible)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to encode models")
 		return
 	}
-	handlerutil.WriteModelsList(w, http.StatusOK, map[string]any{
-		"object":      "list",
-		"mode":        result.Mode,
-		"connections": result.Connections,
-	}, modelsJSON)
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	handlerutil.WriteModelsListExact(w, http.StatusOK, modelsJSON)
 }
 
 // HandleModelsInfo returns metadata for a specific model.
@@ -760,110 +792,68 @@ func (h *ChatHandler) HandleModelsInfo(w http.ResponseWriter, r *http.Request) {
 	handlerutil.WriteJSON(w, http.StatusOK, info)
 }
 
-// HandleModelsByKind returns models filtered by service kind.
-// GET /v1/models/{kind}
+// HandleModelsByKind serves GET /v1/models/{kind} with Axon's
+// kind-filtered, model-granular listing (batch 9; built by
+// buildModelsListForKinds — see models_kinds.go). A single segment
+// that is not one of Axon's seven kind slugs falls through to the
+// single-model lookup, exactly as Axon's [...model] route dispatches:
+// an unknown id answers the model_not_found 404 rather than an empty
+// 200 (the pre-batch-9 handler listed providers per kind, with
+// Go-only slugs systemone/rerank — that surface is gone).
 func (h *ChatHandler) HandleModelsByKind(w http.ResponseWriter, r *http.Request) {
-	kind := r.PathValue("kind")
-	if kind == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing kind")
+	slug := r.PathValue("kind")
+	kinds, ok := modelKindSlugMap[slug]
+	if !ok {
+		h.serveModelLookup(w, r, slug)
 		return
 	}
 
-	var data []map[string]any
-	now := time.Now().Unix()
-
-	// A web provider is the search/fetch lane itself, so upstream publishes one
-	// entry per lane — `<alias>/search` when the provider has a searchConfig and
-	// `<alias>/fetch` when it has a fetchConfig (src/app/api/v1/models/route.js
-	// :612-631). Answering `match = false` for the whole kind left the listing
-	// empty and every web client without a model to call.
-	if kind == "web" {
-		for id, cfg := range providers.KnownProviders {
-			alias := providers.GetProviderAlias(id)
-			if cfg.SearchURL != "" {
-				data = append(data, map[string]any{
-					"id":       alias + "/search",
-					"object":   "model",
-					"kind":     "webSearch",
-					"owned_by": alias,
-					"endpoint": "/v1/search",
-					"created":  now,
-				})
-			}
-			if cfg.FetchURL != "" {
-				data = append(data, map[string]any{
-					"id":       alias + "/fetch",
-					"object":   "model",
-					"kind":     "webFetch",
-					"owned_by": alias,
-					"endpoint": "/v1/web/fetch",
-					"created":  now,
-				})
-			}
-		}
-		sort.Slice(data, func(i, j int) bool {
-			return data[i]["id"].(string) < data[j]["id"].(string)
-		})
-	} else {
-		for id, cfg := range providers.KnownProviders {
-			var match bool
-			switch kind {
-			case "image":
-				match = cfg.ImageURL != ""
-			case "tts":
-				match = cfg.TTSURL != ""
-			case "stt":
-				match = cfg.STTURL != ""
-			case "systemone":
-				match = cfg.SystemoneURL != ""
-			case "embedding":
-				match = strings.Contains(cfg.BaseURL, "/embeddings")
-			case "rerank":
-				// Rerank shares the provider's OpenAI-compatible base, so the
-				// lane is derived rather than declared: a provider that serves
-				// embeddings serves rerank on the same host. Matching on the
-				// embeddings marker keeps the listing honest without a second
-				// registry column nothing else reads.
-				match = strings.Contains(cfg.BaseURL, "/embeddings")
-			case "image-to-text":
-				match = true
-			}
-			if !match {
-				continue
-			}
-			data = append(data, map[string]any{
-				"id":       id,
-				"object":   "model",
-				"kind":     kind,
-				"owned_by": id,
-				"endpoint": kindEndpoint(kind),
-				"created":  now,
-			})
-		}
-	}
+	models := h.buildModelsListForKinds(r.Context(), kinds)
 
 	// Per-key policy applies to the kind listing too — it is the same
 	// catalogue under a different filter, so it goes through the same filter.
-	visible, err := h.filterModelsByAccess(requestKey(r), kindEntriesAsModelInfo(data))
+	visible, err := h.filterModelsByAccess(requestKey(r), models)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	data = kindEntriesFromModelInfo(visible, kind, now)
-
-	if data == nil {
-		data = []map[string]any{}
+	if visible == nil {
+		visible = []ModelInfoObject{}
 	}
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"object": "list",
-		"data":   data,
+		"data":   visible,
+	})
+}
+
+// serveModelLookup answers a single-model lookup (GET
+// /v1/models/{provider}/{model}, or a non-slug single segment) from
+// the same snapshot findModelForLookup uses, with Axon's
+// model_not_found 404 shape.
+func (h *ChatHandler) serveModelLookup(w http.ResponseWriter, r *http.Request, identifier string) {
+	// Per-key policy before the lookup, so a denied model answers 403 instead
+	// of the 404 the client could not act on.
+	if err := h.checkModelAccess(requestKey(r), identifier); err != nil {
+		writeModelAccessError(w, err)
+		return
+	}
+	if m, ok := h.findModelForLookup(r.Context(), identifier); ok {
+		handlerutil.WriteJSON(w, http.StatusOK, m)
+		return
+	}
+	handlerutil.WriteJSON(w, http.StatusNotFound, map[string]any{
+		"error": map[string]any{
+			"message": fmt.Sprintf("The model '%s' does not exist or you do not have access to it.", identifier),
+			"type":    "invalid_request_error",
+			"code":    "model_not_found",
+		},
 	})
 }
 
 // HandleModelLookup handles GET /v1/models/* catch-all for both kind filtering and provider/model lookup.
 // Port of Next.js src/app/api/v1/models/[...model]/route.js (#3588).
-// - GET /v1/models/{kind} -> list filtered by capability (image, tts, stt, embedding, image-to-text, web)
+// - GET /v1/models/{kind} -> list filtered by capability (image, tts, stt, embedding, image-to-text, web, task)
 // - GET /v1/models/{provider}/{model} -> single model lookup (e.g. cc/claude-sonnet-5)
 func (h *ChatHandler) HandleModelLookup(w http.ResponseWriter, r *http.Request) {
 	// Extract suffix after /models
@@ -900,43 +890,16 @@ func (h *ChatHandler) HandleModelLookup(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Known kind slugs
-	kindSlugMap := map[string]bool{
-		"image":         true,
-		"tts":           true,
-		"stt":           true,
-		"embedding":     true,
-		"image-to-text": true,
-		"web":           true,
-	}
-	// If suffix is a known kind without slash, delegate to kind handling
-	if kindSlugMap[suffix] && !strings.Contains(suffix, "/") {
+	// If the suffix is a known kind slug without slash, delegate to kind handling
+	if _, isKindSlug := modelKindSlugMap[suffix]; isKindSlug && !strings.Contains(suffix, "/") {
 		// Reuse HandleModelsByKind logic by setting path value
 		r.SetPathValue("kind", suffix)
 		h.HandleModelsByKind(w, r)
 		return
 	}
 
-	// Per-key policy before the lookup, so a denied model answers 403 instead
-	// of the 404 the client could not act on.
-	if err := h.checkModelAccess(requestKey(r), suffix); err != nil {
-		writeModelAccessError(w, err)
-		return
-	}
 	// Otherwise treat as provider/model ID lookup.
-	if m, ok := h.findModelForLookup(r.Context(), suffix); ok {
-		handlerutil.WriteJSON(w, http.StatusOK, m)
-		return
-	}
-	// Also try without provider prefix? No, must be exact.
-
-	handlerutil.WriteJSON(w, http.StatusNotFound, map[string]any{
-		"error": map[string]any{
-			"message": fmt.Sprintf("The model '%s' does not exist or you do not have access to it.", suffix),
-			"type":    "invalid_request_error",
-			"code":    "model_not_found",
-		},
-	})
+	h.serveModelLookup(w, r, suffix)
 }
 
 // findModelForLookup resolves a provider/model id against the default list,

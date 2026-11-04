@@ -67,7 +67,7 @@ func (h *DashboardHandler) HandleGetProvidersClient(w http.ResponseWriter, r *ht
 
 	conns, err := h.Repo.GetProviderConnections("", false)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, "Failed to fetch providers")
 		return
 	}
 	eligible := make([]*models.ProviderConnection, 0, len(conns))

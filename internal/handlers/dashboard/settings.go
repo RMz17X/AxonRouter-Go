@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -56,10 +57,17 @@ var secretSettingKeys = []string{"password"}
 func (h *DashboardHandler) HandleGetSettings(w http.ResponseWriter, r *http.Request) {
 	raw, err := h.Repo.GetSettingsRaw()
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		// Axon answers dashboard errors flat ({error: message}); the
+		// nested engine envelope is for /v1 routes only (batch 9, G1).
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	handlerutil.WriteJSON(w, http.StatusOK, sanitizeSettings(raw))
+	out := sanitizeSettings(raw)
+	// Axon derives these two from the process env on every GET.
+	out["enableRequestLogs"] = os.Getenv("ENABLE_REQUEST_LOGS") == "true"
+	out["enableTranslator"] = os.Getenv("ENABLE_TRANSLATOR") == "true"
+	noStore(w)
+	handlerutil.WriteJSON(w, http.StatusOK, out)
 }
 
 // HandleUpdateSettings handles PUT/PATCH /api/settings.
@@ -67,14 +75,14 @@ func (h *DashboardHandler) HandleGetSettings(w http.ResponseWriter, r *http.Requ
 func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusBadRequest, "failed to read body")
 		return
 	}
 	defer r.Body.Close()
 
 	var updates map[string]any
 	if err := json.Unmarshal(body, &updates); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
+		writePlainError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 	if updates == nil {
@@ -88,11 +96,21 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 		delete(updates, "currentPassword")
 		delete(updates, "newPassword")
 		if newPassword == "" {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "newPassword is required")
+			writePlainError(w, http.StatusBadRequest, "newPassword is required")
+			return
+		}
+		// Axon: with a stored hash, a missing current password is a
+		// 400 of its own, distinct from a wrong one (401).
+		if currentPassword == "" && hasStoredPassword(settingsOrEmpty(h)) {
+			writePlainError(w, http.StatusBadRequest, "Current password required")
 			return
 		}
 		if err := h.changeDashboardPassword(currentPassword, newPassword); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusUnauthorized, err.Error())
+			if err.Error() == "Invalid current password" {
+				writePlainError(w, http.StatusUnauthorized, err.Error())
+			} else {
+				writePlainError(w, http.StatusInternalServerError, err.Error())
+			}
 			return
 		}
 	} else {
@@ -100,21 +118,20 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 		delete(updates, "newPassword")
 	}
 
+	// Axon strips protected keys from the payload silently
+	// (PROTECTED_SETTING_KEYS) instead of failing the whole save.
 	for _, key := range protectedSettingKeys {
-		if _, ok := updates[key]; ok {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "setting "+key+" is read-only")
-			return
-		}
+		delete(updates, key)
 	}
 
 	if err := validateProviderThinking(updates["providerThinking"]); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		writePlainError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	normalizeProviderThinking(updates)
 
 	if err := validateNumericSettings(updates); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		writePlainError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -131,7 +148,7 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 	// every switch. Refused here, before the write, so a bad payload leaves
 	// the settings row untouched.
 	if err := h.mergeAutoPingSchedules(updates); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		writePlainError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// White-label branding is rendered by the sidebar, so the stored shape is
@@ -143,7 +160,7 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 	// and its file in agreement, not one pointing at a deleted asset.
 	previousLogo, clearLogo := logoClearedByUpdate(h, updates)
 	if err := h.Repo.UpdateSettingsRaw(updates); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+		writePlainError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	if clearLogo {
@@ -156,6 +173,7 @@ func (h *DashboardHandler) HandleUpdateSettings(w http.ResponseWriter, r *http.R
 		}
 	}
 
+	noStore(w)
 	updated, err := h.Repo.GetSettingsRaw()
 	if err != nil {
 		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok"})
@@ -198,7 +216,7 @@ func (h *DashboardHandler) HandleExportDatabase(w http.ResponseWriter, r *http.R
 func (h *DashboardHandler) HandleImportDatabase(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "failed to read body")
+		writePlainError(w, http.StatusBadRequest, "failed to read body")
 		return
 	}
 	defer r.Body.Close()

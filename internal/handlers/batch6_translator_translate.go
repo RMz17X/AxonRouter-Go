@@ -8,16 +8,17 @@ package handlers
 // the provider request (URL + headers + target body) through the
 // executor's buildUrl/buildHeaders/transformRequest surface.
 //
-// PARTIAL PORT (recorded in .changes/917): steps 1-2 are implemented
-// for the sources the Go translator registry can actually convert
-// (openai = identity, claude = the real Claude→OpenAI request
-// translator). Step 3 is deferred — Go executors expose no build-only
-// request-construction API, and adding one restructures every
-// executor. Step 2 for gemini / antigravity / openai-responses sources
-// is likewise deferred: the registry has no Gemini→OpenAI or
-// Responses→OpenAI *request* translator. Deferred cases answer
-// Axon's catch shape {success:false, error} at 500 with the reason
-// named, never a fabricated result.
+// PARTIAL PORT (recorded in .changes/917, step 2 completed in
+// .changes/926): steps 1-2 are implemented for every source format
+// detectTranslatorFormat can return — openai = identity, claude = the
+// real Claude→OpenAI request translator, openai-responses = the chat
+// layer's Responses→Chat request translator, gemini / antigravity =
+// the dedicated request translators in internal/translator
+// (gemini_request.go). Step 3 remains deferred — Go executors expose
+// no build-only request-construction API, and adding one restructures
+// every executor (OWNER-DECISION, audit item 5b). The deferred case
+// answers Axon's catch shape {success:false, error} at 500 with the
+// reason named, never a fabricated result.
 
 import (
 	"encoding/json"
@@ -83,7 +84,16 @@ func HandleTranslatorTranslate(w http.ResponseWriter, r *http.Request) {
 		})
 	case 2:
 		sourceFormat := detectTranslatorFormat(clientMap, r.UserAgent())
-		converted, errStr := translateToOpenAI(sourceFormat, clientBody)
+		// Axon's step 2 hands the registry the parseModel'd model and
+		// stream = clientBody.stream !== false (default true).
+		modelStr, _ := clientMap["model"].(string)
+		_, parsedModel := parseTranslatorModel(modelStr)
+		model, _ := parsedModel.(string)
+		stream := true
+		if s, ok := clientMap["stream"].(bool); ok && !s {
+			stream = false
+		}
+		converted, errStr := translateToOpenAI(sourceFormat, clientBody, model, stream)
 		if errStr != "" {
 			translatorFail(w, http.StatusInternalServerError, errStr)
 			return
@@ -236,14 +246,32 @@ func detectTranslatorFormat(body map[string]any, userAgent string) string {
 	return "openai"
 }
 
-// translateToOpenAI runs step 2 for the sources the Go translator
-// registry supports; other sources report the missing translator.
-func translateToOpenAI(sourceFormat string, clientBody []byte) ([]byte, string) {
+// translateToOpenAI runs step 2 for every source format the detector
+// can return; other sources report the missing translator.
+func translateToOpenAI(sourceFormat string, clientBody []byte, model string, stream bool) ([]byte, string) {
 	switch sourceFormat {
 	case "openai":
 		return clientBody, ""
 	case "claude":
 		out, err := translator.TranslateClaudeToOpenAI(clientBody)
+		if err != nil {
+			return nil, err.Error()
+		}
+		return out, ""
+	case "openai-responses":
+		res, err := translator.ResponsesToChatRequest(clientBody)
+		if err != nil {
+			return nil, err.Error()
+		}
+		return res.Body, ""
+	case "gemini":
+		out, err := translator.TranslateGeminiRequestToOpenAI(model, clientBody, stream)
+		if err != nil {
+			return nil, err.Error()
+		}
+		return out, ""
+	case "antigravity":
+		out, err := translator.TranslateAntigravityRequestToOpenAI(model, clientBody, stream)
 		if err != nil {
 			return nil, err.Error()
 		}

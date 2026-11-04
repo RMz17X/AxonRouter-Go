@@ -254,6 +254,13 @@ func parseUsageStatsViews(raw string) usageStatsViews {
 	return v
 }
 
+// writeDashboardError writes Axon's flat dashboard error shape
+// ({error: message}); the nested engine envelope that
+// handlerutil.WriteJSONError emits is the /v1 shape (batch 9, G1).
+func writeDashboardError(w http.ResponseWriter, status int, message string) {
+	handlerutil.WriteJSON(w, status, map[string]any{"error": message})
+}
+
 func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		now := time.Now()
@@ -371,7 +378,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 		if window.daily {
 			dailyRows, err := repo.GetUsageDailyRecent(window.days)
 			if err != nil {
-				handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+				writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
 				return
 			}
 			for _, rowJSON := range dailyRows {
@@ -539,7 +546,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			// the rows written since the previous poll.
 			agg, err := rawWindows.getRawWindow(repo, window)
 			if err != nil {
-				handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+				writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
 				return
 			}
 			applyRawAggregate(&resp, agg, nodeNameMap, connMap, keyNames, views)
@@ -569,7 +576,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 		// Build recent requests list (20 deduped from usageHistory)
 		recentHistory, err := repo.GetRecentUsageHistory(60)
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
 			return
 		}
 		var dedupedRecent []usagetracker.RecentRequest
@@ -625,7 +632,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 
 		last10, err := last30MinuteBuckets(repo, now)
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
 			return
 		}
 		resp.Last10Minutes = last10
@@ -710,7 +717,7 @@ func HandleRequestDetails(repo *db.Repo) http.HandlerFunc {
 
 		rows, total, err := repo.GetRequestDetailsPaged(r.Context(), limit, offset, detailsSince(r.URL.Query().Get("period"), time.Now()))
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch request details")
 			return
 		}
 
@@ -801,7 +808,7 @@ func HandleRequestDetail(repo *db.Repo) http.HandlerFunc {
 		// every such request.
 		id, err := url.PathUnescape(r.PathValue("id"))
 		if err != nil {
-			handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid request id")
+			writeDashboardError(w, http.StatusBadRequest, "invalid request id")
 			return
 		}
 		raw, err := repo.GetRequestDetailByID(id)
@@ -809,16 +816,16 @@ func HandleRequestDetail(repo *db.Repo) http.HandlerFunc {
 			// A detail that was never recorded, or has since been pruned by
 			// retention, is a 404 rather than a server fault.
 			if errors.Is(err, sql.ErrNoRows) {
-				handlerutil.WriteJSONError(w, http.StatusNotFound, "request detail not found")
+				writeDashboardError(w, http.StatusNotFound, "Request detail not found")
 				return
 			}
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
+			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch request details")
 			return
 		}
 
 		var item map[string]any
 		if err := json.Unmarshal([]byte(raw), &item); err != nil {
-			handlerutil.WriteJSONError(w, http.StatusInternalServerError, "stored request detail is unreadable")
+			writeDashboardError(w, http.StatusInternalServerError, "stored request detail is unreadable")
 			return
 		}
 		if tokens, ok := item["tokens"].(map[string]any); ok {
