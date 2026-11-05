@@ -314,6 +314,45 @@ func RequireOperatorCaller(repo *db.Repo, next http.HandlerFunc) http.HandlerFun
 	}
 }
 
+// RequireOperatorForWrites is the dashboard groups' write sweep
+// (council round 3, Fix 1). Rounds 1–2 gated the secret-bearing
+// surfaces one route at a time; the round-3 census proved the
+// dashboard group's ENTIRE state-changing surface still admitted any
+// active engine API key — key minting/rotation-theft/deletion,
+// plaintext provider-credential export's write siblings, connection
+// redirection to an attacker upstream, tunnel enable, guardrail
+// policy deletion, sync-token minting. The sweep inverts the
+// default: every POST/PUT/PATCH/DELETE in the dashboard groups must
+// come from an operator-class caller (session, CLI token, or
+// login-disabled install — CallerIsDashboardPrivileged), except the
+// routes exempt() names, each with its reason recorded at the call
+// site. GET/HEAD keep the classes rounds 1–2 aligned. An engine key
+// remains what it is for: spending on the data plane (/v1, MCP
+// transports), never administering the gateway.
+func RequireOperatorForWrites(repo *db.Repo, exempt func(method, path string) bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			default:
+				next.ServeHTTP(w, r)
+				return
+			}
+			if exempt != nil && exempt(r.Method, r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if !middleware.CallerIsDashboardPrivileged(repo, r) {
+				handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]any{
+					"error": "Unauthorized",
+				})
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // RequireManagementAuth wraps a handler with the port of
 // requireManagementAuth (used by /api/credentials/* and /api/mcp/audit*):
 // the request must come from a whitelisted local address or carry a valid

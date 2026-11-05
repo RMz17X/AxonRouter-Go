@@ -38,7 +38,14 @@ type Stats struct {
 
 // Config configures semantic/prompt cache behavior.
 type Config struct {
-	Enabled             bool
+	Enabled bool
+	// SimilarityThreshold is retained for config compatibility but is
+	// currently NOT consulted: Lookup is an exact-key match and
+	// reports a hit's similarity as 1.0. Nothing performs a fuzzy or
+	// embedding-based search today, despite the package name — do not
+	// read this field as evidence that one happens (council round 3,
+	// NIT-3; recorded rather than removed under the owner's
+	// acceleration trim).
 	SimilarityThreshold float64
 	TTL                 time.Duration
 	MaxEntries          int

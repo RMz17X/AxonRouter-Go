@@ -156,10 +156,10 @@ func (r *Repo) InsertRequestDetailBatch(recs []RequestDetailRecord) error {
 
 // UpsertUsageDaily inserts or replaces a daily usage aggregation record.
 // The data parameter should be a JSON string matching the 9router-go daily aggregation format.
-// NOTE: INSERT OR REPLACE is an atomic full-row replace of the pre-merged JSON
-// blob. Merging happens in-process (see handlers/chat/usage.go dailyUsageMu), so
-// concurrent writers from MULTIPLE processes can still clobber each other. This
-// is documented as single-writer unless the aggregation moves SQL-side.
+// NOTE: this is a bare full-row replace of a pre-merged JSON blob. The
+// chat layer's fold does NOT use it: FoldUsageDaily below serialises the
+// merge across processes inside one transaction. Kept for direct
+// writers that own the whole row.
 func (r *Repo) UpsertUsageDaily(dateKey string, data string) error {
 	// The full-row replace: usageDaily keys on dateKey, so the conflict
 	// target is the key itself and DO UPDATE SET is the atomic replace
@@ -169,6 +169,63 @@ func (r *Repo) UpsertUsageDaily(dateKey string, data string) error {
 	_, err := r.Exec(query, dateKey, data)
 	if err != nil {
 		return fmt.Errorf("upsert daily usage %s: %w", dateKey, err)
+	}
+	return nil
+}
+
+// Stage sentinels for FoldUsageDaily. The fold's caller (the chat layer)
+// classifies failures by stage to keep the round-1 failure-atomic
+// contract's log lines: a read-stage failure aborts the fold with the
+// deltas retained, a merge-stage failure likewise, and a write-stage
+// failure likewise — each stage has its own line.
+var (
+	ErrDailyFoldRead  = errors.New("read daily usage")
+	ErrDailyFoldMerge = errors.New("merge daily usage")
+	ErrDailyFoldWrite = errors.New("write daily usage")
+)
+
+// FoldUsageDaily folds one date's pending deltas into the stored daily
+// aggregate atomically ACROSS processes (council round 3, C-6/B-1).
+// The whole read-modify-write runs in ONE transaction: the day row is
+// inserted empty when absent (the old ErrNoRows case — an empty base,
+// not an error), then read back FOR UPDATE, so a second process folding
+// the same day blocks on the row lock and merges onto this fold's
+// committed result instead of erasing it with a stale full-row write.
+// fold receives the stored blob ("" only when the row held nothing) and
+// returns the merged blob; it must be pure (no database access — the
+// transaction holds one pooled connection while it runs). Any failure
+// rolls the transaction back and leaves the stored aggregate untouched,
+// so the caller can retain its deltas for the next flush.
+func (r *Repo) FoldUsageDaily(dateKey string, fold func(existing string) (string, error)) error {
+	ctx := context.Background()
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDailyFoldRead, fmt.Errorf("fold daily usage %s: %w", dateKey, err))
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Ensure the day row exists so the locking read below always has a
+	// row to lock.
+	if _, err := tx.ExecContext(ctx, r.Rebind(
+		`INSERT INTO usageDaily (dateKey, data) VALUES (?, ?) ON CONFLICT (dateKey) DO NOTHING`),
+		dateKey, "{}"); err != nil {
+		return fmt.Errorf("%w: %w", ErrDailyFoldRead, fmt.Errorf("fold daily usage %s: %w", dateKey, err))
+	}
+	var existing string
+	if err := tx.QueryRowContext(ctx, r.Rebind(
+		`SELECT data FROM usageDaily WHERE dateKey = ? FOR UPDATE`), dateKey).Scan(&existing); err != nil {
+		return fmt.Errorf("%w: %w", ErrDailyFoldRead, fmt.Errorf("fold daily usage %s: %w", dateKey, err))
+	}
+	merged, err := fold(existing)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrDailyFoldMerge, err)
+	}
+	if _, err := tx.ExecContext(ctx, r.Rebind(
+		`UPDATE usageDaily SET data = ? WHERE dateKey = ?`), merged, dateKey); err != nil {
+		return fmt.Errorf("%w: %w", ErrDailyFoldWrite, fmt.Errorf("fold daily usage %s: %w", dateKey, err))
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("%w: %w", ErrDailyFoldWrite, fmt.Errorf("fold daily usage %s: commit: %w", dateKey, err))
 	}
 	return nil
 }

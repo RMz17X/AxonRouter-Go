@@ -10,31 +10,64 @@ import (
 // settingsWriteMu serialises the settings read-modify-write cycle
 // within this process.
 //
-// The settings row is one JSON blob: a writer reads it, merges its own keys
-// into it and writes it back. Two writers that interleave lose one another's
-// keys, so the whole cycle runs under one lock. The lock is per-process
-// only: in a cluster, two nodes merging settings concurrently can still
-// read the same blob, and the later full-row write silently drops the
-// earlier writer's keys — the same residual window FillSettingsRawIfAbsent
-// documents for its narrower get-or-create case. It is bounded in practice
-// (operator-driven writes, a millisecond window, whole keys lost rather
-// than corruption); a version-guarded or advisory-locked merge is the
-// eventual fix.
+// The settings row is one JSON blob: a writer reads it, merges its own
+// keys into it and writes it back. Two writers that interleave lose one
+// another's keys, so the whole cycle runs under one lock. The lock is
+// per-process; the cluster half of the serialisation is the row lock
+// inside updateSettings' transaction (council round 3, C-2): a second
+// node's merge cannot start from the same base blob, so no writer's
+// keys are silently dropped by a later full-row write.
 var settingsWriteMu sync.Mutex
 
-// updateSettings merges into the settings row under the write lock.
+// updateSettings merges into the settings row atomically.
 //
-// The merge runs on the row as it is, so a writer that has to change a nested
-// key does not read the row itself. A row that cannot be read is not
-// replaced: the merge would write back only its own keys and drop everything
-// else the operator had set.
+// The whole read-modify-write runs in ONE transaction: the row is
+// inserted empty when absent, then read back FOR UPDATE, so writers
+// on other processes serialise on the row lock and each merge starts
+// from the previous writer's committed row. The merge callback must
+// be pure (no database access — the transaction holds one pooled
+// connection while it runs). A row that cannot be read is not
+// replaced: the merge would write back only its own keys and drop
+// everything else the operator had set. The write carries no request
+// context: a settings save that is cancelled with the caller leaves
+// the operator with a half-applied change, and the transaction is
+// atomic. The TTL read cache interacts unchanged: the write path
+// never reads through it (the locked read is always fresh), and after
+// commit this process's cache is refreshed write-through with the
+// exact row landed, so its own next read cannot serve a pre-write
+// snapshot; other processes may serve their cached snapshot for up
+// to the TTL, exactly as before — reads were never transactional.
 func (r *Repo) updateSettings(merge func(existing map[string]any) error) error {
 	settingsWriteMu.Lock()
 	defer settingsWriteMu.Unlock()
 
-	existing, err := r.getSettingsRaw(true)
+	ctx := context.Background()
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("update settings: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Ensure the row exists so the locking read below always has a
+	// row to lock; a fresh install merges onto the empty blob, the
+	// old no-row default.
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO settings (id, data) VALUES (1, '{}') ON CONFLICT (id) DO NOTHING`); err != nil {
+		return fmt.Errorf("update settings: %w", err)
+	}
+	var rawData string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT data FROM settings WHERE id = 1 FOR UPDATE`).Scan(&rawData); err != nil {
+		return fmt.Errorf("update settings: %w", err)
+	}
+	existing := make(map[string]any)
+	if rawData != "" {
+		if err := json.Unmarshal([]byte(rawData), &existing); err != nil {
+			return fmt.Errorf("unmarshal settings data: %w", err)
+		}
+		if existing == nil {
+			existing = make(map[string]any)
+		}
 	}
 	if err := merge(existing); err != nil {
 		return err
@@ -43,15 +76,12 @@ func (r *Repo) updateSettings(merge func(existing map[string]any) error) error {
 	if err != nil {
 		return fmt.Errorf("marshal settings data: %w", err)
 	}
-	// The write carries no request context: a settings save that is cancelled
-	// with the caller leaves the operator with a half-applied change, and the
-	// statement itself is atomic.
-	if _, err := r.ExecContext(
-		context.Background(),
-		`INSERT INTO settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-		string(b),
-	); err != nil {
+	if _, err := tx.ExecContext(ctx, r.Rebind(
+		`UPDATE settings SET data = ? WHERE id = 1`), string(b)); err != nil {
 		return fmt.Errorf("update settings raw: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("update settings: commit: %w", err)
 	}
 	// Write-through: the next read serves this exact row from the TTL
 	// cache instead of re-reading what this write just landed.
@@ -67,10 +97,11 @@ func (r *Repo) updateSettings(merge func(existing map[string]any) error) error {
 // caller: the merge runs inside the settings write lock against a
 // forced fresh read, so a key another node landed first is KEPT and
 // handed back to the caller, whose own candidate is discarded, instead
-// of the blind overwrite UpdateSettingsRaw would have applied. The
-// residual cross-node window is the row write itself: a merge whose
-// fresh read predates a rival's commit still writes its own candidate
-// for a key its read saw as absent.
+// of the blind overwrite UpdateSettingsRaw would have applied. Since
+// council round 3 the merge runs inside updateSettings' row-locked
+// transaction, so the read a merge starts from is always the latest
+// committed row — a key a rival node landed first is seen as present
+// and kept, on every node.
 func (r *Repo) FillSettingsRawIfAbsent(updates map[string]any) (map[string]any, error) {
 	effective := make(map[string]any, len(updates))
 	err := r.updateSettings(func(existing map[string]any) error {

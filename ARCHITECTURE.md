@@ -355,7 +355,7 @@ the arrival clock because the text log format prints no timestamp of its own.
 The wire shape diverges deliberately from upstream Next, which shipped bare
 strings and no level at all; the Svelte dashboard is the only consumer.
 
-The usage tracker publishes active requests over SSE; its live state rides the speed layer (§ Speed layer), so a cluster's nodes share the in-flight picture, and its recent-request ring is seeded once from `usageHistory` when empty. PostgreSQL remains the durable source for all usage history and daily aggregates.
+The usage tracker publishes active requests over SSE; its live state rides the speed layer (§ Speed layer), so a cluster's nodes share the in-flight picture while they sit on the same speed-layer backend, and its recent-request ring is seeded once from `usageHistory` when empty. The failover breaker that picks that backend is per-process: nodes decide independently, so during a partial outage they can briefly serve from different backends before converging. PostgreSQL remains the durable source for all usage history and daily aggregates.
 
 Global middleware limits request bodies to 10 MiB, recovers panics, assigns request IDs, and emits structured request logs. `LOG_FILE` can redirect the standard logger to an append-only file.
 

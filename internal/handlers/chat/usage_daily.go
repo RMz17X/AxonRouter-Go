@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"database/sql"
 	json "encoding/json/v2"
 	"errors"
 	"sync"
@@ -30,6 +29,10 @@ import (
 // queued for the next flush, so a transient read error can never fold
 // onto an empty base and replace the day's committed totals with one
 // interval's worth — the failure mode this guard exists to prevent.
+// Round 3 (C-6) made the fold atomic across processes as well: the
+// read-modify-write runs inside Repo.FoldUsageDaily's transaction
+// under the day row's lock, so two cluster nodes folding the same day
+// serialise instead of erasing each other's batches.
 
 // dailyFlushInterval is the aggregate's freshness bound: the dashboard
 // daily totals trail live traffic by at most this much.
@@ -129,15 +132,19 @@ func flushDailyUsage() {
 	}
 }
 
-// applyDailyDeltas performs one read-modify-write per date present in
-// deltas, under the global daily-fold mutex, so two batch folds can
-// never interleave into a lost update. It returns the deltas that did NOT land — a date
-// whose base read failed (any error other than sql.ErrNoRows, which is
-// the legitimate empty base), whose blob would not marshal, or whose
-// upsert failed — so the caller can retain them for the next flush.
-// A blob whose base read failed is never upserted: the upsert is a
-// full-row replace, so folding onto a phantom empty base would
-// destroy the day's committed totals (council round 1, C-1).
+// applyDailyDeltas performs one atomic fold per date present in
+// deltas. The per-process dailyUsageMu serialises this node's batch
+// folds; the fold itself is transactional at the repo seam
+// (Repo.FoldUsageDaily: insert-if-absent + SELECT … FOR UPDATE), so a
+// second process folding the same day merges onto this fold's
+// committed result instead of erasing it with a stale full-row write
+// (council round 3, C-6). It returns the deltas that did NOT land — a
+// date whose fold failed at the read, merge, or write stage — so the
+// caller can retain them for the next flush. A fold whose base read
+// fails is aborted before any write: folding onto a phantom empty
+// base would destroy the day's committed totals (council round 1,
+// C-1); an absent day row is the legitimate empty base, handled
+// inside the transaction.
 func applyDailyDeltas(repo *db.Repo, deltas []dailyUsageDelta) (unlanded []dailyUsageDelta) {
 	dailyUsageMu.Lock()
 	defer dailyUsageMu.Unlock()
@@ -151,27 +158,30 @@ func applyDailyDeltas(repo *db.Repo, deltas []dailyUsageDelta) (unlanded []daily
 		byDate[d.dateKey] = append(byDate[d.dateKey], d)
 	}
 	for _, dateKey := range order {
-		existing, err := repo.GetUsageDaily(dateKey)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		err := repo.FoldUsageDaily(dateKey, func(existing string) (string, error) {
+			data := parseDailyData(existing)
+			for _, d := range byDate[dateKey] {
+				if d.failed {
+					mergeDailyUsageError(data, d.provider, d.model)
+				} else {
+					mergeDailyUsage(data, d.provider, d.model, d.endpoint, d.connectionID, d.apiKey, d.promptTokens, d.completion, d.cachedTokens, d.cost)
+				}
+			}
+			dataJSON, err := json.Marshal(data)
+			if err != nil {
+				return "", err
+			}
+			return string(dataJSON), nil
+		})
+		switch {
+		case err == nil:
+		case errors.Is(err, db.ErrDailyFoldRead):
 			log.Error("usage", "read daily usage failed; fold aborted, deltas retained", "date", dateKey, "error", err)
 			unlanded = append(unlanded, byDate[dateKey]...)
-			continue
-		}
-		data := parseDailyData(existing)
-		for _, d := range byDate[dateKey] {
-			if d.failed {
-				mergeDailyUsageError(data, d.provider, d.model)
-			} else {
-				mergeDailyUsage(data, d.provider, d.model, d.endpoint, d.connectionID, d.apiKey, d.promptTokens, d.completion, d.cachedTokens, d.cost)
-			}
-		}
-		dataJSON, err := json.Marshal(data)
-		if err != nil {
+		case errors.Is(err, db.ErrDailyFoldMerge):
 			log.Error("usage", "marshal daily usage failed; deltas retained", "date", dateKey, "error", err)
 			unlanded = append(unlanded, byDate[dateKey]...)
-			continue
-		}
-		if err := repo.UpsertUsageDaily(dateKey, string(dataJSON)); err != nil {
+		default:
 			log.Error("usage", "upsert daily usage failed; deltas retained", "date", dateKey, "error", err)
 			unlanded = append(unlanded, byDate[dateKey]...)
 		}

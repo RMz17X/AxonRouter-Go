@@ -208,8 +208,12 @@ serving to PostgreSQL behind a breaker (3 failures inside a 10 s
 sliding window trip it, a 5-second prober heals it, both transitions are
 logged and visible as `speedLayer` in `GET /api/system/memory`). It
 **never** degrades to per-node memory in a cluster — divergent memory is
-worse than a slower database. An unparseable Redis URL logs loudly and
-serves from the database; it never silently selects memory.
+worse than a slower database. The breaker and prober are per-process:
+each node trips and heals on its own observations, so nodes can briefly
+disagree about which backend is serving — but every node's fallback is
+the same shared PostgreSQL backend, never its own memory. An
+unparseable Redis URL logs loudly and serves from the database; it
+never silently selects memory.
 
 The same payload carries `usageWritesDropped`: the count of usage
 writes lost since this process booted — ledger rows (`usageHistory` /

@@ -136,6 +136,15 @@ func SetupRoutes(r interface {
 	// chat handlers — the same place /v1/messages does.
 	r.Post("/responses", routinglatency.Wrap("v1", chatH.HandleResponses))
 	r.Post("/responses/compact", routinglatency.Wrap("v1", chatH.HandleResponsesCompact))
+	// /codex/* is Axon's web-server mount for the same chat handler
+	// (webServer.mjs app.all("/codex/*", chatHandler); chat.js's
+	// pathname dispatch covers exactly the chat spellings) — council
+	// round 3, F-1. The four spellings mirror the /v1 set above, same
+	// handlers, same latency wrap; POST-only like the rest of the lane.
+	r.Post("/codex/chat/completions", routinglatency.Wrap("v1", chatH.HandleChatCompletions))
+	r.Post("/codex/messages", routinglatency.Wrap("v1", chatH.HandleMessages))
+	r.Post("/codex/responses", routinglatency.Wrap("v1", chatH.HandleResponses))
+	r.Post("/codex/api/chat", chatH.HandleOllamaChat)
 	r.Post("/images/generations", mediaH.HandleImages)
 	r.Post("/images/edits", mediaH.HandleImageEdits)
 	r.Post("/audio/speech", mediaH.HandleAudioSpeech)
@@ -179,23 +188,29 @@ func SetupRoutes(r interface {
 
 	// Headroom Management Domain (token-compression proxy lifecycle + dashboard proxy)
 	headroomH := media.NewHeadroomHandler(repo)
-	r.Post("/headroom/start", headroomH.HandleHeadroomStart)
-	r.Post("/headroom/stop", headroomH.HandleHeadroomStop)
-	r.Post("/headroom/restart", headroomH.HandleHeadroomRestart)
+	// The headroom write spellings are operator-only even on this
+	// engine mount (council round 3, R3-S5): they reach pip-install
+	// and process-spawn handlers, which no engine key may drive. The
+	// dashboard-group copies are governed by the RequireOperatorForWrites
+	// sweep; these shadowed copies are wrapped too, so a future mount
+	// reorder cannot reopen the lane. Status/extras reads unchanged.
+	r.Post("/headroom/start", RequireOperatorCaller(repo, headroomH.HandleHeadroomStart))
+	r.Post("/headroom/stop", RequireOperatorCaller(repo, headroomH.HandleHeadroomStop))
+	r.Post("/headroom/restart", RequireOperatorCaller(repo, headroomH.HandleHeadroomRestart))
 	r.Get("/headroom/status", headroomH.HandleHeadroomStatus)
 	r.Get("/headroom/extras", headroomH.HandleHeadroomExtras)
-	r.Post("/headroom/extras", headroomH.HandleHeadroomExtras)
-	r.Delete("/headroom/extras", headroomH.HandleHeadroomExtras)
+	r.Post("/headroom/extras", RequireOperatorCaller(repo, headroomH.HandleHeadroomExtras))
+	r.Delete("/headroom/extras", RequireOperatorCaller(repo, headroomH.HandleHeadroomExtras))
 	r.HandleFunc("/headroom/proxy", headroomH.HandleHeadroomProxy)
 	r.HandleFunc("/headroom/proxy/*", headroomH.HandleHeadroomProxy)
 
-	r.Post("/api/headroom/start", headroomH.HandleHeadroomStart)
-	r.Post("/api/headroom/stop", headroomH.HandleHeadroomStop)
-	r.Post("/api/headroom/restart", headroomH.HandleHeadroomRestart)
+	r.Post("/api/headroom/start", RequireOperatorCaller(repo, headroomH.HandleHeadroomStart))
+	r.Post("/api/headroom/stop", RequireOperatorCaller(repo, headroomH.HandleHeadroomStop))
+	r.Post("/api/headroom/restart", RequireOperatorCaller(repo, headroomH.HandleHeadroomRestart))
 	r.Get("/api/headroom/status", headroomH.HandleHeadroomStatus)
 	r.Get("/api/headroom/extras", headroomH.HandleHeadroomExtras)
-	r.Post("/api/headroom/extras", headroomH.HandleHeadroomExtras)
-	r.Delete("/api/headroom/extras", headroomH.HandleHeadroomExtras)
+	r.Post("/api/headroom/extras", RequireOperatorCaller(repo, headroomH.HandleHeadroomExtras))
+	r.Delete("/api/headroom/extras", RequireOperatorCaller(repo, headroomH.HandleHeadroomExtras))
 	r.HandleFunc("/api/headroom/proxy", headroomH.HandleHeadroomProxy)
 	r.HandleFunc("/api/headroom/proxy/*", headroomH.HandleHeadroomProxy)
 	// OAuth & Import Tokens Domain
@@ -257,6 +272,11 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 		dashH.Resilience = chatH.Resilience
 	}
 	ssoH := sso.NewHandler(repo)
+
+	// Session probe (batch 7), moved into the dashboard group in
+	// council round 3 (N-2 ALIGN): anonymous callers get the gate's
+	// denial; session callers keep the full document.
+	r.Get("/api/auth/session", HandleAuthSession)
 
 	// Backend parity batch 6 — dashboard-side protocol families
 	// (Axon: requireManagementAuth — local request or dashboard
@@ -437,7 +457,11 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Put("/api/provider-nodes/{id}/limits", dashH.HandleUpdateProviderNodeLimits)
 	r.Post("/api/provider-nodes/{id}/quota/reset", dashH.HandleResetProviderNodeQuota)
 	r.Get("/api/providers/{id}/models", dashH.HandleGetConnectionModels)
-	r.Get("/api/providers/{id}/export-keys", dashH.HandleExportProviderKeys)
+	// export-keys returns PLAINTEXT provider credentials — the one
+	// sensitive read the round-3 census found still key-reachable
+	// (R3-S2); it takes the operator wrap individually since the
+	// write sweep below does not touch GET classes.
+	r.Get("/api/providers/{id}/export-keys", RequireOperatorCaller(repo, dashH.HandleExportProviderKeys))
 	// Bulk removal of a node's imported models; the single-row form stays at
 	// DELETE /api/models/custom/{key}.
 	r.Delete("/api/providers/{id}/models", dashH.HandleDeleteProviderModels)
@@ -721,6 +745,55 @@ func mountOAuthRoutes(r interface {
 	r.Post("/api/oauth/{provider}/{action}", oauthH.HandleOAuthDynamicPost)
 }
 
+// operatorWriteExempt names the dashboard-group writes that stay
+// reachable for engine-key callers under the round-3 operator sweep
+// (RequireOperatorForWrites). Every entry is a POST whose effect is
+// either gated again inside the handler chain or confined to the
+// caller's own engine domain; everything not listed here requires an
+// operator-class caller. The list:
+//
+//   - /api/mcp/sse, /api/mcp/stream — the MCP transports. External MCP
+//     clients authenticate with an engine API key BY DESIGN; the
+//     handlers enforce their own key validity + scope gate
+//     (batch 7), and the tools they expose are the key's own domain.
+//   - /api/protocols/mcp/invoke — forwards the caller's own
+//     Authorization / X-Api-Key into its self-call; the MCP surface
+//     it reaches enforces the same key + scope gate.
+//   - /api/protocols/a2a/message — a zero-effect acknowledgement
+//     echo, and load-bearing as one: the protocols status probe
+//     self-POSTs to it over loopback with no credentials, so gating
+//     it would break the status surface.
+//   - /api/translator/send — a chat completion: LLM spend in the
+//     key's own domain, no administrative effect.
+//   - The OAuth COMPLETION family under /api/oauth/ — a final path
+//     segment of "exchange" (incl. the "-exchange" spellings),
+//     "initiate", and the device/freebuff poll+start posts.
+//     Completing a flow requires the provider-issued code the caller
+//     obtained interactively, and the resulting connection is the
+//     engine's own account pool. The administrative OAuth writes
+//     (import / bulk-import / import-token / api-key / pat / cookie /
+//     token-switch / dynamic actions) are NOT exempt and are gated.
+func operatorWriteExempt(method, path string) bool {
+	if method != http.MethodPost {
+		return false
+	}
+	switch path {
+	case "/api/mcp/sse", "/api/mcp/stream",
+		"/api/protocols/mcp/invoke", "/api/protocols/a2a/message",
+		"/api/translator/send",
+		"/api/oauth/device/start", "/api/oauth/device/poll",
+		"/api/oauth/freebuff/poll":
+		return true
+	}
+	if strings.HasPrefix(path, "/api/oauth/") {
+		last := path[strings.LastIndex(path, "/")+1:]
+		if last == "exchange" || last == "initiate" || strings.HasSuffix(last, "-exchange") {
+			return true
+		}
+	}
+	return false
+}
+
 // SetupServerRouter mounts public endpoints (/health, /api/hello) and
 // API-key protected routes (all engine + admin routes) on the chi router.
 //
@@ -822,12 +895,14 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	r.Get("/api/settings/require-login", dashH.HandleRequireLogin)
 	r.Get("/api/tunnel/status", dashH.HandleTunnelStatus)
 
-	// Backend parity batch 7 — the session probe, the local-only
-	// password reset (its own gate lives in the handler), and the
-	// internal WorkerProxy endpoints (handler-level x-internal-auth
-	// token gate; the intended caller holds no dashboard session — see
-	// batch7_internal_proxy.go).
-	r.Get("/api/auth/session", HandleAuthSession)
+	// Backend parity batch 7 — the local-only password reset (its own
+	// gate lives in the handler) and the internal WorkerProxy endpoints
+	// (handler-level x-internal-auth token gate; the intended caller
+	// holds no dashboard session — see batch7_internal_proxy.go). The
+	// session probe moved into the dashboard group in council round 3
+	// (N-2 ALIGN): neither SPA consumes the unauthenticated answer, so
+	// anonymous callers now get the dashboard gate's denial and session
+	// callers keep the full document.
 	r.Post("/api/auth/reset-password", HandleAuthResetPassword(repo))
 	r.Post("/api/internal/proxy/resolve", HandleInternalProxyResolve(repo))
 	r.Post("/api/internal/proxy/report", HandleInternalProxyReport(repo))
@@ -943,6 +1018,7 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	// before any traffic, so the cache on that instance never fills.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireDashboardAuth(repo))
+		r.Use(RequireOperatorForWrites(repo, operatorWriteExempt))
 		SetupDashboardRoutes(r, repo, engineChatH)
 	})
 
@@ -958,6 +1034,7 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 	// local CLI token — same policy as the rest of the dashboard group.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RequireDashboardAuth(repo))
+		r.Use(RequireOperatorForWrites(repo, operatorWriteExempt))
 		r.Get("/api/cli-tools/all-statuses", media.NewCLIToolsHandler().HandleAllStatuses)
 		// CLI tool settings are dashboard reads (batch 5 re-score):
 		// Axon keeps a GET-only settings route per tool next to the
