@@ -251,25 +251,29 @@ const providerConnsTTL = 15 * time.Second
 // cachedProviderConnections returns a clone of the snapshot for key
 // when it is still fresh.
 func (r *Repo) cachedProviderConnections(key providerConnsKey) ([]*models.ProviderConnection, bool) {
-	r.providerConnsMu.Lock()
-	defer r.providerConnsMu.Unlock()
+	r.providerConnsMu.RLock()
 	entry, ok := r.providerConns[key]
 	if !ok || time.Now().After(entry.expires) {
+		r.providerConnsMu.RUnlock()
 		return nil, false
 	}
-	return cloneProviderConnections(entry.rows), true
+	rows := entry.rows
+	r.providerConnsMu.RUnlock()
+
+	return cloneProviderConnections(rows), true
 }
 
 // storeProviderConnections snapshots rows for key. The snapshot keeps
 // its own clones: the slice being returned to the caller stays theirs.
 func (r *Repo) storeProviderConnections(key providerConnsKey, rows []*models.ProviderConnection) {
+	cloned := cloneProviderConnections(rows)
 	r.providerConnsMu.Lock()
 	defer r.providerConnsMu.Unlock()
 	if r.providerConns == nil {
 		r.providerConns = make(map[providerConnsKey]providerConnsEntry)
 	}
 	r.providerConns[key] = providerConnsEntry{
-		rows:    cloneProviderConnections(rows),
+		rows:    cloned,
 		expires: time.Now().Add(providerConnsTTL),
 	}
 }

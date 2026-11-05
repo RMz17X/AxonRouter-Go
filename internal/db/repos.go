@@ -59,7 +59,7 @@ type Repo struct {
 	// re-parse every connection row of a provider on every request.
 	// Guarded by providerConnsMu; entries are deep clones, never the
 	// slices handed to callers.
-	providerConnsMu sync.Mutex
+	providerConnsMu sync.RWMutex
 	providerConns   map[providerConnsKey]providerConnsEntry
 	// vault is the optional credential vault. It is stored rather than held by
 	// value so a key rotation can swap the live vault without touching any

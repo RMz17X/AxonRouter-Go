@@ -268,7 +268,14 @@ func (h *DashboardHandler) HandleTestBatch(w http.ResponseWriter, r *http.Reques
 			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Batch test failed"})
 			return
 		}
-	case body.Mode == "oauth" || body.Mode == "free" || body.Mode == "apikey" ||
+	case body.Mode == "oauth":
+		oauthConns, listErr := h.Repo.GetActiveOAuthConnections(r.Context())
+		if listErr != nil {
+			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Batch test failed"})
+			return
+		}
+		conns = oauthConns
+	case body.Mode == "free" || body.Mode == "apikey" ||
 		body.Mode == "compatible" || body.Mode == "all":
 		all, listErr := h.Repo.GetProviderConnections("", true)
 		if listErr != nil {
