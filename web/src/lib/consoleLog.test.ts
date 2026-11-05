@@ -170,9 +170,12 @@ describe('splitTag', () => {
 
 describe('toPlainText', () => {
   it('exports one timestamped, levelled row per line', () => {
+    // Local-time Date constructors, like the formatClock tests: formatClock
+    // renders local time by design, so a UTC-parsed instant would make the
+    // expectation depend on the machine's timezone.
     const rows = [
-      toConsoleEntry({ level: 'info', line: 'INF [usage] logged' }, 0, Date.parse('2026-10-03T07:08:09.045Z')),
-      toConsoleEntry({ level: 'error', line: 'ERR [chat] boom' }, 1, Date.parse('2026-10-03T07:08:09.046Z')),
+      toConsoleEntry({ level: 'info', line: 'INF [usage] logged' }, 0, new Date(2026, 9, 3, 7, 8, 9, 45).getTime()),
+      toConsoleEntry({ level: 'error', line: 'ERR [chat] boom' }, 1, new Date(2026, 9, 3, 7, 8, 9, 46).getTime()),
     ]
     expect(toPlainText(rows)).toBe(
       '07:08:09.045 INFO INF [usage] logged\n07:08:09.046 ERROR ERR [chat] boom'
