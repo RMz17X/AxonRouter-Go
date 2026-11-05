@@ -32,10 +32,10 @@ import (
 // and `grok-cli` publishes only the model its account may use.
 
 const (
-	liveCatalogTTL       = 5 * time.Minute
-	liveCatalogNegTTL    = 60 * time.Second
-	liveCatalogFastHTTP  = 10 * time.Second
-	kiroCatalogHTTP      = 30 * time.Second
+	liveCatalogTTL       = 30 * time.Minute
+	liveCatalogNegTTL    = 10 * time.Minute
+	liveCatalogFastHTTP  = 3 * time.Second
+	kiroCatalogHTTP      = 3 * time.Second
 	kiroRuntimeSDKVer    = "1.0.0"
 	kiroAgentOS          = "windows"
 	kiroAgentOSVersion   = "10.0.26200"

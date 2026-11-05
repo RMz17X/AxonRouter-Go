@@ -333,8 +333,14 @@ func maskConnectionSecret(secret string) string {
 	}
 	const prefix = 6
 	const suffix = 4
+	dots := n - prefix - suffix
+	// Cap the dot repetition to avoid exploding JSON payloads on large credentials
+	// (e.g. 1.2KB OAuth JWTs across 12k+ accounts blowing up to 16MB of UTF-8 bullets).
+	if dots > 24 {
+		dots = 24
+	}
 	return handlerutil.RunePrefix(secret, prefix) +
-		strings.Repeat("•", n-prefix-suffix) +
+		strings.Repeat("•", dots) +
 		handlerutil.RuneSuffix(secret, suffix)
 }
 
