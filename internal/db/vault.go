@@ -179,12 +179,22 @@ func (r *Repo) ListConnectionsNeedingSeal(ctx context.Context) ([]ConnectionSeal
 // VaultCounts reports how many connections are sealed and how many still hold a
 // plaintext credential, for the dashboard status route.
 func (r *Repo) VaultCounts(ctx context.Context) (sealed, plaintext int, err error) {
-	rows, err := r.QueryContext(ctx, `SELECT data, secretCiphertext, tokenCiphertext, refreshCiphertext FROM providerConnections`)
+	// Fast count for completely unsealed rows (no ciphertexts at all)
+	var purePlaintext int
+	err = r.QueryRowContext(ctx, `SELECT COUNT(*) FROM providerConnections WHERE secretCiphertext = '' AND tokenCiphertext = '' AND refreshCiphertext = ''`).Scan(&purePlaintext)
+	if err != nil {
+		return 0, 0, fmt.Errorf("vault counts plain count: %w", err)
+	}
+
+	// Only rows with at least one ciphertext present need deep JSON field inspection
+	// to see if they are fully sealed or still hold remaining plaintext secrets.
+	rows, err := r.QueryContext(ctx, `SELECT data, secretCiphertext, tokenCiphertext, refreshCiphertext FROM providerConnections WHERE secretCiphertext != '' OR tokenCiphertext != '' OR refreshCiphertext != ''`)
 	if err != nil {
 		return 0, 0, fmt.Errorf("vault counts: %w", err)
 	}
 	defer rows.Close()
 
+	plaintext = purePlaintext
 	for rows.Next() {
 		var data, secretCt, tokenCt, refreshCt string
 		if err = rows.Scan(&data, &secretCt, &tokenCt, &refreshCt); err != nil {
@@ -195,18 +205,7 @@ func (r *Repo) VaultCounts(ctx context.Context) (sealed, plaintext int, err erro
 
 		if hasCiphertext && !hasPlaintext {
 			sealed++
-		} else if !hasCiphertext && hasPlaintext {
-			plaintext++
-		} else if hasCiphertext && hasPlaintext {
-			// Partially sealed (e.g. top-level sealed but nested unsealed) counts as plaintext/unsealed until fully sealed
-			plaintext++
 		} else {
-			// Neither ciphertexts nor plaintext secrets (e.g. no credentials at all)
-			// Traditionally considered sealed or plain? Let's check original behavior:
-			// Original: secretCiphertext == '' && tokenCiphertext == '' && refreshCiphertext == '' was isPlain = 1.
-			// But wait, if there are no secrets at all, was it counted as plain or sealed?
-			// Original CASE WHEN secretCiphertext = '' ... THEN 1 ELSE 0 END counted empty ciphertexts as plain.
-			// Wait, let's keep exact compatibility for rows without secrets or ciphertexts, or check what existing tests expect.
 			plaintext++
 		}
 	}

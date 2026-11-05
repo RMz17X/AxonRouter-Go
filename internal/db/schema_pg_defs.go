@@ -71,6 +71,7 @@ func pgCoreSchema() []tableDef {
 				"CREATE INDEX IF NOT EXISTS idx_pc_priority ON providerConnections(provider, priority)",
 				"CREATE INDEX IF NOT EXISTS idx_pc_sort_order ON providerConnections ((CASE WHEN priority IS NULL THEN 999999 ELSE priority END) ASC, updatedAt DESC)",
 				"CREATE INDEX IF NOT EXISTS idx_pc_prov_act_sort ON providerConnections (provider, isActive, (CASE WHEN priority IS NULL THEN 999999 ELSE priority END) ASC, updatedAt DESC)",
+				"CREATE INDEX IF NOT EXISTS idx_pc_last_used_at ON providerConnections(lastUsedAt DESC NULLS LAST)",
 			},
 		},
 		{

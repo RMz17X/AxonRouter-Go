@@ -1443,11 +1443,11 @@
   }
 
   async function handleBulkResetStatus() {
-    const isSelected = selectedConnectionIds.length > 0
+    const isSelected = selectedConnIds.length > 0
     try {
       const res = await api.bulkResetStatus({
         provider: providerId,
-        ids: isSelected ? selectedConnectionIds : undefined,
+        ids: isSelected ? selectedConnIds : undefined,
       })
       if (res.ok) {
         onRefresh()
@@ -3813,7 +3813,7 @@
         </label>
 
         <div class="flex items-center gap-2">
-          {#if selectedConnectionIds.length > 0}
+          {#if selectedConnIds.length > 0}
             <button
               type="button"
               onclick={handleBulkResetStatus}
@@ -3821,7 +3821,7 @@
               title="Reset status and clear cooldowns for selected connections"
             >
               <span class="material-symbols-outlined text-[15px]">restart_alt</span>
-              <span>Reset Cooldown ({selectedConnectionIds.length})</span>
+              <span>Reset Cooldown ({selectedConnIds.length})</span>
             </button>
           {:else}
             <button
