@@ -1,5 +1,429 @@
 # Changelog
 
+## [v1.9.17] - 2026-11-06
+
+## MiniMax Code: a Claude client's reply is no longer translated into OpenAI shape
+
+**Symptom.** A /v1/messages client routed to minimax-code received an
+OpenAI-shaped body (no `type: "message"`, no Claude content blocks) in
+answer to a Claude Messages reply from the mavis upstream —
+TestMiniMaxCodeClaudeWire in the integration suite.
+
+**Root cause.** A flag-polarity collision. The Claude response helpers
+read TranslateResp in their convention (true = the client speaks
+Claude → pass through; false = OpenAI client → translate). The chat
+layer's translateResponse has the opposite meaning on the /v1/messages
+lane: it is false for Claude-native providers precisely because no
+translation was expected. ForwardMinimaxCode used to ignore the flag
+for Claude clients (raw relay); a later change routed every reply
+through the helpers, so the messages lane's false was obeyed as
+"translate to OpenAI" and Claude clients got chat.completion JSON.
+
+**Fix.** ForwardMinimaxCode hands the helpers the flag in their own
+convention: `req.TranslateResp = req.ClaudeClient` before dispatch.
+ClaudeClient is derived from the endpoint itself at both
+request-construction sites, so it cannot drift from the client's
+actual format. The /v1/chat/completions lane keeps the translation
+the earlier change was for; the /v1/messages lane passes through —
+now through the helpers, so tool decloaking applies there too (the
+old raw relay skipped it).
+
+**Verification.** TestMiniMaxCodeClaudeWire (and the global-site and
+auth-refusal companions) pass against a live PostgreSQL through the
+real router; previously the wire test failed on the reply shape.
+
+## GET /api/connections: the unfiltered list returns connections again
+
+**Symptom.** GET /api/connections without a `?provider=` filter
+returned `[]` with a 200 — visible in the integration suite
+(TestConnectionLifecycle, TestConnectionNameConflictIsRefused: a
+just-created connection "is not in the list []") and in the dashboard
+itself, whose unfiltered callers (App boot, the add-from-link modal)
+silently received nothing.
+
+**Root cause.** A perf guard (commit 68e94eb3) short-circuited the
+handler to an empty list when no provider filter was given, to avoid
+dumping a very large connections table. The guard changed the
+endpoint's contract instead of its cost profile, and every caller
+that relied on the upstream list shape broke without an error.
+
+**Fix.** The short-circuit is removed: the handler again serves
+GetProviderConnections for the filter as given (empty filter = all
+connections), with the existing secret-stripping sanitizer unchanged.
+The aggregate views that motivated the guard read /api/providers/stats;
+the handler comment records the reasoning so the guard is not
+reintroduced.
+
+**Verification.** The integration lifecycle and name-conflict tests,
+which failed against the guarded handler, pass against a live
+PostgreSQL through the real router.
+
+## Release workflow: the Docker Hub job is removed; GHCR is the image home
+
+**Symptom.** Every release run failed its `docker` job at "Log in to
+Docker Hub" (no valid DOCKERHUB secrets), reddening otherwise-good
+releases.
+
+**Root cause.** The job was an upstream leftover twice over: it pushed
+to `luqmenul/9router-go` — the UPSTREAM author's Docker Hub
+repository, a coordinate this fork neither owns nor may push to — and
+this fork already publishes its real image to GHCR
+(ghcr.io/rmz17x/axonrouter-go) from the Publish Docker Image workflow,
+which succeeded for v1.9.16 on the same tag push.
+
+**Fix.** The Docker Hub job is deleted from release.yml, along with
+the channel job's now-dead docker_tags output. The Telegram notify job
+needs only [binaries] (its comment records that the image's own
+workflow run is its success signal). REGISTRY_IMAGE now names the GHCR
+coordinate, and the prerelease banner's pull line uses it with the
+full tag (GHCR tags keep the `v`). One trade-off, recorded: the
+removed job built linux/arm64 as well as amd64; the GHCR workflow
+builds amd64 — arm64 users are served by the native release binaries.
+
+## Media detail page: the proxy card returns to its one home
+
+MediaProviderDetail rendered the NoAuth proxy card for noAuth
+providers. That card writes the provider's chat-egress proxy strategy —
+a setting media handlers never read — and the same card already lives
+on the provider's Connections detail page, which is where proxy
+strategy belongs. One setting, one home: the media page no longer
+renders the card (its Connections section now shows for keyed
+providers only, as before), and a comment in the page records why so
+it is not re-added.
+
+## Proxy resolution readout: a binding that resolves to nothing is now visible
+
+Every proxy-binding bug in this area shared one shape: the dashboard
+showed a selection as set while the resolver matched zero pools and
+requests silently went direct. The fix is a readout that shows the
+resolution itself, next to the controls that set it.
+
+- New read-only endpoint GET /api/providers/proxy-resolution?id=<provider>
+  (registered in both route tables). It derives the selector from the
+  stored provider strategy exactly as the chat resolver does — same
+  strategy-key walk (id, alias, canonical), same sentinels, same legacy
+  bare-type heal — and matches candidates with the production
+  Repo.ActivePoolsByTarget. It reports the binding kind (group / type /
+  pool / rotation / direct / none), the selector, the active candidate
+  pools, and whether it resolves at all. A small exported
+  db.IsKnownProxyType wrapper keeps the heal's type set in one place.
+- A shared ProxyResolutionNote component renders one line: the resolved
+  pool names and count, or an amber warning — "matches no active pool —
+  requests will go direct" — when the selection resolves to zero. It
+  sits under the provider Proxy Lock (connections detail) and inside
+  the NoAuth proxy card, refreshing after every save.
+- While wiring the card: its save now deletes both rotation spellings,
+  not only rotateStrategy. The stored rotateStrategy key is the live
+  one (the settings parser maps it onto the resolver's
+  ProxyRotateStrategy field); a stray proxyRotateStrategy key is never
+  parsed back, but leaving it would keep a phantom setting on display.
+  A card save expresses the complete group/type/none choice, so
+  neither spelling may survive it.
+
+## Web unit tests realigned with the Usage page's current design
+
+The bun suite had eight failures, all tests pinning a superseded
+design or a machine-specific assumption:
+
+- usagePanelPlan.test.ts still arranged `overview.*` panels and
+  expected blocksFor to pair the topology+recent row. The Overview
+  section is a fixed Axon-layout mirror with no arrangeable panels
+  (the panel universe covers Details/Cache/Compression), and blocksFor
+  has emitted one block per panel since. The tests now pin the current
+  design on the Details group: order repair, the Default preset's
+  three hidden cards, move/moveBefore semantics, and blocksFor's
+  one-block-per-panel + duplicate collapse.
+- consoleLog.test.ts built a toPlainText expectation from a UTC-parsed
+  instant while formatClock renders local time by design, so the test
+  only passed on UTC machines. It now constructs local-time dates like
+  the formatClock tests do.
+
+The full web suite passes: 774 pass / 0 fail (was 766 / 8).
+
+## devin-cli: registry entry completes the provider's wiring
+
+The devin-cli provider was half-wired: a registered executor
+(ForwardOpenAI), model capabilities, a frontend model list and alias,
+and shipped dashboard artwork — but no entry in the provider registry,
+so the catalog the dashboard renders could not include it and the
+provider tests failed on its absence. Upstream declares it
+category "free", noAuth, hidden (its registry file is not imported
+into upstream's active index, which is why the port missed it).
+
+The registry now carries the entry in exactly that shape: Devin CLI,
+alias dv, CategoryFree, NoAuth, Hidden, with its website and a factual
+auth hint (it runs the local `devin` binary, which must be installed
+and authenticated on the host). Hidden keeps it out of the provider
+lists, matching upstream's declaration.
+
+Also: the providers display-links test's exemption set gains `mmf` —
+the owner's name-only shell left after mimo-free's removal, whose
+missing display data is a recorded decision, not an omission.
+
+## Handler tests realigned with the behaviour they pin
+
+Three unit tests had drifted from deliberate behaviour and failed in CI:
+
+- TestHandleUsageStream assumed the first SSE frame is `data:`; the
+  usage stream deliberately opens with a `retry: 3000` reconnect hint.
+  The test now reads to the first data frame.
+- TestSuggestedModelsBadRequests pinned "unreachable feed → 200 with
+  empty data" using `type=mimo-free`, whose filter was removed with
+  that provider (unknown types are the 400 case the same test pins).
+  The leg now uses a live filter (opencode-free); the 200-empty
+  contract is unchanged.
+- TestAntigravityQuota_Generic429NoStrike still expected upstream
+  #3684's three-strike rule for definitive quota errors. This fork
+  deliberately blocks a definitive quota error (QUOTA_EXHAUSTED /
+  "Individual quota reached") immediately — "instant quota 429
+  rotation", commit 4bc8f72f. The test now pins the fork contract:
+  generic/content 429s never strike (the #4197 core, unchanged),
+  definitive quota errors block on the first, and non-definitive
+  explicit errors (rate-limit markers) still use three strikes. The
+  divergence is recorded in the test's doc comment.
+
+## Usage writer: the data race is gone
+
+**Symptom.** CI's race-detector job reported a data race in the chat
+package and a failing assertion in
+TestUsageWriter_FlushWithoutWorker ("flush waited on a queue that was
+never created").
+
+**Root cause.** Two halves of one design fault. The worker loop re-read
+the package-level queue variables in its select on every iteration, while
+TestUsageWriter_FlushWithoutWorker reset those variables (and the Once)
+without synchronisation to fake a cold process — a write racing the
+loop's reads for its whole lifetime. The reset also never cleared
+usageWorkerReady, so in a suite process where another test had already
+started the worker, the drain waited on the nilled queue and the test
+failed on its own premise.
+
+**Fix.** usageWorkerLoop now receives its two queues as parameters,
+captured when ensureUsageWorker starts it — the loop never re-reads the
+package variables (the same rule FlushUsageWrites already followed via
+usageWorkerReady). The test no longer mutates shared state: it pins the
+idle-drain contract (an idle flush reports success promptly), which both
+the cold and warm process states satisfy.
+
+**Verification.** `go test -race -run TestUsageWriter
+./internal/handlers/chat/` passes; previously the race detector flagged
+the test/loop pair and the assertion failed in suite order.
+
+## CI: the integration job gets its PostgreSQL
+
+**Symptom.** The CI `integration` job was permanently red: every DB-backed
+test failed at 0.00s with "neither INTEGRATION_DATABASE_URL nor
+DATABASE_URL is set", which read as dozens of broken tests and hid real
+regressions behind the noise.
+
+**Root cause.** A workflow-config defect, not code: the job declared no
+PostgreSQL service and no DSN environment, while the suite (internal/db/
+dbtest) requires a reachable scratch PostgreSQL to provision its throwaway
+schemas. The job could never have passed.
+
+**Fix.** The job now runs a `postgres:17` service container (database
+`axonrouter_integration`, health-gated on `pg_isready`) and exports
+`INTEGRATION_DATABASE_URL` for its steps, matching the DSN contract the
+harness already implements.
+
+**Verification.** The identical suite was run locally against a scratch
+database with only `INTEGRATION_DATABASE_URL` set — the configuration the
+workflow now provides — and passes; the workflow change is a transcription
+of that proven setup.
+
+# Provider Proxy Lock: type locks never resolved; stale proxyPoolId outranked the lock
+
+**Symptom.** On a keyed provider's detail page, the Proxy Lock dropdown
+offers proxy TYPES next to groups. Locking to a type (e.g. "Type: http")
+showed as set in the UI, but traffic never used a pool of that type: with
+no other binding it fell back to a direct connection. Separately, once a
+strategy carried a `proxyPoolId`, changing or removing the lock in the UI
+had no effect on traffic at all.
+
+**Root cause.** Two storage-contract breaks between the lock UI and the
+resolver:
+
+1. `handleProxyGroupLockChange` stored the selection as a bare
+   `proxyGroup` value for BOTH kinds — group names and type names alike.
+   `resolveProviderProxyPoolID` converted any bare `proxyGroup` into the
+   selector `group:<value>`, which `ActivePoolsByTarget` matches against
+   the pools' group field. A type name is not a group name, so a type
+   lock resolved to zero pools.
+2. The resolver prefers `strategy.proxyPoolId` over `proxyGroup`, but
+   the lock handler never wrote or cleared `proxyPoolId`. A value stored
+   earlier (via the API or an older UI) silently kept control while the
+   lock appeared to change or clear.
+
+**Fix.**
+
+- The lock's options now carry canonical selector values (`group:<name>`
+  / `type:<name>`), `lockedProxyGroup` holds that selector form, and the
+  handler owns both strategy fields on every change: a group writes
+  `proxyPoolId: "group:<name>"` plus the `proxyGroup` mirror; a type
+  writes `proxyPoolId: "type:<name>"` and deletes the mirror; None
+  deletes both. The load path derives the displayed lock from the
+  prefixed `proxyPoolId` first, so a type binding stored through the API
+  also shows instead of reading as "None".
+- The resolver heals legacy data: a bare `proxyGroup` naming a known
+  proxy type now converts to `type:<value>` instead of `group:<value>`,
+  mirroring `ActivePoolsByTarget`'s own bare-target precedence, so locks
+  stored by the old UI take effect without a settings migration.
+- The NoAuth card (950) already wrote the canonical forms; this brings
+  the keyed lock to the same contract.
+
+**Verification.** Web build green; svelte-check 80 errors / 56 warnings,
+unchanged from the pre-fix tree; `go build ./...` and `go vet` on the
+touched packages green. Live on a throwaway instance (provider `openai`,
+dummy key; pools: cf-1 group=cloudflare type=socks5, resi-1
+group=residential type=http, plain-http with NO group field, type=http —
+all pointing at dead local ports so the chosen egress is observable),
+one chat attempt per strategy state, read back from the server log's
+egress field:
+
+- `{proxyPoolId: "type:http"}` → egress `resi-1` (an http pool), failing
+  closed with "assigned proxy failed, refusing to route direct".
+- `{proxyGroup: "http"}` (the legacy bare form the old UI wrote) →
+  egress `plain-http` — reachable ONLY by type, proving the heal.
+- `{proxyPoolId: "group:cloudflare", proxyGroup: "cloudflare"}` →
+  egress `cf-1`.
+- No strategy → egress `direct`.
+
+# NoAuth card: group chips must come from the pools, not /api/proxy-groups
+
+**Symptom.** On the NoAuth proxy card shipped in 950, the group chips were
+built from `GET /api/proxy-groups`. That list mixes two things that are
+not pool-group names: the DEFAULT groups are type-backed (key is the type
+name, e.g. "Cloudflare Relay" with key `cloudflare`, and their
+activeCount is counted by pool TYPE), and the CUSTOM groups are
+membership-backed entities (a name plus a list of pool IDs). The card
+encoded every entry as the selector `group:<key>`.
+
+**Root cause.** The chat resolver's `group:<name>` selector
+(`Repo.ActivePoolsByTarget`) matches one thing only: the pool rows' own
+`group` string field. It never expands custom-group membership and never
+treats a default group's key as its type. So a chip could display
+"Cloudflare Relay — 3 active" (three pools of TYPE cloudflare) while its
+selector resolved only pools whose group field literally read
+"cloudflare" — usually zero, which in non-strict mode silently falls
+back to a direct connection behind a UI claiming the provider is
+proxied.
+
+**Fix.** `NoAuthProxyCard` no longer fetches /api/proxy-groups. Its group
+chips are derived from the pools list it already loads: distinct trimmed
+`group` values with active-pool counts — the same derivation the rest of
+the dashboard (provider detail group options) uses, so every chip shown
+is a selector that resolves. The type-backed default groups remain
+reachable through the card's Type chips (`type:cloudflare`, etc.), which
+is the selector form the resolver actually honours for them.
+
+**Verification.** Build green; svelte-check 80 errors / 56 warnings,
+identical to the pre-fix tree of this change (and still zero added
+against the 80/58 measured before the 950 work). Chip derivation is a
+pure function of the pools payload already proven live in the 950 API
+checks (pools seeded with group "cloudflare" produce the same chip that
+was clicked through there).
+
+Found during the post-950 proxy audit (2026-11-06), which also recorded
+two further proxy findings left for an owner decision: the keyed
+provider Proxy Lock's Type options are stored as a bare `proxyGroup`
+that the resolver prefixes with `group:` (lock-to-type never resolves),
+and a stale strategy `proxyPoolId` silently outranks the lock's
+`proxyGroup` because the lock handler never clears it.
+
+# NoAuth proxy UX: proxy group or proxy type only (owner rule)
+
+Owner rule (2026-11-06): for OpenCode free and every other NoAuth provider,
+the proxy choice is a proxy GROUP or a proxy TYPE — nothing else. The NoAuth
+proxy UI offered a third axis on top of the group chips: a rotation strategy
+(None / Round-robin / Random) under which the group selection was disabled
+and requests rotated across ALL active pools regardless of any group. That
+mode is gone, and the missing type choice is added.
+
+## What changed
+
+- `NoAuthProxyCard` (the one card, see below): the selectable targets are
+  now Direct (None), one chip per proxy group, and one chip per proxy type
+  (labelled `Type: <type>`, with active-pool counts from the pools list).
+  The Rotation Strategy control, its state, and its helper text are
+  deleted. Saving from the card always deletes a stored `rotateStrategy`
+  for the provider, so a strategy left behind by the old UI cannot keep
+  rotating invisibly behind a UI that no longer shows it. A type selection
+  is stored as `proxyPoolId: "type:<type>"` with no `proxyGroup` mirror —
+  the resolver reads the `type:` prefix natively.
+- `ProviderDetailView` carried a second, inline copy of the NoAuth proxy
+  section (group chips + rotation buttons writing the same strategy
+  fields). It is replaced by `<NoAuthProxyCard>` — one home for the NoAuth
+  proxy choice, per the no-redundancy rule — and its now-dead state,
+  save handler, settings-load extraction, group derivation, and the
+  `proxyGroupsList` fetch that only fed the deleted copy are removed.
+  `MediaProviderDetail` already used the component and inherits the fix.
+
+The engine is untouched: `resolveProviderProxyPoolID` already resolves
+`group:`/`type:` selectors for provider strategies, and with no
+`rotateStrategy` stored the NoAuth rotation branch simply never engages.
+
+## Verification
+
+- Build green. svelte-check measured against the true pre-change tree
+  (HEAD versions of the two touched files restored into a copy of this
+  tree): 80 errors / 58 warnings before, 80 errors / 56 warnings after —
+  zero added. (The 77/57 figure in AGENTS.md §6.E predates the
+  post-release wave; the tree had already drifted to 80/58.)
+- The built bundle contains the new card copy ("Routes through the
+  selected proxy group or type") and the string "Rotation Strategy" no
+  longer appears in any built asset.
+- Live API proof on a throwaway instance (fresh DB, pools seeded in
+  groups cloudflare/residential of types socks5/http), replaying the
+  card's exact save logic: a stale `rotateStrategy: round-robin` was
+  seeded first; after a group save the strategy read back
+  `{proxyPoolId: "group:cloudflare", proxyGroup: "cloudflare"}` with the
+  rotation gone; after a type save `{proxyPoolId: "type:socks5"}`; after
+  Direct the provider's strategy entry was removed entirely.
+- A remote visual pass was attempted and could not reach the VM-local
+  rig (the browser runs on another host; loopback is not shared), so the
+  rendering evidence is the bundle proof above rather than a screenshot.
+
+### refactor(db): schema bootstrap runs in three phases — tables, additive columns, then all indexes
+
+**Symptom.** The PostgreSQL bootstrap created each table's indexes as
+part of creating the table, while the additive columns
+(`pgGoOnlyColumns`) were only applied near the end. Any index declared
+on an additive column therefore detonated on fresh databases — this is
+the exact mechanism behind the v1.9.16 fresh-install boot blocker
+(fragment 945), and the two indexes that need additive columns survived
+only as hand-placed one-off `Exec` calls after the additive pass,
+detached from their tables' declarations.
+
+**Root cause.** Creation order was coupled to declaration order:
+`ensureTablePG` fused table creation, column backfill and index
+creation into one per-table step that ran before the additive pass, so
+the ordering rule ("never index a column that does not exist yet")
+lived in comments and in two exceptional code blocks instead of in the
+structure.
+
+**Fix.** `EnsureCoreSchema` now runs three explicit phases: (1) every
+table group (core, KeiRouter, usage ledger, thought signatures) plus
+the partitioned parents is created and backfilled with its declared
+columns; (2) the additive columns are applied; (3) every declared
+index is created. `ensureTablePG` is split into
+`ensureTableColumnsPG` / `ensureTableIndexesPG`, the partitioned
+parents' defs are factored into `partitionedUsageParents()` with their
+indexes executed by `ensurePartitionedIndexesPG`, and the two stray
+indexes return home: `idx_ak_lookup` into the apiKeys def and
+`idx_pc_last_used_at` into the providerConnections def. A new index on
+any column — declared or additive — is now safe by construction,
+wherever it is declared.
+
+**Verification.** Behaviour-preserving, proven by catalog read-back,
+not by assertion: the full schema (tables, columns with types and
+defaults, indexes with definitions, PK/UNIQUE constraints — 425
+objects) produced by the pre-refactor code on a fresh database was
+captured as a golden snapshot; the refactored code's fresh-database
+schema is byte-identical to it, the refactored code booted on the
+pre-refactor database leaves the schema identical (upgrade path), and
+a second boot is clean. Build and vet green; login 200 in all three
+boots; zero error lines in the boot logs.
+
 ## [v1.9.16] - 2026-11-05
 
 ### feat(branding,ops): AxonRouter identity completed, port 3177, GHCR publishing
