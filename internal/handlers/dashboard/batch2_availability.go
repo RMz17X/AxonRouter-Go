@@ -42,6 +42,16 @@ func (h *DashboardHandler) HandleModelAvailability(w http.ResponseWriter, r *htt
 		data := connDataMap(c)
 		locks := activeModelLocks(data, now)
 		_, hasAccountLock := futureTime(data, "lockedAllUntil", now)
+		accountLockUntil, _ := data["lockedAllUntil"].(string)
+		if !hasAccountLock {
+			if _, ok := futureTime(data, "rateLimitedUntil", now); ok {
+				hasAccountLock = true
+				accountLockUntil, _ = data["rateLimitedUntil"].(string)
+			} else if _, ok := futureTime(data, "oauthLockedUntil", now); ok {
+				hasAccountLock = true
+				accountLockUntil, _ = data["oauthLockedUntil"].(string)
+			}
+		}
 		testStatus := dataStr(data, "testStatus")
 		if !hasAccountLock && len(locks) == 0 && testStatus != "unavailable" {
 			continue
@@ -55,7 +65,7 @@ func (h *DashboardHandler) HandleModelAvailability(w http.ResponseWriter, r *htt
 		// then the modelLocks entries in stored order; the stored order is
 		// not recoverable from a Go map, so the rest follow in map order.
 		if hasAccountLock {
-			u, _ := data["lockedAllUntil"].(string)
+			u := accountLockUntil
 			models = append(models, availabilityEntry{
 				Provider: c.Provider, Model: "__all", Status: "cooldown",
 				Until: &u, ConnectionID: c.ID, ConnectionName: name, LastError: lastError,

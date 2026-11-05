@@ -60,10 +60,24 @@ func SelectConnectionsNeedingRefresh(conns []*models.ProviderConnection, now tim
 			AccessToken  string         `json:"accessToken"`
 			RefreshToken string         `json:"refreshToken"`
 			ExpiresAt    string         `json:"expiresAt"`
+			Status       string         `json:"status"`
+			TestStatus   string         `json:"testStatus"`
+			DisabledAt   any            `json:"disabledAt"`
 			PSD          map[string]any `json:"providerSpecificData"`
 		}
 		if c.Data != "" {
 			_ = json.Unmarshal([]byte(c.Data), &data)
+		}
+		if strings.EqualFold(data.Status, "disabled") ||
+			strings.EqualFold(data.Status, "validation_required") ||
+			strings.EqualFold(data.TestStatus, "disabled") ||
+			data.DisabledAt != nil {
+			continue
+		}
+		if data.PSD != nil {
+			if blocked, _ := data.PSD["refreshBlocked"].(bool); blocked {
+				continue
+			}
 		}
 		if !strings.EqualFold(strings.ReplaceAll(c.AuthType, "_", ""), "oauth") {
 			continue
@@ -160,6 +174,11 @@ func runBackgroundRefreshTick(ctx context.Context, repo *db.Repo) {
 // refreshBackgroundConnection refreshes one due connection and persists the
 // result back to the row (fail-open: errors only logged).
 func refreshBackgroundConnection(ctx context.Context, repo *db.Repo, c ConnectionNeedingRefresh) {
+	if repo != nil {
+		if latest, err := repo.GetProviderConnectionByID(c.ID); err != nil || latest == nil || latest.IsActive == 0 {
+			return
+		}
+	}
 	result, err := Refresh(ctx, &Params{
 		Client:               &http.Client{Timeout: 15 * time.Second},
 		Provider:             c.Provider,
@@ -171,11 +190,12 @@ func refreshBackgroundConnection(ctx context.Context, repo *db.Repo, c Connectio
 		log.Printf("[BG_TOKEN_REFRESH] refresh failed conn=%s provider=%s: %v", c.ID, c.Provider, err)
 		// Record the rejection so the tick, and the request path, stop
 		// hammering the token endpoint for a grant only a re-login fixes.
-		if providers.IsRefreshUnauthorized(err) {
+		if providers.IsRefreshGrantDead(err) {
 			if until, failures, lockErr := repo.RecordConnectionOAuthFailure(c.ID, http.StatusUnauthorized, err.Error()); lockErr != nil {
 				log.Printf("[BG_TOKEN_REFRESH] park failed conn=%s: %v", c.ID, lockErr)
 			} else {
-				log.Printf("[BG_TOKEN_REFRESH] parked conn=%s until=%s failures=%d", c.ID, until.Format(time.RFC3339), failures)
+				_ = repo.SetConnectionStatus(c.ID, false)
+				log.Printf("[BG_TOKEN_REFRESH] parked and disabled conn=%s until=%s failures=%d", c.ID, until.Format(time.RFC3339), failures)
 			}
 		}
 		return

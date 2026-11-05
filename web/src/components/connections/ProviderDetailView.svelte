@@ -742,6 +742,7 @@
 
   let showApplyProxyModal = $state(false)
   let isApplyingProxy = $state(false)
+  let isResettingCooldown = $state(false)
   // Non-null while a reorder request is in flight; the chevrons disable on it
   // so a second click cannot fire a swap computed from a stale list.
   let reorderingConnId = $state<string | null>(null)
@@ -1405,10 +1406,12 @@
 
   async function handleBulkResetStatus() {
     const isSelected = selectedConnIds.length > 0
+    isResettingCooldown = true
     try {
       const res = await api.bulkResetStatus({
         provider: providerId,
         ids: isSelected ? selectedConnIds : undefined,
+        action: isSelected ? undefined : 'cooldown',
       })
       if (res.ok) {
         onRefresh()
@@ -1417,6 +1420,8 @@
       }
     } catch (err) {
       alert(`Bulk reset failed: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      isResettingCooldown = false
     }
   }
 
@@ -3563,6 +3568,19 @@
           </button>
         {/if}
 
+        {#if providerConnections.length > 0}
+          <button
+            type="button"
+            onclick={handleBulkResetStatus}
+            disabled={isResettingCooldown}
+            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 h-7 px-3 text-xs rounded-[8px]"
+            title={selectedConnIds.length > 0 ? 'Reset cooldown & exhausted status for selected accounts' : 'Reset cooldown & exhausted status for all active accounts in this provider'}
+          >
+            <span class="material-symbols-outlined text-[18px] {isResettingCooldown ? 'animate-spin' : ''}">restart_alt</span>
+            {selectedConnIds.length > 0 ? `Reset Cooldown (${selectedConnIds.length})` : 'Reset Cooldown / Exhausted'}
+          </button>
+        {/if}
+
         <button
           type="button"
           onclick={runOneByOneTest}
@@ -4009,7 +4027,7 @@
                       <span class="text-xs text-text-muted">#{priorityNum}</span>
                     </div>
                     <!-- Error message block -->
-                    {#if lastErr && lastErr !== 'Provider test not supported' && (status?.state === 'failed' || conn.testStatus === 'failed' || conn.testStatus === 'error')}
+                    {#if lastErr && lastErr !== 'Provider test not supported' && (status?.state === 'failed' || conn.testStatus === 'failed' || conn.testStatus === 'error' || conn.testStatus === 'unavailable' || !isConnActive || connBadge === 'error' || lastErr.toLowerCase().includes('terms of service') || lastErr.toLowerCase().includes('disabled in this account') || lastErr.toLowerCase().includes('account disabled') || lastErr.toLowerCase().includes('tos_violation') || lastErr.toLowerCase().includes('validation_required') || lastErr.toLowerCase().includes('verify your account') || Boolean(conn.verificationUrl))}
                       <div class="mt-1.5 flex flex-col gap-1.5 text-xs text-red-500 bg-red-500/10 px-2.5 py-1.5 rounded-md border border-red-500/20 max-w-full">
                         <div class="flex items-start gap-1.5">
                           <span class="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
@@ -4020,9 +4038,9 @@
                             {lastErr}
                           </span>
                         </div>
-                        {#if lastErr.toLowerCase().includes('terms of service') || lastErr.toLowerCase().includes('disabled in this account')}
+                        {#if lastErr.toLowerCase().includes('terms of service') || lastErr.toLowerCase().includes('disabled in this account') || lastErr.toLowerCase().includes('account disabled') || lastErr.toLowerCase().includes('tos_violation')}
                           <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
-                            <span class="text-amber-400 font-medium">Akun dinonaktifkan (Pelanggaran ToS). Segera ajukan appeal:</span>
+                            <span class="text-amber-400 font-medium">Akun dinonaktifkan (Pelanggaran ToS) — Appeal: https://forms.gle/hGzM9MEUv2azZsrb9</span>
                             <a
                               href="https://forms.gle/hGzM9MEUv2azZsrb9"
                               target="_blank"

@@ -1721,6 +1721,22 @@ type antigravitySubInfo struct {
 	projectID  string
 	plan       string
 	paidTierID string
+	errMsg     string
+}
+
+func extractGoogleErrorMessage(body map[string]any) string {
+	if body == nil {
+		return ""
+	}
+	if errObj, ok := body["error"].(map[string]any); ok {
+		if msg, ok := errObj["message"].(string); ok && strings.TrimSpace(msg) != "" {
+			return strings.TrimSpace(msg)
+		}
+	}
+	if msg, ok := body["message"].(string); ok && strings.TrimSpace(msg) != "" {
+		return strings.TrimSpace(msg)
+	}
+	return ""
 }
 
 // fetchAntigravitySubInfo mirrors getAntigravitySubscriptionInfo: one loadCodeAssist
@@ -1732,6 +1748,9 @@ func fetchAntigravitySubInfo(ctx context.Context, accessToken string) antigravit
 		"mode":     1,
 	}, antigravityDashboardHeaders(accessToken))
 	if err != nil || status != http.StatusOK || data == nil {
+		if status == http.StatusForbidden {
+			sub.errMsg = extractGoogleErrorMessage(data)
+		}
 		return sub
 	}
 	sub.projectID = antigravityProjectID(data["cloudaicompanionProject"])
@@ -1764,6 +1783,20 @@ func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID 
 		return usageResult{plan: plan, message: "Antigravity error: " + err.Error()}
 	}
 	if status == http.StatusForbidden {
+		errMsg := extractGoogleErrorMessage(body)
+		if errMsg == "" {
+			errMsg = sub.errMsg
+		}
+		lowerErr := strings.ToLower(errMsg)
+		if strings.Contains(lowerErr, "disabled in this account") ||
+			strings.Contains(lowerErr, "terms of service") ||
+			strings.Contains(lowerErr, "tos_violation") {
+			return usageResult{plan: plan, message: enrichAppealMessage("Account disabled: " + errMsg)}
+		}
+		if strings.Contains(lowerErr, "validation_required") ||
+			strings.Contains(lowerErr, "verify your account") {
+			return usageResult{plan: plan, message: errMsg}
+		}
 		return usageResult{plan: plan, message: "Antigravity quota API access forbidden. Chat may still work."}
 	}
 	if status == http.StatusUnauthorized {

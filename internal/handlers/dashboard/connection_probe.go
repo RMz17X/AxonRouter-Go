@@ -1006,9 +1006,33 @@ func (h *DashboardHandler) persistProbeResult(conn *models.ProviderConnection, r
 			raw["lastErrorAt"] = nil
 		}
 	} else {
+		msg := enrichAppealMessage(out.message)
 		raw["testStatus"] = "error"
-		raw["lastError"] = out.message
+		raw["lastError"] = msg
 		raw["lastErrorAt"] = time.Now().UTC().Format(time.RFC3339)
+		lower := strings.ToLower(msg)
+		isToSDisabled := strings.Contains(lower, "disabled in this account") ||
+			strings.Contains(lower, "terms of service") ||
+			strings.Contains(lower, "tos_violation") ||
+			strings.Contains(lower, "account disabled")
+		isValidationReq := strings.Contains(lower, "validation_required") ||
+			strings.Contains(lower, "verify your account")
+		isDeadAuth := strings.Contains(lower, "invalid_grant") ||
+			strings.Contains(lower, "token refresh rejected") ||
+			strings.Contains(lower, "account banned")
+		if isToSDisabled {
+			raw["status"] = "disabled"
+			_ = h.Repo.SetConnectionStatus(conn.ID, false)
+		} else if isValidationReq {
+			raw["status"] = "validation_required"
+			if v, _ := raw["verificationUrl"].(string); v == "" {
+				raw["verificationUrl"] = "https://antigravity.google"
+			}
+			_ = h.Repo.SetConnectionStatus(conn.ID, false)
+		} else if isDeadAuth {
+			raw["status"] = "disabled"
+			_ = h.Repo.SetConnectionStatus(conn.ID, false)
+		}
 	}
 
 	if out.refreshed && out.tokens != nil {

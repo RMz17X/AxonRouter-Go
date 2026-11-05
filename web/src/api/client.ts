@@ -1408,7 +1408,7 @@ export const api = {
       `/api/providers/${encodeURIComponent(id)}/reset-status`,
       { method: 'POST' }
     ),
-  bulkResetStatus: (payload: { provider?: string; ids?: string[] }) =>
+  bulkResetStatus: (payload: { provider?: string; ids?: string[]; action?: string }) =>
     request<{ ok: boolean; count?: number }>(
       '/api/providers/bulk-reset-status',
       {

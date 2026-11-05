@@ -34,6 +34,14 @@ func (r *Repo) SetConnectionProjectID(connID, projectID string) error {
 // records the fatal error message in data.lastError so the dashboard reflects it
 // and routing stops picking this connection entirely.
 func (r *Repo) DisableConnectionWithReason(id string, status int, reason string) error {
+	lowerReason := strings.ToLower(reason)
+	if (strings.Contains(lowerReason, "disabled in this account") ||
+		strings.Contains(lowerReason, "terms of service") ||
+		strings.Contains(lowerReason, "tos_violation") ||
+		strings.Contains(lowerReason, "account disabled")) &&
+		!strings.Contains(reason, "https://forms.gle/hGzM9MEUv2azZsrb9") {
+		reason = strings.TrimRight(reason, ".") + ". Appeal form: https://forms.gle/hGzM9MEUv2azZsrb9"
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	lastError, err := json.Marshal(map[string]any{
 		"status":    status,

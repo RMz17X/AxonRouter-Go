@@ -115,8 +115,22 @@ func (c usageCredentials) needsRefresh() bool {
 // Upstream gates its refresh on authType === "oauth"; an api_key provider has
 // no refresh token to exchange.
 func isUsageRefreshable(conn *models.ProviderConnection, raw map[string]any) bool {
-	if conn.AuthType != "oauth" {
+	if conn == nil || conn.AuthType != "oauth" {
 		return false
+	}
+	if conn.Data != "" && conn.IsActive == 0 {
+		return false
+	}
+	if raw != nil {
+		if status, _ := raw["status"].(string); strings.EqualFold(status, "disabled") || strings.EqualFold(status, "validation_required") {
+			return false
+		}
+		if ts, _ := raw["testStatus"].(string); strings.EqualFold(ts, "disabled") {
+			return false
+		}
+		if raw["disabledAt"] != nil {
+			return false
+		}
 	}
 	s, _ := raw["refreshToken"].(string)
 	return strings.TrimSpace(s) != ""
@@ -154,7 +168,8 @@ func (h *DashboardHandler) markDeadGrant(conn *models.ProviderConnection, refres
 		log.Warn("usage", "record dead oauth grant failed", "provider", conn.Provider, "conn", conn.ID, "error", err)
 		return
 	}
-	log.Warn("usage", "oauth grant dead, re-authorize this account",
+	_ = h.Repo.SetConnectionStatus(conn.ID, false)
+	log.Warn("usage", "oauth grant dead, account disabled and re-authorize required",
 		"provider", conn.Provider, "conn", conn.ID,
 		"until", until.Format(time.RFC3339), "failures", failures)
 }

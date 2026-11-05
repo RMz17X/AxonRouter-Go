@@ -4,6 +4,7 @@ import (
 	"context"
 	json "encoding/json/v2"
 	"net/http"
+	"strings"
 	"time"
 
 	"axonrouter/proxy/internal/fetchgate"
@@ -75,6 +76,21 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 		_ = json.Unmarshal([]byte(conn.Data), &data)
 	}
 
+	// Disabled accounts must never trigger OAuth token refresh or upstream quota
+	// reads; return the stored error/reason directly.
+	if conn.IsActive == 0 {
+		msg := lastErrorText(data)
+		if msg == "" {
+			msg = "Account is disabled."
+		}
+		msg = enrichAppealMessage(msg)
+		handlerutil.WriteJSON(w, http.StatusOK, usageResult{
+			plan:    conn.Provider,
+			message: msg,
+		}.toResponse())
+		return
+	}
+
 	// Live provider quota fetchers (ports of open-sse/services/usage/*.js).
 	// Antigravity keeps its existing dedicated path below.
 	if !acquireQuotaSlot(w, r) {
@@ -133,6 +149,19 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 			defer cancel()
 
 			res := fetchAntigravityDashboardUsage(ctx, accessToken, projectID)
+			if res.message != "" {
+				lowerMsg := strings.ToLower(res.message)
+				if strings.Contains(lowerMsg, "disabled in this account") ||
+					strings.Contains(lowerMsg, "terms of service") ||
+					strings.Contains(lowerMsg, "tos_violation") ||
+					strings.Contains(lowerMsg, "account disabled") {
+					res.message = enrichAppealMessage(res.message)
+					_ = h.Repo.DisableConnectionWithReason(conn.ID, http.StatusForbidden, res.message)
+				} else if strings.Contains(lowerMsg, "validation_required") ||
+					strings.Contains(lowerMsg, "verify your account") {
+					_ = h.Repo.SetConnectionVerificationRequired(conn.ID, "https://antigravity.google", res.message)
+				}
+			}
 			handlerutil.WriteJSON(w, http.StatusOK, res.toResponse())
 			return
 		}

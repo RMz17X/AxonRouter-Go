@@ -452,10 +452,13 @@ func (r *Repo) GetFirstConnectionPerProvider(ctx context.Context) ([]*models.Pro
 }
 
 // GetLockedOrUnavailableConnections queries only rows that have lockedAllUntil,
-// modelLocks, or testStatus=unavailable in their data JSON, avoiding a 170k-row scan.
+// rateLimitedUntil, oauthLockedUntil, modelLocks, or testStatus=unavailable in
+// their data JSON, avoiding a 170k-row scan.
 func (r *Repo) GetLockedOrUnavailableConnections(ctx context.Context) ([]*models.ProviderConnection, error) {
 	query := "SELECT " + providerConnectionColumns + " FROM providerConnections " +
 		"WHERE (data->>'lockedAllUntil') IS NOT NULL " +
+		"   OR (data->>'rateLimitedUntil') IS NOT NULL " +
+		"   OR (data->>'oauthLockedUntil') IS NOT NULL " +
 		"   OR (data->>'modelLocks') IS NOT NULL " +
 		"   OR (data->>'testStatus') = 'unavailable' " +
 		connectionSortOrder
@@ -512,6 +515,9 @@ func (r *Repo) GetActiveProviders(ctx context.Context) ([]string, error) {
 func (r *Repo) GetActiveOAuthConnections(ctx context.Context) ([]*models.ProviderConnection, error) {
 	query := "SELECT " + providerConnectionColumns + " FROM providerConnections " +
 		"WHERE LOWER(authType) = 'oauth' AND isActive = 1 " +
+		"  AND COALESCE(data->>'status', '') NOT IN ('disabled', 'validation_required') " +
+		"  AND COALESCE(data->>'testStatus', '') != 'disabled' " +
+		"  AND (data->>'disabledAt') IS NULL " +
 		"  AND (data->>'refreshToken') IS NOT NULL " +
 		"  AND trim(data->>'refreshToken') != ''"
 	return r.listProviderConnections(query, nil)

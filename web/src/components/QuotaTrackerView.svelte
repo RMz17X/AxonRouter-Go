@@ -211,6 +211,21 @@
   // putting it in the reactive graph would only add renders nobody reads.
   let quotaCycleController: AbortController | null = null
 
+  function isFatalDisableMessage(msg: string | null | undefined): boolean {
+    if (!msg) return false
+    const lower = msg.toLowerCase()
+    return (
+      lower.includes('disabled in this account') ||
+      lower.includes('terms of service') ||
+      lower.includes('tos_violation') ||
+      lower.includes('account disabled') ||
+      lower.includes('validation_required') ||
+      lower.includes('verify your account') ||
+      lower.includes('invalid_grant') ||
+      lower.includes('token refresh rejected')
+    )
+  }
+
   // Runs one full pass over `targets`. Starting a pass supersedes any pass
   // still running: its reads are aborted and its late answers are dropped, so
   // a page change mid-refresh cannot leave rows blank or overwrite the new page.
@@ -221,7 +236,29 @@
   ): Promise<void> {
     quotaErrors = filterQuotaStateByConnections(quotaErrors, visible)
     quotaData = filterQuotaStateByConnections(quotaData, visible)
-    quotaLoading = buildLoadingState(targets)
+
+    // Never auto-refresh disabled accounts; populate their message from stored lastError.
+    const activeIds = new Set(visible.filter((c) => isActiveConn(c)).map((c) => c.id))
+    const activeTargets = targets.filter((t) => activeIds.has(t.id))
+    for (const conn of visible) {
+      if (!isActiveConn(conn) && !quotaData[conn.id]?.message) {
+        const errText =
+          typeof conn.lastError === 'string' && conn.lastError.trim()
+            ? conn.lastError.trim()
+            : 'Account is disabled.'
+        quotaData = {
+          ...quotaData,
+          [conn.id]: {
+            quotas: [],
+            plan: conn.provider,
+            message: errText,
+            raw: null,
+          },
+        }
+      }
+    }
+
+    quotaLoading = buildLoadingState(activeTargets)
 
     // Supersede the pass in flight before starting this one. Its reads are
     // aborted, so the browser stops waiting on answers no row will use and the
@@ -231,7 +268,7 @@
     quotaCycleController = controller
 
     await runQuotaFetchCycle<ConnectionUsageResponse>({
-      targets,
+      targets: activeTargets,
       signal: controller.signal,
       concurrency: QUOTA_FETCH_CONCURRENCY,
       force,
@@ -248,6 +285,13 @@
         quotaErrors = { ...quotaErrors, [target.id]: '' }
         quotaLoading = { ...quotaLoading, [target.id]: false }
         setQuotaCache(target.id, quotaEntry)
+        if (isFatalDisableMessage(data?.message)) {
+          connections = connections.map((c) =>
+            c.id === target.id
+              ? { ...c, isActive: 0, lastError: data?.message || c.lastError }
+              : c,
+          )
+        }
       },
       onError: (target, error) => {
         quotaLoading = { ...quotaLoading, [target.id]: false }
@@ -256,6 +300,11 @@
         // not a failure worth showing on a row that is about to disappear.
         if (message.toLowerCase().includes('not found')) return
         quotaErrors = { ...quotaErrors, [target.id]: message || 'Failed to fetch quota' }
+        if (isFatalDisableMessage(message)) {
+          connections = connections.map((c) =>
+            c.id === target.id ? { ...c, isActive: 0, lastError: message } : c,
+          )
+        }
       },
       onComplete: () => {
         if (quotaCycleController === controller) quotaCycleController = null
@@ -682,6 +731,13 @@
         quotaErrors = { ...quotaErrors, [target.id]: '' }
         quotaLoading = { ...quotaLoading, [target.id]: false }
         setQuotaCache(target.id, quotaEntry)
+        if (isFatalDisableMessage(data?.message)) {
+          connections = connections.map((c) =>
+            c.id === target.id
+              ? { ...c, isActive: 0, lastError: data?.message || c.lastError }
+              : c,
+          )
+        }
       },
       onError: (target, error) => {
         quotaLoading = { ...quotaLoading, [target.id]: false }
@@ -690,6 +746,11 @@
         // showing on a row that is about to disappear.
         if (message.toLowerCase().includes('not found')) return
         quotaErrors = { ...quotaErrors, [target.id]: message || 'Failed to fetch quota' }
+        if (isFatalDisableMessage(message)) {
+          connections = connections.map((c) =>
+            c.id === target.id ? { ...c, isActive: 0, lastError: message } : c,
+          )
+        }
       },
     })
   }
@@ -1482,6 +1543,17 @@
             {:else if error}
               <div class="py-4 text-center flex flex-col items-center gap-2">
                 <p class="text-xs text-red-500 font-medium px-2">{error}</p>
+                {#if error.toLowerCase().includes('terms of service') || error.toLowerCase().includes('disabled in this account') || error.toLowerCase().includes('account disabled') || error.toLowerCase().includes('tos_violation')}
+                  <a
+                    href="https://forms.gle/hGzM9MEUv2azZsrb9"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold shadow-sm transition-colors"
+                  >
+                    <span>Kunjungi Form Appeal (ToS)</span>
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
+                {/if}
                 {#if error.toLowerCase().includes('validation_required') || error.toLowerCase().includes('verify your account') || conn.verificationUrl}
                   <a
                     href={conn.verificationUrl || 'https://antigravity.google'}
@@ -1497,6 +1569,17 @@
             {:else if quota?.message}
               <div class="py-4 text-center flex flex-col items-center gap-2">
                 <p class="text-xs text-text-muted px-2">{quota.message}</p>
+                {#if quota.message.toLowerCase().includes('terms of service') || quota.message.toLowerCase().includes('disabled in this account') || quota.message.toLowerCase().includes('account disabled') || quota.message.toLowerCase().includes('tos_violation')}
+                  <a
+                    href="https://forms.gle/hGzM9MEUv2azZsrb9"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold shadow-sm transition-colors"
+                  >
+                    <span>Kunjungi Form Appeal (ToS)</span>
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
+                {/if}
                 {#if quota.message.toLowerCase().includes('validation_required') || quota.message.toLowerCase().includes('verify your account') || conn.verificationUrl}
                   <a
                     href={conn.verificationUrl || 'https://antigravity.google'}

@@ -374,11 +374,15 @@ func (h *ChatHandler) oauthRefreshNeeded(connectionID string) (needs bool, proje
 // must hold the connection's refresh lock.
 func (h *ChatHandler) refreshOAuthLocked(connectionID, currentToken string) (oauthTokenResult, error) {
 	db := h.Repo
-	row := db.QueryRowContext(context.Background(), "SELECT provider, data FROM providerConnections WHERE id = ?", connectionID)
+	row := db.QueryRowContext(context.Background(), "SELECT provider, isActive, data FROM providerConnections WHERE id = ?", connectionID)
 	var provider string
+	var isActive int
 	var rawData string
-	if err := row.Scan(&provider, &rawData); err != nil {
+	if err := row.Scan(&provider, &isActive, &rawData); err != nil {
 		return oauthTokenResult{token: currentToken, passthrough: true}, nil
+	}
+	if isActive == 0 {
+		return oauthTokenResult{}, fmt.Errorf("account %s is disabled", connectionID)
 	}
 	var connMap map[string]any
 	if err := json.Unmarshal([]byte(rawData), &connMap); err != nil {
@@ -469,11 +473,15 @@ func (h *ChatHandler) forceRefreshOAuthToken(connectionID string) (string, strin
 // holds the connection's refresh lock.
 func (h *ChatHandler) forceRefreshLocked(connectionID string) (oauthTokenResult, error) {
 	db := h.Repo
-	row := db.QueryRowContext(context.Background(), "SELECT provider, data FROM providerConnections WHERE id = ?", connectionID)
+	row := db.QueryRowContext(context.Background(), "SELECT provider, isActive, data FROM providerConnections WHERE id = ?", connectionID)
 	var provider string
+	var isActive int
 	var rawData string
-	if err := row.Scan(&provider, &rawData); err != nil {
+	if err := row.Scan(&provider, &isActive, &rawData); err != nil {
 		return oauthTokenResult{}, err
+	}
+	if isActive == 0 {
+		return oauthTokenResult{}, fmt.Errorf("account %s is disabled", connectionID)
 	}
 
 	var connMap map[string]any

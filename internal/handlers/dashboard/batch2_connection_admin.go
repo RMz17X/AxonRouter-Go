@@ -25,11 +25,14 @@ import (
 // decoded data map (AxonRouter's reset-status updates object).
 func resetConnectionData(data map[string]any) {
 	data["testStatus"] = "active"
+	data["status"] = "active"
 	data["lastError"] = nil
 	data["lastErrorAt"] = nil
 	data["errorCode"] = nil
 	data["backoffLevel"] = 0
 	data["rateLimitedUntil"] = nil
+	data["oauthLockedUntil"] = nil
+	data["oauthFailureCount"] = 0
 	data["lockedAllUntil"] = nil
 	data["lockedToModel"] = nil
 	data["lockedToModelUntil"] = nil
@@ -38,6 +41,7 @@ func resetConnectionData(data map[string]any) {
 	data["previousStatus"] = nil
 	data["disabledAt"] = nil
 	data["disabledBy"] = nil
+	delete(data, "verificationUrl")
 	for k := range data {
 		if strings.HasPrefix(k, modelLockKeyPrefix) {
 			data[k] = nil
@@ -154,10 +158,14 @@ func (h *DashboardHandler) bulkTargetConnections(provider string, ids []string) 
 // from the data blob instead of nulling them.
 func bulkResetConnectionData(data map[string]any) {
 	data["testStatus"] = "active"
+	data["status"] = "active"
 	data["lastError"] = nil
 	data["lastErrorAt"] = nil
 	data["errorCode"] = nil
+	data["backoffLevel"] = 0
 	data["rateLimitedUntil"] = nil
+	data["oauthLockedUntil"] = nil
+	data["oauthFailureCount"] = 0
 	data["lockedAllUntil"] = nil
 	data["lockedToModel"] = nil
 	data["lockedToModelUntil"] = nil
@@ -170,6 +178,7 @@ func bulkResetConnectionData(data map[string]any) {
 	delete(data, "disabledReason")
 	delete(data, "disabledAt")
 	delete(data, "disabledBy")
+	delete(data, "verificationUrl")
 	if psd := dataMap(data, "providerSpecificData"); psd != nil {
 		for _, k := range []string{"refreshBlocked", "refreshBlockedAt", "validationUrl", "validationMessage", "validationAt"} {
 			delete(psd, k)
@@ -215,14 +224,22 @@ func (h *DashboardHandler) HandleBulkResetStatus(w http.ResponseWriter, r *http.
 		handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "provider or ids is required"})
 		return
 	}
-	conns, err := h.bulkTargetConnections(body.Provider, body.IDs)
+	provider := body.Provider
+	if provider != "" {
+		provider = providers.ResolveAlias(provider)
+	}
+	conns, err := h.bulkTargetConnections(provider, body.IDs)
 	if err != nil {
 		handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to reset connection status"})
 		return
 	}
+	onlyCooldown := strings.EqualFold(body.Action, "cooldown")
 	count := 0
 	for _, conn := range conns {
 		if conn == nil {
+			continue
+		}
+		if onlyCooldown && len(body.IDs) == 0 && conn.IsActive == 0 {
 			continue
 		}
 		data := connDataMap(conn)
@@ -231,9 +248,11 @@ func (h *DashboardHandler) HandleBulkResetStatus(w http.ResponseWriter, r *http.
 			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to reset connection status"})
 			return
 		}
-		if err := h.Repo.SetConnectionStatus(conn.ID, true); err != nil {
-			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to reset connection status"})
-			return
+		if !onlyCooldown || len(body.IDs) > 0 || conn.IsActive != 0 {
+			if err := h.Repo.SetConnectionStatus(conn.ID, true); err != nil {
+				handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to reset connection status"})
+				return
+			}
 		}
 		count++
 	}
