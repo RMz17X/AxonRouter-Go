@@ -54,6 +54,12 @@ func IsAlwaysProtectedPath(path string) bool {
 		"/admin/health/reset",
 		"/api/oauth/cursor/auto-import",
 		"/api/oauth/kiro/auto-import",
+		// Zed completes Axon's three auto-imports (dashboardGuard.js
+		// names all three): its payload is a live IDE access token from
+		// the OS keyring. It was missing here while its siblings were
+		// listed, so any engine API key could read it (council round 2,
+		// F-B1).
+		"/api/oauth/zed/auto-import",
 		// The Chrome-import routes read the operator's own browser
 		// profile and hand back live session material (Google cookies,
 		// a DeepSeek user token) — the same host-secret class as the

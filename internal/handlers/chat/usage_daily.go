@@ -130,9 +130,8 @@ func flushDailyUsage() {
 }
 
 // applyDailyDeltas performs one read-modify-write per date present in
-// deltas, under the same global mutex the one-shot upserts take, so a
-// batch fold and a direct upsertDailyUsage call can never interleave
-// into a lost update. It returns the deltas that did NOT land — a date
+// deltas, under the global daily-fold mutex, so two batch folds can
+// never interleave into a lost update. It returns the deltas that did NOT land — a date
 // whose base read failed (any error other than sql.ErrNoRows, which is
 // the legitimate empty base), whose blob would not marshal, or whose
 // upsert failed — so the caller can retain them for the next flush.

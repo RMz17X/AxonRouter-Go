@@ -141,13 +141,7 @@ func classifySessionToken(token string) (map[string]any, string) {
 // password. Upstream guards this route as local-only (dashboardGuard
 // LOCAL_ONLY_PATHS); the gate below mirrors canAccessLocalOnlyRoute.
 func HandleAuthResetPassword(repo *db.Repo) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !canAccessLocalOnlyRoute(repo, r) {
-			handlerutil.WriteJSON(w, http.StatusForbidden, map[string]any{
-				"error": "Local only: CLI token required",
-			})
-			return
-		}
+	return RequireLocalOnlyRoute(repo, func(w http.ResponseWriter, r *http.Request) {
 		if err := repo.UpdateSettingsRaw(map[string]any{"password": nil}); err != nil {
 			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{
 				"error": err.Error(),
@@ -155,6 +149,27 @@ func HandleAuthResetPassword(repo *db.Repo) http.HandlerFunc {
 			return
 		}
 		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"success": true})
+	})
+}
+
+// RequireLocalOnlyRoute wraps a handler with dashboardGuard's
+// LOCAL_ONLY gate: the caller must hold the CLI token, or arrive
+// directly from a private/loopback peer while authenticated
+// (canAccessLocalOnlyRoute). Axon applies the check to five paths
+// before routing; in Go it composes at registration, behind the
+// dashboard gate — the same in-handler composition the
+// reset-password port established. Denial is Axon's flat 403 body.
+// The paths are the three OAuth auto-imports and cowork-settings
+// (council round 2, F-B2); reset-password above shares the wrapper.
+func RequireLocalOnlyRoute(repo *db.Repo, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !canAccessLocalOnlyRoute(repo, r) {
+			handlerutil.WriteJSON(w, http.StatusForbidden, map[string]any{
+				"error": "Local only: CLI token required",
+			})
+			return
+		}
+		next(w, r)
 	}
 }
 

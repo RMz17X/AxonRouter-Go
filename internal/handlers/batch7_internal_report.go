@@ -296,7 +296,10 @@ func applyLiveQuotaUpdate(repo *db.Repo, flat map[string]any, signal *codexLiveQ
 // The Go usage writer stamps arrival time and takes a precomputed cost;
 // upstream's pipeline prices downstream, so cost is recorded as 0 and
 // the reported observation time lives on the request detail instead
-// (see .changes/918).
+// (see .changes/918). The meta argument is an empty JSON object, not
+// an empty string: usageHistory.meta is JSONB, and PostgreSQL rejects
+// "" as invalid JSON (SQLSTATE 22P02) — an empty string here failed
+// every usage-carrying report (council round 2, R2-N1).
 func saveReportUsage(repo *db.Repo, report map[string]any, provider, model, connectionID, status string, tokens *reportTokens) error {
 	tokensMap := map[string]any{
 		"prompt_tokens":     tokens.prompt,
@@ -312,7 +315,7 @@ func saveReportUsage(repo *db.Repo, report map[string]any, provider, model, conn
 	return repo.InsertUsageHistory(
 		provider, model, connectionID, "", endpoint,
 		tokens.prompt, tokens.completion, 0, status,
-		tokens.prompt+tokens.completion, "", string(mustJSON(tokensMap)),
+		tokens.prompt+tokens.completion, "{}", string(mustJSON(tokensMap)),
 	)
 }
 

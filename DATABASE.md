@@ -211,11 +211,13 @@ logged and visible as `speedLayer` in `GET /api/system/memory`). It
 worse than a slower database. An unparseable Redis URL logs loudly and
 serves from the database; it never silently selects memory.
 
-The same payload carries `usageWritesDropped`: the count of usage-ledger
-rows (`usageHistory` / `requestDetails`) lost since this process booted.
-The writer counts every loss path — queue-full drops on the droppable
-lane and rows its per-row fallback could not land — so the number means
-all ledger loss, not just overload loss. Zero is the only healthy value;
+The same payload carries `usageWritesDropped`: the count of usage
+writes lost since this process booted — ledger rows (`usageHistory` /
+`requestDetails`) that could not land, plus generic-lane jobs
+(compression-analytics records) shed at a full queue — so the number
+can over-report ledger loss but never under-reports it. The writer
+counts every loss path — queue-full drops on the droppable lane and
+rows its per-row fallback could not land. Zero is the only healthy value;
 nonzero means investigate, starting with the gateway log's `[usage]`
 lines. The counter covers losses while the process runs; a shutdown
 that cannot drain within its grace window logs the fact and the tail

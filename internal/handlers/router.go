@@ -74,7 +74,13 @@ func SetupRoutes(r interface {
 	r.Get("/v1/models/*", chatH.HandleModelLookup)
 	r.Get("/api/v1/models", chatH.HandleModels)
 	r.Get("/api/v1/models/*", chatH.HandleModelLookup)
-	r.Get("/api/models", chatH.HandleModels)
+	// The bare /api/models is NOT registered here: it is a dashboard
+	// route in Axon (the {models} catalogue shape batch 9 aligned),
+	// and this group is the engine gate — a session caller was
+	// refused while an engine key was admitted, the inverse of
+	// Axon's caller class. It lives in SetupDashboardRoutes behind
+	// the operator-class wrapper (council round 2, F-B3). The
+	// wildcard below stays: it serves the engine-side model lookup.
 	r.Get("/api/models/*", chatH.HandleModelLookup)
 	// Catalog sync is an operator action, not an engine one (council
 	// round 1, N-5): Axon's guard admits only a session, the CLI token,
@@ -86,7 +92,6 @@ func SetupRoutes(r interface {
 	// state, and Axon gates the pair identically.
 	r.Get("/api/models/catalog-sync", RequireOperatorCaller(repo, chatH.HandleCatalogSyncStatus))
 	r.Post("/api/models/catalog-sync", RequireOperatorCaller(repo, chatH.HandleCatalogSyncTrigger))
-	r.Get("/api/models", chatH.HandleModels)
 	// HEAD rides the same handlers as the model-catalogue GETs (and the
 	// voices list below): Axon's Next.js serves HEAD from the GET
 	// handler, and SDK health checks, load balancers and client
@@ -102,7 +107,6 @@ func SetupRoutes(r interface {
 	r.Head("/v1/models/*", chatH.HandleModelLookup)
 	r.Head("/api/v1/models", chatH.HandleModels)
 	r.Head("/api/v1/models/*", chatH.HandleModelLookup)
-	r.Head("/api/models", chatH.HandleModels)
 	r.Head("/api/models/*", chatH.HandleModelLookup)
 	// Backend parity batch 6 — protocol surface (see
 	// .changes/917-backend-parity-batch6-protocol-surface.md). Axon's
@@ -195,7 +199,7 @@ func SetupRoutes(r interface {
 	r.HandleFunc("/api/headroom/proxy", headroomH.HandleHeadroomProxy)
 	r.HandleFunc("/api/headroom/proxy/*", headroomH.HandleHeadroomProxy)
 	// OAuth & Import Tokens Domain
-	mountOAuthRoutes(r, oauthH)
+	mountOAuthRoutes(r, repo, oauthH)
 
 	// Usage Real-time SSE Stream & Stats Domain (dashboard topology animation + recent requests)
 	r.Get("/usage/stream", HandleUsageStream(repo))
@@ -524,7 +528,23 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Put("/api/guardrails/policies/{id}", dashH.HandleUpdateGuardrailPolicy)
 	r.Delete("/api/guardrails/policies/{id}", dashH.HandleDeleteGuardrailPolicy)
 	r.Get("/api/guardrails/logs", dashH.HandleListGuardrailLogs)
-	r.Post("/api/vault/rotate", dashH.HandleRotateVault)
+	// Rotation takes the new master key from the request body and
+	// re-wraps every connection DEK under it: in the wrong caller's
+	// hands it irreversibly destroys the sealed credential store,
+	// so it is operator-class like the other host-secret operations
+	// (council round 2, R2-S2).
+	r.Post("/api/vault/rotate", RequireOperatorCaller(repo, dashH.HandleRotateVault))
+	// The bare /api/models list is Axon's dashboard catalogue route:
+	// it serves the {models} shape (HandleModels branches on the
+	// path) behind the dashboard guard, where an engine API key is
+	// not a credential. It was registered only in the engine group,
+	// which inverted the caller class (council round 2, F-B3), so it
+	// is registered here — and, like catalog-sync in round 1, takes
+	// RequireOperatorCaller so the dashboard gate's key admission
+	// does not widen it: session, CLI token, or a login-off install
+	// only. HEAD rides the GET handler, as in the engine group.
+	r.Get("/api/models", RequireOperatorCaller(repo, chatH.HandleModels))
+	r.Head("/api/models", RequireOperatorCaller(repo, chatH.HandleModels))
 	r.Get("/api/models/custom", dashH.HandleGetCustomModels)
 	r.Get("/api/models/caps", dashH.HandleGetModelCaps)
 	r.Post("/api/models/custom", dashH.HandleSaveCustomModel)
@@ -552,10 +572,17 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Delete("/api/models/alias", dashH.HandleDeleteModelAlias)
 
 	r.Get("/api/settings", dashH.HandleGetSettings)
-	r.Put("/api/settings", dashH.HandleUpdateSettings)
-	r.Patch("/api/settings", dashH.HandleUpdateSettings)
-	r.Put("/settings", dashH.HandleUpdateSettings)
-	r.Patch("/settings", dashH.HandleUpdateSettings)
+	// The settings write is operator-class (council round 2, R2-S1):
+	// the generic update merges caller JSON into the settings row,
+	// which carries the security configuration itself (requireLogin,
+	// ipWhitelist, trustedProxyEnabled) — an engine API key admitted
+	// by the dashboard gate could rewrite those and collapse every
+	// gate that composes on them. The read stays on the plain gate;
+	// round 1's S-3 strips the secrets from what it serves.
+	r.Put("/api/settings", RequireOperatorCaller(repo, dashH.HandleUpdateSettings))
+	r.Patch("/api/settings", RequireOperatorCaller(repo, dashH.HandleUpdateSettings))
+	r.Put("/settings", RequireOperatorCaller(repo, dashH.HandleUpdateSettings))
+	r.Patch("/settings", RequireOperatorCaller(repo, dashH.HandleUpdateSettings))
 
 	// Settings backup/restore + outbound proxy diagnostics (profile page)
 	r.Get("/api/settings/database", dashH.HandleExportDatabase)
@@ -604,7 +631,7 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 
 	// Mount OAuth routes under dashboard auth so web dashboard can initiate and exchange tokens
 	oauthH := oauth.NewOAuthHandler(repo)
-	mountOAuthRoutes(r, oauthH)
+	mountOAuthRoutes(r, repo, oauthH)
 }
 
 // SetupConsoleLogRoutes mounts operational log APIs behind a full dashboard
@@ -629,13 +656,17 @@ func SetupConsoleLogRoutes(r chi.Router, repo *db.Repo) {
 func mountOAuthRoutes(r interface {
 	Get(pattern string, handlerFn http.HandlerFunc)
 	Post(pattern string, handlerFn http.HandlerFunc)
-}, oauthH *oauth.OAuthHandler) {
+}, repo *db.Repo, oauthH *oauth.OAuthHandler) {
 	r.Post("/api/oauth/{provider}/import", oauthH.HandleOAuthImport)
 	r.Get("/api/oauth/kiro/social-authorize", oauthH.HandleOAuthKiroSocialAuthorize)
 	r.Post("/api/oauth/kiro/social-exchange", oauthH.HandleOAuthKiroSocialExchange)
 	r.Post("/api/oauth/kiro/import", oauthH.HandleKiroImport)
 	r.Post("/api/oauth/kiro/import-cli-proxy", oauthH.HandleKiroImportCliProxy)
-	r.Get("/api/oauth/kiro/auto-import", oauthH.HandleKiroAutoImport)
+	// The auto-imports read host credential stores, so Axon classes
+	// them LOCAL_ONLY on top of ALWAYS_PROTECTED (dashboardGuard.js);
+	// the locality wrapper is RequireLocalOnlyRoute (council round 2,
+	// F-B2).
+	r.Get("/api/oauth/kiro/auto-import", RequireLocalOnlyRoute(repo, oauthH.HandleKiroAutoImport))
 	r.Post("/api/oauth/kiro/api-key", oauthH.HandleKiroAPIKey)
 	r.Post("/api/oauth/codex/bulk-import", oauthH.HandleOAuthCodexBulkImport)
 	r.Post("/api/oauth/grok-cli/bulk-import", oauthH.HandleOAuthGrokCliBulkImport)
@@ -666,7 +697,7 @@ func mountOAuthRoutes(r interface {
 	r.Post("/api/oauth/device/start", oauthH.HandleDeviceStart)
 	r.Post("/api/oauth/device/poll", oauthH.HandleDevicePoll)
 	r.Post("/api/oauth/cursor/import", oauthH.HandleCursorImport)
-	r.Get("/api/oauth/cursor/auto-import", oauthH.HandleCursorAutoImport)
+	r.Get("/api/oauth/cursor/auto-import", RequireLocalOnlyRoute(repo, oauthH.HandleCursorAutoImport))
 	r.Get("/api/oauth/kimchi/authorize", oauthH.HandleKimchiAuthorize)
 	r.Post("/api/oauth/kimchi/exchange", oauthH.HandleKimchiExchange)
 	r.Post("/api/oauth/gitlab/pat", oauthH.HandleGitlabPAT)
@@ -685,7 +716,7 @@ func mountOAuthRoutes(r interface {
 	r.Post("/api/oauth/xiaomi-mimo/api-key", oauthH.HandleMimoAPIKey)
 	r.Get("/api/oauth/xiaomi-mimo/auto-import", oauthH.HandleMimoAutoImport)
 	r.Post("/api/oauth/zed/import", oauthH.HandleZedImport)
-	r.Get("/api/oauth/zed/auto-import", oauthH.HandleZedAutoImport)
+	r.Get("/api/oauth/zed/auto-import", RequireLocalOnlyRoute(repo, oauthH.HandleZedAutoImport))
 	r.Get("/api/oauth/{provider}/{action}", oauthH.HandleOAuthDynamicGet)
 	r.Post("/api/oauth/{provider}/{action}", oauthH.HandleOAuthDynamicPost)
 }
@@ -945,7 +976,11 @@ func SetupServerRouter(r chi.Router, repo *db.Repo, ts *TokenSaverConfig) *chat.
 		r.Get("/api/cli-tools/codex-settings", settingsH.GetCodex)
 		r.Get("/api/cli-tools/cline-settings", settingsH.GetCline)
 		r.Get("/api/cli-tools/copilot-settings", settingsH.GetCopilot)
-		r.Get("/api/cli-tools/cowork-settings", settingsH.GetCowork)
+		// Cowork settings report host install state, so Axon classes
+		// the route LOCAL_ONLY (dashboardGuard.js) like the OAuth
+		// auto-imports — the locality wrapper is RequireLocalOnlyRoute
+		// (council round 2, F-B2).
+		r.Get("/api/cli-tools/cowork-settings", RequireLocalOnlyRoute(repo, settingsH.GetCowork))
 		r.Get("/api/cli-tools/deepseek-tui-settings", settingsH.GetDeepseekTui)
 		r.Get("/api/cli-tools/droid-settings", settingsH.GetDroid)
 		r.Get("/api/cli-tools/grok-build-settings", settingsH.GetGrokBuild)

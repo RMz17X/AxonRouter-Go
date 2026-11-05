@@ -45,7 +45,18 @@ const (
 // row can still carry the value, and the entry is a guard, not feature
 // surface — it costs one comparison on the settings-write path and keeps
 // the generic update from ever touching the stored value.
-var protectedSettingKeys = []string{"password", "mitmSudoEncrypted"}
+//
+// The internal-proxy token pair joined the list in council round 2
+// (R2-S1), mirroring their place on the read-strip list
+// (secretSettingKeys, round 1 S-3): the generic update must never move
+// them regardless of caller. Nothing legitimate writes them through
+// this handler — the worker-proxy handlers mint and persist the pair
+// directly against the repo (FillSettingsRawIfAbsent), and there is no
+// rotation endpoint — so the strip closes the plant-a-token path
+// without breaking the token lifecycle. The route itself is also
+// operator-gated (see the registrations); this list is the
+// defense-in-depth half.
+var protectedSettingKeys = []string{"password", "mitmSudoEncrypted", "internalProxyResolveToken", "internalProxyReportToken"}
 
 // writePlainError answers with Next's flat { error: "message" } shape instead of
 // the OpenAI-style envelope, because the dashboard UI reads data.error as text.

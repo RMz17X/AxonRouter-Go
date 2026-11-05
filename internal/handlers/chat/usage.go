@@ -3,7 +3,6 @@ package chat
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	json "encoding/json/v2"
 	"errors"
@@ -595,38 +594,12 @@ func extractContent(content any) string {
 	}
 }
 
-// upsertDailyUsage reads the existing daily aggregate, merges new tokens, and upserts.
-// A base read that fails for any reason other than a missing row
-// aborts the fold (council round 1, C-1): the upsert is a full-row
-// replace, so folding onto a phantom empty base would destroy the
-// day's committed totals.
-func (h *ChatHandler) upsertDailyUsage(provider, model, endpoint, connectionID, apiKey string, promptTokens, completionTokens, cachedTokens int, cost float64) {
-	dailyUsageMu.Lock()
-	defer dailyUsageMu.Unlock()
-
-	dateKey := time.Now().UTC().Format("2006-01-02")
-	existing, err := h.Repo.GetUsageDaily(dateKey)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.Error("usage", "read daily usage failed; fold aborted", "date", dateKey, "error", err)
-		return
-	}
-
-	data := parseDailyData(existing)
-	mergeDailyUsage(data, provider, model, endpoint, connectionID, apiKey, promptTokens, completionTokens, cachedTokens, cost)
-
-	dataJSON, err := json.Marshal(data)
-	if err != nil {
-		log.Error("usage", "marshal daily usage failed", "error", err)
-		return
-	}
-	if err := h.Repo.UpsertUsageDaily(dateKey, string(dataJSON)); err != nil {
-		log.Error("usage", "upsert daily usage failed", "error", err)
-	}
-}
-
 // mergeDailyUsage folds one successful request's contribution into the
-// parsed day blob. It is the shared fold for the one-shot upsert above
-// and the batched accumulator in usage_daily.go.
+// parsed day blob. It is the fold the batched accumulator in
+// usage_daily.go applies per delta. (The one-shot ChatHandler wrappers
+// that also called it were deleted in council round 2, R2-C-N1: no
+// production caller remained — all traffic folds through the
+// accumulator.)
 func mergeDailyUsage(data map[string]any, provider, model, endpoint, connectionID, apiKey string, promptTokens, completionTokens, cachedTokens int, cost float64) {
 	data["requests"] = getJSONInt(data, "requests") + 1
 	data["promptTokens"] = getJSONInt(data, "promptTokens") + promptTokens
@@ -877,37 +850,10 @@ func resolveCompressionMode(ts *shared.TokenSaverConfig, savedTokens int) string
 	return "rtk"
 }
 
-func (h *ChatHandler) upsertDailyUsageError(provider, model, endpoint, connectionID, apiKey, status string) {
-	if status == "canceled" {
-		return
-	}
-	dailyUsageMu.Lock()
-	defer dailyUsageMu.Unlock()
-	dateKey := time.Now().UTC().Format("2006-01-02")
-	existing, err := h.Repo.GetUsageDaily(dateKey)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		// Same failure-atomic rule as the success fold (council round
-		// 1, C-1): never upsert a blob whose base read failed.
-		log.Error("usage", "read daily usage failed; error fold aborted", "date", dateKey, "error", err)
-		return
-	}
-	data := parseDailyData(existing)
-	mergeDailyUsageError(data, provider, model)
-
-	updatedJSON, err := json.Marshal(data)
-	if err != nil {
-		log.Error("usage", "marshal daily usage failed", "date", dateKey, "error", err)
-		return
-	}
-	if err := h.Repo.UpsertUsageDaily(dateKey, string(updatedJSON)); err != nil {
-		log.Error("usage", "upsert daily usage failed", "date", dateKey, "error", err)
-	}
-}
-
 // mergeDailyUsageError folds one failed request's contribution into the
 // parsed day blob: the request/error counters and the provider/model
-// breakdowns, with no token movement. Shared by the one-shot upsert
-// above and the batched accumulator in usage_daily.go.
+// breakdowns, with no token movement. It is the error fold the batched
+// accumulator in usage_daily.go applies per delta.
 func mergeDailyUsageError(data map[string]any, provider, model string) {
 	data["requests"] = getJSONInt(data, "requests") + 1
 	data["totalRequests"] = getJSONInt(data, "totalRequests") + 1

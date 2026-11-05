@@ -245,11 +245,19 @@ func loadJWTSecret(v *viper.Viper) string {
 		return secret
 	}
 
-	jwtEphemeralWarnOnce.Do(func() {
-		log.Warn("config", "JWT_SECRET is not set; generated an ephemeral per-boot secret — sessions will NOT survive a restart and will NOT span nodes; set JWT_SECRET so every node shares one secret")
-	})
-
-	return ephemeralJWTSecret()
+	// Generate first, warn second: the warning asserts a secret was
+	// generated, so it may only fire once one actually exists. On a
+	// crypto/rand failure ephemeralJWTSecret returns "" (callers fail
+	// closed) and its own Error line is the whole report — a
+	// once-per-process warning claiming the opposite would never be
+	// corrected (council round 2, R2-C-N2).
+	secret = ephemeralJWTSecret()
+	if secret != "" {
+		jwtEphemeralWarnOnce.Do(func() {
+			log.Warn("config", "JWT_SECRET is not set; generated an ephemeral per-boot secret — sessions will NOT survive a restart and will NOT span nodes; set JWT_SECRET so every node shares one secret")
+		})
+	}
+	return secret
 }
 
 // ephemeralJWTSecret returns the process-wide ephemeral JWT secret,
