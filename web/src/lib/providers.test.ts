@@ -122,8 +122,10 @@ describe('providers & media separation', () => {
 
   it('carries upstream display links (website/notice) for all registry providers', () => {
     // No upstream registry counterpart (Go-only entries), or no display link
-    // upstream by design (opencode).
-    const exempt = new Set(['freebuff', 'kimi-coding', 'opencode'])
+    // upstream by design (opencode). mmf is the owner's name-only shell left
+    // after mimo-free's removal — display data is absent by decision, not
+    // by omission.
+    const exempt = new Set(['freebuff', 'kimi-coding', 'opencode', 'mmf'])
     for (const p of PROVIDER_CATALOG) {
       if (exempt.has(p.id)) continue
       assert.ok(
