@@ -4,6 +4,7 @@
   import { TAB_ROUTES, type ActiveTab } from '../lib/router'
   import { isNavLinkActive, NAV_GROUPS, orderedNavGroups } from '../lib/nav'
   import { navBadgeFor } from '../lib/navBadges'
+  import { fmtNumberUS } from '../lib/axonFormat'
   import {
     isFavoritesEnabled,
     isIconRailEnabled,
@@ -463,8 +464,8 @@
       >
         <div class="min-w-0">
           <p class="text-[11px] text-text-muted uppercase tracking-wide">Providers</p>
-          <p class="text-xs font-semibold text-text-main mt-0.5 truncate">
-            {activeConnections} <span class="text-text-muted font-normal">/ {totalConnections} active</span>
+          <p class="text-xs font-semibold text-text-main mt-0.5 truncate" title="{activeConnections.toLocaleString()} / {totalConnections.toLocaleString()} active">
+            {fmtNumberUS(activeConnections)} <span class="text-text-muted font-normal">/ {fmtNumberUS(totalConnections)} active</span>
           </p>
         </div>
         <span class="material-symbols-outlined text-primary text-[18px]">radio_button_checked</span>

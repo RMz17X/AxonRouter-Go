@@ -27,12 +27,30 @@ export function formatTokensID(value: number | null | undefined): string {
   return sign + String(abs)
 }
 
-const enUS = new Intl.NumberFormat('en-US')
-
-/** Full en-US grouping, no abbreviation (Axon's fmtNumber for table counts). */
+/** Compact unit formatting for tables & counts: values >= 1000 auto-abbreviate to K/M/B (e.g. 168303 -> 168K). */
 export function fmtNumberUS(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '0'
-  return enUS.format(Math.trunc(value))
+  const v = Math.trunc(value)
+  const abs = Math.abs(v)
+  const sign = v < 0 ? '-' : ''
+  if (abs < 1000) return sign + String(abs)
+
+  const units: [number, string][] = [
+    [1e9, 'B'],
+    [1e6, 'M'],
+    [1e3, 'K'],
+  ]
+
+  for (const [div, suffix] of units) {
+    if (abs >= div) {
+      const n = abs / div
+      // For >= 10 units (e.g. 168,303 -> 168K, 12,400 -> 12K), round to integer.
+      // For < 10 units (e.g. 1,500 -> 1.5K, 2,400,000 -> 2.4M), show 1 decimal if non-zero.
+      const formatted = n >= 10 ? Math.round(n).toString() : (Math.round(n * 10) / 10).toString()
+      return sign + formatted + suffix
+    }
+  }
+  return sign + String(abs)
 }
 
 /** "$" + toFixed(2), Axon's table/KPI cost shape. */
