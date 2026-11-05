@@ -47,8 +47,13 @@ func (h *ChatHandler) connIdentityKVByID(connectionID string) []any {
 	if h.Repo == nil || connectionID == "" {
 		return nil
 	}
-	conn, err := h.Repo.GetProviderConnectionByID(connectionID)
-	if err != nil || conn == nil {
+	var conn *models.ProviderConnection
+	if cached, ok := h.Repo.GetCachedConnectionByID("", connectionID); ok {
+		conn = cached
+	} else if c, err := h.Repo.GetProviderConnectionByID(connectionID); err == nil {
+		conn = c
+	}
+	if conn == nil {
 		return nil
 	}
 	return connIdentityKV(conn)

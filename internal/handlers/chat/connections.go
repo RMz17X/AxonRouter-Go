@@ -276,7 +276,11 @@ func (h *ChatHandler) getBestConnectionWithContext(ctx context.Context, provider
 	isProbe := handlerutil.IsProbeContext(ctx)
 
 	if connectionID != "" {
-		conn, err = h.Repo.GetProviderConnectionByID(connectionID)
+		if cached, ok := h.Repo.GetCachedConnectionByID(provider, connectionID); ok {
+			conn = cached
+		} else {
+			conn, err = h.Repo.GetProviderConnectionByID(connectionID)
+		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to fetch connection %s: %w", connectionID, err)
 		}

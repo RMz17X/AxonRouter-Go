@@ -248,6 +248,47 @@ type providerConnsEntry struct {
 // never trails the stamps this process minted.
 const providerConnsTTL = 15 * time.Second
 
+// CachedProviderConnections returns the in-memory cached connections for a provider if fresh.
+func (r *Repo) CachedProviderConnections(provider string, activeOnly bool) ([]*models.ProviderConnection, bool) {
+	return r.cachedProviderConnections(providerConnsKey{provider: provider, activeOnly: activeOnly})
+}
+
+// GetCachedConnectionByID returns a connection from the in-memory cache if present and fresh,
+// avoiding hitting PostgreSQL for point lookups during rotation and fallback loops.
+func (r *Repo) GetCachedConnectionByID(provider, id string) (*models.ProviderConnection, bool) {
+	if provider != "" {
+		if conns, ok := r.CachedProviderConnections(provider, true); ok {
+			for _, c := range conns {
+				if c != nil && c.ID == id {
+					return c, true
+				}
+			}
+		}
+		if conns, ok := r.CachedProviderConnections(provider, false); ok {
+			for _, c := range conns {
+				if c != nil && c.ID == id {
+					return c, true
+				}
+			}
+		}
+		return nil, false
+	}
+
+	r.providerConnsMu.RLock()
+	defer r.providerConnsMu.RUnlock()
+	for _, entry := range r.providerConns {
+		if time.Now().After(entry.expires) {
+			continue
+		}
+		for _, c := range entry.rows {
+			if c != nil && c.ID == id {
+				return c, true
+			}
+		}
+	}
+	return nil, false
+}
+
 // cachedProviderConnections returns a clone of the snapshot for key
 // when it is still fresh.
 func (r *Repo) cachedProviderConnections(key providerConnsKey) ([]*models.ProviderConnection, bool) {

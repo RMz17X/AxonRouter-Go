@@ -310,6 +310,30 @@ func (r *Repo) ClearConnectionModelLocks(ctx context.Context, connID string) err
 // IsConnectionModelLocked checks whether the given connection has an active
 // modelLock_<model> field in its data JSON blob. Returns true when the
 // timestamp is in the future.
+func isConnectionModelLockedFromData(rawData, model string) bool {
+	if rawData == "" {
+		return false
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(rawData), &raw); err != nil {
+		return false
+	}
+	key := modelLockPrefix + model
+	val, ok := raw[key]
+	if !ok {
+		return false
+	}
+	str, ok := val.(string)
+	if !ok || str == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339, str)
+	if err != nil {
+		return false
+	}
+	return time.Now().UTC().Before(t)
+}
+
 func (r *Repo) IsConnectionModelLocked(connID, model string) (bool, error) {
 	// Speed-layer shortcut (P3, see speed.go): a live overlay entry is a
 	// lock a writer already persisted to the row below, so answering
@@ -317,6 +341,10 @@ func (r *Repo) IsConnectionModelLocked(connID, model string) (bool, error) {
 	// through to the row, which stays authoritative.
 	if r.overlayModelLocked(connID, model) {
 		return true, nil
+	}
+	// Check cached in-memory connection snapshot first
+	if cached, ok := r.GetCachedConnectionByID("", connID); ok && cached != nil {
+		return isConnectionModelLockedFromData(cached.Data, model), nil
 	}
 	var rawData string
 	err := r.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&rawData)
@@ -327,25 +355,7 @@ func (r *Repo) IsConnectionModelLocked(connID, model string) (bool, error) {
 		return false, fmt.Errorf("get connection data %s: %w", connID, err)
 	}
 
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(rawData), &raw); err != nil {
-		return false, nil // malformed data — treat as unlocked
-	}
-
-	key := modelLockPrefix + model
-	val, ok := raw[key]
-	if !ok {
-		return false, nil
-	}
-	str, ok := val.(string)
-	if !ok || str == "" {
-		return false, nil
-	}
-	t, err := time.Parse(time.RFC3339, str)
-	if err != nil {
-		return false, nil
-	}
-	return time.Now().UTC().Before(t), nil
+	return isConnectionModelLockedFromData(rawData, model), nil
 }
 
 // UnlockConnectionModel removes a per-connection model lock by setting
@@ -440,8 +450,13 @@ func (r *Repo) IsProviderAvailable(provider, model string) bool {
 		return true
 	}
 	for _, c := range conns {
-		locked, err := r.IsConnectionModelLocked(c.ID, model)
-		if err == nil && !locked {
+		if c == nil {
+			continue
+		}
+		if r.overlayModelLocked(c.ID, model) {
+			continue
+		}
+		if !isConnectionModelLockedFromData(c.Data, model) {
 			return true
 		}
 	}
