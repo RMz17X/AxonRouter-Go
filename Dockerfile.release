@@ -2,6 +2,10 @@
 # Used by GitHub Actions release workflow for fast, unified image packaging.
 FROM alpine:3.21
 
+LABEL org.opencontainers.image.source="https://github.com/RMz17X/AxonRouter-Go"
+LABEL org.opencontainers.image.description="AxonRouter-Go container image"
+LABEL org.opencontainers.image.licenses="MIT"
+
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 
