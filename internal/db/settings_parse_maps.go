@@ -1,6 +1,8 @@
 package db
 
 import (
+	"strings"
+
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/providers"
 	"axonrouter/proxy/internal/thinking"
@@ -96,8 +98,16 @@ func applyProviderStrategies(s *SettingsData, raw map[string]any) {
 		} else if sl, ok := vm["stickyRoundRobinLimit"].(float64); ok && sl > 0 {
 			sticky = int(sl)
 		}
+		proxyGrp := handlerutil.GetString(vm, "proxyGroup")
+		if proxyGrp == "" {
+			pID := handlerutil.GetString(vm, "proxyPoolId")
+			if strings.HasPrefix(pID, "group:") {
+				proxyGrp = strings.TrimPrefix(pID, "group:")
+			}
+		}
 		strat := ProviderStrategy{
 			ProxyPoolID:         handlerutil.GetString(vm, "proxyPoolId"),
+			ProxyGroup:          proxyGrp,
 			RotateStrategy:      rotateStrat,
 			StickyLimit:         sticky,
 			ProxyRotateStrategy: handlerutil.GetString(vm, "rotateStrategy"),

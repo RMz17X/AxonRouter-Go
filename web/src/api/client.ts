@@ -225,6 +225,7 @@ export interface VaultStatus {
 
 export interface ProviderStrategyConfig {
   proxyPoolId?: string
+  proxyGroup?: string
   rotateStrategy?: string
   strictModelAssignment?: boolean
   [key: string]: unknown

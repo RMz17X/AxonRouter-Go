@@ -21,6 +21,7 @@ import (
 	"axonrouter/proxy/internal/providers"
 	internalproxy "axonrouter/proxy/internal/proxy"
 	"axonrouter/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/proxy/smart"
 	"axonrouter/proxy/internal/speedlayer"
 	"axonrouter/proxy/internal/translator"
 	"axonrouter/proxy/internal/updater"
@@ -67,15 +68,25 @@ func (h *ChatHandler) resolveProviderProxyPoolID(provider string, excluded map[s
 	if err != nil || settings == nil || settings.ProviderStrategies == nil {
 		return "", nil
 	}
-	var singleID, rotate string
+	var singleID, rotate, proxyGroup string
 	for _, p := range providerStrategyKeys(provider) {
 		if strat, ok := settings.ProviderStrategies[p]; ok {
 			if singleID == "" && strat.ProxyPoolID != "" && strat.ProxyPoolID != "__none__" {
 				singleID = strat.ProxyPoolID
 			}
+			if proxyGroup == "" && strat.ProxyGroup != "" && strat.ProxyGroup != "none" {
+				proxyGroup = strat.ProxyGroup
+			}
 			if rotate == "" && db.IsProxyPoolRotation(strat.ProxyRotateStrategy) {
 				rotate = strat.ProxyRotateStrategy
 			}
+		}
+	}
+	if singleID == "" && proxyGroup != "" {
+		if strings.HasPrefix(proxyGroup, "group:") || strings.HasPrefix(proxyGroup, "type:") {
+			singleID = proxyGroup
+		} else {
+			singleID = "group:" + proxyGroup
 		}
 	}
 	// Pool rotation is a NoAuth-provider feature: the provider card offers it
@@ -806,12 +817,26 @@ func (h *ChatHandler) getProviderConfig(provider string, connData *ConnectionDat
 // answers "", which leaves the request direct.
 func (h *ChatHandler) resolveEdgeRelay(connData *ConnectionData) (relayURL, noProxy string) {
 	if connData.ProxyPoolID != "" && h.Repo != nil {
-		if pool, err := h.Repo.GetProxyPool(connData.ProxyPoolID); err == nil && pool != nil && pool.IsActive {
-			if pool.IsEdgeRelay() {
-				relayURL = pool.NextURL()
-				noProxy = pool.NoProxy
-				logProxyOnce(connData.ProxyPoolID, relayURL, pool.Type)
+		var pool *db.ProxyPool
+		if strings.HasPrefix(connData.ProxyPoolID, "group:") || strings.HasPrefix(connData.ProxyPoolID, "type:") || isKnownProxyType(connData.ProxyPoolID) || connData.ProxyPoolID == "cloudflare" {
+			candidates := h.Repo.ActivePoolsByTarget(connData.ProxyPoolID)
+			if len(candidates) > 0 {
+				pool, _ = smart.DefaultTracker.PickBest(connData.Provider, candidates)
 			}
+		} else {
+			var err error
+			pool, err = h.Repo.GetProxyPool(connData.ProxyPoolID)
+			if err != nil || pool == nil {
+				candidates := h.Repo.ActivePoolsByTarget(connData.ProxyPoolID)
+				if len(candidates) > 0 {
+					pool, _ = smart.DefaultTracker.PickBest(connData.Provider, candidates)
+				}
+			}
+		}
+		if pool != nil && pool.IsActive && pool.IsEdgeRelay() {
+			relayURL = pool.NextURL()
+			noProxy = pool.NoProxy
+			logProxyOnce(connData.ProxyPoolID, relayURL, pool.Type)
 		}
 	}
 	if relayURL == "" && connData.ProviderSpecificData != nil {

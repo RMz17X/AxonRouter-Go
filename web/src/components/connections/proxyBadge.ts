@@ -23,7 +23,8 @@ export interface ProxyBadgeInfo {
  */
 export function proxyBadgeInfo(
   conn: Pick<ProviderConnection, 'providerSpecificData'>,
-  pools: ProxyPool[] = []
+  pools: ProxyPool[] = [],
+  providerProxyGroup?: string
 ): ProxyBadgeInfo {
   const psd = (conn.providerSpecificData as Record<string, unknown> | undefined) || {}
   const poolId = typeof psd.proxyPoolId === 'string' && psd.proxyPoolId ? psd.proxyPoolId : null
@@ -69,6 +70,19 @@ export function proxyBadgeInfo(
   const legacyUrl = typeof psd.connectionProxyUrl === 'string' ? psd.connectionProxyUrl : ''
   const hasLegacyProxy = psd.connectionProxyEnabled === true && !!legacyUrl
   const hasAnyProxy = !!poolId || hasLegacyProxy
+
+  // Fallback to provider-level locked proxy group when no custom connection proxy is configured
+  if (!hasAnyProxy && providerProxyGroup && providerProxyGroup !== 'none') {
+    const grp = providerProxyGroup.replace(/^(group|type):/, '')
+    const activeCount = pools.filter((p) => (p.group === grp || p.type === grp) && p.isActive).length
+    return {
+      hasAnyProxy: true,
+      variant: activeCount > 0 ? 'success' : 'error',
+      displayText: `Group: ${grp} (auto)`,
+      maskedProxyUrl: `Default Group: ${grp}`,
+      noProxyText: ''
+    }
+  }
 
   const rawProxyUrl = pool?.proxyUrl || legacyUrl
   let maskedProxyUrl = ''

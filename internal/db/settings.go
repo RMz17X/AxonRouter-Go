@@ -74,6 +74,7 @@ func (c ComboStrategy) FirstTokenGrace() int {
 // steer egress. See connRotationStrategy in the chat package.
 type ProviderStrategy struct {
 	ProxyPoolID           string `json:"proxyPoolId,omitempty"`
+	ProxyGroup            string `json:"proxyGroup,omitempty"`
 	RotateStrategy        string `json:"rotateStrategy,omitempty"` // "none", "round-robin", "random", "sticky"
 	StickyLimit           int    `json:"stickyLimit,omitempty"`
 	StrictModelAssignment bool   `json:"strictModelAssignment,omitempty"`

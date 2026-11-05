@@ -160,6 +160,9 @@ func (r *Repo) SetProviderStrategy(provider string, strat ProviderStrategy) erro
 		if strat.ProxyPoolID != "" {
 			entry["proxyPoolId"] = strat.ProxyPoolID
 		}
+		if strat.ProxyGroup != "" {
+			entry["proxyGroup"] = strat.ProxyGroup
+		}
 		if strat.RotateStrategy != "" {
 			entry["rotateStrategy"] = strat.RotateStrategy
 			entry["fallbackStrategy"] = strat.RotateStrategy

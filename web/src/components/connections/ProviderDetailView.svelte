@@ -482,6 +482,7 @@
   let isRoundRobin = $state(false)
   let stickyLimit = $state('1')
   let thinkingLevel = $state('auto')
+  let lockedProxyGroup = $state('')
 
   // Proxy Pools
   let proxyPools = $state<ProxyPool[]>([])
@@ -995,6 +996,10 @@
       const strategy = settingsData?.providerStrategies?.[providerId]
       isRoundRobin = strategy?.fallbackStrategy === 'round-robin'
       stickyLimit = String(strategy?.stickyRoundRobinLimit ?? 1)
+      lockedProxyGroup =
+        strategy?.proxyGroup ||
+        (strategy?.proxyPoolId?.startsWith('group:') ? strategy.proxyPoolId.slice(6) : '') ||
+        ''
 
       // Extract Thinking Level
       const thinking = (settingsData as any)?.providerThinking?.[providerId]
@@ -1425,7 +1430,27 @@
 
   // Per-row proxy badge (upstream ConnectionRow) — see proxyBadge.ts.
   function proxyBadgeFor(conn: ProviderConnection) {
-    return proxyBadgeInfo(conn, proxyPools)
+    return proxyBadgeInfo(conn, proxyPools, lockedProxyGroup)
+  }
+
+  async function handleProxyGroupLockChange(e: Event) {
+    const val = (e.currentTarget as HTMLSelectElement).value
+    lockedProxyGroup = val
+    try {
+      const existing = settings?.providerStrategies || {}
+      const currentStrat = existing[providerId] || {}
+      const updated = {
+        ...existing,
+        [providerId]: {
+          ...currentStrat,
+          proxyGroup: val || undefined
+        }
+      }
+      if (settings) settings.providerStrategies = updated
+      await api.updateSettings({ providerStrategies: updated })
+    } catch (err) {
+      console.error('Failed to lock proxy group:', err)
+    }
   }
 
   // Proxy assignment
@@ -3688,6 +3713,37 @@
             <span class="material-symbols-outlined text-[18px]" aria-hidden="true">tune</span>
             Custom headers
           </button>
+
+          <!-- Provider Proxy Lock -->
+          <div class="flex items-center gap-1.5 border-l border-border pl-2.5 ml-1">
+            <span class="text-xs text-text-muted font-medium flex items-center gap-1" title="Lock provider to a proxy group. All accounts automatically route through it unless set to a custom proxy.">
+              <span class="material-symbols-outlined text-[16px] {lockedProxyGroup ? 'text-primary' : 'text-text-muted'}">lock</span>
+              Proxy Lock:
+            </span>
+            <select
+              value={lockedProxyGroup}
+              onchange={handleProxyGroupLockChange}
+              class="bg-surface-2 border border-border rounded-lg px-2 py-1 text-xs text-text-main focus:outline-none focus:border-primary cursor-pointer"
+            >
+              <option value="">None (direct)</option>
+              {#if availableProxyGroups.length > 0}
+                <optgroup label="Proxy Groups">
+                  {#each availableProxyGroups as grp}
+                    {@const count = proxyPools.filter((p) => p.group === grp && p.isActive).length}
+                    <option value={grp}>Group: {grp} ({count} active)</option>
+                  {/each}
+                </optgroup>
+              {/if}
+              {#if availableProxyTypes.length > 0}
+                <optgroup label="Proxy Types">
+                  {#each availableProxyTypes as typ}
+                    {@const count = proxyPools.filter((p) => p.type === typ && p.isActive).length}
+                    <option value={typ}>Type: {typ} ({count} active)</option>
+                  {/each}
+                </optgroup>
+              {/if}
+            </select>
+          </div>
         </div>
       </div>
     </div>
