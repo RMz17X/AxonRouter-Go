@@ -2,13 +2,16 @@
 # Used by GitHub Actions release workflow for fast, unified image packaging.
 FROM alpine:3.21
 
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+
 RUN apk add --no-cache ca-certificates tzdata su-exec \
     && addgroup -S -g 10001 app \
     && adduser -S -u 10001 -G app app \
     && mkdir -p /data \
     && chown app:app /data
 
-COPY axonrouter-go-linux-amd64 /usr/local/bin/axonrouter-go
+COPY axonrouter-go-${TARGETOS}-${TARGETARCH} /usr/local/bin/axonrouter-go
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/axonrouter-go
 
