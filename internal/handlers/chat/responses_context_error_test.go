@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/translator"
 )
 
 func TestResponsesContextLengthExceededStreaming(t *testing.T) {

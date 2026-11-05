@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/db"
-	internalproxy "9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/db"
+	internalproxy "axonrouter/proxy/internal/proxy"
 )
 
 // setupProxyPools gives the handler a repo that can store proxy pools and

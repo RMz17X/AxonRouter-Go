@@ -11,8 +11,8 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // bedrockWire is one captured request to the fake Bedrock upstream.

@@ -1,8 +1,8 @@
 package dashboard
 
 import (
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
 	"context"
 	"encoding/json"
 	"errors"
@@ -801,7 +801,7 @@ func (imp *jailbreakImporter) fetchText(ctx context.Context, u string, limit int
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", "9router-go")
+	req.Header.Set("User-Agent", "axonrouter-go")
 	resp, err := imp.client.Do(req)
 	if err != nil {
 		return "", err
@@ -827,7 +827,7 @@ func (imp *jailbreakImporter) fetchBytes(ctx context.Context, u string, limit in
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", "9router-go")
+	req.Header.Set("User-Agent", "axonrouter-go")
 	resp, err := imp.client.Do(req)
 	if err != nil {
 		return nil, "", err

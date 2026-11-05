@@ -912,7 +912,7 @@
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = '9router-api-keys.txt'
+    a.download = 'axonrouter-go-api-keys.txt'
     a.click()
     URL.revokeObjectURL(url)
   }

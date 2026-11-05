@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"9router/proxy/internal/pricing"
+	"axonrouter/proxy/internal/pricing"
 )
 
 // Gemini 4 Argon (2026-10): unified 1M window, tunable thinking low|medium|high

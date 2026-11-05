@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"9router/proxy/internal/constants"
+	"axonrouter/proxy/internal/constants"
 )
 
 // launchdLabel is the agent label and plist file name.
-const launchdLabel = "com.9router.gateway"
+const launchdLabel = "com.axonrouter-go.gateway"
 
 func launchdPlistPath() string {
 	home, err := userHomeDir()

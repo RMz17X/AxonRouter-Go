@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/providers"
 )
 
 // The model-catalog routes of batch 2: provider-models (aggregate view),

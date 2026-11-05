@@ -33,7 +33,7 @@ func InitGlobalDatabase() error {
 	}
 	dsn := databaseURL()
 	if dsn == "" {
-		initErr = errors.New("DATABASE_URL is not set: 9router-go requires a PostgreSQL connection string in DATABASE_URL (e.g. postgres://user:pass@host:5432/9router) — there is no embedded database in this build")
+		initErr = errors.New("DATABASE_URL is not set: axonrouter-go requires a PostgreSQL connection string in DATABASE_URL (e.g. postgres://user:pass@host:5432/axonrouter) — there is no embedded database in this build")
 		return initErr
 	}
 	dbInstance, initErr = OpenPostgresDatabase(dsn)

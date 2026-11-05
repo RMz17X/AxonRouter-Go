@@ -5,15 +5,15 @@ package dashboard
 import (
 	"io"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 	"bytes"
 	json "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/codexquota"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/codexquota"
 )
 
 // insertResetCreditConn seeds a provider connection the reset-credit handlers

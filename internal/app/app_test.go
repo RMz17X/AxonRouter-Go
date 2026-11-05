@@ -11,11 +11,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"9router/proxy/internal/app"
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers"
-	"9router/proxy/internal/shutdown"
+	"axonrouter/proxy/internal/app"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers"
+	"axonrouter/proxy/internal/shutdown"
 	"github.com/go-chi/chi/v5"
 	"github.com/spf13/viper"
 	"github.com/urfave/cli/v2"
@@ -89,7 +89,7 @@ func TestNewCLIParams_WithContext(t *testing.T) {
 		}
 		return nil
 	}
-	_ = appCLI.Run([]string{"9router", "--rtk", "--caveman", "--ponytail", "--adhd", "--auto-update", "--no-injection-guard"})
+	_ = appCLI.Run([]string{"axonrouter-go", "--rtk", "--caveman", "--ponytail", "--adhd", "--auto-update", "--no-injection-guard"})
 }
 
 func TestConfigModule(t *testing.T) {

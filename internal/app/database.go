@@ -7,13 +7,13 @@ import (
 
 	"go.uber.org/fx"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/speedlayer"
-	"9router/proxy/internal/translator"
-	"9router/proxy/internal/usagetracker"
-	"9router/proxy/internal/vault"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/speedlayer"
+	"axonrouter/proxy/internal/translator"
+	"axonrouter/proxy/internal/usagetracker"
+	"axonrouter/proxy/internal/vault"
 )
 
 // DatabaseModule handles database initialization and provides *sql.DB and *db.Repo.

@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in 9router-go behaves incorrectly — routing, proxying, dashboard, or build
+description: Something in AxonRouter-Go behaves incorrectly — routing, proxying, dashboard, or build
 title: "bug: "
 labels: ["bug"]
 body:
@@ -8,8 +8,8 @@ body:
       value: |
         Thanks for filing a bug. The short version: **what did you expect, and what happened instead?**
 
-        Before you open: search the [open issues](https://github.com/luqman-v1/9router-go/issues?q=is%3Aissue%20state%3Aopen)
-        and the [`CHANGELOG.md`](https://github.com/luqman-v1/9router-go/blob/main/CHANGELOG.md) — fixed bugs are often already listed there.
+        Before you open: search the [open issues](https://github.com/luqman-v1/AxonRouter-Go/issues?q=is%3Aissue%20state%3Aopen)
+        and the [`CHANGELOG.md`](https://github.com/luqman-v1/AxonRouter-Go/blob/main/CHANGELOG.md) — fixed bugs are often already listed there.
 
   - type: textarea
     id: summary
@@ -54,7 +54,7 @@ body:
     attributes:
       label: Logs
       description: |
-        Output of `9router-go logs` around the failure, or the **Translator → Console Logs** tab in the dashboard.
+        Output of `axonrouter-go logs` around the failure, or the **Translator → Console Logs** tab in the dashboard.
         Redact API keys, OAuth tokens, and cookies.
       render: shell
     validations:
@@ -64,7 +64,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: Output of `9router-go version`, or the release tag.
+      description: Output of `axonrouter-go version`, or the release tag.
       placeholder: v1.9.9
     validations:
       required: true

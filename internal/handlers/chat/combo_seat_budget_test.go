@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 func TestComboSeatAttemptBudgetAdvancesToNextMember(t *testing.T) {

@@ -1,17 +1,17 @@
 <div align="center">
 
-# 9router-go — FREE AI Router & Token Saver (Single Binary)
+# AxonRouter-Go — FREE AI Router & Token Saver (Single Binary)
 
 **Never stop coding. Save 20-40% tokens with RTK + auto-fallback to FREE & cheap AI models.**
 
 **Connect Claude Code, Cursor, Antigravity, Codex, Gemini, OpenCode, Cline, OpenClaw... to 40+ AI providers & 100+ models — no Node.js needed at runtime.**
 
-[![CI](https://github.com/luqman-v1/9router-go/actions/workflows/ci.yml/badge.svg)](https://github.com/luqman-v1/9router-go/actions/workflows/ci.yml)
-[![Release](https://github.com/luqman-v1/9router-go/actions/workflows/release.yml/badge.svg)](https://github.com/luqman-v1/9router-go/actions/workflows/release.yml)
-[![GitHub release](https://img.shields.io/github/v/release/luqman-v1/9router-go)](https://github.com/luqman-v1/9router-go/releases/latest)
-[![License](https://img.shields.io/github/license/luqman-v1/9router-go)](https://github.com/luqman-v1/9router-go/blob/main/LICENSE)
-[![GitHub All Releases](https://img.shields.io/github/downloads/luqman-v1/9router-go/total.svg)](https://github.com/luqman-v1/9router-go/releases)
-[![Telegram](https://img.shields.io/badge/Telegram-Join%20Group-26A5E1?logo=telegram&logoColor=white)](https://luqman-v1.github.io/9router-go/tg)
+[![CI](https://github.com/RMz17X/AxonRouter-Go/actions/workflows/ci.yml/badge.svg)](https://github.com/RMz17X/AxonRouter-Go/actions/workflows/ci.yml)
+[![Release](https://github.com/RMz17X/AxonRouter-Go/actions/workflows/release.yml/badge.svg)](https://github.com/RMz17X/AxonRouter-Go/actions/workflows/release.yml)
+[![GitHub release](https://img.shields.io/github/v/release/RMz17X/AxonRouter-Go)](https://github.com/RMz17X/AxonRouter-Go/releases/latest)
+[![License](https://img.shields.io/github/license/RMz17X/AxonRouter-Go)](https://github.com/RMz17X/AxonRouter-Go/blob/main/LICENSE)
+[![GitHub All Releases](https://img.shields.io/github/downloads/RMz17X/AxonRouter-Go/total.svg)](https://github.com/RMz17X/AxonRouter-Go/releases)
+[![Telegram](https://img.shields.io/badge/Telegram-Join%20Group-26A5E1?logo=telegram&logoColor=white)](https://luqman-v1.github.io/axonrouter-go/tg)
 
 [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [⚙️ Configuration](#️-configuration) • [🔄 Upgrade from the SQLite era](#-upgrading-from-the-sqlite-era) • [🌐 Upstream](https://github.com/decolua/9router)
 
@@ -19,7 +19,7 @@
 
 ---
 
-## 🤔 Why 9router-go?
+## 🤔 Why AxonRouter-Go?
 
 Same idea as [9Router](https://github.com/decolua/9router), minus the Node.js runtime: **one Go binary** serves the proxy APIs + an embedded Svelte dashboard, backed by **PostgreSQL**.
 
@@ -30,7 +30,7 @@ Same idea as [9Router](https://github.com/decolua/9router), minus the Node.js ru
 - ❌ Tool outputs (git diff, grep, ls...) burn tokens fast
 - ❌ Manual switching between providers
 
-**9router-go solves this:**
+**axonrouter-go solves this:**
 
 - ✅ **RTK Token Saver** — auto-compress tool_result content, save 20-40% tokens
 - ✅ **Auto fallback** — Subscription → Cheap → Free, zero downtime
@@ -56,7 +56,7 @@ Same idea as [9Router](https://github.com/decolua/9router), minus the Node.js ru
        │ http://localhost:20130/v1
        ↓
 ┌─────────────────────────────────────────────┐
-│         9router-go (Smart Router)           │
+│         axonrouter-go (Smart Router)           │
 │  • RTK Token Saver (cut tool_result tokens) │
 │  • Format translation (OpenAI ↔ Claude)     │
 │  • Quota tracking                           │
@@ -129,7 +129,7 @@ Claude Code / Codex / OpenClaw / Cursor / Cline Settings:
 > [Upgrading from the SQLite era](#-upgrading-from-the-sqlite-era). There is
 > no shared-database mode anymore: the gateway never opens the legacy file.
 
-📦 [All release binaries](https://github.com/luqman-v1/9router-go/releases/latest) • 🐳 Image: `luqmenul/9router-go` • 🔨 [Build from source](#-development)
+📦 [All release binaries](https://github.com/RMz17X/AxonRouter-Go/releases/latest) • 🐳 Image: `luqmenul/axonrouter-go` • 🔨 [Build from source](#-development)
 
 ---
 
@@ -165,9 +165,9 @@ milliseconds as `comboStrategies[comboName].firstTokenTimeoutMs`.
 
 ## 📸 Screenshots
 
-![9router-go dashboard — Providers view](docs/screenshots/providers.png)
+![axonrouter-go dashboard — Providers view](docs/screenshots/providers.png)
 
-![9router-go dashboard — Endpoint & API key setup](docs/screenshots/endpoint.png)
+![axonrouter-go dashboard — Endpoint & API key setup](docs/screenshots/endpoint.png)
 
 ---
 
@@ -180,7 +180,7 @@ the same variables from its own environment.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL` | **yes** | PostgreSQL connection string, e.g. `postgres://user:pass@host:5432/9router?sslmode=disable`. A boot without it is a fatal error — there is no embedded or file database in this build. The compose stacks assemble it from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. |
+| `DATABASE_URL` | **yes** | PostgreSQL connection string, e.g. `postgres://user:pass@host:5432/axonrouter?sslmode=disable`. A boot without it is a fatal error — there is no embedded or file database in this build. The compose stacks assemble it from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. |
 | `JWT_SECRET` | **yes** (in practice) | Signs dashboard sessions/tokens. Every cluster node must share one value. If unset, the gateway generates an ephemeral per-boot secret and logs a loud warning: sessions then survive neither a restart nor a second node. |
 | `INITIAL_PASSWORD` | first boot | Seeds the dashboard password against an empty database. Change it from the dashboard afterwards. Without it, only local access can use the temporary compatibility default; remote login is refused until a password is set. |
 | `PORT` | no (default `20130`) | HTTP port. In the cluster stack, nginx publishes it. |
@@ -346,8 +346,8 @@ at (the compose stacks provide one; for a bare run any reachable server
 works — the gateway creates its schema on first boot).
 
 ```bash
-git clone https://github.com/luqman-v1/9router-go.git
-cd 9router-go
+git clone https://github.com/RMz17X/AxonRouter-Go.git
+cd axonrouter-go
 
 # The supported dev loop is compose-based (same stacks as production):
 cp .env.example .env   # set POSTGRES_PASSWORD / JWT_SECRET / INITIAL_PASSWORD
@@ -359,19 +359,19 @@ make web-dev           # Vite dev server on :5173, API proxied to :20130
 # Native build (embeds the dashboard; needs web/dist first):
 make web-build
 make build
-DATABASE_URL=postgres://user:pass@localhost:5432/9router?sslmode=disable \
-JWT_SECRET=dev-secret ./9router-go
-./9router-go version
+DATABASE_URL=postgres://user:pass@localhost:5432/axonrouter?sslmode=disable \
+JWT_SECRET=dev-secret ./axonrouter-go
+./axonrouter-go version
 ```
 
 The CLI is deliberately small — the binary's only run mode is the foreground
 server (on a TTY it first shows a short menu):
 
 ```text
-9router-go            start the gateway in the foreground
-9router-go version    print version info
-9router-go update     check for and install a self-update
-9router-go help       show usage
+axonrouter-go            start the gateway in the foreground
+axonrouter-go version    print version info
+axonrouter-go update     check for and install a self-update
+axonrouter-go help       show usage
 ```
 
 There are no daemon/service subcommands: process supervision belongs to
@@ -395,16 +395,16 @@ Unreleased work also ships as **experimental** builds. They are published
 separately and are never offered to a normal install:
 
 - GitHub Releases marks them **Pre-release**, so `releases/latest` — the URL
-  `9router-go update` falls back to — keeps pointing at the stable version.
-- Docker Hub tags them `exp` (`luqmenul/9router-go:exp`), never `latest`.
+  `axonrouter-go update` falls back to — keeps pointing at the stable version.
+- Docker Hub tags them `exp` (`luqmenul/axonrouter-go:exp`), never `latest`.
 
 ```bash
-docker pull luqmenul/9router-go:exp
+docker pull luqmenul/axonrouter-go:exp
 ```
 
-Opt in only if you want to help shake out bugs. `9router-go update` will not
+Opt in only if you want to help shake out bugs. `axonrouter-go update` will not
 install one over a stable release — grab the asset for your platform from the
-[pre-releases page](https://github.com/luqman-v1/9router-go/releases) and
+[pre-releases page](https://github.com/RMz17X/AxonRouter-Go/releases) and
 replace the running binary with it.
 
 ---
@@ -413,7 +413,7 @@ replace the running binary with it.
 
 Issues and pull requests use templates, so pick the right one rather than opening a blank report:
 
-- **Bug report** — something behaves incorrectly. Include a reproduction, `9router-go version`, OS, and the log excerpt around the failure.
+- **Bug report** — something behaves incorrectly. Include a reproduction, `axonrouter-go version`, OS, and the log excerpt around the failure.
 - **Feature request** — the problem you cannot solve today, the surface it touches, and whether upstream already has it.
 - **Upstream parity** — a behaviour `decolua/9router` has and this gateway does not; link the upstream commit or PR.
 - **Question** — configuration and usage help.
@@ -423,18 +423,18 @@ of a `CHANGELOG.md` edit. The checks that gate a change: `go vet ./...`,
 `go build ./...`, and for dashboard work `make vet-svelte` plus a live
 check against a running gateway.
 
-Everyone whose commit landed in the repository is credited on the wiki's [**Owner & Contributors**](https://luqman-v1.github.io/9router-go/team.html) page — photo, username, and contribution count, generated from the GitHub API.
+Everyone whose commit landed in the repository is credited on the wiki's [**Owner & Contributors**](https://luqman-v1.github.io/axonrouter-go/team.html) page — photo, username, and contribution count, generated from the GitHub API.
 
 ## 📚 Docs
 
-**Full documentation, searchable:** [**9router-go Wiki**](https://luqman-v1.github.io/9router-go/) — installation, usage, API reference, dashboard, providers, architecture, database, CLI, and a screenshot gallery. Every page supports `?q=` search and `#section` deep links.
+**Full documentation, searchable:** [**axonrouter-go Wiki**](https://luqman-v1.github.io/axonrouter-go/) — installation, usage, API reference, dashboard, providers, architecture, database, CLI, and a screenshot gallery. Every page supports `?q=` search and `#section` deep links.
 
 Repository references:
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — routing, providers, data layer, speed layer, cluster topology
 - [`DATABASE.md`](DATABASE.md) — PostgreSQL schema, partitioning, backup/restore, degradation model
 - [`ROADMAP.md`](ROADMAP.md) — proposals only, not current behavior
-- [`CHANGELOG.md`](CHANGELOG.md) — release history (Go **v1.9.15**, upstream baseline `decolua/9router`). Work merged since the last tag lives in [`.changes/`](.changes/) and is folded in at the next release; the dashboard's changelog modal shows both. Check what you are running with `9router-go version`.
+- [`CHANGELOG.md`](CHANGELOG.md) — release history (Go **v1.9.15**, upstream baseline `decolua/9router`). Work merged since the last tag lives in [`.changes/`](.changes/) and is folded in at the next release; the dashboard's changelog modal shows both. Check what you are running with `axonrouter-go version`.
 - [`docs/TELEGRAM_RELEASE_NOTIFICATIONS.md`](docs/TELEGRAM_RELEASE_NOTIFICATIONS.md) — one-time setup for the release notice posted to Telegram
 
 ## Credits
@@ -443,4 +443,4 @@ Repository references:
 
 ## 📄 License
 
-MIT License — lihat [`LICENSE`](https://github.com/luqman-v1/9router-go/blob/main/LICENSE).
+MIT License — lihat [`LICENSE`](https://github.com/RMz17X/AxonRouter-Go/blob/main/LICENSE).

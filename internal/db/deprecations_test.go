@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 func TestModelDeprecationStore(t *testing.T) {

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
 )
 
 // Issue #101 part 4: a stored per-provider header override has to reach the

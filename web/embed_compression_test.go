@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/web"
+	"axonrouter/proxy/web"
 )
 
 // The dashboard bundle is served from the gateway itself, so the bytes cross

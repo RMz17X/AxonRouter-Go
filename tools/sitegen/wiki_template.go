@@ -48,7 +48,7 @@ func groupBySection(pages []*page) []pageGroup {
 // stylesheet the project page uses, a sidebar built from every page, the article
 // itself, and the client-side search box.
 //
-// Paths are relative because the site is served from the /9router-go/ project
+// Paths are relative because the site is served from the /AxonRouter-Go/ project
 // subpath, where a root-absolute /style.css would 404. The README is one level
 // up at index.html, so the wordmark points there.
 //
@@ -61,8 +61,8 @@ const wikiTemplate = `<!doctype html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ .Page.Title }} — 9router-go Wiki</title>
-    <meta name="description" content="9router-go documentation: {{ .Page.Title }}" />
+    <title>{{ .Page.Title }} — AxonRouter-Go Wiki</title>
+    <meta name="description" content="AxonRouter-Go documentation: {{ .Page.Title }}" />
     <link rel="stylesheet" href="style.css" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e56a4a'/%3E%3Ctext x='16' y='23' font-family='system-ui,sans-serif' font-size='19' font-weight='700' fill='%23fff' text-anchor='middle'%3E9%3C/text%3E%3C/svg%3E" />
     <script>
@@ -629,7 +629,7 @@ const wikiTemplate = `<!doctype html>
         </button>
         <a class="wordmark" href="index.html">
           <span class="wordmark-mark" aria-hidden="true">9</span>
-          <span>9router-go</span>
+          <span>AxonRouter-Go</span>
         </a>
         <nav aria-label="Project" id="project-links">
           <a href="index.html">Project</a>

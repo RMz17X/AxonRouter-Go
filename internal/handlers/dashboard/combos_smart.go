@@ -12,10 +12,10 @@ import (
 
 	"github.com/samber/lo"
 
-	"9router/proxy/internal/combos/smart"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/combos/smart"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/providers"
 )
 
 // Smart select combo: the pattern rules that keep a combo's membership in step

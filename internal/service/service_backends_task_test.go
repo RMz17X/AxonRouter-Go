@@ -11,7 +11,7 @@ func TestWindowsTaskGuardsOffWindows(t *testing.T) {
 	stubHost(t, hostStub{goos: "linux", euid: 1000})
 	stubRun(t)
 
-	if _, err := installWindowsTask("C:\\9router-go.exe", nil); err == nil {
+	if _, err := installWindowsTask("C:\\axonrouter-go.exe", nil); err == nil {
 		t.Error("installWindowsTask() error = nil off windows, want the guard error")
 	}
 	if _, ok := uninstallWindowsTask(); ok {
@@ -27,7 +27,7 @@ func TestInstallWindowsTaskOnWindows(t *testing.T) {
 	stubWindowsTaskUser(t, "bima")
 	calls := stubRun(t)
 
-	info, err := installWindowsTask(`C:\9router-go.exe`, []string{"--rtk=true"})
+	info, err := installWindowsTask(`C:\axonrouter-go.exe`, []string{"--rtk=true"})
 	if err != nil {
 		t.Fatalf("installWindowsTask() error = %v", err)
 	}
@@ -65,7 +65,7 @@ func TestInstallWindowsTaskOnWindows(t *testing.T) {
 	if slices.Contains(create.args, "/rl") {
 		t.Errorf("schtasks /create args = %v, must not request /rl highest", create.args)
 	}
-	if got := argAfter(create.args, "/tr"); got != `C:\9router-go.exe --rtk=true` {
+	if got := argAfter(create.args, "/tr"); got != `C:\axonrouter-go.exe --rtk=true` {
 		t.Errorf("/tr value = %q, want the cmd.exe command line", got)
 	}
 }
@@ -73,8 +73,8 @@ func TestInstallWindowsTaskOnWindows(t *testing.T) {
 // TestWindowsCommandLineQuotesForCmd: the /tr value is read by cmd.exe, so a
 // spaced path is wrapped verbatim, not escaped the way strconv.Quote would.
 func TestWindowsCommandLineQuotesForCmd(t *testing.T) {
-	got := windowsCommandLine(`C:\Program Files\9router\9router-go.exe`, []string{"--rtk=true"})
-	want := `"C:\Program Files\9router\9router-go.exe" --rtk=true`
+	got := windowsCommandLine(`C:\Program Files\AxonRouter-Go\axonrouter-go.exe`, []string{"--rtk=true"})
+	want := `"C:\Program Files\AxonRouter-Go\axonrouter-go.exe" --rtk=true`
 	if got != want {
 		t.Errorf("windowsCommandLine() = %q, want %q", got, want)
 	}
@@ -102,7 +102,7 @@ func TestInstallWindowsTaskErrorPaths(t *testing.T) {
 			return "", nil
 		})
 
-		info, err := installWindowsTask(`C:\9router-go.exe`, nil)
+		info, err := installWindowsTask(`C:\axonrouter-go.exe`, nil)
 		if err == nil {
 			t.Fatal("installWindowsTask() error = nil when /create fails")
 		}
@@ -120,7 +120,7 @@ func TestInstallWindowsTaskErrorPaths(t *testing.T) {
 			return "", nil
 		})
 
-		info, err := installWindowsTask(`C:\9router-go.exe`, nil)
+		info, err := installWindowsTask(`C:\axonrouter-go.exe`, nil)
 		if err != nil {
 			t.Fatalf("installWindowsTask() error = %v", err)
 		}

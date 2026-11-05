@@ -4,7 +4,7 @@ import (
 	json "encoding/json/v2"
 	"strings"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // RepoStore adapts the dashboard repository to the loop's Store interface.

@@ -7,15 +7,15 @@ import (
 	"strconv"
 	"strings"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/proc"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/proc"
 )
 
 // The pid file carries the executable the daemon was launched from next to its
 // PID, on one line:
 //
-//	20130 /usr/local/bin/9router-go
+//	20130 /usr/local/bin/axonrouter-go
 //
 // The PID alone is not a claim on a process: the OS recycles PIDs, so a file
 // left behind by a daemon that was killed can name an unrelated program by the

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // TestRealApplicationBootAndServesTraffic is the end-to-end smoke test: the

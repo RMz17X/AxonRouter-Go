@@ -6,7 +6,7 @@ section: Getting Started
 
 # API
 
-9router-go speaks the OpenAI, Claude, Gemini and Ollama dialects, and adds media,
+axonrouter-go speaks the OpenAI, Claude, Gemini and Ollama dialects, and adds media,
 batching, and a dashboard REST API. This page is the full surface, taken from the
 route table.
 

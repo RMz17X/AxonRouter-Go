@@ -3,13 +3,13 @@ package dashboard
 import (
 	"net/http"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/shared"
-	"9router/proxy/internal/middleware"
-	"9router/proxy/internal/modelhealth"
-	"9router/proxy/internal/observ"
-	"9router/proxy/internal/resilience"
-	"9router/proxy/internal/semanticcache"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/middleware"
+	"axonrouter/proxy/internal/modelhealth"
+	"axonrouter/proxy/internal/observ"
+	"axonrouter/proxy/internal/resilience"
+	"axonrouter/proxy/internal/semanticcache"
 	"github.com/go-chi/chi/v5"
 )
 

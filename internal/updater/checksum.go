@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 )
 
 // checksumsAssetName is the manifest release.yml publishes next to every
@@ -105,7 +105,7 @@ func lookupAssetSHA256(ctx context.Context, assets []releaseAsset, downloadURL s
 		if strings.EqualFold(name, wanted) {
 			return digest, nil
 		}
-		// Some Windows publish paths fold `./9router-go.exe` into the name
+		// Some Windows publish paths fold `./axonrouter-go.exe` into the name
 		// (CMake treats the backslash as an escape, not a separator).
 		if fallback == "" && strings.EqualFold(strings.TrimPrefix(name, "./"), wanted) {
 			fallback = digest

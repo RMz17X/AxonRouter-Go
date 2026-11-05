@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // TestForwardTrae_StreamsAccumulatedThought drives a full streaming round-trip

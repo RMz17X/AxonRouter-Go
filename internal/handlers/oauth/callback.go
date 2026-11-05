@@ -15,7 +15,7 @@ const callbackPage = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>9router — OAuth callback</title>
+<title>AxonRouter-Go — OAuth callback</title>
 <style>
 :root{color-scheme:dark}
 body{background:#0b0e14;color:#e6e9f0;font-family:ui-sans-serif,system-ui,sans-serif;margin:0;padding:32px 16px}
@@ -38,7 +38,7 @@ ol li{margin:4px 0}
 </head>
 <body>
 <div class="card">
-<h1>9router — OAuth callback</h1>
+<h1>AxonRouter-Go — OAuth callback</h1>
 <p class="sub" id="status">Memproses…</p>
 <textarea id="code" readonly placeholder="(no code in URL)"></textarea>
 <div class="row">

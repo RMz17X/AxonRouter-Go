@@ -12,18 +12,18 @@ maintenance, and the background loops that keep a deployment healthy.
 ## Docker
 
 ```bash
-docker run -d --name 9router-go --restart unless-stopped \
-  -p 20130:20130 -v "$HOME/.9router:/data" \
+docker run -d --name axonrouter-go --restart unless-stopped \
+  -p 20130:20130 -v "$HOME/.axonrouter-go:/data" \
   -e PORT=20130 -e DATA_DIR=/data \
   -e INITIAL_PASSWORD=your-secure-password \
-  luqmenul/9router-go:latest
+  luqmenul/axonrouter-go:latest
 ```
 
 `docker-compose.yml` in the repository root is the same shape if you prefer
 compose.
 
 Experimental builds are marked **Pre-release** and never offered to a normal
-install; Docker Hub tags them `exp` (`luqmenul/9router-go:exp`), never `latest`.
+install; Docker Hub tags them `exp` (`luqmenul/axonrouter-go:exp`), never `latest`.
 
 ## Tunnels
 
@@ -45,8 +45,8 @@ Tailscale in a container needs the `NET_ADMIN` capability and a TUN device — s
 ## Self-update
 
 ```bash
-9router-go update        # check and install
-9router-go version       # current version plus an update check
+axonrouter-go update        # check and install
+axonrouter-go version       # current version plus an update check
 ```
 
 Or from the dashboard: `POST /api/version/update` and
@@ -124,5 +124,5 @@ rather than configurable. Tune the proxy in front of the gateway instead.
 
 ## Further reading
 
-- [`ARCHITECTURE.md`](https://github.com/luqman-v1/9router-go/blob/main/ARCHITECTURE.md)
-- [`DATABASE.md`](https://github.com/luqman-v1/9router-go/blob/main/DATABASE.md)
+- [`ARCHITECTURE.md`](https://github.com/RMz17X/AxonRouter-Go/blob/main/ARCHITECTURE.md)
+- [`DATABASE.md`](https://github.com/RMz17X/AxonRouter-Go/blob/main/DATABASE.md)

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/proxy/oauth"
 )
 
 // setupProbeTestDB adds the tables the connection probe needs on top of the

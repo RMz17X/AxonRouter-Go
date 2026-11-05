@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/auth"
+	"axonrouter/proxy/internal/auth"
 
 	"github.com/samber/lo"
 )

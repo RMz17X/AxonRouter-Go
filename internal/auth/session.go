@@ -20,8 +20,8 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/db"
 )
 
 const (

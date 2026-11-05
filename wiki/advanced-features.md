@@ -6,7 +6,7 @@ section: Under the Hood
 
 # Advanced Features
 
-Three features in 9router-go came from other projects. Where that happened, the
+Three features in axonrouter-go came from other projects. Where that happened, the
 source is listed as a link at the end of each feature — you do not need to know
 where something came from to use it.
 
@@ -16,7 +16,7 @@ Each feature below tells you **what it does** and **how to use it, step by step*
 
 ## Persona — attach a system prompt to specific models
 
-**Since:** v1.9.15 · **Source:** [arewedaks/9router-go](https://github.com/arewedaks/9router-go)
+**Since:** v1.9.15 · **Source:** [arewedaks/axonrouter-go](https://github.com/arewedaks/axonrouter-go)
 
 ### What it does
 

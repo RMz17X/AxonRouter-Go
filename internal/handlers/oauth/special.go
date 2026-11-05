@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/handlerutil"
 
-	_ "9router/proxy/internal/foreigndb"
+	_ "axonrouter/proxy/internal/foreigndb"
 )
 
 // ---------- cursor: import + auto-import from local state.vscdb ----------

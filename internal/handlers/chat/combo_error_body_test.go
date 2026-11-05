@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // A combo whose every member fails with a non-upstreamError error (a

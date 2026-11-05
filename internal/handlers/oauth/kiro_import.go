@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy/oauth"
 )
 
 // ---------- kiro: method import endpoints (upstream KiroAuthModal parity) ----------

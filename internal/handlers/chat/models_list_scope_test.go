@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
 )
 
 // modelsListResponse is the wire shape of GET /v1/models including the new

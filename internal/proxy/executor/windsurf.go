@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // ForwardWindsurf routes completions through Codeium's gRPC-web chat endpoint

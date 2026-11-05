@@ -11,11 +11,11 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/app"
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/app"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/translator"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/fx"
 )

@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"slices"
 
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/vault"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/vault"
 )
 
 // The three sealed column pairs on providerConnections.

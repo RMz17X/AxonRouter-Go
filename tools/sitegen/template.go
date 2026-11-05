@@ -4,17 +4,17 @@ package main
 // the three links a visitor to a project page actually reaches for, the article
 // itself, and a footer pointing back at the README on GitHub.
 //
-// Paths are relative because the site is served from the /9router-go/ project
+// Paths are relative because the site is served from the /AxonRouter-Go/ project
 // subpath, where a root-absolute /style.css would 404.
 const pageTemplate = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>9router-go</title>
+    <title>AxonRouter-Go</title>
     <meta
       name="description"
-      content="9router-go is a single-binary AI gateway and token saver in Go. Serve OpenAI, Claude and Gemini compatible APIs to your CLI tools with automatic fallback across 40+ providers."
+      content="AxonRouter-Go is a single-binary AI gateway and token saver in Go. Serve OpenAI, Claude and Gemini compatible APIs to your CLI tools with automatic fallback across 40+ providers."
     />
     <link rel="stylesheet" href="style.css" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e56a4a'/%3E%3Ctext x='16' y='23' font-family='system-ui,sans-serif' font-size='19' font-weight='700' fill='%23fff' text-anchor='middle'%3E9%3C/text%3E%3C/svg%3E" />
@@ -26,7 +26,7 @@ const pageTemplate = `<!doctype html>
       <div class="masthead-inner">
         <a class="wordmark" href="index.html">
           <span class="wordmark-mark" aria-hidden="true">9</span>
-          <span>9router-go</span>
+          <span>AxonRouter-Go</span>
         </a>
         <nav aria-label="Project">
           <a href="https://github.com/{{ .Repo }}">Repository</a>

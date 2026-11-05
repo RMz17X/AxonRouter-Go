@@ -34,7 +34,7 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 var (
@@ -130,8 +130,8 @@ const netlifyRelayCode = `exports.handler = async (event) => {
 `
 
 const netlifyIndexHTML = `<!doctype html>
-<html><head><meta charset="utf-8"><title>9Router Relay</title></head>
-<body><p>9Router relay function lives at <code>/.netlify/functions/relay</code>.</p></body></html>
+<html><head><meta charset="utf-8"><title>AxonRouter-Go Relay</title></head>
+<body><p>AxonRouter-Go relay function lives at <code>/.netlify/functions/relay</code>.</p></body></html>
 `
 
 // ─── Minimal stored (uncompressed) ZIP writer ───────────────────────────

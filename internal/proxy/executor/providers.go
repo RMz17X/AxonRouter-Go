@@ -1,7 +1,7 @@
 package executor
 
 import (
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 	"bytes"
 	"context"
 	"crypto/hmac"
@@ -20,10 +20,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/translator"
 )
 
 // jsonErrorBody renders an error payload as JSON.
@@ -294,7 +294,7 @@ func kiroUpstreamBody(req *Request) ([]byte, error) {
 	if _, after, ok := strings.Cut(model, "/"); ok {
 		model = after
 	}
-	// -thinking / -agentic are 9router fictions, stripped before upstream.
+	// -thinking / -agentic are AxonRouter-Go fictions, stripped before upstream.
 	model = strings.TrimSuffix(model, "-thinking")
 	model = strings.TrimSuffix(model, "-agentic")
 	if idx := strings.IndexByte(model, '('); idx > 0 {
@@ -1569,7 +1569,7 @@ func outputBudgetOf(v any) (int64, bool) {
 }
 
 // museSparkEffortSuffix returns the reasoning effort a caller encoded in the
-// model id, e.g. "muse-spark-1.3(high)". The parenthesised level is 9router
+// model id, e.g. "muse-spark-1.3(high)". The parenthesised level is AxonRouter-Go
 // request notation and never part of the wire id — which is why the callers
 // strip it before dispatch — but the intent it carried is still the caller's.
 func museSparkEffortSuffix(rawModel string) string {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // SetupHandler serves GET /api/cli-tools/setup/{toolId} — Axon's

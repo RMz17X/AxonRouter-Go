@@ -1,8 +1,8 @@
 package oauth
 
 import (
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/updater"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/updater"
 	"context"
 	"net/http"
 	"net/http/httptest"

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // Proxy groups — port of AxonRouter's src/app/api/proxy-groups/route.js

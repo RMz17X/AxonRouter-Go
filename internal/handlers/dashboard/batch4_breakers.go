@@ -5,8 +5,8 @@ import (
 	"sort"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/resilience"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/resilience"
 )
 
 // Circuit breakers — port of AxonRouter's src/app/api/circuit-breakers/

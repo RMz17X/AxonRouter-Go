@@ -12,7 +12,7 @@ import (
 //
 // hasCompletedOnboarding is written but deliberately absent here: it records
 // that the user finished the onboarding flow, and a reset that cleared it would
-// send them through it again for no reason connected to 9router.
+// send them through it again for no reason connected to AxonRouter-Go.
 var claudeEnvKeys = []string{
 	"ANTHROPIC_BASE_URL",
 	"ANTHROPIC_AUTH_TOKEN",

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/models"
 )
 
 // Upstream (src/sse/services/auth.js:86-89) skips a codex account whose

@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // Antigravity and every other provider on a plain OAuth2 grant refresh through

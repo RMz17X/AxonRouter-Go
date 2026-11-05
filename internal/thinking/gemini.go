@@ -1,7 +1,7 @@
 package thinking
 
 import (
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // geminiLevelOutputFloor ports GEMINI_LEVEL_OUTPUT_FLOOR.

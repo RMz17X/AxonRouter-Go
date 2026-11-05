@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 func TestDowngradeJsonSchemaToJSONObject(t *testing.T) {

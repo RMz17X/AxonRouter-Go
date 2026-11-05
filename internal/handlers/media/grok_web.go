@@ -8,8 +8,8 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 // Grok Imagine's media lane, ported from upstream

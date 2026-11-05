@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // OpenCode sync preferences: schema, normalization, validation and

@@ -1,6 +1,6 @@
 package thinking
 
-import "9router/proxy/internal/providers"
+import "axonrouter/proxy/internal/providers"
 
 // writerCtx carries what a per-format writer needs: the body to write into,
 // the intent (already clamped to minimal when the model cannot disable), and

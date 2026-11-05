@@ -1,7 +1,7 @@
 package chat
 
 import (
-	json "9router/proxy/internal/fastjson"
+	json "axonrouter/proxy/internal/fastjson"
 	"bytes"
 	"context"
 	"fmt"
@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/shutdown"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/shutdown"
 )
 
 type fusionAnswer struct {

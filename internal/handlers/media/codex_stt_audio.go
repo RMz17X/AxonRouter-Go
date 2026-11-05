@@ -67,7 +67,7 @@ func buildWav(pcm []byte) []byte {
 // longer than codexMaxAudioSeconds is killed and refused rather than
 // truncated.
 func convertAudio(fileBytes []byte) ([]byte, error) {
-	dir, err := os.MkdirTemp("", "9router-codex-stt-")
+	dir, err := os.MkdirTemp("", "axonrouter-go-codex-stt-")
 	if err != nil {
 		return nil, codexSTTFailure(502, "Audio conversion failed")
 	}

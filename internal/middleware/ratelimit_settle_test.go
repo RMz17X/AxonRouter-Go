@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 // TestRequireRateLimitExposesReservationToHandler proves the TPM charge the

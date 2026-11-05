@@ -37,10 +37,10 @@ func TestSystemdScope(t *testing.T) {
 func TestRenderSystemdUnit(t *testing.T) {
 	t.Run("user unit wants default target", func(t *testing.T) {
 		t.Setenv("DATA_DIR", "")
-		unit := renderSystemdUnit("/usr/local/bin/9router-go", []string{"--rtk=true"})
+		unit := renderSystemdUnit("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 		for _, want := range []string{
-			"Description=9router-go",
-			"ExecStart=/usr/local/bin/9router-go --rtk=true",
+			"Description=axonrouter-go",
+			"ExecStart=/usr/local/bin/axonrouter-go --rtk=true",
 			"WantedBy=default.target",
 			"Restart=always",
 			"WorkingDirectory=/usr/local/bin",
@@ -56,7 +56,7 @@ func TestRenderSystemdUnit(t *testing.T) {
 
 	t.Run("shell DATA_DIR is baked in", func(t *testing.T) {
 		t.Setenv("DATA_DIR", "/data/custom dir")
-		unit := renderSystemdUnit("/usr/local/bin/9router-go", nil)
+		unit := renderSystemdUnit("/usr/local/bin/axonrouter-go", nil)
 		if !strings.Contains(unit, `Environment="DATA_DIR=/data/custom dir"`) {
 			t.Errorf("unit must preserve exported DATA_DIR:\n%s", unit)
 		}
@@ -64,8 +64,8 @@ func TestRenderSystemdUnit(t *testing.T) {
 
 	t.Run("paths with spaces are quoted", func(t *testing.T) {
 		t.Setenv("DATA_DIR", "")
-		unit := renderSystemdUnit("/opt/my apps/9router-go", nil)
-		if !strings.Contains(unit, `ExecStart="/opt/my apps/9router-go"`) {
+		unit := renderSystemdUnit("/opt/my apps/axonrouter-go", nil)
+		if !strings.Contains(unit, `ExecStart="/opt/my apps/axonrouter-go"`) {
 			t.Errorf("ExecStart must quote spaced paths:\n%s", unit)
 		}
 	})
@@ -74,7 +74,7 @@ func TestRenderSystemdUnit(t *testing.T) {
 	// spaced path needs no quoting because whitespace is not a separator there.
 	t.Run("spaced working directory is written verbatim", func(t *testing.T) {
 		t.Setenv("DATA_DIR", "")
-		unit := renderSystemdUnit("/opt/my apps/9router-go", nil)
+		unit := renderSystemdUnit("/opt/my apps/axonrouter-go", nil)
 		if !strings.Contains(unit, "WorkingDirectory=/opt/my apps\n") {
 			t.Errorf("WorkingDirectory must carry the whole spaced path unquoted:\n%s", unit)
 		}
@@ -99,7 +99,7 @@ func TestRenderSystemdUnit(t *testing.T) {
 	// backslashes on Windows, which systemd cannot resolve.
 	t.Run("working directory carries no backslash on any runner", func(t *testing.T) {
 		t.Setenv("DATA_DIR", "")
-		unit := renderSystemdUnit("/usr/local/bin/9router-go", nil)
+		unit := renderSystemdUnit("/usr/local/bin/axonrouter-go", nil)
 		for _, line := range strings.Split(unit, "\n") {
 			if strings.HasPrefix(line, "WorkingDirectory=") && strings.Contains(line, `\`) {
 				t.Errorf("WorkingDirectory must be slash-separated on every runner: %s", line)
@@ -109,10 +109,10 @@ func TestRenderSystemdUnit(t *testing.T) {
 }
 
 func TestRenderLaunchdPlist(t *testing.T) {
-	plist := renderLaunchdPlist("/Applications/9router-go", []string{"--rtk=true"})
+	plist := renderLaunchdPlist("/Applications/axonrouter-go", []string{"--rtk=true"})
 	for _, want := range []string{
-		"<string>com.9router.gateway</string>",
-		"<string>/Applications/9router-go</string>",
+		"<string>com.axonrouter-go.gateway</string>",
+		"<string>/Applications/axonrouter-go</string>",
 		"<string>--rtk=true</string>",
 		"<key>RunAtLoad</key>",
 		"<key>KeepAlive</key>",
@@ -124,10 +124,10 @@ func TestRenderLaunchdPlist(t *testing.T) {
 }
 
 func TestRenderOpenRCScript(t *testing.T) {
-	script := renderOpenRCScript("/usr/local/bin/9router-go", []string{"--rtk=true"})
+	script := renderOpenRCScript("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 	for _, want := range []string{
 		"#!/sbin/openrc-run",
-		"command=/usr/local/bin/9router-go",
+		"command=/usr/local/bin/axonrouter-go",
 		`command_args="--rtk=true"`,
 		"command_background=\"yes\"",
 		"need net",
@@ -139,26 +139,26 @@ func TestRenderOpenRCScript(t *testing.T) {
 }
 
 func TestRenderRunitRun(t *testing.T) {
-	script := renderRunitRun("/usr/local/bin/9router-go", []string{"--rtk=true"})
+	script := renderRunitRun("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 	if !strings.HasPrefix(script, "#!/bin/sh\n") {
 		t.Errorf("runit run script must start with shebang:\n%s", script)
 	}
-	if !strings.Contains(script, "exec /usr/local/bin/9router-go --rtk=true") {
+	if !strings.Contains(script, "exec /usr/local/bin/axonrouter-go --rtk=true") {
 		t.Errorf("runit run script must exec the gateway:\n%s", script)
 	}
 }
 
 func TestRenderCronLine(t *testing.T) {
-	line := renderCronLine("/usr/local/bin/9router-go", []string{"--rtk=true"})
-	if !strings.HasPrefix(line, "@reboot /usr/local/bin/9router-go start --rtk=true ") {
+	line := renderCronLine("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
+	if !strings.HasPrefix(line, "@reboot /usr/local/bin/axonrouter-go start --rtk=true ") {
 		t.Errorf("cron line must reboot-start the daemon: %q", line)
 	}
 	if !strings.Contains(line, cronMarker) {
 		t.Errorf("cron line must carry the ownership marker: %q", line)
 	}
 
-	desktop := renderAutostartDesktop("/usr/local/bin/9router-go", nil)
-	for _, want := range []string{"[Desktop Entry]", "Exec=/usr/local/bin/9router-go start", "Terminal=false", cronMarker} {
+	desktop := renderAutostartDesktop("/usr/local/bin/axonrouter-go", nil)
+	for _, want := range []string{"[Desktop Entry]", "Exec=/usr/local/bin/axonrouter-go start", "Terminal=false", cronMarker} {
 		if !strings.Contains(desktop, want) {
 			t.Errorf("desktop entry missing %q:\n%s", want, desktop)
 		}
@@ -173,11 +173,11 @@ func TestMergeCronEntry(t *testing.T) {
 	}{
 		{"empty crontab appends", "", false},
 		{"other entries preserved", "0 * * * * /usr/bin/backup\n", false},
-		{"exact line is idempotent", "@reboot /bin/9router-go start " + cronMarker + "\n", true},
+		{"exact line is idempotent", "@reboot /bin/axonrouter-go start " + cronMarker + "\n", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			line := "@reboot /bin/9router-go start " + cronMarker
+			line := "@reboot /bin/axonrouter-go start " + cronMarker
 			merged, dup := mergeCronEntry(tt.existing, line)
 			if dup != tt.wantDup {
 				t.Fatalf("mergeCronEntry() dup = %v, want %v", dup, tt.wantDup)
@@ -193,7 +193,7 @@ func TestMergeCronEntry(t *testing.T) {
 }
 
 func TestStripCronEntries(t *testing.T) {
-	existing := "0 * * * * /usr/bin/backup\n@reboot /bin/9router-go start " + cronMarker + "\n"
+	existing := "0 * * * * /usr/bin/backup\n@reboot /bin/axonrouter-go start " + cronMarker + "\n"
 	content, removed := stripCronEntries(existing)
 	if !removed {
 		t.Fatal("stripCronEntries() removed = false, want true")
@@ -227,7 +227,7 @@ func TestQuoteArg(t *testing.T) {
 		want  string
 	}{
 		{"--rtk=true", "--rtk=true"},
-		{"/opt/my apps/9router-go", `"/opt/my apps/9router-go"`},
+		{"/opt/my apps/axonrouter-go", `"/opt/my apps/axonrouter-go"`},
 		{"", "''"},
 	}
 	for _, tt := range tests {

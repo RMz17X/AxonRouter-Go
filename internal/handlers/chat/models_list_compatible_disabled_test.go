@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // TestHandleModels_CompatibleNodeDisabledModels pins two claims about a custom

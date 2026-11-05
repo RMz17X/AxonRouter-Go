@@ -1,9 +1,9 @@
 package middleware
 
 import (
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
 	"net/http"
 )
 

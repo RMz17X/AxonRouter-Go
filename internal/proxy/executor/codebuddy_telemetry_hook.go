@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // ForwardCodebuddyCNWithTelemetry is the codebuddy-cn executor entry that wraps

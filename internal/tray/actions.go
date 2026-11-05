@@ -3,7 +3,7 @@ package tray
 import (
 	"fmt"
 
-	"9router/proxy/internal/service"
+	"axonrouter/proxy/internal/service"
 )
 
 // Actions is the seam the GUI layer calls. Each method is one menu item, so the

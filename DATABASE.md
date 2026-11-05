@@ -1,7 +1,7 @@
 # PostgreSQL Database — Schema and Operator Contract
 
 This document describes the storage contract implemented by the current
-9router-go. **PostgreSQL is the only database.** The gateway boots on
+axonrouter-go. **PostgreSQL is the only database.** The gateway boots on
 `DATABASE_URL` alone; there is no embedded or file database in the build,
 and a boot without `DATABASE_URL` is a fatal error that names the variable.
 
@@ -269,15 +269,15 @@ Against the compose stacks:
 ```bash
 # Backup (single stack shown; the cluster stack is identical in shape)
 docker compose -f docker-compose.single.yml exec postgres \
-  pg_dump -U 9router -d 9router -Fc -f /tmp/9router.dump
-docker compose -f docker-compose.single.yml cp postgres:/tmp/9router.dump ./9router.dump
+  pg_dump -U axonrouter -d axonrouter -Fc -f /tmp/axonrouter.dump
+docker compose -f docker-compose.single.yml cp postgres:/tmp/axonrouter.dump ./axonrouter.dump
 
 # Restore into a FRESH, empty database (stop the app first so the
 # bootstrap and writers are not racing the restore)
 docker compose -f docker-compose.single.yml stop app
-docker compose -f docker-compose.single.yml cp ./9router.dump postgres:/tmp/9router.dump
+docker compose -f docker-compose.single.yml cp ./axonrouter.dump postgres:/tmp/axonrouter.dump
 docker compose -f docker-compose.single.yml exec postgres \
-  pg_restore -U 9router -d 9router --clean --if-exists /tmp/9router.dump
+  pg_restore -U axonrouter -d axonrouter --clean --if-exists /tmp/axonrouter.dump
 docker compose -f docker-compose.single.yml up -d
 ```
 

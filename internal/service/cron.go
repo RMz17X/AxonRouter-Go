@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"9router/proxy/internal/constants"
+	"axonrouter/proxy/internal/constants"
 )
 
 // cronMarker tags the @reboot line this package owns, so install stays
 // idempotent and uninstall never touches the user's own crontab entries.
-const cronMarker = "# 9router-go-autostart"
+const cronMarker = "# axonrouter-go-autostart"
 
 // renderCronLine renders the @reboot entry: cron has no supervisor, so it
 // launches the existing `start` daemon which detaches and owns its pid file.
@@ -27,8 +27,8 @@ func renderCronLine(exe string, args []string) string {
 func renderAutostartDesktop(exe string, args []string) string {
 	return "[Desktop Entry]\n" +
 		"Type=Application\n" +
-		"Name=9router-go gateway\n" +
-		"Comment=9router-go AI API proxy gateway\n" +
+		"Name=axonrouter-go gateway\n" +
+		"Comment=axonrouter-go AI API proxy gateway\n" +
 		"Exec=" + commandLine(exe, append([]string{"start"}, args...)) + "\n" +
 		"Terminal=false\n" +
 		"X-GNOME-Autostart-enabled=true\n" +
@@ -40,7 +40,7 @@ func autostartDesktopPath() string {
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".config", "autostart", "9router-go.desktop")
+	return filepath.Join(home, ".config", "autostart", "axonrouter-go.desktop")
 }
 
 func installCron(exe string, args []string) (Info, error) {

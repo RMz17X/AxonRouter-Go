@@ -3,9 +3,9 @@ package chat
 import (
 	"strings"
 
-	json "9router/proxy/internal/fastjson"
+	json "axonrouter/proxy/internal/fastjson"
 
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 )
 
 // An image sent turns ago still rides in the history of every later request,

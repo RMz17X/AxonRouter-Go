@@ -3,7 +3,7 @@ package semanticcache
 import (
 	"context"
 
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/translator"
 )
 
 type cachedReqKey struct{}

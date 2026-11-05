@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // GitHub Copilot model catalogue.

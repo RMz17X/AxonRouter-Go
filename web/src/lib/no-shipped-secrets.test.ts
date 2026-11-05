@@ -24,7 +24,7 @@ const SRC = resolve(import.meta.dirname, '..')
 const SOURCE_EXT = new Set(['.svelte', '.ts', '.js', '.jsx', '.tsx'])
 
 /**
- * A minted client key. 9router-go generates `sk-` + 32 uuid hex chars, but
+ * A minted client key. AxonRouter-Go generates `sk-` + 32 uuid hex chars, but
  * `POST /api/keys` accepts any caller-supplied secret, so the pattern is
  * deliberately loose about length and shape. Global, because matchAll
  * requires it.
@@ -33,10 +33,10 @@ const SECRET = /sk-[A-Za-z0-9_-]{20,}/g
 
 /**
  * Values that look like a key but are labels the user replaces before use.
- * `sk-9router-local-token` is the shell-profile placeholder the env cards have
+ * `sk-axonrouter-go-local-token` is the shell-profile placeholder the env cards have
  * always shown, so every member of that family is exempt.
  */
-const PLACEHOLDER_PREFIX = 'sk-9router-'
+const PLACEHOLDER_PREFIX = 'sk-axonrouter-go-'
 
 function* walk(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {

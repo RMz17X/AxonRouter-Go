@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // OpenCode sync bundle generator. Port of Axon's

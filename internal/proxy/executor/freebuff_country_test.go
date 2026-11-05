@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy"
 )
 
 func TestFreebuffCountryRefusal_MatchesRegionCopyOnly(t *testing.T) {

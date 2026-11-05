@@ -8,9 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 // #192: an ollama.com API key was forwarded to http://localhost:11434. The

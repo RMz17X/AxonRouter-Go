@@ -10,8 +10,8 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 // The device-code GET action plus the two session POST actions of the

@@ -1,9 +1,9 @@
 package db
 
 import (
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/thinking"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/thinking"
 )
 
 func applyComboStrategies(s *SettingsData, raw map[string]any) {

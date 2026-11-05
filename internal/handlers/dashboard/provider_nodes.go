@@ -14,9 +14,9 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
 )
 
 // ProviderNodeResponse is the JSON representation of a provider node with unpacked data fields.

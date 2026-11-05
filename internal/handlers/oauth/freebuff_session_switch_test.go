@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 func seedFreebuffConnection(t *testing.T, database *sql.DB, id, data string) {

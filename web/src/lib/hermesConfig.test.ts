@@ -134,6 +134,6 @@ describe('hermesConfigYaml', () => {
 
 describe('hermesEnvContent', () => {
   it('exports the key the yaml references by name', () => {
-    expect(hermesEnvContent('sk-9router-local-token')).toBe('OPENAI_API_KEY=sk-9router-local-token\n')
+    expect(hermesEnvContent('sk-axonrouter-go-local-token')).toBe('OPENAI_API_KEY=sk-axonrouter-go-local-token\n')
   })
 })

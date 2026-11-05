@@ -213,7 +213,7 @@ func isOpenCodeProvider(aliasOrID string) bool {
 	return false
 }
 
-// baseModelID strips the 9router thinking suffix "model(level)" so catalog
+// baseModelID strips the AxonRouter-Go thinking suffix "model(level)" so catalog
 // lookups hit the base id (open-sse config/providerModels.js findModel).
 func baseModelID(modelID string) string {
 	if idx := strings.LastIndexByte(modelID, '('); idx > 0 && strings.HasSuffix(modelID, ")") {

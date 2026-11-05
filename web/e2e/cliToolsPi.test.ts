@@ -98,7 +98,7 @@ describe('CLI Tools page lists the pi / Oh My Pi agents (#165)', () => {
       // Never a placeholder: the instance has a key, so a pasteable card must
       // carry it. This is the guard that failed while a literal key was
       // compiled into the bundle as a fallback for the empty case.
-      expect(text).not.toContain('<your-9router-api-key>')
+      expect(text).not.toContain('<your-axonrouter-go-api-key>')
       expect(text).toContain(seededKey)
       expect(text).not.toContain('localhost:20130')
     })
@@ -152,7 +152,7 @@ describe('CLI Tools page lists the pi / Oh My Pi agents (#165)', () => {
 
     const dialog = await openTool('Pi')
     const text = (await dialog.innerText()).replace(/\s+/g, ' ')
-    expect(text).toContain('<your-9router-api-key>')
+    expect(text).toContain('<your-axonrouter-go-api-key>')
     // An empty apiKey is not a placeholder: pi would send the provider without
     // auth and fail at runtime with a far less obvious error.
     expect(text).not.toContain('"apiKey":""')

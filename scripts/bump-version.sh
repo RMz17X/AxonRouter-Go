@@ -24,7 +24,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 # A prerelease must never reach version.json: that manifest is polled by
-# `9router-go update` on the stable channel, so naming an experimental build
+# `axonrouter-go update` on the stable channel, so naming an experimental build
 # there offers it to every install. The release workflow refuses to run when it
 # sees the two out of step; the point here is to keep them in step by default.
 IS_PRERELEASE=false

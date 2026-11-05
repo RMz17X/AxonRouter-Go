@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"9router/proxy/internal/service"
+	"axonrouter/proxy/internal/service"
 )
 
 // State is what the menu renders. Four values, not two: §C5 forbids showing
@@ -111,12 +111,12 @@ func (s Snapshot) CanStop() bool {
 func (s Snapshot) Title() string {
 	switch s.State {
 	case StateRunning:
-		return fmt.Sprintf("9Router Go (Port %d)", s.Port)
+		return fmt.Sprintf("AxonRouter Go (Port %d)", s.Port)
 	case StateStopped:
-		return "9Router Go (Stopped)"
+		return "AxonRouter Go (Stopped)"
 	case StatePortConflict:
-		return fmt.Sprintf("9Router Go (Port %d in use by foreign process (PID %d))", s.Port, s.PID)
+		return fmt.Sprintf("AxonRouter Go (Port %d in use by foreign process (PID %d))", s.Port, s.PID)
 	default:
-		return "9Router Go (Unknown)"
+		return "AxonRouter Go (Unknown)"
 	}
 }

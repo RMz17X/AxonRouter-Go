@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/translator"
 )
 
 // This file pins what can be pinned about the G06–G08 pre-pivot routes today.

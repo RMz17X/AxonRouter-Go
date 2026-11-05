@@ -1,8 +1,8 @@
 package translator
 
 import (
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/thinking"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/thinking"
 	"bytes"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
@@ -523,7 +523,7 @@ func extractThoughtSig(id string) string {
 }
 
 // geminiCleanToolCallID drops the "__ts__<sig>" transport suffix from a tool
-// call id, leaving the id the client actually sees. The suffix is a 9router-go
+// call id, leaving the id the client actually sees. The suffix is a axonrouter-go
 // encoding for carrying a thought signature back to Gemini, so it must never
 // reach the wire nor appear on one side of a call/response pair only.
 func geminiCleanToolCallID(id string) string {

@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
 )
 
 func TestFreebuff_EnsureMarker(t *testing.T) {

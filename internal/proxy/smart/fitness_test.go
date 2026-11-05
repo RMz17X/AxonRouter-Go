@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/proxy/smart"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/proxy/smart"
 )
 
 func TestFitnessTracker_ScoreProgression(t *testing.T) {

@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy/oauth"
 )
 
 // oauthLockTestProvider is a provider id no built-in refresher claims, so the

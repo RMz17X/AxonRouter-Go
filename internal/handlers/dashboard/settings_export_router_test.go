@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/auth"
+	"axonrouter/proxy/internal/auth"
 )
 
 // The password header is the credential an operator scripting a backup has, and

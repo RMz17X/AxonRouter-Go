@@ -6,7 +6,7 @@ section: Using the Gateway
 
 # Providers
 
-9router-go supports 40+ providers and 100+ models. Every provider is **isolated
+axonrouter-go supports 40+ providers and 100+ models. Every provider is **isolated
 and independent** — no provider is merged, cross-aliased, or redirected into
 another.
 

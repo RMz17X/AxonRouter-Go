@@ -13,9 +13,9 @@ import (
 	"sync"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/providers"
 )
 
 func newTestMediaHandler(repo *db.Repo) *MediaHandler {

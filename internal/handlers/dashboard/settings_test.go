@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/db"
 )
 
 // setupSettingsTestDB extends the shared dashboard schema with the tables the
@@ -405,7 +405,7 @@ func TestHandleImportDatabase_LegacyZipArchive(t *testing.T) {
 	payload := `{"settings":{"requireLogin":true},"providerConnections":[{"id":"conn-zip","provider":"deepseek","authType":"apikey","isActive":true,"priority":1,"apiKey":"sk-zip"}],"customModels":[]}`
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	f, err := zw.Create("9router-backup.json")
+	f, err := zw.Create("axonrouter-go-backup.json")
 	if err != nil {
 		t.Fatalf("create zip entry: %v", err)
 	}

@@ -18,7 +18,7 @@ import (
 
 	fhttp "github.com/bogdanfinn/fhttp"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // geminiWebFakeUpstream is a gemini.google.com stand-in for one turn.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/codexquota"
+	"axonrouter/proxy/internal/codexquota"
 )
 
 func TestFetchCodexUsage_RendersBothWindows(t *testing.T) {

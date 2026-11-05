@@ -7,7 +7,7 @@ import (
 	"os"
 	"regexp"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // Ordered-JSON helpers for the batch-5 read surfaces. Axon's settings

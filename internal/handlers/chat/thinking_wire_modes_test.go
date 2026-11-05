@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"9router/proxy/internal/thinking"
+	"axonrouter/proxy/internal/thinking"
 )
 
 // TestInjectProviderThinkingDialectKeys dispositions the operator-override keys

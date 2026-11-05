@@ -5,7 +5,7 @@ package chat
 import (
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // poolRotationDB builds a repo holding an active pool, plus a settings row with

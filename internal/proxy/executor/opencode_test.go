@@ -1,9 +1,9 @@
 package executor
 
 import (
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/translator"
 	"context"
 	json "encoding/json/v2"
 	"io"

@@ -51,7 +51,7 @@ func TestParityForkFallbackStaysOnConfiguredRepository(t *testing.T) {
 		githubReleasesAPI, CurrentVersion = oldAPI, oldVersion
 	})
 	digest := strings.Repeat("a", 64)
-	asset := "9router-go_" + runtime.GOOS + "_" + runtime.GOARCH
+	asset := "axonrouter-go_" + runtime.GOOS + "_" + runtime.GOARCH
 	var base string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -125,7 +125,7 @@ func TestParityHalfConfiguredChannelStillChecks(t *testing.T) {
 
 	t.Run("repo only", func(t *testing.T) {
 		digest := strings.Repeat("a", 64)
-		asset := "9router-go_" + runtime.GOOS + "_" + runtime.GOARCH
+		asset := "axonrouter-go_" + runtime.GOOS + "_" + runtime.GOARCH
 		var base string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.URL.Path {

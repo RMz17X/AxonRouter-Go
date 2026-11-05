@@ -1,4 +1,4 @@
-# 9router-go — Team Engineering & AI Collaboration Guidelines
+# AxonRouter-Go — Team Engineering & AI Collaboration Guidelines
 
 This repository (`9router-go`) is the high-performance, native Golang implementation and companion of [**decolua/9router**](https://github.com/decolua/9router).
 
@@ -38,14 +38,14 @@ Some feature issues in this repo are not parity requests against `decolua/9route
 2. **Port the contract, not the code**: endpoints, request/response payloads, error status codes, and filter/sort rules. Never transliterate TypeScript into Go (see §4.A).
 3. **Map by responsibility** — OmniRoute `src/lib/usage/*.ts` → `internal/handlers/dashboard/` + `web/src/api/client.ts`; `open-sse/executors/` → `internal/proxy/executor/`; `src/app/` components → `web/src/`.
 4. **OmniRoute is secondary**. Where it conflicts with `decolua/9router`, the §1 parity rules win; record the deliberate divergence in your `.changes/` fragment (§7.6), never in `CHANGELOG.md`.
-5. **Provider IDs are not portable verbatim.** OmniRoute has its own catalog. Map to `9router-go` provider IDs and obey §3 (strict provider isolation — no cross-provider aliasing or model hijacking).
+5. **Provider IDs are not portable verbatim.** OmniRoute has its own catalog. Map to `AxonRouter-Go` provider IDs and obey §3 (strict provider isolation — no cross-provider aliasing or model hijacking).
 6. **Preserve upstream error semantics.** OmniRoute surfaces typed error classes with explicit status codes (e.g. `409 no_credit`); port that distinction rather than collapsing every upstream failure into one generic error.
 
 ---
 
 ## 2. Architecture & Codebase Mapping
 
-| Upstream Path (`/Users/luqmannul.hakim/htdocs/9router`) | 9router-go Path | Description & Role |
+| Upstream Path (`/Users/luqmannul.hakim/htdocs/9router`) | AxonRouter-Go Path | Description & Role |
 | :--- | :--- | :--- |
 | `open-sse/translator/` | `internal/translator/` | Protocol format converters (OpenAI ↔ Claude Messages ↔ Gemini ↔ Antigravity). |
 | `open-sse/executors/` | `internal/proxy/executor/`, `internal/proxy/` | Upstream provider callers, SSE stream adapters, tool ID repair, cloaking. |
@@ -55,7 +55,7 @@ Some feature issues in this repo are not parity requests against `decolua/9route
 | `src/app/api/` (Next.js API routes) | `internal/handlers/dashboard/`, `internal/handlers/` | Dashboard REST & SSE APIs (connections, combos, proxypools, usage, settings). |
 | `src/lib/db/` | `internal/db/` | PostgreSQL database layer (pgx via `DATABASE_URL`; schema bootstrap in `schema_pg.go` / `schema_pg_defs.go`). |
 | `src/app/` (Next.js React 19 Frontend) | `web/src/` | Dashboard UI: Built with **Svelte 5 + Vite 8**, embedded into the binary via `web/embed.go`. |
-| `cli/` (npm launcher package) | `cmd/9router-go/main.go` | Single-binary CLI. The default action runs the foreground server; the only subcommands are `version`/`update`/`help` (daemon/service subcommands were removed with the Docker delivery — compose supervises the process). |
+| `cli/` (npm launcher package) | `cmd/axonrouter-go/main.go` | Single-binary CLI. The default action runs the foreground server; the only subcommands are `version`/`update`/`help` (daemon/service subcommands were removed with the Docker delivery — compose supervises the process). |
 | `tests/` (Vitest suites) | `*_test.go` | Go unit and integration test suites. |
 
 ---
@@ -169,7 +169,7 @@ looks. A large pure-Go library is fine; a small one that needs cgo is not.
      ```bash
      for pair in $(grep -E '^CROSS_TARGETS *:=' Makefile | sed 's/.*:=[[:space:]]*//'); do
        CGO_ENABLED=0 GOOS=${pair%-*} GOARCH=${pair#*-} \
-         go build -o /dev/null ./cmd/9router-go/ || echo "FAIL $pair"
+         go build -o /dev/null ./cmd/axonrouter-go/ || echo "FAIL $pair"
      done
      ```
      This needs `web/dist` to exist first (`make web-build`), because `web/embed.go` is a `//go:embed all:dist` directive — a fresh clone fails here for that reason and not for portability. `make cross` runs the same loop but also invokes `web-build`, so it needs Bun; the raw loop is the cheap check for a Go-only change.
@@ -278,7 +278,7 @@ Unit tests call handlers directly or mount a hand-built router, so they cannot s
 
 The dashboard UI in `web/` is built with **Svelte 5 + Vite 8 + TypeScript + Tailwind CSS**, compiled to `web/dist`, and embedded directly into the Go binary via `embed.go` (`//go:embed all:dist`).
 
-> **Upstream Parity Notice**: While upstream `9router` uses Next.js 16 and React 19 (`useState`, `useEffect`, JSX), `9router-go` uses **Svelte 5**. All UI features, views, and modals from upstream must be ported to idiomatic Svelte 5.
+> **Upstream Parity Notice**: While upstream `9router` uses Next.js 16 and React 19 (`useState`, `useEffect`, JSX), `AxonRouter-Go` uses **Svelte 5**. All UI features, views, and modals from upstream must be ported to idiomatic Svelte 5.
 
 ### A. Svelte 5 Runes (STRICTLY MANDATORY)
 Always write modern Svelte 5 code using Runes. **Never use legacy Svelte 3/4 syntax.**
@@ -344,7 +344,7 @@ Always write modern Svelte 5 code using Runes. **Never use legacy Svelte 3/4 syn
 
 ### B. Upstream React 19 $\rightarrow$ Svelte 5 Porting Matrix
 
-| Upstream Next.js / React 19 | 9router-go Svelte 5 Equivalent |
+| Upstream Next.js / React 19 | AxonRouter-Go Svelte 5 Equivalent |
 | :--- | :--- |
 | `useState(initial)` | `let val = $state(initial)` |
 | `useMemo(() => compute(x), [x])` | `let computed = $derived(compute(x))` |
@@ -422,7 +422,7 @@ Measured on `main` + the first-paint work, 2026-10-21 (`cd web && bun run build`
 
 §6.F is about what the bundle weighs. This is about what the browser has to do to *show* it, and it exists because a dashboard that took 21 seconds to appear on a first visit was shipped and nobody measured it.
 
-The symptom is the `Connecting to 9router-go Localhost Gateway (:20130)...` screen hanging on the first dashboard open. **Before blaming the gateway, measure the client side.** The backend is almost never the cause: every boot endpoint answers in under 5 ms. The delay is in the bytes and round trips before the app mounts.
+The symptom is the `Connecting to AxonRouter-Go Localhost Gateway (:20130)...` screen hanging on the first dashboard open. **Before blaming the gateway, measure the client side.** The backend is almost never the cause: every boot endpoint answers in under 5 ms. The delay is in the bytes and round trips before the app mounts.
 
 #### G.1 No third-party origins
 
@@ -471,7 +471,7 @@ Report three numbers: **bytes transferred**, **request count**, **load event**. 
 
 #### G.5 The boot screen must not be the only thing the user sees
 
-The `Connecting to 9router-go Localhost Gateway (:20130)...` spinner is a **full-screen gate**: it replaces the whole dashboard until every boot request resolves. Two consequences to keep in mind when touching it:
+The `Connecting to AxonRouter-Go Localhost Gateway (:20130)...` spinner is a **full-screen gate**: it replaces the whole dashboard until every boot request resolves. Two consequences to keep in mind when touching it:
 
 - It is the first thing an operator sees when something is wrong, so it must not become a *slower* way to find out what is wrong.
 - It is a symptom, not a diagnosis. The message names the gateway, so an operator blames the gateway — when the cause was the browser's download. Do not "fix" a slow dashboard by making the spinner more informative; measure where the time goes first.
@@ -510,7 +510,7 @@ When tasked with syncing a feature, bugfix, or provider from upstream:
    # guarantee has quietly become a per-platform build.
    for pair in $(grep -E '^CROSS_TARGETS *:=' Makefile | sed 's/.*:=[[:space:]]*//'); do
      CGO_ENABLED=0 GOOS=${pair%-*} GOARCH=${pair#*-} \
-       go build -o /dev/null ./cmd/9router-go/ || echo "FAIL $pair"
+       go build -o /dev/null ./cmd/axonrouter-go/ || echo "FAIL $pair"
    done
    make vet-svelte   # svelte-check ratchet — see §6.E
    # A UI change also has to clear the first-paint budget (§6.G): the bundle
@@ -567,7 +567,7 @@ When tasked with syncing a feature, bugfix, or provider from upstream:
      another feature branch:
      ```bash
      rtk git fetch origin
-     rtk git worktree add ../9router-go-<slug> -b fix/<slug> origin/main
+     rtk git worktree add ../axonrouter-go-<slug> -b fix/<slug> origin/main
      ```
    - Set the base explicitly, and pass the repo when creating the PR so a
      mismatched default cannot silently redirect it:
@@ -657,11 +657,11 @@ make build
 # fresh clone fails here for that reason rather than for portability.
 for pair in $(grep -E '^CROSS_TARGETS *:=' Makefile | sed 's/.*:=[[:space:]]*//'); do
   CGO_ENABLED=0 GOOS=${pair%-*} GOARCH=${pair#*-} \
-    go build -o /dev/null ./cmd/9router-go/ || echo "FAIL $pair"
+    go build -o /dev/null ./cmd/axonrouter-go/ || echo "FAIL $pair"
 done
 
 # Run dev server with live go run (PORT=20130 default; needs a reachable
-# PostgreSQL — DATABASE_URL/JWT_SECRET from ~/.9router.env or the shell):
+# PostgreSQL — DATABASE_URL/JWT_SECRET from ~/.axonrouter-go.env or the shell):
 make dev
 
 # Or run the supported deployment shape (Docker):

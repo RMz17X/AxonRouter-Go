@@ -157,5 +157,5 @@ export function toPlainText(entries: ConsoleEntry[]): string {
 }
 
 export function downloadFilename(when = new Date()): string {
-  return `9router-console-${when.getFullYear()}${pad(when.getMonth() + 1)}${pad(when.getDate())}-${pad(when.getHours())}${pad(when.getMinutes())}${pad(when.getSeconds())}.log`
+  return `axonrouter-go-console-${when.getFullYear()}${pad(when.getMonth() + 1)}${pad(when.getDate())}-${pad(when.getHours())}${pad(when.getMinutes())}${pad(when.getSeconds())}.log`
 }

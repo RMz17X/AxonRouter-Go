@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 // TestAcquireLeavesQueueOnContextCancel is the regression for the reviewer's

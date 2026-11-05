@@ -6,7 +6,7 @@ section: Under the Hood
 
 # Database
 
-9router-go stores everything in **PostgreSQL** — there is no database file.
+axonrouter-go stores everything in **PostgreSQL** — there is no database file.
 The server connects with `DATABASE_URL` and refuses to boot without it.
 
 ## Where the data lives
@@ -43,7 +43,7 @@ file backup tool:
 
 ```bash
 docker compose -f docker-compose.single.yml exec postgres \
-  pg_dump -U 9router -d 9router -Fc -f /tmp/9router.dump
+  pg_dump -U axonrouter -d axonrouter -Fc -f /tmp/axonrouter.dump
 ```
 
 The dashboard's Download Backup is a different thing: a portable payload

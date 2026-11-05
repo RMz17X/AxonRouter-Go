@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // Kimchi is a dual-auth provider: the dashboard offers an OAuth browser-token

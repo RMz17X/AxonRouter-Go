@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // The usage dashboard serves the Details section (issue #280): lifetime cards,

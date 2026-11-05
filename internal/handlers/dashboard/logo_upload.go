@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // The white-label logo is the one dashboard asset an operator supplies as a

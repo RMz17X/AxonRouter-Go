@@ -1,19 +1,19 @@
 package chat
 
 import (
-	json "9router/proxy/internal/fastjson"
-	"9router/proxy/internal/middleware"
+	json "axonrouter/proxy/internal/fastjson"
+	"axonrouter/proxy/internal/middleware"
 	"bytes"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 
-	"9router/proxy/internal/constants"
+	"axonrouter/proxy/internal/constants"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
 )
 
 // multimodalPath returns the sub-endpoint URL for a multimodal service.

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/browsercookies"
+	"axonrouter/proxy/internal/browsercookies"
 )
 
 // stubBrowserCookiesRead stands in for the reading of a browser's cookies.

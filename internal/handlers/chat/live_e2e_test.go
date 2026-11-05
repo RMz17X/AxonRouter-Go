@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/proxy/executor"
 	_ "modernc.org/sqlite"
 )
 

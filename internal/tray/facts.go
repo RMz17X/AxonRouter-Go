@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/daemon"
-	"9router/proxy/internal/service"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/daemon"
+	"axonrouter/proxy/internal/service"
 )
 
 // Gather reads the facts the state machine needs. One function so the tray

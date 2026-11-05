@@ -10,10 +10,10 @@ package chat
 import (
 	"context"
 
-	"9router/proxy/internal/handlers/shared"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
 )
 
 // fetchZedLiveCatalog returns the models Zed reports for this account.

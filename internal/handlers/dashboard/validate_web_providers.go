@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strings"
 
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 // Probes for the browser-login providers, mirroring OmniRoute's

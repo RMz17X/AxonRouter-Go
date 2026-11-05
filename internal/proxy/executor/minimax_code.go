@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/translator"
 )
 
 // MiniMax Code (mcode) — the credits lane. Anthropic Messages on MiniMax's
@@ -204,7 +204,7 @@ func miniMaxCodeSessionID(req *Request) string {
 func randomSessionID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return "9router-go-session"
+		return "axonrouter-go-session"
 	}
 	return hex.EncodeToString(b[:])
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/auth"
+	"axonrouter/proxy/internal/auth"
 )
 
 // TestHealthIsPublic pins that the liveness probe answers before any

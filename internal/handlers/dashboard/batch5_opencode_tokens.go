@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // OpenCode sync tokens. Port of Axon's src/lib/opencodeSync/tokens.ts:

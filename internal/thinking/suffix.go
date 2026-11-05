@@ -8,7 +8,7 @@ import (
 
 // ParseSuffix ports parseSuffix: "model(value)" → clean id + override intent.
 // The model is ALWAYS stripped on match, even when the value is unknown
-// (override nil) — the suffix is a 9router request override, not the model id.
+// (override nil) — the suffix is an AxonRouter-Go request override, not the model id.
 // Last "(" wins (greedy upstream `.*`); inner must hold no parens; trailing
 // spaces after ")" allowed (upstream `\s*$`).
 func ParseSuffix(model string) (string, *Intent) {

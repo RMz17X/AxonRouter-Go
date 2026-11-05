@@ -10,7 +10,7 @@
 // Windows is in the constraint without a tag because systray reaches the Win32
 // API directly there: no cgo, no pkg-config, nothing to install. Requiring a
 // tag on the one platform that builds out of the box would mean a plain
-// `go build ./cmd/9router-tray/` silently produces the stub instead.
+// `go build ./cmd/axonrouter-tray/` silently produces the stub instead.
 package main
 
 import (
@@ -22,7 +22,7 @@ import (
 
 	"github.com/getlantern/systray"
 
-	"9router/proxy/internal/tray"
+	"axonrouter/proxy/internal/tray"
 )
 
 //go:embed tray.ico
@@ -41,7 +41,7 @@ type menu struct {
 func runGUI(actions tray.Actions, port int) error {
 	systray.Run(func() {
 		systray.SetIcon(trayIcon)
-		systray.SetTitle("9Router Go")
+		systray.SetTitle("AxonRouter Go")
 		go runMenu(actions, port)
 	}, func() {
 		// Quit Tray: release the icon and return. Deliberately empty — C4 says
@@ -61,7 +61,7 @@ func runGUI(actions tray.Actions, port int) error {
 // pid file plus a non-blocking service probe costs nothing.
 func runMenu(actions tray.Actions, port int) {
 	m := &menu{
-		status: systray.AddMenuItem("9Router Go", ""),
+		status: systray.AddMenuItem("AxonRouter Go", ""),
 		start:  systray.AddMenuItem("Start Gateway", ""),
 		stop:   systray.AddMenuItem("Stop Gateway", ""),
 		// A real checkbox rather than a "✓ " prefix: the prefix is a picture of

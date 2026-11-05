@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 )
 
 // TestCompress_ByteFloorCases tests the integrating function HeadroomClient.Compress

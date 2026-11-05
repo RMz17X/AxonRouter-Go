@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/proxy"
 )
 
 const (

@@ -4,12 +4,12 @@ import (
 	json "encoding/json/v2"
 	"fmt"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 // Combo order — the persisted half of AxonRouter's reorderCombos
 // (src/lib/localDb/combos.ts). Axon stores a sortOrder column on each combo;
-// 9router-go's combos table has no such column, so the order lives in the kv
+// axonrouter-go's combos table has no such column, so the order lives in the kv
 // table (scope "comboOrder", key "ids") as the full ordered id list, and
 // GetCombos applies it on read. Ids in the stored order come first; combos
 // the order does not name (created after the last reorder) keep their

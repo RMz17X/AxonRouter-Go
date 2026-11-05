@@ -8,7 +8,7 @@ import (
 	neturl "net/url"
 	"time"
 
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 )
 
 // Health probe timings. The quick tunnel's DNS propagates in seconds, so the

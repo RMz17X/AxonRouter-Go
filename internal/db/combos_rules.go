@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/combos/smart"
+	"axonrouter/proxy/internal/combos/smart"
 )
 
 // The smart-rule column and the methods that read and write it.

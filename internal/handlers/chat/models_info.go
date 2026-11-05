@@ -52,8 +52,8 @@ import (
 	"net/http"
 	"strings"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/providers"
 )
 
 // axonKindEndpoint is Axon's KIND_ENDPOINT table

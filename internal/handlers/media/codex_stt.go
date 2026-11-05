@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/usagetracker"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/usagetracker"
 	json "encoding/json/v2"
 )
 
@@ -269,7 +269,7 @@ func validateCodexSTTForm(form *codexSTTForm) error {
 // pooled client already carries the connection's proxy when one is set, which
 // is the Go consolidation of upstream's direct/proxied fetch split.
 func (h *MediaHandler) postCodexTranscribe(ctx context.Context, connData *chat.ConnectionData, apiKey, accountID string, wav []byte) (*http.Response, error) {
-	boundary := "----9router-codex-stt"
+	boundary := "----axonrouter-go-codex-stt"
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "--%s\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n", boundary)
 	body.Write(wav)

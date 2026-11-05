@@ -1,7 +1,7 @@
 package detection
 
 import (
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/translator"
 )
 
 type FindingSeverity string

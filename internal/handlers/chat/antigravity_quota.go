@@ -1,9 +1,9 @@
 package chat
 
 import (
-	json "9router/proxy/internal/fastjson"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/translator"
+	json "axonrouter/proxy/internal/fastjson"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/translator"
 	"bytes"
 	"context"
 	"fmt"

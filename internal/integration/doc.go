@@ -1,5 +1,5 @@
 // Package integration holds the feature-level integration suite for
-// 9router-go.
+// axonrouter-go.
 //
 // The tests here boot the real HTTP stack — the same chi router, middleware
 // chain, handlers, database schema and provider dispatch that the binary serves

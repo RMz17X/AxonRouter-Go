@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy/executor"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/translator"
 )
 
 // setupHandlerForForward wires a ChatHandler to a temp DB (no connections needed for forward tests).

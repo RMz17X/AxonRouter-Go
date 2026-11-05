@@ -1,6 +1,6 @@
 # Build artifacts
-/9router-go
-/9router-go-*
+/axonrouter-go
+/axonrouter-go-*
 /SHA256SUMS.txt
 *.exe
 *.exe~
@@ -17,6 +17,7 @@ _site/
 /tmp/*.log
 
 # Data directory
+.axonrouter-go/
 .9router/
 data/
 

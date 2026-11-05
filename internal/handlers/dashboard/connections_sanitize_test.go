@@ -3,7 +3,7 @@ package dashboard
 import (
 	"testing"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 func TestSanitizeProviderConnection_LastErrorAttribution(t *testing.T) {

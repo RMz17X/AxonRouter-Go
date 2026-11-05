@@ -20,13 +20,13 @@ import (
 
 	"github.com/google/uuid"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/media"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/media"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 // probeMessageContent is the short natural test message sent during probe calls (~22 chars).

@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/log"
 )
 
 // Ping models and text, ported from upstream QUOTA_AUTOPING_CONFIG

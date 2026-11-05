@@ -22,22 +22,22 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/daemon"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/shutdown"
+	"axonrouter/proxy/internal/daemon"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/shutdown"
 	"github.com/samber/lo"
 )
 
-// CurrentVersion is the active 9router-go application version.
-// Can be overridden at build time via -ldflags "-X 9router/proxy/internal/updater.CurrentVersion=1.8.8"
+// CurrentVersion is the active AxonRouter-Go application version.
+// Can be overridden at build time via -ldflags "-X axonrouter/proxy/internal/updater.CurrentVersion=1.8.8"
 // Default fallback is read from version.json at init if not overridden.
 var CurrentVersion = "1.9.16-exp.1"
 
 // DefaultUpdateURL is the primary remote version manifest URL.
-var DefaultUpdateURL = "https://raw.githubusercontent.com/luqman-v1/9router-go/main/version.json"
+var DefaultUpdateURL = "https://raw.githubusercontent.com/RMz17X/AxonRouter-Go/main/version.json"
 
 // DefaultGitHubRepo is the repository for GitHub Releases API fallback.
-var DefaultGitHubRepo = "luqman-v1/9router-go"
+var DefaultGitHubRepo = "RMz17X/AxonRouter-Go"
 
 // DefaultCheckInterval is the periodic background update check interval (6 hours).
 const DefaultCheckInterval = 6 * time.Hour
@@ -159,7 +159,7 @@ var githubReleasesAPI = lo.CoalesceOrEmpty(os.Getenv("UPSTREAM_API_BASE"), "http
 // every install that reaches it, and the fallback that CAN fill the digest from
 // the release's SHA256SUMS.txt would never run. version.json ships exactly
 // three keys — downloadUrl, latestVersion, releaseNotes — so taking it on trust
-// made the checksum path unreachable in production and broke `9router-go
+// made the checksum path unreachable in production and broke `axonrouter-go
 // update` outright. A manifest without a digest therefore falls through to the
 // GitHub Releases API, and its version metadata is used only if that fails too.
 func CheckUpdate(ctx context.Context) (*UpdateInfo, error) {
@@ -304,7 +304,7 @@ func checkGitHubReleases(ctx context.Context, apiURL string) (*UpdateInfo, error
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("User-Agent", "9router-go/"+CurrentVersion)
+	req.Header.Set("User-Agent", "AxonRouter-Go/"+CurrentVersion)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
@@ -474,7 +474,7 @@ func PerformSelfUpdate(downloadURL, expectedSHA256 string) error {
 
 	// Create temporary binary file in the target directory
 	dir := filepath.Dir(execPath)
-	tmpFile, err := os.CreateTemp(dir, ".9router-go-update-*.tmp")
+	tmpFile, err := os.CreateTemp(dir, ".axonrouter-go-update-*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
@@ -607,7 +607,7 @@ func scoreArchiveEntry(name string, content []byte) int {
 	low := strings.ToLower(name)
 
 	// Prefer entries containing the project name over generic files
-	if strings.Contains(low, "9router-go") || strings.Contains(low, "9router_go") {
+	if strings.Contains(low, "axonrouter-go") || strings.Contains(low, "axonrouter_go") {
 		score += 10
 	}
 
@@ -737,11 +737,11 @@ func runCheckCycle(ctx context.Context) {
 	}
 
 	if !info.HasUpdate {
-		log.Debug("updater", "9router-go is up to date", "version", info.CurrentVersion)
+		log.Debug("updater", "AxonRouter-Go is up to date", "version", info.CurrentVersion)
 		return
 	}
 
-	log.Info("updater", "NEW 9ROUTER-GO VERSION AVAILABLE!",
+	log.Info("updater", "NEW AXONROUTER-GO VERSION AVAILABLE!",
 		"current", info.CurrentVersion,
 		"latest", info.LatestVersion,
 		"downloadUrl", info.DownloadURL,

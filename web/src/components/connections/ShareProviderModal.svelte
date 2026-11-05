@@ -274,7 +274,7 @@
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = '9router-providers.json'
+    a.download = 'axonrouter-go-providers.json'
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -316,7 +316,7 @@
   {#snippet children()}
     <div class="flex flex-col gap-4">
       <p class="text-sm text-text-muted">
-        Build a link that adds {providerName || providerId} on another 9router-go instance.
+        Build a link that adds {providerName || providerId} on another AxonRouter-Go instance.
       </p>
 
       <!-- Scope -->

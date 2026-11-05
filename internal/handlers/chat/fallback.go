@@ -1,19 +1,19 @@
 package chat
 
 import (
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/headroom"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/middleware"
-	"9router/proxy/internal/observ"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy/executor"
-	"9router/proxy/internal/thinking"
-	"9router/proxy/internal/tokensaver"
-	"9router/proxy/internal/tracing"
-	"9router/proxy/internal/translator"
-	"9router/proxy/internal/usagetracker"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/headroom"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/middleware"
+	"axonrouter/proxy/internal/observ"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/thinking"
+	"axonrouter/proxy/internal/tokensaver"
+	"axonrouter/proxy/internal/tracing"
+	"axonrouter/proxy/internal/translator"
+	"axonrouter/proxy/internal/usagetracker"
 	"bytes"
 	"context"
 	json "encoding/json/v2"
@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	internalproxy "9router/proxy/internal/proxy"
+	internalproxy "axonrouter/proxy/internal/proxy"
 )
 
 // StatusClientClosedRequest is the canonical HTTP status for client connection aborts (nginx 499).

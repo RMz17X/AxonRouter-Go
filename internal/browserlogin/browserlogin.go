@@ -193,7 +193,7 @@ func Run(ctx context.Context) (*Result, error) {
 			"use an Incognito window instead and paste the cookie header")
 	}
 
-	profile, err := os.MkdirTemp("", "9router-gemini-login-*")
+	profile, err := os.MkdirTemp("", "axonrouter-go-gemini-login-*")
 	if err != nil {
 		return nil, fmt.Errorf("create the temporary browser profile: %w", err)
 	}

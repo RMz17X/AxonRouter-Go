@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/analyticsrange"
-	"9router/proxy/internal/pricing"
+	"axonrouter/proxy/internal/analyticsrange"
+	"axonrouter/proxy/internal/pricing"
 )
 
 // CompressionModeStats holds per-mode compression statistics.

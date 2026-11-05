@@ -18,12 +18,12 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/thinking"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/thinking"
 )
 
 // Dashboard client headers, matching the Next dashboard settings/database route.
@@ -234,7 +234,7 @@ func (h *DashboardHandler) HandleExportDatabase(w http.ResponseWriter, r *http.R
 	}
 
 	nowStr := time.Now().Format("2006-01-02")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="9router-backup-%s.json"`, nowStr))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="axonrouter-go-backup-%s.json"`, nowStr))
 	handlerutil.WriteJSONIndented(w, http.StatusOK, payload)
 }
 

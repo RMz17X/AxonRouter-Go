@@ -15,7 +15,7 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // The generic AxonRouter OAuth dispatch route:
@@ -293,7 +293,7 @@ func mimoAuthorizeURL(redirectURI string) (verifier, authURL string) {
 	keyName := ""
 	if hn, err := os.Hostname(); err == nil {
 		sum := sha256.Sum256([]byte(runtime.GOOS + "-" + hn))
-		keyName = fmt.Sprintf("9router-xmd-%x", sum[:4])
+		keyName = fmt.Sprintf("axonrouter-go-xmd-%x", sum[:4])
 	}
 	priv, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {

@@ -3,8 +3,8 @@ package shared
 import (
 	"sync"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/tokensaver"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/tokensaver"
 )
 
 // TokenSaverConfig holds runtime-configurable token saver flags and levels.

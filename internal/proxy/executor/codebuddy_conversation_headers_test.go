@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 var (

@@ -155,7 +155,7 @@ func (r *Repo) InsertRequestDetailBatch(recs []RequestDetailRecord) error {
 }
 
 // UpsertUsageDaily inserts or replaces a daily usage aggregation record.
-// The data parameter should be a JSON string matching the 9router-go daily aggregation format.
+// The data parameter should be a JSON string matching the axonrouter-go daily aggregation format.
 // NOTE: this is a bare full-row replace of a pre-merged JSON blob. The
 // chat layer's fold does NOT use it: FoldUsageDaily below serialises the
 // merge across processes inside one transaction. Kept for direct

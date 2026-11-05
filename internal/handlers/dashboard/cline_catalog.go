@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/updater"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/updater"
 )
 
 // Cline / ClinePass model discovery.

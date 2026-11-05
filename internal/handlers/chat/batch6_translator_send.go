@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 // translatorSendCapture buffers an executor response until its status

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/proc"
+	"axonrouter/proxy/internal/proc"
 )
 
 // pidLine renders a claim the way writePID does.
@@ -71,7 +71,7 @@ func TestRunningPIDReportsThisProcess(t *testing.T) {
 // parse error — but it carries nothing that can be checked, and an unverifiable
 // claim is not a running daemon.
 func TestParseClaim(t *testing.T) {
-	self := "/usr/local/bin/9router-go"
+	self := "/usr/local/bin/axonrouter-go"
 
 	tests := []struct {
 		name string

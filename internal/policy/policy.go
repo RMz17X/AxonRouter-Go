@@ -20,8 +20,8 @@ package policy
 import (
 	"strings"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/models"
 )
 
 // PlanSource loads one plan by id. *db.Repo satisfies it.

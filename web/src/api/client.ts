@@ -15,7 +15,7 @@ export interface PruneUsageResult {
   carriedTokens?: number
   cutoff: string
 }
-// Typed API client for 9router-go Native Dashboard
+// Typed API client for AxonRouter-Go Native Dashboard
 
 export interface ProviderConnection {
   id: string
@@ -2121,7 +2121,7 @@ export const api = {
       }
     } catch {}
     try {
-      const res = await fetch('https://raw.githubusercontent.com/luqman-v1/9router-go/main/CHANGELOG.md')
+      const res = await fetch('https://raw.githubusercontent.com/RMz17X/AxonRouter-Go/main/CHANGELOG.md')
       if (res.ok) {
         const text = await res.text()
         if (text && text.trim().length > 0) return text

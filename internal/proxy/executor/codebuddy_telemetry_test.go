@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // codebuddyLifecycleCopy snapshots the lifecycle-dedup map under its lock, so

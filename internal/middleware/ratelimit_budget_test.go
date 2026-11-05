@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/budget"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/budget"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/models"
 )
 
 // stubBudget is a budget.Reader with a fixed reading.

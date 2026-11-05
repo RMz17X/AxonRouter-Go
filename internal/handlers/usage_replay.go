@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // Request replay — port of AxonRouter's
@@ -25,7 +25,7 @@ import (
 // or other body fields), so an executing replay re-sends the stored
 // conversation rather than the byte-exact original body; and dispatch goes
 // to this gateway's chat endpoint (/v1/chat/completions) instead of Axon's
-// /v1/unified, which 9router-go does not have. The preview object keeps
+// /v1/unified, which axonrouter-go does not have. The preview object keeps
 // Axon's field set, with correlationId, endpoint, mode and trace null —
 // the stored payload carries none of them.
 

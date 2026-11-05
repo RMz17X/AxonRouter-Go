@@ -14,8 +14,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/proxy"
 )
 
 const (

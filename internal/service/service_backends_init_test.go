@@ -16,7 +16,7 @@ func TestInstallOpenRCNeedsRoot(t *testing.T) {
 	crontab := stubCrontab(t, "")
 	stubRun(t)
 
-	if _, err := installOpenRC("/usr/local/bin/9router-go", nil); err == nil {
+	if _, err := installOpenRC("/usr/local/bin/axonrouter-go", nil); err == nil {
 		t.Fatal("installOpenRC() error = nil without root, want the root requirement")
 	}
 	if *crontab != "" {
@@ -32,7 +32,7 @@ func TestInstallOpenRCAsRoot(t *testing.T) {
 	stubHost(t, hostStub{goos: "linux", euid: 0})
 	calls := stubRun(t)
 
-	info, err := installOpenRC("/usr/local/bin/9router-go", []string{"--rtk=true"})
+	info, err := installOpenRC("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 	if err != nil {
 		t.Fatalf("installOpenRC() error = %v", err)
 	}
@@ -79,7 +79,7 @@ func TestInstallOpenRCRootErrorPaths(t *testing.T) {
 				return "", nil
 			})
 
-			info, err := installOpenRC("/usr/local/bin/9router-go", nil)
+			info, err := installOpenRC("/usr/local/bin/axonrouter-go", nil)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("installOpenRC() err = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -174,7 +174,7 @@ func TestControlOpenRC(t *testing.T) {
 		t.Fatalf("controlOpenRC(restart) error = %v", err)
 	}
 	if len(*calls) != 1 || (*calls)[0].name != "rc-service" || !slices.Contains((*calls)[0].args, "restart") {
-		t.Errorf("calls = %v, want rc-service 9router-go restart", *calls)
+		t.Errorf("calls = %v, want rc-service axonrouter-go restart", *calls)
 	}
 }
 
@@ -185,7 +185,7 @@ func TestRunitServiceDirAndTarget(t *testing.T) {
 		if got := runitServiceDir(); got != runitSystemDir {
 			t.Errorf("runitServiceDir() = %q, want %q", got, runitSystemDir)
 		}
-		if got := runitTarget(); got != "9router-go" {
+		if got := runitTarget(); got != "axonrouter-go" {
 			t.Errorf("runitTarget() = %q, want the service name", got)
 		}
 		if !filepath.IsAbs(root) {
@@ -196,7 +196,7 @@ func TestRunitServiceDirAndTarget(t *testing.T) {
 	t.Run("user uses ~/service", func(t *testing.T) {
 		home := setHome(t)
 		stubHost(t, hostStub{goos: "linux", euid: 1000})
-		want := filepath.Join(home, "service", "9router-go")
+		want := filepath.Join(home, "service", "axonrouter-go")
 		if got := runitServiceDir(); got != want {
 			t.Errorf("runitServiceDir() = %q, want %q", got, want)
 		}
@@ -211,11 +211,11 @@ func TestInstallRunitUser(t *testing.T) {
 	stubHost(t, hostStub{goos: "linux", euid: 1000})
 	calls := stubRun(t)
 
-	info, err := installRunit("/usr/local/bin/9router-go", []string{"--rtk=true"})
+	info, err := installRunit("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 	if err != nil {
 		t.Fatalf("installRunit() error = %v", err)
 	}
-	run := filepath.Join(home, "service", "9router-go", "run")
+	run := filepath.Join(home, "service", "axonrouter-go", "run")
 	if !fileExists(run) {
 		t.Fatalf("runit run script not written to %s", run)
 	}
@@ -236,7 +236,7 @@ func TestInstallRunitRootActivatesTheService(t *testing.T) {
 	stubHost(t, hostStub{goos: "linux", euid: 0})
 	calls := stubRun(t)
 
-	info, err := installRunit("/usr/local/bin/9router-go", nil)
+	info, err := installRunit("/usr/local/bin/axonrouter-go", nil)
 	if err != nil {
 		t.Fatalf("installRunit() error = %v", err)
 	}
@@ -254,8 +254,8 @@ func TestInstallRunitRootActivatesTheService(t *testing.T) {
 	if !info.Active {
 		t.Errorf("Info.Active = false, want true when sv start succeeds")
 	}
-	if len(*calls) != 1 || !slices.Contains((*calls)[0].args, "9router-go") {
-		t.Errorf("calls = %v, want sv start 9router-go", *calls)
+	if len(*calls) != 1 || !slices.Contains((*calls)[0].args, "axonrouter-go") {
+		t.Errorf("calls = %v, want sv start axonrouter-go", *calls)
 	}
 }
 
@@ -265,7 +265,7 @@ func TestInstallRunitErrorPaths(t *testing.T) {
 		stubHost(t, hostStub{goos: "linux", euid: 1000})
 		stubRunFunc(t, func(string, ...string) (string, error) { return "", errors.New("boom") })
 
-		info, err := installRunit("/usr/local/bin/9router-go", nil)
+		info, err := installRunit("/usr/local/bin/axonrouter-go", nil)
 		if err != nil {
 			t.Fatalf("installRunit() error = %v", err)
 		}
@@ -277,7 +277,7 @@ func TestInstallRunitErrorPaths(t *testing.T) {
 	t.Run("missing home is reported", func(t *testing.T) {
 		stubNoHome(t)
 		stubHost(t, hostStub{goos: "linux", euid: 1000})
-		if _, err := installRunit("/usr/local/bin/9router-go", nil); err == nil {
+		if _, err := installRunit("/usr/local/bin/axonrouter-go", nil); err == nil {
 			t.Error("installRunit() error = nil without a home directory")
 		}
 	})
@@ -287,8 +287,8 @@ func TestStatusRunit(t *testing.T) {
 	t.Run("run script present and supervised", func(t *testing.T) {
 		home := setHome(t)
 		stubHost(t, hostStub{goos: "linux", euid: 1000})
-		writeFile(t, filepath.Join(home, "service", "9router-go", "run"), "#!/bin/sh\n")
-		stubRunFunc(t, func(string, ...string) (string, error) { return "run: 9router-go: (pid 1) 0s", nil })
+		writeFile(t, filepath.Join(home, "service", "axonrouter-go", "run"), "#!/bin/sh\n")
+		stubRunFunc(t, func(string, ...string) (string, error) { return "run: axonrouter-go: (pid 1) 0s", nil })
 
 		info, ok := statusRunit()
 		if !ok || info.Backend != BackendRunit || !info.Active {
@@ -299,8 +299,8 @@ func TestStatusRunit(t *testing.T) {
 	t.Run("run script present but down", func(t *testing.T) {
 		home := setHome(t)
 		stubHost(t, hostStub{goos: "linux", euid: 1000})
-		writeFile(t, filepath.Join(home, "service", "9router-go", "run"), "#!/bin/sh\n")
-		stubRunFunc(t, func(string, ...string) (string, error) { return "down: 9router-go: 1s, normally up", nil })
+		writeFile(t, filepath.Join(home, "service", "axonrouter-go", "run"), "#!/bin/sh\n")
+		stubRunFunc(t, func(string, ...string) (string, error) { return "down: axonrouter-go: 1s, normally up", nil })
 
 		info, ok := statusRunit()
 		if !ok || info.Active {
@@ -329,7 +329,7 @@ func TestUninstallRunit(t *testing.T) {
 	t.Run("user removes the run script and its directory", func(t *testing.T) {
 		home := setHome(t)
 		stubHost(t, hostStub{goos: "linux", euid: 1000})
-		dir := filepath.Join(home, "service", "9router-go")
+		dir := filepath.Join(home, "service", "axonrouter-go")
 		writeFile(t, filepath.Join(dir, "run"), "#!/bin/sh\n")
 		calls := stubRun(t)
 
@@ -388,7 +388,7 @@ func TestControlRunit(t *testing.T) {
 	if err := controlRunit("restart"); err != nil {
 		t.Fatalf("controlRunit(restart) error = %v", err)
 	}
-	want := filepath.Join(home, "service", "9router-go")
+	want := filepath.Join(home, "service", "axonrouter-go")
 	if len(*calls) != 1 || (*calls)[0].name != "sv" || !slices.Contains((*calls)[0].args, want) {
 		t.Errorf("calls = %v, want sv restart %s", *calls, want)
 	}
@@ -405,10 +405,10 @@ func TestInitScriptsParseAsShell(t *testing.T) {
 		name   string
 		script string
 	}{
-		{"openrc plain", renderOpenRCScript("/usr/local/bin/9router-go", []string{"--rtk=true"})},
-		{"openrc spaced path and arg", renderOpenRCScript("/opt/my apps/9router-go", []string{"--name=a b"})},
-		{"runit plain", renderRunitRun("/usr/local/bin/9router-go", []string{"--rtk=true"})},
-		{"runit spaced path and arg", renderRunitRun("/opt/my apps/9router-go", []string{"--name=a b"})},
+		{"openrc plain", renderOpenRCScript("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})},
+		{"openrc spaced path and arg", renderOpenRCScript("/opt/my apps/axonrouter-go", []string{"--name=a b"})},
+		{"runit plain", renderRunitRun("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})},
+		{"runit spaced path and arg", renderRunitRun("/opt/my apps/axonrouter-go", []string{"--name=a b"})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

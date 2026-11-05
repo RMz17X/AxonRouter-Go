@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // The dashboard's Test button pings a model through the endpoint its kind

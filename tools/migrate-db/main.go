@@ -1,5 +1,5 @@
 // migrate-db is the one-shot SQLite -> PostgreSQL data migrator for
-// 9router-go (plan §5/P2). It is a separate module on purpose: its
+// axonrouter-go (plan §5/P2). It is a separate module on purpose: its
 // SQLite driver must never enter the runtime's module graph, and the
 // runtime never links it. It reads both schemas as data — the SQLite
 // file's catalog and the PostgreSQL DDL transcribed in schema_pg.sql —

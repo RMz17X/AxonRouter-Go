@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/log"
 )
 
 // workerBaseURL is the service that maps a shortId onto its tunnel URL, which
@@ -667,7 +667,7 @@ func normaliseProtocol(p string) string {
 // by default, and a named-tunnel config sitting there would silently turn a
 // quick tunnel into something else.
 func writeQuickTunnelConfig() (string, func(), error) {
-	dir, err := os.MkdirTemp("", "9router-quick-tunnel-")
+	dir, err := os.MkdirTemp("", "axonrouter-go-quick-tunnel-")
 	if err != nil {
 		return "", nil, fmt.Errorf("tunnel.writeQuickTunnelConfig: %w", err)
 	}

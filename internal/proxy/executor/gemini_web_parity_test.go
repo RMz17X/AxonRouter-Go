@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/translator"
 )
 
 // The parity work against azrinaldi/gemini-stealth-bridge closed five gaps:

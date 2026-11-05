@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/auth"
+	"axonrouter/proxy/internal/auth"
 )
 
 // g05FixturePayload is the migration rehearsal corpus: every access state the

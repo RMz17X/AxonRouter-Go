@@ -76,7 +76,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "== building"
-go build -o "$workdir/9router" ./cmd/9router-go
+go build -o "$workdir/axonrouter-go" ./cmd/axonrouter-go
 
 # auth.CLIToken() derives from two files under DATA_DIR and creates them on first
 # use. Seed them before the server starts, in the exact format
@@ -94,7 +94,7 @@ PY
 echo "== starting gateway on :$PORT"
 PORT="$PORT" DATA_DIR="$workdir/data" \
   ALLOW_PRIVATE_NETWORKING=true \
-  "$workdir/9router" >"$workdir/gateway.log" 2>&1 &
+  "$workdir/axonrouter-go" >"$workdir/gateway.log" 2>&1 &
 gw_pid=$!
 
 

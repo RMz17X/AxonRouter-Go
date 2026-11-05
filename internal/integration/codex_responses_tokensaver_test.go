@@ -9,9 +9,9 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/app"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers"
+	"axonrouter/proxy/internal/app"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers"
 )
 
 // A /v1/responses client on a Responses-speaking upstream with a token saver

@@ -1,4 +1,4 @@
-# 9router-go Architecture
+# AxonRouter-Go Architecture
 
 This document describes the current Go implementation. Source code is authoritative when a compatibility statement and local behavior differ.
 
@@ -15,11 +15,11 @@ This document describes the current Go implementation. Source code is authoritat
 
 ```mermaid
 flowchart LR
-    CLI[CLI, SDK, and agent clients] --> GW[9router-go HTTP process]
+    CLI[CLI, SDK, and agent clients] --> GW[axonrouter-go HTTP process]
     Browser[Browser] --> SPA[Embedded Svelte 5 SPA]
     SPA --> API[Native Go dashboard API]
 
-    subgraph GW[9router-go HTTP process]
+    subgraph GW[axonrouter-go HTTP process]
       SPA
       API
       ENGINE[Routing, translation, provider executors, SSE]
@@ -41,7 +41,7 @@ The Go binary owns proxy routing, dashboard APIs, auth, persistence, OAuth, medi
 
 | Path | Responsibility |
 | --- | --- |
-| `cmd/9router-go/` | CLI parser (`version`/`update`/`help`; the default action runs the foreground server), signal handling, Fx start/stop |
+| `cmd/axonrouter-go/` | CLI parser (`version`/`update`/`help`; the default action runs the foreground server), signal handling, Fx start/stop |
 | `internal/app/` | Fx modules, dependency graph, server and DB lifecycle |
 | `internal/config/` | Viper/env configuration, `DATA_DIR` state-root resolution, JWT secret from `JWT_SECRET` |
 | `internal/handlers/` | Chi route composition, chat, media, OAuth, dashboard, SSO, usage |
@@ -55,12 +55,12 @@ The Go binary owns proxy routing, dashboard APIs, auth, persistence, OAuth, medi
 | `internal/foreigndb/` | Read-only reader for *other applications'* legacy-format files (browser/Cursor/Zed imports); never opens this gateway's data |
 | `web/` | Svelte 5 + Vite + Tailwind dashboard |
 | `web/embed.go` | Embeds `web/dist` and serves the SPA with index fallback |
-| `internal/daemon/`, `internal/service/` | Process primitives kept for the tray companion (`cmd/9router-tray`) and the updater; this binary exposes no daemon/service operator surface anymore |
+| `internal/daemon/`, `internal/service/` | Process primitives kept for the tray companion (`cmd/axonrouter-tray`) and the updater; this binary exposes no daemon/service operator surface anymore |
 | `internal/proc/` | Portable process primitives (liveness, terminate, detach) shared by the daemon and headroom |
 
 ## Fx lifecycle
 
-`cmd/9router-go/main.go` builds an `urfave/cli` application. The default server action loads CLI parameters and starts `app.AppModule` with `fx.Replace(cliParams)`. Set `FX_LOGGING=true` to enable the console Fx logger; otherwise Fx logging is disabled.
+`cmd/axonrouter-go/main.go` builds an `urfave/cli` application. The default server action loads CLI parameters and starts `app.AppModule` with `fx.Replace(cliParams)`. Set `FX_LOGGING=true` to enable the console Fx logger; otherwise Fx logging is disabled.
 
 The binary's only run mode is the **foreground server** — the daemon and
 service subcommands were removed with the Docker delivery (P5), and process
@@ -310,8 +310,8 @@ resilience semaphore, provider quota caches, and the catalog cache
 ```mermaid
 flowchart LR
     Client[Clients] --> LB[nginx]
-    LB --> N1[9router-go node]
-    LB --> N2[9router-go node]
+    LB --> N1[axonrouter-go node]
+    LB --> N2[axonrouter-go node]
     N1 --> PG[(PostgreSQL 17 - durable truth)]
     N2 --> PG
     N1 --> VK[(Valkey - hot state only)]
@@ -371,7 +371,7 @@ make build
 # Development runtime (a reachable PostgreSQL is required — the compose
 # stacks provide one; a bare run points DATABASE_URL at any server)
 make run                 # or: make dev
-DATABASE_URL=postgres://user:pass@localhost:5432/9router JWT_SECRET=dev PORT=3000 make run
+DATABASE_URL=postgres://user:pass@localhost:5432/axonrouter JWT_SECRET=dev PORT=3000 make run
 
 # Verification
 make vet
@@ -392,7 +392,7 @@ ratchet + live probes against a running gateway.
 
 The tagged release workflow builds the five platform binaries with
 `make cross`, uploads checksums, and builds/pushes the multi-architecture
-Linux image (`luqmenul/9router-go`, linux/amd64 + linux/arm64) from the
+Linux image (`luqmenul/axonrouter-go`, linux/amd64 + linux/arm64) from the
 repo `Dockerfile`: Bun stage builds the SPA, a Go stage embeds it into a
 CGO-disabled binary, and the Alpine runtime runs it as a non-root user
 (uid 10001) behind `docker-entrypoint.sh`. The compose stacks
@@ -416,6 +416,6 @@ The web package has no frontend unit/component test script. Dashboard verificati
 
 ## Compatibility history and future work
 
-The upstream project was a Next.js/React application with a JavaScript SSE/routing core and SQLite migrator. 9router-go ports the proxy behavior, selected data shapes, route/auth contracts, and dashboard behavior into a Go/Svelte single process. References to upstream Next.js code in comments and changelog entries identify provenance for a contract; they do not identify the current runtime.
+The upstream project was a Next.js/React application with a JavaScript SSE/routing core and SQLite migrator. axonrouter-go ports the proxy behavior, selected data shapes, route/auth contracts, and dashboard behavior into a Go/Svelte single process. References to upstream Next.js code in comments and changelog entries identify provenance for a contract; they do not identify the current runtime.
 
 Database migration/bootstrap support, frontend automated tests, additional unported upstream features, and parity gaps belong in `ROADMAP.md` or `TECHNICAL_DEBT.md` only as future work until implemented and verified.

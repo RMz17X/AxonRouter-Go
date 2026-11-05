@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/translator"
 )
 
 // geminiStream replays a live Gemini-native SSE body as OpenAI chunks.

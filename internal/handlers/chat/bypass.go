@@ -1,12 +1,12 @@
 package chat
 
 import (
-	json "9router/proxy/internal/fastjson"
+	json "axonrouter/proxy/internal/fastjson"
 	"net/http"
 	"strings"
 	"time"
 
-	"9router/proxy/internal/constants"
+	"axonrouter/proxy/internal/constants"
 )
 
 // bypassResponse represents a fake response for bypassed requests.

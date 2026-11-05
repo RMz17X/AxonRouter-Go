@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 func TestModelFamilyName(t *testing.T) {

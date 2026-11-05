@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // Provider usage fetchers for GET /api/usage/{connectionId}.
@@ -192,7 +192,7 @@ var usageHTTPClient = &http.Client{Transport: proxy.NewFallbackTransport(http.De
 // usageUserAgent is sent when a fetcher does not set its own, so a request does
 // not announce Go's default "Go-http-client/1.1" to WAF-fronted hosts. Fetchers
 // that already set one (grok-cli, antigravity) keep theirs.
-const usageUserAgent = "9router-go"
+const usageUserAgent = "axonrouter-go"
 
 func usageDo(ctx context.Context, method, rawURL string, headers map[string]string, body []byte) (int, http.Header, []byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, usageHTTPTimeout)

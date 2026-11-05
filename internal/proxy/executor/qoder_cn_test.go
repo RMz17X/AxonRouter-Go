@@ -3,7 +3,7 @@ package executor
 import (
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // RegisterAll runs at server startup, not at package init, so the test has to

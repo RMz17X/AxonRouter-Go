@@ -61,7 +61,7 @@ func TestAliveReportsRunningProcess(t *testing.T) {
 	}
 }
 
-// Stop must actually end the process — this is what `9router-go stop` depends
+// Stop must actually end the process — this is what `axonrouter-go stop` depends
 // on, and on Windows the graceful path is a forced TerminateProcess, so both
 // platforms are pinned to "process is gone when Terminate returns".
 func TestTerminateEndsProcess(t *testing.T) {

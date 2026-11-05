@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/db"
 
 	"github.com/go-chi/chi/v5"
 )

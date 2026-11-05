@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/log"
 )
 
 // hooks collects the I/O seams a test needs to fail mid-operation.

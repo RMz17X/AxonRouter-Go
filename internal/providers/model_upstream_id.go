@@ -57,7 +57,7 @@ func CodexUpstreamModelID(model string) string {
 }
 
 // splitThinkingSuffix separates the trailing "(level)" thinking override from a
-// model id. It is a 9router request modifier, never part of the wire id.
+// model id. It is an AxonRouter-Go request modifier, never part of the wire id.
 func splitThinkingSuffix(model string) (base, suffix string) {
 	if open := strings.LastIndex(model, "("); open != -1 && strings.HasSuffix(model, ")") {
 		return strings.TrimSpace(model[:open]), model[open:]

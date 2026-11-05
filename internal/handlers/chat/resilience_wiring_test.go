@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/promptcache"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/resilience"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/promptcache"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/resilience"
 )
 
 // resilienceTestConfig is the minimal provider config the admit path reads.

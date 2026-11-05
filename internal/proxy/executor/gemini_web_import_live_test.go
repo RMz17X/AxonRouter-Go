@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/browsercookies"
+	"axonrouter/proxy/internal/browsercookies"
 )
 
 // TestGeminiWebLiveImportedSession exercises a session that was read out of a

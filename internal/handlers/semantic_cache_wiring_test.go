@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/shared"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/translator"
 )
 
 // SetupRoutes must hand back the chat handler that owns the engine's semantic

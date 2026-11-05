@@ -9,13 +9,13 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // resetHint mirrors upstream RESET_HINT in src/app/api/auth/login/route.js.
-const resetHint = "Forgot password? Reset to default via 9router-go CLI → Settings → Reset Password to Default."
+const resetHint = "Forgot password? Reset to default via axonrouter-go CLI → Settings → Reset Password to Default."
 
 // HandleAuthLogin handles POST /api/auth/login: verify the dashboard password
 // and issue the session cookie. Mirrors upstream

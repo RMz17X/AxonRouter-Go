@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // Rotation routes traffic through every active pool, so each one is in use

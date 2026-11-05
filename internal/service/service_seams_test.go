@@ -50,9 +50,9 @@ func redirectInitPaths(t *testing.T) string {
 	root := t.TempDir()
 	previousOpenRC := openRCServicePath
 	previousRunitDir, previousRunitLink := runitSystemDir, runitSystemLink
-	openRCServicePath = filepath.Join(root, "etc", "init.d", "9router-go")
-	runitSystemDir = filepath.Join(root, "etc", "sv", "9router-go")
-	runitSystemLink = filepath.Join(root, "var", "service", "9router-go")
+	openRCServicePath = filepath.Join(root, "etc", "init.d", "axonrouter-go")
+	runitSystemDir = filepath.Join(root, "etc", "sv", "axonrouter-go")
+	runitSystemLink = filepath.Join(root, "var", "service", "axonrouter-go")
 	t.Cleanup(func() {
 		openRCServicePath = previousOpenRC
 		runitSystemDir, runitSystemLink = previousRunitDir, previousRunitLink

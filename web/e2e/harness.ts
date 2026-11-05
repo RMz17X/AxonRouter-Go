@@ -1,7 +1,7 @@
 /**
  * Harness for the dashboard E2E suite.
  *
- * The suite drives a real `9router-go` binary against a real SQLite file and
+ * The suite drives a real `AxonRouter-Go` binary against a real SQLite file and
  * a real Chromium, because the regressions it exists to catch live in the DOM.
  *
  * Every other gate in this repo is structurally blind to them: `tsc` reads
@@ -30,7 +30,7 @@ const REPO_ROOT = resolve(import.meta.dirname, '..', '..')
 // Checked before the spawn, in startDashboard: bun reports a rejected beforeAll
 // as a 5s hook timeout followed by an afterAll crash on the undefined handle,
 // so one missing file used to read as six failures.
-const BINARY = join(REPO_ROOT, process.platform === 'win32' ? '9router-go.exe' : '9router-go')
+const BINARY = join(REPO_ROOT, process.platform === 'win32' ? 'axonrouter-go.exe' : 'axonrouter-go')
 
 export interface Dashboard {
   page: Page
@@ -56,7 +56,7 @@ export async function startDashboard(port: number): Promise<Dashboard> {
     throw new Error(`gateway binary not found at ${BINARY}; build it before running the e2e suite`)
   }
 
-  const dataDir = mkdtempSync(join(tmpdir(), '9router-e2e-'))
+  const dataDir = mkdtempSync(join(tmpdir(), 'axonrouter-go-e2e-'))
   const server = spawn(BINARY, [], {
     cwd: REPO_ROOT,
     env: {

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/auth"
+	"axonrouter/proxy/internal/auth"
 )
 
 // TestRelayDeployRoutesAcceptDashboardSession pins that the four relay-deploy

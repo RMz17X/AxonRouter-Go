@@ -21,7 +21,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy"
 )
 
 type Config struct {
@@ -378,7 +378,7 @@ func main() {
 	}
 
 	fmt.Println("==================================================")
-	fmt.Println("9Router benchmark — measuring the real gateway")
+	fmt.Println("AxonRouter-Go benchmark — measuring the real gateway")
 	fmt.Printf("target=%s stream=%v requests=%d\n", cfg.Target, cfg.Stream, cfg.Requests)
 	fmt.Println("==================================================")
 

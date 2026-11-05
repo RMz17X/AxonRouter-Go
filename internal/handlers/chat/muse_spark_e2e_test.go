@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 // Every test in this file reaches the real opencode free tier over the network —

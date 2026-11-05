@@ -613,7 +613,7 @@
       const a = document.createElement('a')
       const stamp = new Date().toISOString().replace(/[.:]/g, '-')
       a.href = url
-      a.download = `9router-backup-${stamp}.json`
+      a.download = `axonrouter-go-backup-${stamp}.json`
       document.body.appendChild(a)
       a.click()
       setTimeout(() => {
@@ -1322,11 +1322,11 @@
         <h2 class="text-sm font-bold text-text-main">White-label branding</h2>
       </div>
       <p class="text-xs text-text-muted">
-        Customize the name and logo shown in the dashboard sidebar. Leave blank to use the 9router-go defaults.
+        Customize the name and logo shown in the dashboard sidebar. Leave blank to use the AxonRouter-Go defaults.
       </p>
       <label class="block space-y-1">
         <span class="text-xs font-medium text-text-main">Application name</span>
-        <Input bind:value={appName} placeholder="9router-go" />
+        <Input bind:value={appName} placeholder="AxonRouter-Go" />
       </label>
       <label class="block space-y-1">
         <span class="text-xs font-medium text-text-main">Logo URL</span>

@@ -24,14 +24,14 @@ var commandcodeWorkingDir = func() string {
 	return "/"
 }()
 
-// commandcodeProjectSlug falls back to "9router-go" when the working dir
+// commandcodeProjectSlug falls back to "axonrouter-go" when the working dir
 // slugifies to nothing (cwd "/" in a container): upstream rejects an empty
 // x-project-slug with 400.
 var commandcodeProjectSlug = func() string {
 	if s := commandcodeSlugify(commandcodeWorkingDir); s != "" {
 		return s
 	}
-	return "9router-go"
+	return "axonrouter-go"
 }()
 
 var (

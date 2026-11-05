@@ -4,11 +4,11 @@ order: 1
 section: Getting Started
 ---
 
-# 9router-go
+# AxonRouter-Go
 
 **Never stop coding. Save 20-40% tokens with RTK + auto-fallback to FREE & cheap AI models.**
 
-9router-go is a single Go binary that serves both the proxy APIs and the dashboard — no Node.js at runtime. This page is the entry point to the whole wiki.
+AxonRouter-Go is a single Go binary that serves both the proxy APIs and the dashboard — no Node.js at runtime. This page is the entry point to the whole wiki.
 
 ## Start here
 
@@ -37,7 +37,7 @@ section: Getting Started
 ## Running in 30 seconds
 
 ```bash
-9router-go
+axonrouter-go
 # Dashboard: http://localhost:20130 (initial password: 123456)
 ```
 
@@ -48,7 +48,7 @@ Dashboard → Providers → connect **Kiro AI** (≈50 free credits per month) o
 ## Which version am I on?
 
 ```bash
-9router-go version
+axonrouter-go version
 ```
 
 Some features on this site arrived in a specific release. Where that matters, the

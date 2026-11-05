@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -37,7 +37,7 @@ const (
 
 // comboTestTarget is one resolved leaf of the combo: the model string the
 // health check will call, and the step metadata Axon reports for it. The
-// pointer fields are always null here — 9router-go combo members are plain
+// pointer fields are always null here — axonrouter-go combo members are plain
 // model strings with no step id, connection pin, or label.
 type comboTestTarget struct {
 	ModelStr     string  `json:"modelStr"`

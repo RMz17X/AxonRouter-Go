@@ -103,7 +103,7 @@ func RunDeepSeek(ctx context.Context) (*DeepSeekResult, error) {
 			"use an Incognito window instead and paste the userToken from chat.deepseek.com localStorage")
 	}
 
-	profile, err := os.MkdirTemp(browserProfileRoot(binary), "9router-deepseek-login-*")
+	profile, err := os.MkdirTemp(browserProfileRoot(binary), "axonrouter-go-deepseek-login-*")
 	if err != nil {
 		return nil, fmt.Errorf("create the temporary browser profile: %w", err)
 	}

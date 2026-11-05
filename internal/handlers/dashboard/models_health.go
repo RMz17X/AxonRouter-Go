@@ -5,8 +5,8 @@ import (
 	"io"
 	"net/http"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/modelhealth"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/modelhealth"
 )
 
 // HandleGetModelHealth handles GET /api/models/health.

@@ -167,7 +167,7 @@ func TestTokenHarborFreeDeepseekIsNotUnknown(t *testing.T) {
 }
 
 // Port of upstream tests/unit/gpt-6-context-window.test.js (89ffac5a), minus
-// the gateway rows 9router-go does not carry (Kiro 272k / Codex 272k+372k /
+// the gateway rows axonrouter-go does not carry (Kiro 272k / Codex 272k+372k /
 // Devin CLI 200k live in this port's provider tables, not in capabilities.js).
 // The order of the tier rows is the load-bearing part: move mini/nano below
 // *gpt-5.4* and they silently report 1.05M.

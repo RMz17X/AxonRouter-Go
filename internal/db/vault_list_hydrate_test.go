@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/vault"
+	"axonrouter/proxy/internal/vault"
 )
 
 // TestVaultListHydratesTheCredential pins the list query's hydration.

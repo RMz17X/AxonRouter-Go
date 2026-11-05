@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/updater"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/updater"
 )
 
 func TestHandleVersion(t *testing.T) {
@@ -88,7 +88,7 @@ func TestHandleToggleAutoUpdate(t *testing.T) {
 // falls through to the release API that can. This manifest carries the digest
 // precisely so it still answers on its own — the fallthrough is covered in
 // internal/updater. Without it this test would be asserting the old
-// manifest-always-wins behaviour, where `9router-go update` always failed
+// manifest-always-wins behaviour, where `axonrouter-go update` always failed
 // with "release carries no checksum".
 func TestHandleCheckUpdate_Mock(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

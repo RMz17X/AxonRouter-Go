@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // The Details list endpoint used to return the whole stored payload per row —

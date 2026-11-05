@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/proc"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/proc"
 )
 
 // StartupTimeout bounds how long Start waits for the daemon to answer /health
@@ -38,7 +38,7 @@ const (
 )
 
 // ErrAlreadyRunning is returned when a live daemon already owns the port.
-var ErrAlreadyRunning = errors.New("9router-go is already running")
+var ErrAlreadyRunning = errors.New("AxonRouter-Go is already running")
 
 // StopTimeout is how long Restart waits for the old daemon's port to be
 // released before giving up.

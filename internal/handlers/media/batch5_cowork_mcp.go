@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/clisetup"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // Cowork MCP routes (batch 5): the Anthropic MCP registry browser and

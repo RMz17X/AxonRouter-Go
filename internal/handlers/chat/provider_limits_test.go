@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/middleware"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/middleware"
 )
 
 // Provider-scope enforcement, request side. These tests cover the properties the

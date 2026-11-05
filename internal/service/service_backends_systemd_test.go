@@ -15,7 +15,7 @@ func TestInstallSystemdUserWritesAndEnablesUnit(t *testing.T) {
 	home := setHome(t)
 	calls := stubRun(t)
 
-	info, err := installSystemd("/usr/local/bin/9router-go", []string{"--rtk=true"})
+	info, err := installSystemd("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 	if err != nil {
 		t.Fatalf("installSystemd() error = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestInstallSystemdErrorPaths(t *testing.T) {
 				return "", nil
 			})
 
-			info, err := installSystemd("/usr/local/bin/9router-go", nil)
+			info, err := installSystemd("/usr/local/bin/axonrouter-go", nil)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("installSystemd() err = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -170,7 +170,7 @@ func TestInstallSystemdEnablesLingerOnBothPaths(t *testing.T) {
 				return "", nil
 			})
 
-			if _, err := installSystemd("/usr/local/bin/9router-go", nil); err != nil {
+			if _, err := installSystemd("/usr/local/bin/axonrouter-go", nil); err != nil {
 				t.Fatalf("installSystemd() error = %v", err)
 			}
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/proc"
+	"axonrouter/proxy/internal/proc"
 )
 
 // isolate points DATA_DIR at a temp directory so the tests never read or write

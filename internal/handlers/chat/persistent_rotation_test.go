@@ -5,8 +5,8 @@ package chat
 import (
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/models"
 )
 
 // The rotation used to live in an in-memory index keyed by provider, so a

@@ -12,7 +12,7 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // The POST poll action of the generic dispatch route (split from

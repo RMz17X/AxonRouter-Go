@@ -1,6 +1,6 @@
 // Package proc holds the portable process primitives shared by everything in
 // this repo that manages an external process: the headroom proxy and the
-// 9router daemon itself.
+// AxonRouter-Go daemon itself.
 //
 // Every platform answers the same three questions — is this PID alive, ask it
 // to stop, and force it to stop — so callers never branch on runtime.GOOS.

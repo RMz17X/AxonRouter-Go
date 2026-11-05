@@ -176,7 +176,7 @@ Rename the product for anyone you share the dashboard with.
 
 | Field | Notes |
 |---|---|
-| Application name | Shown in the sidebar. Leave blank for `9router-go` |
+| Application name | Shown in the sidebar. Leave blank for `axonrouter-go` |
 | Logo URL | An HTTPS URL, or a local absolute path such as `/logo.png` |
 | Upload image | PNG, SVG, WebP or JPEG, max 2 MB. The file is stored in the gateway's own data directory and the URL field is filled in for you |
 

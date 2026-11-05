@@ -10,7 +10,7 @@ import (
 
 	toml "github.com/pelletier/go-toml/v2"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // Second half of the *-settings readers: deepseek-tui, droid,

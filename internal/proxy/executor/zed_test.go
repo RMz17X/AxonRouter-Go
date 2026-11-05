@@ -13,7 +13,7 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // zedTestJWT builds an unsigned JWT whose payload carries the given exp claim.

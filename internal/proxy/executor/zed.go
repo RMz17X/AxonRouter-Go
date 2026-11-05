@@ -41,10 +41,10 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/translator"
 )
 
 const (

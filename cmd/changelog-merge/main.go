@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/changelogfrag"
+	"axonrouter/proxy/internal/changelogfrag"
 )
 
 func main() {

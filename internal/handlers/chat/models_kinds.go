@@ -29,8 +29,8 @@ import (
 	"slices"
 	"strings"
 
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
 )
 
 // modelKindSlugMap is Axon's KIND_SLUG_MAP: URL slug → service

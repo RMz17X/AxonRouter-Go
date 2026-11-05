@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"9router/proxy/internal/proc"
+	"axonrouter/proxy/internal/proc"
 )
 
 // Backend names the init/autostart system an install targets.
@@ -31,7 +31,7 @@ const (
 )
 
 // ErrNotInstalled is returned when no autostart entry exists to remove.
-var ErrNotInstalled = errors.New("9router-go autostart is not installed")
+var ErrNotInstalled = errors.New("AxonRouter-Go autostart is not installed")
 
 // Test seams. CI only runs one OS, so the live host facts detection and the
 // Windows guard depend on are read through these instead of the runtime

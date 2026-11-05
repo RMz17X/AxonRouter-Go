@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // HandleGetDatabaseStats handles GET /api/settings/database/stats.

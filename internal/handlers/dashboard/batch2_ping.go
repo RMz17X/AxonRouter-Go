@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/translator"
 )
 
 // pingResult is AxonRouter ping.js's verdict shape: {ok, latencyMs, error,

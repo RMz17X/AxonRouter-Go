@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
 )
 
 func TestMediaContracts_ClientCancellationAbortsUpstream(t *testing.T) {

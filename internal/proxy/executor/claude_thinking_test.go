@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // TestEnsureClaudeMessages_ThinkingDisplay covers the request-side half of

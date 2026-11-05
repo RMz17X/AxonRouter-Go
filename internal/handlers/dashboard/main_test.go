@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"9router/proxy/internal/testnet"
+	"axonrouter/proxy/internal/testnet"
 )
 
 // ALLOW_PRIVATE_NETWORKING lets the handler tests reach their own httptest

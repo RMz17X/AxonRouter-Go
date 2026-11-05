@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 // TestAcquireQueuesUntilSlotFrees proves a request over the concurrency cap

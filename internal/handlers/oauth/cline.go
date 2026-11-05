@@ -1,10 +1,10 @@
 package oauth
 
 import (
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/updater"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/updater"
 	"bytes"
 	"context"
 	"encoding/base64"

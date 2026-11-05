@@ -1,4 +1,4 @@
-# 9router-go — cluster stack: N gateway replicas behind nginx, one
+# AxonRouter-Go — cluster stack: N gateway replicas behind nginx, one
 # PostgreSQL 17 (the durable truth), one Valkey (the speed layer —
 # ephemeral hot state only; a Valkey outage degrades the gateways to
 # PostgreSQL, never to per-node memory).
@@ -17,13 +17,13 @@ services:
     # must stay ≤ PG_MAX_CONNECTIONS (see .env.example).
     command: postgres -c max_connections=${PG_MAX_CONNECTIONS:-100}
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-9router}
+      POSTGRES_USER: ${POSTGRES_USER:-axonrouter}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ${POSTGRES_DB:-9router}
+      POSTGRES_DB: ${POSTGRES_DB:-axonrouter}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-9router} -d ${POSTGRES_DB:-9router}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-axonrouter} -d ${POSTGRES_DB:-axonrouter}"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -42,7 +42,7 @@ services:
 
   app:
     build: .
-    image: 9router-go:local
+    image: axonrouter-go:local
     deploy:
       replicas: ${APP_REPLICAS:-2}
     depends_on:
@@ -51,7 +51,7 @@ services:
       valkey:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-9router}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-9router}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-axonrouter}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-axonrouter}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       INITIAL_PASSWORD: ${INITIAL_PASSWORD:-}
       # Per-node PostgreSQL pool (code defaults 10/5). Keep
@@ -85,7 +85,7 @@ services:
     profiles: ["migrate"]
     build:
       context: tools/migrate-db
-    image: 9router-go-migrate:local
+    image: axonrouter-go-migrate:local
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,7 +96,7 @@ services:
       - --sqlite
       - /legacy/data.sqlite
       - --pg
-      - postgres://${POSTGRES_USER:-9router}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-9router}?sslmode=disable
+      - postgres://${POSTGRES_USER:-axonrouter}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-axonrouter}?sslmode=disable
 
 volumes:
   pgdata:

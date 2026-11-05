@@ -14,9 +14,9 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/shared"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/translator"
 )
 
 func TestRTKCompressionMetricsCalculationAndLog(t *testing.T) {

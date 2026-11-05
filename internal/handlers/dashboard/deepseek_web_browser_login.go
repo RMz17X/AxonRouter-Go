@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
-	"9router/proxy/internal/browserlogin"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/browserlogin"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/log"
 )
 
 // The browser sign-in for DeepSeek Web.

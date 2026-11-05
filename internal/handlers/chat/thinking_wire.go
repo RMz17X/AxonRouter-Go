@@ -3,9 +3,9 @@ package chat
 import (
 	"context"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/thinking"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/thinking"
+	"axonrouter/proxy/internal/translator"
 	json "encoding/json/v2"
 	"strings"
 )

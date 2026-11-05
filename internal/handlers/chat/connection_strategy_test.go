@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/models"
 )
 
 func TestApplyConnectionStrategy_RoundRobin(t *testing.T) {

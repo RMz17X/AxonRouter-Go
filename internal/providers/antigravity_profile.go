@@ -2,7 +2,7 @@ package providers
 
 import "strings"
 
-// AntigravityClientProfile selects which official client identity 9router
+// AntigravityClientProfile selects which official client identity AxonRouter-Go
 // presents to Google's Cloud Code / Antigravity backend.
 //
 // Google ships two clients that share the same OAuth client id and the same

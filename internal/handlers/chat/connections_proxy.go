@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/log"
-	internalproxy "9router/proxy/internal/proxy"
-	"9router/proxy/internal/proxy/smart"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/log"
+	internalproxy "axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy/smart"
 )
 
 func isKnownProxyType(t string) bool {

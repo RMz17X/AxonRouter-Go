@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/browsercookies"
-	"9router/proxy/internal/browserlogin"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/browsercookies"
+	"axonrouter/proxy/internal/browserlogin"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // The DeepSeek import answers with BOTH halves of the credential: the

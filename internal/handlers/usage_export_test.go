@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // exportTestRepo builds a repository with the tables the export walks and a

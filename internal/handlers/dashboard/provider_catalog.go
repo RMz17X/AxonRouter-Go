@@ -3,8 +3,8 @@ package dashboard
 import (
 	"net/http"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/providers"
 )
 
 // HandleGetProviderCatalog serves the provider registry the dashboard renders

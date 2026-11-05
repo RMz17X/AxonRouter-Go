@@ -27,9 +27,9 @@ import (
 	"net/http"
 	"strings"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/translator"
 )
 
 // HandleTranslatorTranslate serves POST /api/translator/translate.

@@ -1,5 +1,5 @@
 name: Question
-description: Ask how to configure, use, or troubleshoot 9router-go
+description: Ask how to configure, use, or troubleshoot AxonRouter-Go
 title: "question: "
 labels: ["question"]
 body:

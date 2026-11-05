@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // A re-login mints a new plan JWT and bumps token_version, which kills the

@@ -10,8 +10,8 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // The client-attestation headers chat.deepseek.com's web client sends.

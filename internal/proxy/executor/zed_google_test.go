@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 func TestZedWireProviderGoogle(t *testing.T) {

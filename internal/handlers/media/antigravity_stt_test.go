@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
 )
 
 func TestHandleSTT_Antigravity(t *testing.T) {

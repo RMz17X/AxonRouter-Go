@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
 )
 
 // newElevenLabsSoundHandler seeds an active elevenlabs connection pointed at a

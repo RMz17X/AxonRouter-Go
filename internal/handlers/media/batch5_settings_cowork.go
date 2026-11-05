@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"strings"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // Cowork (Claude Desktop 3p) settings reader — the read half of

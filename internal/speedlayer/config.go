@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 )
 
 // Mode names the boot selection, for the banner and the status payload.

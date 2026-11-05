@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/usagetracker"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/usagetracker"
 )
 
 // ElevenLabs Scribe STT. The generic OpenAI-compatible multipart path is
@@ -103,7 +103,7 @@ func parseElevenLabsSTTRequest(body []byte, contentType string, modelInfo *chat.
 		return nil, fmt.Errorf("missing required field: file")
 	}
 	// model_id is the upstream model id, not the caller's provider-qualified
-	// spelling — the vendor knows nothing about 9router's "elevenlabs/…" form.
+	// spelling — the vendor knows nothing about AxonRouter-Go's "elevenlabs/…" form.
 	form.Model = modelInfo.Model
 	if form.Model == "" {
 		form.Model = form.get("model")

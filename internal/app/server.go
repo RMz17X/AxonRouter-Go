@@ -13,18 +13,18 @@ import (
 
 	"go.uber.org/fx"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/middleware"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy/executor"
-	"9router/proxy/internal/proxy/oauth"
-	"9router/proxy/internal/proxy/smart"
-	"9router/proxy/internal/schedule"
-	"9router/proxy/internal/shutdown"
-	"9router/proxy/internal/updater"
-	"9router/proxy/internal/uptime"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/middleware"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/proxy/smart"
+	"axonrouter/proxy/internal/schedule"
+	"axonrouter/proxy/internal/shutdown"
+	"axonrouter/proxy/internal/updater"
+	"axonrouter/proxy/internal/uptime"
 )
 
 // ServerModule provides *http.Server and manages its lifecycle and background tasks.
@@ -157,7 +157,7 @@ func ProvideServer(p ServerParams) *http.Server {
 				smart.NewCanaryWorker(p.Repo, nil).Start(shutdown.Context())
 			}
 
-			log.Printf("9router-go Proxy (%s) starting on port %d", updater.CurrentVersion, p.Config.Port)
+			log.Printf("AxonRouter-Go Proxy (%s) starting on port %d", updater.CurrentVersion, p.Config.Port)
 
 			go func() {
 				if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -165,7 +165,7 @@ func ProvideServer(p ServerParams) *http.Server {
 				}
 			}()
 
-			fmt.Fprintf(os.Stdout, "\n  🚀 9router-go Proxy (%s) on %s\n\n", updater.CurrentVersion, addr)
+			fmt.Fprintf(os.Stdout, "\n  🚀 AxonRouter-Go Proxy (%s) on %s\n\n", updater.CurrentVersion, addr)
 			log.Printf("Server is ready to handle requests at %s", addr)
 			return nil
 		},

@@ -11,7 +11,7 @@ import (
 	"os"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 func TestE2E_EdgeTTS_LiveEndpoint(t *testing.T) {

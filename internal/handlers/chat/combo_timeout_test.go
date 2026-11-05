@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	internalproxy "9router/proxy/internal/proxy"
+	internalproxy "axonrouter/proxy/internal/proxy"
 )
 
 func TestComboResponseTimeoutPrecommit(t *testing.T) {

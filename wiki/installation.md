@@ -10,12 +10,12 @@ section: Getting Started
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/luqman-v1/9router-go/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/RMz17X/AxonRouter-Go/main/install.sh | bash
 ```
 
 ```powershell
 # Windows (PowerShell) — writes to %LOCALAPPDATA% + user PATH, no admin needed
-irm https://raw.githubusercontent.com/luqman-v1/9router-go/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/RMz17X/AxonRouter-Go/main/install.ps1 | iex
 ```
 
 ## Defaults
@@ -26,16 +26,16 @@ No flags required:
 |---|---|
 | Port | `20130` |
 | Database | PostgreSQL, via `DATABASE_URL` (**required**) |
-| State | `DATA_DIR` — `~/.9router` (`%APPDATA%/9router` on Windows); non-database state only |
+| State | `DATA_DIR` — `~/.axonrouter-go` (`%APPDATA%/axonrouter-go` on Windows); a pre-rename `~/.9router` is still used when it is the only one that exists; non-database state only |
 | Dashboard | `http://localhost:20130` |
 | Initial password | `123456` (localhost only) |
 
 ## Running
 
 ```bash
-9router-go              # run in the foreground
+axonrouter-go              # run in the foreground
 curl http://localhost:20130/health
-./9router-go version
+./axonrouter-go version
 ```
 
 Override only when you need something different (there are no `--port` flags).
@@ -43,10 +43,10 @@ A reachable PostgreSQL is mandatory — the binary refuses to boot without
 `DATABASE_URL`:
 
 ```bash
-DATABASE_URL=postgres://user:pass@localhost:5432/9router JWT_SECRET=change-me ./9router-go
-PORT=20129 DATABASE_URL=... ./9router-go
-DATA_DIR=/srv/9router DATABASE_URL=... ./9router-go
-HOST=127.0.0.1 DATABASE_URL=... ./9router-go
+DATABASE_URL=postgres://user:pass@localhost:5432/axonrouter JWT_SECRET=change-me ./axonrouter-go
+PORT=20129 DATABASE_URL=... ./axonrouter-go
+DATA_DIR=/srv/axonrouter-go DATABASE_URL=... ./axonrouter-go
+HOST=127.0.0.1 DATABASE_URL=... ./axonrouter-go
 ```
 
 ## Running it persistently
@@ -66,19 +66,19 @@ docker compose -f docker-compose.single.yml up -d --build
 ```
 
 Experimental builds are marked **Pre-release** and never offered to a normal
-install; Docker Hub tags them `exp` (`luqmenul/9router-go:exp`), never `latest`.
+install; Docker Hub tags them `exp` (`luqmenul/axonrouter-go:exp`), never `latest`.
 
 ## Building from source
 
 Prerequisites: Go 1.27 and Bun 1.x (the dashboard is embedded into the binary, so build web first).
 
 ```bash
-git clone https://github.com/luqman-v1/9router-go.git
-cd 9router-go
+git clone https://github.com/RMz17X/AxonRouter-Go.git
+cd axonrouter-go
 make web-build   # bun install --frozen-lockfile && bun run build
 make build       # embeds VERSION into the Go binary
 # run it (needs a reachable PostgreSQL):
-DATABASE_URL=postgres://user:pass@localhost:5432/9router JWT_SECRET=dev ./9router-go
+DATABASE_URL=postgres://user:pass@localhost:5432/axonrouter JWT_SECRET=dev ./axonrouter-go
 ```
 
 ## First login
@@ -90,7 +90,7 @@ DATABASE_URL=postgres://user:pass@localhost:5432/9router JWT_SECRET=dev ./9route
   password. Either:
   1. Set `INITIAL_PASSWORD` on launch (recommended):
      ```bash
-     INITIAL_PASSWORD="your-secure-password" ./9router-go
+     INITIAL_PASSWORD="your-secure-password" ./axonrouter-go
      ```
   2. Or access via SSH port-forwarding first:
      ```bash

@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // "Test Connection" on a relayed connection must exercise the relay. It used to

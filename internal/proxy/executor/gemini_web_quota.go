@@ -14,7 +14,7 @@ import (
 
 	fhttp "github.com/bogdanfinn/fhttp"
 
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 )
 
 // Quota on Gemini Web.

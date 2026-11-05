@@ -272,22 +272,22 @@ jobs:
         run: go test ./... -v
 
       # The binary is built with Go's default -pgo=auto, which silently stops
-      # applying cmd/9router-go/default.pgo the moment that file is renamed,
+      # applying cmd/axonrouter-go/default.pgo the moment that file is renamed,
       # gitignored, .dockerignore'd, or a -pgo=off flag creeps in. Nothing about
       # the build would fail — it would just quietly get slower, so the flag is
       # asserted here instead of trusted.
       - name: Build
-        run: go build -ldflags="-s -w" -o /tmp/9router-go ./cmd/9router-go/
+        run: go build -ldflags="-s -w" -o /tmp/axonrouter-go ./cmd/axonrouter-go/
 
       - name: Assert PGO is applied
         run: |
-          go version -m /tmp/9router-go | grep -q -- '-pgo=' || {
+          go version -m /tmp/axonrouter-go | grep -q -- '-pgo=' || {
             echo "::error::PGO profile not applied to the release binary."
-            echo "Check that cmd/9router-go/default.pgo is committed and that"
+            echo "Check that cmd/axonrouter-go/default.pgo is committed and that"
             echo "no build step passes -pgo=off."
             exit 1
           }
-          go version -m /tmp/9router-go | grep -- '-pgo='
+          go version -m /tmp/axonrouter-go | grep -- '-pgo='
 
       # Every gate above is structurally blind to the DOM. `tsc` reads types,
       # `vite build` bundles, the ratchet counts diagnostics, and `go test`
@@ -297,7 +297,7 @@ jobs:
       # dropped the confirm() on delete and regenerate, and every gate stayed
       # green. This job drives the real binary in a real browser.
       - name: Build binary for E2E
-        run: go build -o 9router-go ./cmd/9router-go/
+        run: go build -o axonrouter-go ./cmd/axonrouter-go/
 
       - name: Install Chromium
         working-directory: web
@@ -352,7 +352,7 @@ jobs:
       # platform where systray needs no cgo or pkg-config, so the build that
       # proves the file still compiles is free here and exists nowhere else.
       - name: Build tray binary
-        run: go build -o /dev/null ./cmd/9router-tray/
+        run: go build -o /dev/null ./cmd/axonrouter-tray/
 
   # The `test` job above runs `go test ./...` without -race, so a data race
   # could merge green and only surface on a user's machine under load. The
@@ -447,7 +447,7 @@ jobs:
         run: go test -tags=integration -race -count=1 -timeout 10m ./internal/integration/... -v
 
   # The Dockerfile was only ever built by release.yml, on a tag. Every breakage
-  # it can suffer — a .dockerignore entry that swallows cmd/9router-go/, a
+  # it can suffer — a .dockerignore entry that swallows cmd/axonrouter-go/, a
   # go.mod bump that misses a stage, web/embed.go failing on a missing dist —
   # stayed invisible until a release, where the only fix is re-tagging. This
   # job builds the image on every PR and pushes nothing.
@@ -465,7 +465,7 @@ jobs:
           context: .
           platforms: linux/amd64
           load: true
-          tags: 9router-go:ci
+          tags: axonrouter-go:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -476,13 +476,13 @@ jobs:
       # Docker build context.
       - name: Assert PGO survived the Docker build context
         run: |
-          cid=$(docker create 9router-go:ci)
-          docker cp "$cid":/usr/local/bin/9router-go /tmp/from-image
+          cid=$(docker create axonrouter-go:ci)
+          docker cp "$cid":/usr/local/bin/axonrouter-go /tmp/from-image
           docker rm "$cid" >/dev/null
           go version -m /tmp/from-image | grep -q -- '-pgo=' || {
             echo "::error::PGO profile missing inside the Docker image."
             echo "Check .dockerignore for an entry that would drop"
-            echo "cmd/9router-go/default.pgo from the build context."
+            echo "cmd/axonrouter-go/default.pgo from the build context."
             exit 1
           }
           go version -m /tmp/from-image | grep -- '-pgo='
@@ -583,12 +583,12 @@ jobs:
                 ;;
             esac
           }
-          check 9router-go-linux-amd64        linux/amd64   "x86-64"
-          check 9router-go-linux-arm64        linux/arm64   "aarch64"
-          check 9router-go-darwin-amd64       darwin/amd64  "Mach-O 64-bit x86_64"
-          check 9router-go-darwin-arm64       darwin/arm64  "Mach-O 64-bit arm64"
-          check 9router-go-windows-amd64.exe  windows/amd64 "PE32+"
-          check 9router-go-tray-windows-amd64.exe windows/amd64 "PE32+"
+          check axonrouter-go-linux-amd64        linux/amd64   "x86-64"
+          check axonrouter-go-linux-arm64        linux/arm64   "aarch64"
+          check axonrouter-go-darwin-amd64       darwin/amd64  "Mach-O 64-bit x86_64"
+          check axonrouter-go-darwin-arm64       darwin/arm64  "Mach-O 64-bit arm64"
+          check axonrouter-go-windows-amd64.exe  windows/amd64 "PE32+"
+          check axonrouter-go-tray-windows-amd64.exe windows/amd64 "PE32+"
           exit "$fail"
 
       # The updater verifies a download against SHA256SUMS.txt before it renames
@@ -598,9 +598,9 @@ jobs:
       - name: Assert SHA256SUMS covers every artifact
         run: |
           set -euo pipefail
-          for f in 9router-go-linux-amd64 9router-go-linux-arm64 \
-                   9router-go-darwin-amd64 9router-go-darwin-arm64 \
-                   9router-go-windows-amd64.exe 9router-go-tray-windows-amd64.exe; do
+          for f in axonrouter-go-linux-amd64 axonrouter-go-linux-arm64 \
+                   axonrouter-go-darwin-amd64 axonrouter-go-darwin-arm64 \
+                   axonrouter-go-windows-amd64.exe axonrouter-go-tray-windows-amd64.exe; do
             grep -q "  $f\$" SHA256SUMS.txt || {
               echo "::error::SHA256SUMS.txt has no entry for $f"
               exit 1

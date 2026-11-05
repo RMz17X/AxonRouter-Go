@@ -18,12 +18,12 @@ import (
 
 	"go.uber.org/fx"
 
-	"9router/proxy/internal/app"
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/db/dbtest"
-	"9router/proxy/internal/shutdown"
-	"9router/proxy/internal/updater"
+	"axonrouter/proxy/internal/app"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/db/dbtest"
+	"axonrouter/proxy/internal/shutdown"
+	"axonrouter/proxy/internal/updater"
 )
 
 // The whole package shares ONE application instance, started by TestMain and

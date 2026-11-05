@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/translator"
 )
 
 func TestCloakAntigravityRequest_WebSearchGetsRenamed(t *testing.T) {
@@ -617,7 +617,7 @@ func TestAntigravityUpstreamModel(t *testing.T) {
 		want  string
 	}{
 		// Claude 5.5: the bare catalog id is the thinking tier, and the
-		// registry's own "(high)" preset is 9router notation, not wire.
+		// registry's own "(high)" preset is AxonRouter-Go notation, not wire.
 		{"claude-sonnet-5-5", "claude-sonnet-5-5-high"},
 		{"claude-sonnet-5-5-high", "claude-sonnet-5-5-high"},
 		{"claude-sonnet-5-5-medium", "claude-sonnet-5-5-medium"},
@@ -711,7 +711,7 @@ func TestWrapForAntigravity_CapAndRequestID(t *testing.T) {
 		t.Fatalf("unmarshal wrapper: %v", err)
 	}
 	// The wire id is the family backend: the "(high)" the registry carries is
-	// 9router's thinking notation, not a Google model id, and 404s on the wire.
+	// AxonRouter-Go's thinking notation, not a Google model id, and 404s on the wire.
 	if req.Model != "gemini-3.7-flash-tiered" {
 		t.Errorf("expected model gemini-3.7-flash-tiered, got %s", req.Model)
 	}

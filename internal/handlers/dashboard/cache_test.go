@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/semanticcache"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/semanticcache"
+	"axonrouter/proxy/internal/translator"
 	"github.com/go-chi/chi/v5"
 )
 

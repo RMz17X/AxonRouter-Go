@@ -3,7 +3,7 @@ package dashboard
 import (
 	"testing"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 func TestSortProviderConnections_GroupsByProviderAndKeepsNullPriority(t *testing.T) {

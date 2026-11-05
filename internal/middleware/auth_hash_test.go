@@ -9,9 +9,9 @@ import (
 	"os"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/dbtest"
-	"9router/proxy/internal/keikey"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/dbtest"
+	"axonrouter/proxy/internal/keikey"
 )
 
 // newHashTestRepo builds a database with the real schema and no seeded keys,

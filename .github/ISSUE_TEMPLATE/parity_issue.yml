@@ -1,12 +1,12 @@
 name: Upstream parity
-description: decolua/9router has a behaviour 9router-go does not — port it, or record why not
+description: decolua/9router has a behaviour AxonRouter-Go does not — port it, or record why not
 title: "parity: "
 labels: ["parity"]
 body:
   - type: markdown
     attributes:
       value: |
-        `9router-go` is a Go port of [`decolua/9router`](https://github.com/decolua/9router) and keeps the same
+        `AxonRouter-Go` is a Go port of [`decolua/9router`](https://github.com/decolua/9router) and keeps the same
         wire contracts, so behaviour that exists upstream and not here is a **gap**, not a feature request.
 
         Issues sourced from `diegosouzapw/OmniRoute` are welcome too — link the cited file there and note it below.
@@ -35,7 +35,7 @@ body:
       description: |
         Map by responsibility, not by file path. Common targets:
 
-        | Upstream | 9router-go |
+        | Upstream | AxonRouter-Go |
         | --- | --- |
         | `open-sse/translator/` | `internal/translator/` |
         | `open-sse/executors/` | `internal/proxy/executor/`, `internal/proxy/` |

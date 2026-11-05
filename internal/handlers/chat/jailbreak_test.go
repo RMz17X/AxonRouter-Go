@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/translator"
 )
 
 // applyJailbreak is the injection boundary for every chat request. These tests

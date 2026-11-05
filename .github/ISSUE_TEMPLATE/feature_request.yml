@@ -56,7 +56,7 @@ body:
       label: Upstream reference
       description: |
         Link to a commit, PR, or issue in `decolua/9router` (or in `diegosouzapw/OmniRoute` if that is where
-        the idea comes from). Leave empty if this is original to 9router-go.
+        the idea comes from). Leave empty if this is original to AxonRouter-Go.
     validations:
       required: false
 

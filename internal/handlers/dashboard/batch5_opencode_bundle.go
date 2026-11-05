@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // OpenCode sync artifacts + bundle assembly (second half of the

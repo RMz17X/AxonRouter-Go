@@ -25,7 +25,7 @@ var ErrStopUnsupported = errors.New("proc: graceful stop unsupported on this pla
 // The exit code is checked because a process this package spawned and released
 // without waiting on keeps its PID as a zombie and still reports STILL_ACTIVE
 // until the handle is reused — reporting that as alive would make
-// `9router-go stop` wait on a process that is already gone.
+// `axonrouter-go stop` wait on a process that is already gone.
 func pidAlive(pid int) bool {
 	if pid <= 0 {
 		return false

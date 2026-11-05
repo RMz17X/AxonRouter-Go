@@ -1,7 +1,7 @@
 package chat
 
 import (
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 	"bytes"
 	"context"
 	json "encoding/json/v2"
@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/handlers/shared"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/proxy/executor"
-	"9router/proxy/internal/proxy/oauth"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/translator"
 )
 
 // antigravityConnData resolves a connection's data blob for the Antigravity

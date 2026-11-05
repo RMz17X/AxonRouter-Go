@@ -15,8 +15,8 @@ import (
 	"net/http"
 	"time"
 
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/translator"
 )
 
 // zedGeminiStream translates a Zed google stream into OpenAI chat SSE.

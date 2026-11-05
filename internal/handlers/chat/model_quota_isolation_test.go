@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 func TestModelScoped429_DoesNotBlockUnrelatedModelsOnSameAccount(t *testing.T) {

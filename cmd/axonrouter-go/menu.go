@@ -14,10 +14,10 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/daemon"
-	"9router/proxy/internal/proc"
-	"9router/proxy/internal/updater"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/daemon"
+	"axonrouter/proxy/internal/proc"
+	"axonrouter/proxy/internal/updater"
 )
 
 // stdinIsTerminal reports whether the bare invocation has a human at the
@@ -31,7 +31,7 @@ func stdinIsTerminal() bool {
 	return fi.Mode()&os.ModeCharDevice != 0
 }
 
-// runMenu is the bare-`9router-go` entry point on a terminal: the same
+// runMenu is the bare-`axonrouter-go` entry point on a terminal: the same
 // interface picker the Node CLI shows instead of silently booting a server.
 // Since P5 the foreground server is the binary's only run mode, so the
 // picker offers exactly that, plus the tray companion (which manages its
@@ -162,7 +162,7 @@ func parseChoice(line string) string {
 // startTray hands the tray to its own binary and returns, so the terminal is
 // free while the icon stays.
 //
-// The tray lives in cmd/9router-tray because a GUI toolkit cannot be linked
+// The tray lives in cmd/axonrouter-tray because a GUI toolkit cannot be linked
 // into this binary without breaking the CGO_ENABLED=0 cross-build for all five
 // targets (docs/specs/tray-companion-architecture.md §X2). Spawning keeps the
 // menu entry the Node CLI has ("Hide to Tray") without importing it here.

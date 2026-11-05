@@ -18,15 +18,15 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy/executor"
-	"9router/proxy/internal/proxy/poolstate"
-	"9router/proxy/internal/speedlayer"
-	"9router/proxy/internal/updater"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/proxy/poolstate"
+	"axonrouter/proxy/internal/speedlayer"
+	"axonrouter/proxy/internal/updater"
 )
 
 // System endpoints (batch 7, AxonRouter parity): GET

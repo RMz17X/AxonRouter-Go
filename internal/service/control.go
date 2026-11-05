@@ -9,7 +9,7 @@ import (
 
 // ErrNoSupervisor reports that the installed backend has no runtime
 // supervisor: cron only wakes the gateway at boot, so process control falls
-// back to the pid-file daemon (`9router-go start|stop|restart`).
+// back to the pid-file daemon (`axonrouter-go start|stop|restart`).
 var ErrNoSupervisor = errors.New("service: autostart backend has no supervisor, manage the process directly")
 
 // controlTimeout bounds how long start/stop/restart wait for the supervised
@@ -86,7 +86,7 @@ func controlSystemd(op string) error {
 
 // logHint points at the user journal, the only scope this package manages.
 func logHint() string {
-	return "journalctl --user -u 9router-go.service"
+	return "journalctl --user -u axonrouter-go.service"
 }
 
 // waitSystemdInactive polls until the unit leaves the active state.
@@ -134,7 +134,7 @@ func controlLaunchd(op string) error {
 }
 
 func controlOpenRC(op string) error {
-	_, err := run("rc-service", "9router-go", op)
+	_, err := run("rc-service", "axonrouter-go", op)
 	return err
 }
 

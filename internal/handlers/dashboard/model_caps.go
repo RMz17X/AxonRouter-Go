@@ -5,10 +5,10 @@ import (
 	"slices"
 	"strings"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/pricing"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/pricing"
+	"axonrouter/proxy/internal/providers"
 )
 
 // isModelFree evaluates whether a model is free by combining suffix heuristic

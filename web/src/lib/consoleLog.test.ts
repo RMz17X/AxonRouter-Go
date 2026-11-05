@@ -193,7 +193,7 @@ describe('stripAnsi', () => {
 describe('downloadFilename', () => {
   it('stamps the export time', () => {
     expect(downloadFilename(new Date(2026, 9, 3, 7, 8, 9))).toBe(
-      '9router-console-20261003-070809.log'
+      'axonrouter-go-console-20261003-070809.log'
     )
   })
 })

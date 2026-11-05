@@ -29,9 +29,9 @@ import (
 	"net/http"
 	"strings"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/translator"
 )
 
 // step3SpecializedExecutors maps canonical provider ids to the

@@ -113,7 +113,7 @@ func TestCheckUpdate_Manifest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		manifest := map[string]any{
 			"latestVersion": "2.0.0",
-			"downloadUrl":   "https://example.com/downloads/9router-go",
+			"downloadUrl":   "https://example.com/downloads/axonrouter-go",
 			"releaseNotes":  "Major release 2.0.0",
 			"sha256":        "abcdef123456",
 		}
@@ -136,7 +136,7 @@ func TestCheckUpdate_Manifest(t *testing.T) {
 	if info.LatestVersion != "2.0.0" {
 		t.Errorf("expected latestVersion 2.0.0, got %s", info.LatestVersion)
 	}
-	if info.DownloadURL != "https://example.com/downloads/9router-go" {
+	if info.DownloadURL != "https://example.com/downloads/axonrouter-go" {
 		t.Errorf("expected downloadUrl, got %s", info.DownloadURL)
 	}
 }
@@ -159,12 +159,12 @@ func TestCheckUpdate_GitHubReleasesFallback(t *testing.T) {
 			"body":     "Awesome new features",
 			"assets": []map[string]any{
 				{
-					"name":                 "9router-go_darwin_arm64.tar.gz",
-					"browser_download_url": "https://github.com/releases/9router-go_darwin_arm64.tar.gz",
+					"name":                 "axonrouter-go_darwin_arm64.tar.gz",
+					"browser_download_url": "https://github.com/releases/axonrouter-go_darwin_arm64.tar.gz",
 				},
 				{
-					"name":                 "9router-go_linux_amd64.tar.gz",
-					"browser_download_url": "https://github.com/releases/9router-go_linux_amd64.tar.gz",
+					"name":                 "axonrouter-go_linux_amd64.tar.gz",
+					"browser_download_url": "https://github.com/releases/axonrouter-go_linux_amd64.tar.gz",
 				},
 			},
 		}
@@ -190,7 +190,7 @@ func TestCheckUpdate_GitHubReleasesFallback(t *testing.T) {
 }
 
 func TestExtractExecutableBytes_TarGz(t *testing.T) {
-	// Create a dummy .tar.gz containing a 9router-go binary payload
+	// Create a dummy .tar.gz containing a axonrouter-go binary payload
 	binaryContent := bytes.Repeat([]byte("BINARY_PAYLOAD_CONTENT_TEST_EXEC_DATA"), 100)
 
 	var buf bytes.Buffer
@@ -198,7 +198,7 @@ func TestExtractExecutableBytes_TarGz(t *testing.T) {
 	tw := tar.NewWriter(gw)
 
 	hdr := &tar.Header{
-		Name: "9router-go",
+		Name: "axonrouter-go",
 		Mode: 0755,
 		Size: int64(len(binaryContent)),
 	}
@@ -211,7 +211,7 @@ func TestExtractExecutableBytes_TarGz(t *testing.T) {
 	tw.Close()
 	gw.Close()
 
-	extracted, err := extractExecutableBytes(buf.Bytes(), "9router-go_darwin_arm64.tar.gz")
+	extracted, err := extractExecutableBytes(buf.Bytes(), "axonrouter-go_darwin_arm64.tar.gz")
 	if err != nil {
 		t.Fatalf("extractExecutableBytes failed: %v", err)
 	}
@@ -227,7 +227,7 @@ func TestExtractExecutableBytes_Zip(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
-	f, err := zw.Create("9router-go.exe")
+	f, err := zw.Create("axonrouter-go.exe")
 	if err != nil {
 		t.Fatalf("create zip entry: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestExtractExecutableBytes_Zip(t *testing.T) {
 	}
 	zw.Close()
 
-	extracted, err := extractExecutableBytes(buf.Bytes(), "9router-go_windows_amd64.zip")
+	extracted, err := extractExecutableBytes(buf.Bytes(), "axonrouter-go_windows_amd64.zip")
 	if err != nil {
 		t.Fatalf("extract zip failed: %v", err)
 	}
@@ -248,9 +248,9 @@ func TestExtractExecutableBytes_Zip(t *testing.T) {
 
 func TestMatchReleaseAsset(t *testing.T) {
 	assets := []releaseAsset{
-		{Name: "9router-go_linux_amd64.tar.gz", BrowserDownloadURL: "url-linux-amd64"},
-		{Name: "9router-go_darwin_arm64.tar.gz", BrowserDownloadURL: "url-darwin-arm64"},
-		{Name: "9router-go_windows_amd64.zip", BrowserDownloadURL: "url-windows-amd64"},
+		{Name: "axonrouter-go_linux_amd64.tar.gz", BrowserDownloadURL: "url-linux-amd64"},
+		{Name: "axonrouter-go_darwin_arm64.tar.gz", BrowserDownloadURL: "url-darwin-arm64"},
+		{Name: "axonrouter-go_windows_amd64.zip", BrowserDownloadURL: "url-windows-amd64"},
 		{Name: "checksums.txt", BrowserDownloadURL: "url-checksums"},
 	}
 
@@ -288,7 +288,7 @@ func TestAutoUpdate_StatusAndToggle(t *testing.T) {
 // platformBinaryAsset is the release asset name for the platform the tests run
 // on, which is the entry the checksum manifest has to carry.
 func platformBinaryAsset() string {
-	name := fmt.Sprintf("9router-go_%s_%s", runtime.GOOS, runtime.GOARCH)
+	name := fmt.Sprintf("axonrouter-go_%s_%s", runtime.GOOS, runtime.GOARCH)
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -313,7 +313,7 @@ func TestCheckGitHubReleases_PublishesPlatformChecksum(t *testing.T) {
 		if strings.HasSuffix(r.URL.Path, "/"+checksumsAssetName) {
 			checksumRequests++
 			w.Header().Set("Content-Type", "text/plain")
-			fmt.Fprintf(w, "%s  9router-go-linux-amd64\n", strings.Repeat("11", 32))
+			fmt.Fprintf(w, "%s  axonrouter-go-linux-amd64\n", strings.Repeat("11", 32))
 			fmt.Fprintf(w, "%s *%s\n", wantDigest, platformAsset)
 			return
 		}
@@ -349,7 +349,7 @@ func TestCheckGitHubReleases_PublishesPlatformChecksum(t *testing.T) {
 }
 
 func TestCheckGitHubReleases_ChecksumLookupFailures(t *testing.T) {
-	platformAsset := fmt.Sprintf("9router-go_%s_%s", runtime.GOOS, runtime.GOARCH)
+	platformAsset := fmt.Sprintf("axonrouter-go_%s_%s", runtime.GOOS, runtime.GOARCH)
 
 	tests := []struct {
 		name  string
@@ -358,7 +358,7 @@ func TestCheckGitHubReleases_ChecksumLookupFailures(t *testing.T) {
 		{name: "release has no SHA256SUMS.txt asset"},
 		{
 			name:  "SHA256SUMS.txt has no entry for this platform",
-			lines: []string{strings.Repeat("ab", 32) + "  9router-go-plan9-mips.tar.gz"},
+			lines: []string{strings.Repeat("ab", 32) + "  axonrouter-go-plan9-mips.tar.gz"},
 		},
 		{
 			name:  "SHA256SUMS.txt lines are unreadable",
@@ -415,12 +415,12 @@ func TestParseChecksumLine(t *testing.T) {
 		wantName  string
 		wantEmpty bool
 	}{
-		{name: "two space text mode", line: digest + "  9router-go-linux-amd64", wantName: "9router-go-linux-amd64"},
-		{name: "single space separator", line: digest + " 9router-go-linux-amd64", wantName: "9router-go-linux-amd64"},
-		{name: "star binary mode", line: digest + " *9router-go-linux-amd64", wantName: "9router-go-linux-amd64"},
-		{name: "leading ./ prefix", line: digest + "  ./9router-go-linux-amd64", wantName: "./9router-go-linux-amd64"},
-		{name: "digest too short", line: "abc123  9router-go-linux-amd64", wantEmpty: true},
-		{name: "digest is not hex", line: strings.Repeat("zz", 32) + "  9router-go-linux-amd64", wantEmpty: true},
+		{name: "two space text mode", line: digest + "  axonrouter-go-linux-amd64", wantName: "axonrouter-go-linux-amd64"},
+		{name: "single space separator", line: digest + " axonrouter-go-linux-amd64", wantName: "axonrouter-go-linux-amd64"},
+		{name: "star binary mode", line: digest + " *axonrouter-go-linux-amd64", wantName: "axonrouter-go-linux-amd64"},
+		{name: "leading ./ prefix", line: digest + "  ./axonrouter-go-linux-amd64", wantName: "./axonrouter-go-linux-amd64"},
+		{name: "digest too short", line: "abc123  axonrouter-go-linux-amd64", wantEmpty: true},
+		{name: "digest is not hex", line: strings.Repeat("zz", 32) + "  axonrouter-go-linux-amd64", wantEmpty: true},
 		{name: "no filename", line: digest, wantEmpty: true},
 		{name: "blank line", line: "", wantEmpty: true},
 	}
@@ -449,10 +449,10 @@ func TestAssetFileName(t *testing.T) {
 		url  string
 		want string
 	}{
-		{url: "https://example.test/9router-go-linux-amd64", want: "9router-go-linux-amd64"},
-		{url: "https://example.test/9router-go-windows-amd64.exe?token=abc", want: "9router-go-windows-amd64.exe"},
+		{url: "https://example.test/axonrouter-go-linux-amd64", want: "axonrouter-go-linux-amd64"},
+		{url: "https://example.test/axonrouter-go-windows-amd64.exe?token=abc", want: "axonrouter-go-windows-amd64.exe"},
 		{url: "https://example.test/dir/", want: "dir"},
-		{url: "9router-go-darwin-arm64.tar.gz", want: "9router-go-darwin-arm64.tar.gz"},
+		{url: "axonrouter-go-darwin-arm64.tar.gz", want: "axonrouter-go-darwin-arm64.tar.gz"},
 	}
 
 	for _, tt := range tests {
@@ -472,7 +472,7 @@ func updateAssetTarGz(t *testing.T, payload []byte) []byte {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
-	if err := tw.WriteHeader(&tar.Header{Name: "9router-go", Mode: 0755, Size: int64(len(payload))}); err != nil {
+	if err := tw.WriteHeader(&tar.Header{Name: "axonrouter-go", Mode: 0755, Size: int64(len(payload))}); err != nil {
 		t.Fatalf("write tar header: %v", err)
 	}
 	if _, err := tw.Write(payload); err != nil {
@@ -492,7 +492,7 @@ func updateAssetTarGz(t *testing.T, payload []byte) []byte {
 // binary itself.
 func stubRunningBinary(t *testing.T, payload []byte) string {
 	t.Helper()
-	stub := filepath.Join(t.TempDir(), "9router-go")
+	stub := filepath.Join(t.TempDir(), "axonrouter-go")
 	if err := os.WriteFile(stub, payload, 0o755); err != nil {
 		t.Fatalf("write stub binary: %v", err)
 	}
@@ -509,7 +509,7 @@ func TestPerformSelfUpdate_RefusesInstallWithoutChecksum(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if err := PerformSelfUpdate(server.URL+"/9router-go_linux_amd64.tar.gz", ""); err == nil {
+	if err := PerformSelfUpdate(server.URL+"/axonrouter-go_linux_amd64.tar.gz", ""); err == nil {
 		t.Fatal("expected an error when the release carries no checksum")
 	}
 
@@ -529,7 +529,7 @@ func TestPerformSelfUpdate_KeepsBinaryOnChecksumMismatch(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := PerformSelfUpdate(server.URL+"/9router-go_linux_amd64.tar.gz", strings.Repeat("ff", 32))
+	err := PerformSelfUpdate(server.URL+"/axonrouter-go_linux_amd64.tar.gz", strings.Repeat("ff", 32))
 	if err == nil {
 		t.Fatal("expected an error on checksum mismatch")
 	}
@@ -654,7 +654,7 @@ func TestRunCheckCycle_SkipsPrereleaseForFinalInstall(t *testing.T) {
 // no sha256. Since #72 made the digest mandatory, returning that manifest on
 // sight meant the one path that CAN fill the digest from the release's
 // SHA256SUMS.txt never ran: every install ended in "release carries no
-// checksum", and `9router-go update` failed outright. This pins the manifest to
+// checksum", and `axonrouter-go update` failed outright. This pins the manifest to
 // being a lead rather than an answer when it describes an update it cannot
 // verify.
 func TestCheckUpdate_ManifestWithoutDigestFallsThroughToReleaseDigest(t *testing.T) {

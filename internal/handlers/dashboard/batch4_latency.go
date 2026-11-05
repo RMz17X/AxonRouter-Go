@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/routinglatency"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/routinglatency"
 )
 
 // HandleGetRoutingLatency handles GET /api/routing/latency — port of

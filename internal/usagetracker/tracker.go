@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/speedlayer"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/speedlayer"
+	"axonrouter/proxy/internal/translator"
 )
 
 const (
@@ -30,7 +30,7 @@ type ActiveRequest struct {
 	// RequestedModel is the name the client asked for, and ComboName is set
 	// only when a combo served the request. A combo request reports the member
 	// that serves it in Model/Provider, so the dashboard can draw
-	// 9router-go -> combo -> member instead of showing the member as if the
+	// axonrouter-go -> combo -> member instead of showing the member as if the
 	// caller had asked for it by name. ComboName is the explicit signal: the
 	// map must not have to guess which names are combos.
 	RequestedModel string `json:"requestedModel,omitempty"`

@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"strings"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 func init() {

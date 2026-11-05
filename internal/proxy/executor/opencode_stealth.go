@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
 	fhttp "github.com/bogdanfinn/fhttp"
 	"github.com/bogdanfinn/fhttp/http2"
 	tls_client "github.com/bogdanfinn/tls-client"

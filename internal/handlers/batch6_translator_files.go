@@ -16,8 +16,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 var translatorStageFileWhitelist = map[string]bool{

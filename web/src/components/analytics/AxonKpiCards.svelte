@@ -1,5 +1,5 @@
 <script lang="ts">
-  // AxonRouter Overview KPI row: exactly Axon's five cards. 9router-go's old
+  // AxonRouter Overview KPI row: exactly Axon's five cards. AxonRouter-Go's old
   // six-card row carried a separate Success Rate card; Axon folds the failure
   // count into the Requests card's note instead, so that card is gone here.
   import { fmtCost, fmtCostApprox, fmtNumberUS, formatTokensID } from '../../lib/axonFormat'
@@ -57,7 +57,7 @@
     <span class="text-text-muted text-sm uppercase font-semibold">Estimated Cost</span>
     <span class="truncate text-2xl font-bold text-amber-400" title={fmtCostApprox(totalCost)}>{fmtCostApprox(totalCost)}</span>
     <!-- Axon links this note to a pricing settings page ("Rates").
-         9router-go has no pricing page, so the link is deliberately omitted:
+         AxonRouter-Go has no pricing page, so the link is deliberately omitted:
          a link to nowhere would be a dead control. -->
     <span class="text-[10px] text-text-muted truncate">In {fmtCost(costSplit.inCost)} · Out {fmtCost(costSplit.outCost)}</span>
   </div>

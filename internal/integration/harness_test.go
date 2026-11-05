@@ -14,11 +14,11 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/app"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/db/dbtest"
-	"9router/proxy/internal/handlers"
-	"9router/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/app"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/db/dbtest"
+	"axonrouter/proxy/internal/handlers"
+	"axonrouter/proxy/internal/handlers/chat"
 )
 
 // testAPIKey is the client key seeded into every Env. The engine routes are
@@ -26,7 +26,7 @@ import (
 // table, so a runnable integration test must own one.
 const testAPIKey = "sk-integration-test-key"
 
-// Env is a fully wired 9router-go instance: the production chi router from
+// Env is a fully wired axonrouter-go instance: the production chi router from
 // app.ProvideRouter (same middleware stack, same route table), a private
 // PostgreSQL schema built by the real schema bootstrap (provisioned by
 // internal/db/dbtest from INTEGRATION_DATABASE_URL — see AGENTS.md §5.D's

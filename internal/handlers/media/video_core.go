@@ -29,9 +29,9 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/handlers/shared"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
 )
 
 // videoFetchTimeout is Axon's VIDEO_FETCH_TIMEOUT_MS.

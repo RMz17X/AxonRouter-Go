@@ -1,23 +1,23 @@
 package chat
 
 import (
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/shared"
-	"9router/proxy/internal/middleware"
-	"9router/proxy/internal/promptcache"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/proxy/executor"
-	"9router/proxy/internal/proxy/oauth"
-	"9router/proxy/internal/resilience"
-	"9router/proxy/internal/thinking"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/middleware"
+	"axonrouter/proxy/internal/promptcache"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/resilience"
+	"axonrouter/proxy/internal/thinking"
 	json "encoding/json/v2"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"9router/proxy/internal/semanticcache"
+	"axonrouter/proxy/internal/semanticcache"
 )
 
 // NewChatHandler creates a ChatHandler with the given repository and a streaming-capable HTTP client.

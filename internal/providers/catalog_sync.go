@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 )
 
 const (
@@ -91,7 +91,7 @@ var (
 	syncStateMu   sync.Mutex
 )
 
-// ProviderAliases maps 9router provider IDs to models.dev provider IDs for limit resolution.
+// ProviderAliases maps AxonRouter-Go provider IDs to models.dev provider IDs for limit resolution.
 var ProviderAliases = map[string]string{
 	"glm":           "zai",
 	"glm-cn":        "zhipuai",

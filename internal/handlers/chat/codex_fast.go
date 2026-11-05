@@ -1,8 +1,8 @@
 package chat
 
 import (
-	json "9router/proxy/internal/fastjson"
-	"9router/proxy/internal/thinking"
+	json "axonrouter/proxy/internal/fastjson"
+	"axonrouter/proxy/internal/thinking"
 	"context"
 )
 

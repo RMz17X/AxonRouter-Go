@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy/poolstate"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy/poolstate"
 )
 
 // Shared proxy-probe engine for the batch-4 surfaces — a port of

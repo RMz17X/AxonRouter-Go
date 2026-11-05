@@ -6,8 +6,8 @@ import (
 	json "encoding/json/v2"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/shared"
 )
 
 func TestNewChatHandler_DefaultsAllOff(t *testing.T) {

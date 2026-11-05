@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/db"
-	internalproxy "9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/db"
+	internalproxy "axonrouter/proxy/internal/proxy"
 )
 
 const (
@@ -183,7 +183,7 @@ func (w *CanaryWorker) ProbePool(ctx context.Context, pool *db.ProxyPool) (bool,
 	if err != nil {
 		return false, 0, err
 	}
-	req.Header.Set("User-Agent", "9router-canary/1.0")
+	req.Header.Set("User-Agent", "AxonRouter-Go-canary/1.0")
 
 	resp, err := client.Do(req)
 	latency := time.Since(start)

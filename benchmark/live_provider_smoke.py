@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Live provider smoke test.
 
-Boots a 9router-go build against a COPY of the real user DB and issues one
+Boots an AxonRouter-Go build against a COPY of the real user DB and issues one
 real /v1/chat/completions request per provider, recording the HTTP status,
 negotiated protocol, and response shape. Run against two binaries to prove
 PGO / transport-pool changes do not alter provider behavior.

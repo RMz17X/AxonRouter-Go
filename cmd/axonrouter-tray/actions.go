@@ -10,18 +10,18 @@ import (
 	"runtime"
 	"time"
 
-	"9router/proxy/internal/daemon"
-	"9router/proxy/internal/proc"
-	"9router/proxy/internal/service"
+	"axonrouter/proxy/internal/daemon"
+	"axonrouter/proxy/internal/proc"
+	"axonrouter/proxy/internal/service"
 )
 
-// gatewayBinaryName mirrors cmd/9router-go's rename rule so an `opencode-go`
+// gatewayBinaryName mirrors cmd/axonrouter-go's rename rule so an `opencode-go`
 // install looks for its own sibling rather than a different install's gateway.
 func gatewayBinaryName() string {
 	if base := filepath.Base(os.Args[0]); len(base) > 5 && base[len(base)-5:] == "-tray" {
 		return base[:len(base)-5]
 	}
-	return "9router-go"
+	return "axonrouter-go"
 }
 
 // gatewayPath resolves the sibling gateway binary. Only the sibling is tried: a

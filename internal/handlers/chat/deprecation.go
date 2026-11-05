@@ -1,12 +1,12 @@
 package chat
 
 import (
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/handlerutil"
 	"context"
 	"time"
 
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/providers"
 )
 
 // deprecationRecordTTL bounds how long a deprecation is cached in memory after

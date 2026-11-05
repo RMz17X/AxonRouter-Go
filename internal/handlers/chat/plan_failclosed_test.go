@@ -5,8 +5,8 @@ package chat
 import (
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/models"
 )
 
 // A key on a plan is restricted by the union of its own rows and the plan's

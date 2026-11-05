@@ -1,7 +1,7 @@
 <script lang="ts">
   // AxonRouter's Realtime Requests card: live in-flight banner on top of the
   // most recent completed requests. Axon reads its completed rows from the
-  // lightweight recent feed, but 9router-go's feed carries no id and no cost,
+  // lightweight recent feed, but AxonRouter-Go's feed carries no id and no cost,
   // and the error modal needs an id to fetch the trace — so completed rows
   // here come from the request-details ledger (spec §4.3), polled on the
   // card's own 5 s cycle. Active rows still come from the SSE-fed prop.

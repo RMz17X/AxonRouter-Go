@@ -5,7 +5,7 @@ package dashboard
 import (
 	"testing"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 func TestIdentityOf_GitHub(t *testing.T) {

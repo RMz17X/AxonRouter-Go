@@ -3,7 +3,7 @@ package chat
 import (
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // seedAPIKeyRow inserts the apiKeys row the joined plan read needs: that

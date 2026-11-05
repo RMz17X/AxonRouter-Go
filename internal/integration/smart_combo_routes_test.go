@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // The smart-combo routes are registered in two tables: dashboard.RegisterRoutes,

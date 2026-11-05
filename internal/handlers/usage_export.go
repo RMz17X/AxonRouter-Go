@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // Usage log export.
@@ -62,12 +62,12 @@ func HandleUsageExport(repo *db.Repo) http.HandlerFunc {
 		stamp := time.Now().UTC().Format("2006-01-02")
 		if format == "csv" {
 			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="9router-usage-%s.csv"`, stamp))
+			w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="axonrouter-go-usage-%s.csv"`, stamp))
 			writeUsageCSV(w, r, repo, since)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="9router-usage-%s.json"`, stamp))
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="axonrouter-go-usage-%s.json"`, stamp))
 		writeUsageJSON(w, r, repo, since)
 	}
 }

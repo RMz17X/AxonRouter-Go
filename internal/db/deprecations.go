@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // deprecationScope is the kv scope the gateway files model deprecations under.

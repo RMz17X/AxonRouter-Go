@@ -4,10 +4,10 @@ import (
 	"context"
 	"strings"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlers/chat"
-	"9router/proxy/internal/handlers/media"
-	"9router/proxy/internal/modelhealth"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/handlers/media"
+	"axonrouter/proxy/internal/modelhealth"
 )
 
 // startModelHealthScheduler starts the automatic model-health loop.

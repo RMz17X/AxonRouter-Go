@@ -12,8 +12,8 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/proxy"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/translator"
 )
 
 // A keyless live call to the OpenCode free tier.

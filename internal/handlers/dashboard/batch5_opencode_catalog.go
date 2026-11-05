@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/clisetup"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
 )
 
 // OpenCode sync model catalog. Port of Axon's

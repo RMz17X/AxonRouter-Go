@@ -6,7 +6,7 @@ section: Using the Gateway
 
 # Security
 
-9router-go holds provider credentials, client API keys, and the prompts that pass
+axonrouter-go holds provider credentials, client API keys, and the prompts that pass
 through it. This page covers every control that protects them.
 
 ## Dashboard authentication
@@ -89,7 +89,7 @@ provider URL or a model-catalog sync cannot reach an address it should not.
 ## Session and CLI tokens
 
 Dashboard sessions live in `internal/auth/session.go`; the local CLI token that
-lets `9router-go` talk to its own daemon lives in `internal/auth/clitoken.go`.
+lets `axonrouter-go` talk to its own daemon lives in `internal/auth/clitoken.go`.
 The CLI token is what makes destructive operations work from a terminal without a
 browser session.
 

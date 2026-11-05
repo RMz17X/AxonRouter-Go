@@ -30,7 +30,7 @@ var (
 	ErrAlreadyPatched = errors.New("clientconfig: already patched")
 
 	// ErrInternalInconsistency reports that output produced by this package
-	// failed to re-parse. That is a bug in 9Router, never a user error, and
+	// failed to re-parse. That is a bug in AxonRouter-Go, never a user error, and
 	// nothing is returned for writing.
 	ErrInternalInconsistency = errors.New("clientconfig: patch produced unparsable output")
 )

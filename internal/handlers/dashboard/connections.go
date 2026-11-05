@@ -1,10 +1,10 @@
 package dashboard
 
 import (
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/updater"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/updater"
 	"context"
 	json "encoding/json/v2"
 	"errors"

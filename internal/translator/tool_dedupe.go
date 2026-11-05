@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// thinkingOverrideSuffix matches the 9router thinking override a client may
+// thinkingOverrideSuffix matches the AxonRouter-Go thinking override a client may
 // append to a model id ("deepseek-v4-flash(max)"). It is stripped before a
 // model is matched against a catalog, and so before the DeepSeek check below.
 var thinkingOverrideSuffix = regexp.MustCompile(`\([^()]+\)\s*$`)

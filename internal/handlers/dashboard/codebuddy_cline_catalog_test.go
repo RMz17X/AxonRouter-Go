@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // CodeBuddy, WorkBuddy and the Cline pair publish no OpenAI-style /models route,

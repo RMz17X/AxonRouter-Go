@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // Freebuff behind an edge relay.

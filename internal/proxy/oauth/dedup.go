@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/sync/singleflight"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 const (

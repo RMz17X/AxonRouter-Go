@@ -10,8 +10,8 @@ import (
 	"reflect"
 	"testing"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy"
 )
 
 func TestGLM53FlashFree_OutboundWireScenarios(t *testing.T) {

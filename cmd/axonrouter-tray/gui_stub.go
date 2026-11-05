@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"runtime"
 
-	"9router/proxy/internal/tray"
+	"axonrouter/proxy/internal/tray"
 )
 
 func runGUI(tray.Actions, int) error {
-	return fmt.Errorf("this 9router-tray build has no GUI: rebuild with -tags tray (required on %s; Windows needs no tag)", runtime.GOOS)
+	return fmt.Errorf("this axonrouter-tray build has no GUI: rebuild with -tags tray (required on %s; Windows needs no tag)", runtime.GOOS)
 }

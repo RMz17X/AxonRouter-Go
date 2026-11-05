@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/translator"
-	"9router/proxy/internal/usagetracker"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/translator"
+	"axonrouter/proxy/internal/usagetracker"
 )
 
 func TestLogFailure_DifferentiatesCanceledFromError(t *testing.T) {

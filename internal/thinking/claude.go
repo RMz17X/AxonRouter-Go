@@ -1,7 +1,7 @@
 package thinking
 
 import (
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // ClaudeMinThinkingBudget is the smallest thinking budget the Claude Messages

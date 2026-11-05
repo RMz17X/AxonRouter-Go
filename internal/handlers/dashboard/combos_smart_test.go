@@ -12,7 +12,7 @@ import (
 	"slices"
 	"testing"
 
-	"9router/proxy/internal/combos/smart"
+	"axonrouter/proxy/internal/combos/smart"
 )
 
 // seedSmartNode inserts a custom provider node, a connection for it and one

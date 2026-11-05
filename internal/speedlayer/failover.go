@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/shutdown"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/shutdown"
 )
 
 // failover.go implements the degradation rule the cluster design locks:

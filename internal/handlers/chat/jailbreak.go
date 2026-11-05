@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/translator"
 )
 
 // resolveJailbreak returns the injection document for a request, or nil when

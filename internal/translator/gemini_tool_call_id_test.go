@@ -124,7 +124,7 @@ func TestGeminiToolCallNameResolvesThroughThoughtSignatureSuffix(t *testing.T) {
 	if resp.Name != "read_file" {
 		t.Errorf("functionResponse name = %q, want read_file (suffixed id %q)", resp.Name, id)
 	}
-	// The suffix is a 9router-go transport encoding and must not reach Gemini,
+	// The suffix is a axonrouter-go transport encoding and must not reach Gemini,
 	// so the response carries the id with it stripped — the same id the client
 	// sees on the functionCall half of the pair.
 	if resp.ID != geminiCleanToolCallID(id) {

@@ -9,10 +9,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"9router/proxy/internal/config"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/headroom"
+	"axonrouter/proxy/internal/config"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/headroom"
 )
 
 // hopByHopHeaders are stripped from both forwarded requests and responses.
@@ -90,7 +90,7 @@ func (h *HeadroomHandler) HandleHeadroomRestart(w http.ResponseWriter, r *http.R
 func (h *HeadroomHandler) handleHeadroomStart(w http.ResponseWriter, r *http.Request, restart bool) {
 	hurl := h.headroomURL()
 	if !headroom.IsLoopbackHeadroomUrl(hurl) {
-		writeHeadroomError(w, http.StatusBadRequest, "External Headroom proxies must be started outside 9router-go", "EXTERNAL_PROXY")
+		writeHeadroomError(w, http.StatusBadRequest, "External Headroom proxies must be started outside AxonRouter-Go", "EXTERNAL_PROXY")
 		return
 	}
 	port := headroom.ParsePortFromURL(hurl)

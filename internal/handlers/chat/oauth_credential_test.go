@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/db"
-	_ "9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/db"
+	_ "axonrouter/proxy/internal/providers"
 )
 
 // A Kiro connection can carry BOTH an apiKey and an OAuth accessToken. Which one

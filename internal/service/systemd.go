@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/constants"
+	"axonrouter/proxy/internal/constants"
 )
 
 // unitName is the service name under the user manager.
-const unitName = "9router-go.service"
+const unitName = "axonrouter-go.service"
 
 // systemdScope is the systemctl prefix for the per-user manager. Every
 // install/uninstall/status/control call goes through it: omitting --user sends
@@ -36,7 +36,7 @@ func userUnitPath() string {
 func renderSystemdUnit(exe string, args []string) string {
 	var b strings.Builder
 	b.WriteString("[Unit]\n")
-	b.WriteString("Description=9router-go AI API proxy gateway\n")
+	b.WriteString("Description=axonrouter-go AI API proxy gateway\n")
 	b.WriteString("After=network-online.target\n")
 	b.WriteString("Wants=network-online.target\n\n")
 	b.WriteString("[Service]\n")
@@ -99,7 +99,7 @@ func installSystemd(exe string, args []string) (Info, error) {
 	}
 	info := Info{Backend: BackendSystemdUser, Path: path, Exec: commandLine(exe, args), Enabled: true}
 	// Starting now is best-effort: when the gateway already runs from
-	// `9router-go start` the port is taken and the unit still starts on the
+	// `axonrouter-go start` the port is taken and the unit still starts on the
 	// next boot, which is the point of the install. The active state is
 	// polled rather than trusted from the start job: systemctl reports
 	// success when the job is queued, even if the process then exits.

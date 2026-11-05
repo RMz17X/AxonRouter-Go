@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 func TestForwardKimchiRequest_Success(t *testing.T) {

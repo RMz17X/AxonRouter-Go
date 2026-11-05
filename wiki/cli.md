@@ -11,9 +11,9 @@ Every command comes from the single binary.
 ## Running the gateway
 
 ```bash
-9router-go                  # foreground server (port 20130) — the only run mode
-9router-go version          # version details, plus an update check
-9router-go update           # check and self-update
+axonrouter-go                  # foreground server (port 20130) — the only run mode
+axonrouter-go version          # version details, plus an update check
+axonrouter-go update           # check and self-update
 curl http://localhost:20130/health
 ```
 
@@ -28,7 +28,7 @@ containers, or the host's init system for a bare binary. Removed commands
 
 ## Interactive menu
 
-Running `9router-go` with no arguments in a terminal opens a menu:
+Running `axonrouter-go` with no arguments in a terminal opens a menu:
 
 ```text
 1) Start in this terminal (foreground)
@@ -37,7 +37,7 @@ Running `9router-go` with no arguments in a terminal opens a menu:
 ```
 
 **Option 2 — tray.** The tray icon lives in a companion binary
-(`cmd/9router-tray`), not the main one: a GUI toolkit cannot be linked into the
+(`cmd/axonrouter-tray`), not the main one: a GUI toolkit cannot be linked into the
 gateway without breaking the `CGO_ENABLED=0` cross-build for every target. Only
 the *sibling* binary is tried, so a PATH lookup cannot pick up another install's
 tray talking to a different gateway. Right-click the icon to open the dashboard
@@ -45,7 +45,7 @@ or quit.
 
 ```bash
 # the tray ships as its own package
-9router-tray --port 20130
+axonrouter-tray --port 20130
 ```
 
 ## Flags
@@ -57,7 +57,7 @@ There are no `--port` flags; use environment variables.
 | Variable | Default | Effect |
 |---|---|---|
 | `PORT` | `20130` | HTTP port |
-| `DATA_DIR` | `~/.9router` (`%APPDATA%/9router` on Windows) | Non-database state root (uploads, CLI tokens, tunnel state, catalog cache) |
+| `DATA_DIR` | `~/.axonrouter-go` (`%APPDATA%/axonrouter-go` on Windows); a pre-rename `~/.9router` is still used when it is the only one that exists | Non-database state root (uploads, CLI tokens, tunnel state, catalog cache) |
 | `DATABASE_URL` | — (**required**) | PostgreSQL connection URL; the server refuses to boot without it |
 | `HOST` / `BIND_ADDR` | all interfaces | Listener address |
 | `INITIAL_PASSWORD` | unset (`123456` on localhost) | First dashboard password |
@@ -109,5 +109,5 @@ See `.env.example` for the full list.
 
 ## Verifying a release
 
-Download from [GitHub Releases](https://github.com/luqman-v1/9router-go/releases/latest)
+Download from [GitHub Releases](https://github.com/RMz17X/AxonRouter-Go/releases/latest)
 and verify against `SHA256SUMS.txt`.

@@ -57,7 +57,7 @@ func TestHomeScopedPathsWithoutHome(t *testing.T) {
 func TestInstallLaunchdWithoutHome(t *testing.T) {
 	stubNoHome(t)
 	stubRun(t)
-	if _, err := installLaunchd("/Applications/9router-go", nil); err == nil {
+	if _, err := installLaunchd("/Applications/axonrouter-go", nil); err == nil {
 		t.Error("installLaunchd() error = nil without a home directory, want error")
 	}
 }
@@ -65,7 +65,7 @@ func TestInstallLaunchdWithoutHome(t *testing.T) {
 func TestInstallSystemdUserWithoutHome(t *testing.T) {
 	stubNoHome(t)
 	stubRun(t)
-	if _, err := installSystemd("/usr/local/bin/9router-go", nil); err == nil {
+	if _, err := installSystemd("/usr/local/bin/axonrouter-go", nil); err == nil {
 		t.Error("installSystemd(user) error = nil without a home directory, want error")
 	}
 	if filepath.IsAbs(userUnitPath()) {
@@ -78,7 +78,7 @@ func TestInstallCronWithoutHomeStillWritesTheCrontab(t *testing.T) {
 	crontab := stubCrontab(t, "")
 	stubRun(t)
 
-	info, err := installCron("/usr/local/bin/9router-go", nil)
+	info, err := installCron("/usr/local/bin/axonrouter-go", nil)
 	if err != nil {
 		t.Fatalf("installCron() error = %v", err)
 	}

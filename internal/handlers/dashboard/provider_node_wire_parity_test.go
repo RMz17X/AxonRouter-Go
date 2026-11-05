@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // nodeIDPrefixes and providers.CompatibleNodeWires describe the same set of

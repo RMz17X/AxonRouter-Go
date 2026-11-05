@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/constants"
-	"9router/proxy/internal/providers"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/translator"
 )
 
 const (

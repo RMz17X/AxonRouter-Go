@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/translator"
 )
 
 // toolArgsStream builds a Chat Completions SSE stream carrying one tool call.

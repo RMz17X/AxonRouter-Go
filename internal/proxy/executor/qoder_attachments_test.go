@@ -13,7 +13,7 @@ func TestQoderBuildMultipartFile(t *testing.T) {
 	data := []byte("fake-png-bytes")
 	boundary, body := qoderBuildMultipartFile(data, "photo.png", "image/png")
 
-	if !strings.HasPrefix(boundary, "----9routerQoder") {
+	if !strings.HasPrefix(boundary, "----AxonRouterGoQoder") {
 		t.Errorf("unexpected boundary: %s", boundary)
 	}
 	bodyStr := string(body)

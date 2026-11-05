@@ -14,7 +14,7 @@ func TestInstallCronWritesEntryAndDesktopFile(t *testing.T) {
 	crontab := stubCrontab(t, "")
 	stubRun(t)
 
-	info, err := installCron("/usr/local/bin/9router-go", []string{"--rtk=true"})
+	info, err := installCron("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 	if err != nil {
 		t.Fatalf("installCron() error = %v", err)
 	}
@@ -24,7 +24,7 @@ func TestInstallCronWritesEntryAndDesktopFile(t *testing.T) {
 	if !strings.Contains(*crontab, cronMarker) || !strings.Contains(*crontab, "@reboot") {
 		t.Errorf("crontab = %q, want an @reboot entry carrying the marker", *crontab)
 	}
-	desktop := filepath.Join(home, ".config", "autostart", "9router-go.desktop")
+	desktop := filepath.Join(home, ".config", "autostart", "axonrouter-go.desktop")
 	if !fileExists(desktop) {
 		t.Fatalf("autostart desktop entry not written to %s", desktop)
 	}
@@ -32,11 +32,11 @@ func TestInstallCronWritesEntryAndDesktopFile(t *testing.T) {
 
 func TestInstallCronIsIdempotent(t *testing.T) {
 	setHome(t)
-	line := renderCronLine("/usr/local/bin/9router-go", nil)
+	line := renderCronLine("/usr/local/bin/axonrouter-go", nil)
 	crontab := stubCrontab(t, "0 * * * * /usr/bin/backup\n"+line+"\n")
 	stubRun(t)
 
-	if _, err := installCron("/usr/local/bin/9router-go", nil); err != nil {
+	if _, err := installCron("/usr/local/bin/axonrouter-go", nil); err != nil {
 		t.Fatalf("installCron() error = %v", err)
 	}
 	if strings.Count(*crontab, cronMarker) != 1 {
@@ -54,7 +54,7 @@ func TestInstallCronWriteFailure(t *testing.T) {
 	t.Cleanup(func() { writeCrontab = previous })
 	stubRun(t)
 
-	if _, err := installCron("/usr/local/bin/9router-go", nil); err == nil {
+	if _, err := installCron("/usr/local/bin/axonrouter-go", nil); err == nil {
 		t.Fatal("installCron() error = nil when crontab write fails, want error")
 	}
 }
@@ -62,7 +62,7 @@ func TestInstallCronWriteFailure(t *testing.T) {
 func TestStatusCron(t *testing.T) {
 	t.Run("crontab owns an entry", func(t *testing.T) {
 		setHome(t)
-		stubCrontab(t, renderCronLine("/usr/local/bin/9router-go", nil)+"\n")
+		stubCrontab(t, renderCronLine("/usr/local/bin/axonrouter-go", nil)+"\n")
 		stubRun(t)
 
 		info, ok := statusCron()
@@ -78,8 +78,8 @@ func TestStatusCron(t *testing.T) {
 		home := setHome(t)
 		stubCrontab(t, "")
 		stubRun(t)
-		desktop := filepath.Join(home, ".config", "autostart", "9router-go.desktop")
-		writeFile(t, desktop, renderAutostartDesktop("/usr/local/bin/9router-go", nil))
+		desktop := filepath.Join(home, ".config", "autostart", "axonrouter-go.desktop")
+		writeFile(t, desktop, renderAutostartDesktop("/usr/local/bin/axonrouter-go", nil))
 
 		info, ok := statusCron()
 		if !ok || info.Path != desktop {
@@ -100,10 +100,10 @@ func TestStatusCron(t *testing.T) {
 func TestUninstallCron(t *testing.T) {
 	t.Run("removes the crontab entry and the desktop entry", func(t *testing.T) {
 		home := setHome(t)
-		crontab := stubCrontab(t, "0 * * * * /usr/bin/backup\n"+renderCronLine("/usr/local/bin/9router-go", nil)+"\n")
+		crontab := stubCrontab(t, "0 * * * * /usr/bin/backup\n"+renderCronLine("/usr/local/bin/axonrouter-go", nil)+"\n")
 		stubRun(t)
-		desktop := filepath.Join(home, ".config", "autostart", "9router-go.desktop")
-		writeFile(t, desktop, renderAutostartDesktop("/usr/local/bin/9router-go", nil))
+		desktop := filepath.Join(home, ".config", "autostart", "axonrouter-go.desktop")
+		writeFile(t, desktop, renderAutostartDesktop("/usr/local/bin/axonrouter-go", nil))
 
 		if _, ok := uninstallCron(); !ok {
 			t.Fatal("uninstallCron() = false, want true")
@@ -123,7 +123,7 @@ func TestUninstallCron(t *testing.T) {
 		home := setHome(t)
 		stubCrontab(t, "")
 		stubRun(t)
-		desktop := filepath.Join(home, ".config", "autostart", "9router-go.desktop")
+		desktop := filepath.Join(home, ".config", "autostart", "axonrouter-go.desktop")
 		writeFile(t, desktop, "[Desktop Entry]\nExec=someone-elses-app\n")
 
 		if _, ok := uninstallCron(); ok {
@@ -149,8 +149,8 @@ func TestUninstallCron(t *testing.T) {
 		home := setHome(t)
 		stubCrontab(t, "")
 		stubRun(t)
-		desktop := filepath.Join(home, ".config", "autostart", "9router-go.desktop")
-		writeFile(t, desktop, renderAutostartDesktop("/usr/local/bin/9router-go", nil))
+		desktop := filepath.Join(home, ".config", "autostart", "axonrouter-go.desktop")
+		writeFile(t, desktop, renderAutostartDesktop("/usr/local/bin/axonrouter-go", nil))
 		previousRemove := remove
 		remove = func(string) error { return errors.New("permission denied") }
 		t.Cleanup(func() { remove = previousRemove })
@@ -167,7 +167,7 @@ func TestUninstallCron(t *testing.T) {
 // TestCronLineHasRebootSchedule pins the @reboot schedule and the trailing
 // ownership marker.
 func TestCronLineHasRebootSchedule(t *testing.T) {
-	line := renderCronLine("/usr/local/bin/9router-go", []string{"--rtk=true"})
+	line := renderCronLine("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 	if !strings.HasPrefix(line, "@reboot ") {
 		t.Fatalf("cron line = %q, want an @reboot schedule", line)
 	}
@@ -186,7 +186,7 @@ func TestCronLineHasRebootSchedule(t *testing.T) {
 // TestAutostartDesktopIsAValidEntry validates the XDG autostart entry with
 // desktop-file-validate where present, plus the required keys and marker.
 func TestAutostartDesktopIsAValidEntry(t *testing.T) {
-	entry := renderAutostartDesktop("/usr/local/bin/9router-go", []string{"--rtk=true"})
+	entry := renderAutostartDesktop("/usr/local/bin/axonrouter-go", []string{"--rtk=true"})
 
 	section, keys := parseDesktopEntry(t, entry)
 	if section != "Desktop Entry" {
@@ -213,7 +213,7 @@ func TestAutostartDesktopIsAValidEntry(t *testing.T) {
 		t.Logf("desktop-file-validate not installed, structural checks only")
 		return
 	}
-	path := filepath.Join(t.TempDir(), "9router-go.desktop")
+	path := filepath.Join(t.TempDir(), "axonrouter-go.desktop")
 	if err := os.WriteFile(path, []byte(entry), 0o644); err != nil {
 		t.Fatal(err)
 	}

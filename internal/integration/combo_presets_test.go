@@ -8,8 +8,8 @@ import (
 
 	"github.com/samber/lo"
 
-	"9router/proxy/internal/combopresets"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/combopresets"
+	"axonrouter/proxy/internal/providers"
 )
 
 // presetItem is one GET /api/combos/presets item.

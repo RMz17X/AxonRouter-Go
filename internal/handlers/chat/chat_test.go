@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/dbtest"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/translator"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/dbtest"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/translator"
 	"os"
 )
 

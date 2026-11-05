@@ -11,7 +11,7 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // bedrockEventStream builds the AWS EventStream body Bedrock's

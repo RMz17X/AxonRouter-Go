@@ -13,7 +13,7 @@ section: Under the Hood
        │ http://localhost:20130/v1
        ↓
 ┌─────────────────────────────────────────────┐
-│         9router-go (Smart Router)           │
+│         axonrouter-go (Smart Router)           │
 │  • RTK Token Saver (cut tool_result tokens) │
 │  • Format translation (OpenAI ↔ Claude)     │
 │  • Quota tracking                           │
@@ -67,4 +67,4 @@ Each combo carries its own strategy:
 
 ## Further reading
 
-Full internals: [`ARCHITECTURE.md`](https://github.com/luqman-v1/9router-go/blob/main/ARCHITECTURE.md).
+Full internals: [`ARCHITECTURE.md`](https://github.com/RMz17X/AxonRouter-Go/blob/main/ARCHITECTURE.md).

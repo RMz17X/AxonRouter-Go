@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"9router/proxy/internal/constants"
+	"axonrouter/proxy/internal/constants"
 )
 
 // newPoolTransport builds the transport shape the chat handler caches per

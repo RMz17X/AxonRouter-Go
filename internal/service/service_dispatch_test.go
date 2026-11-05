@@ -52,7 +52,7 @@ func TestInstallDispatchesToEveryBackend(t *testing.T) {
 			override: string(BackendRunit),
 			wantBack: BackendRunit,
 			wantFile: func(_ *testing.T, home string) string {
-				return filepath.Join(home, "service", "9router-go", "run")
+				return filepath.Join(home, "service", "axonrouter-go", "run")
 			},
 		},
 		{
@@ -61,7 +61,7 @@ func TestInstallDispatchesToEveryBackend(t *testing.T) {
 			override: string(BackendCron),
 			wantBack: BackendCron,
 			wantFile: func(_ *testing.T, home string) string {
-				return filepath.Join(home, ".config", "autostart", "9router-go.desktop")
+				return filepath.Join(home, ".config", "autostart", "axonrouter-go.desktop")
 			},
 		},
 		{
@@ -119,7 +119,7 @@ func TestUninstallRemovesEveryBackendItFinds(t *testing.T) {
 	home := setHome(t)
 	redirectInitPaths(t)
 	stubHost(t, hostStub{goos: "linux", euid: 1000})
-	stubCrontab(t, renderCronLine("/usr/local/bin/9router-go", nil)+"\n")
+	stubCrontab(t, renderCronLine("/usr/local/bin/axonrouter-go", nil)+"\n")
 	stubRun(t)
 
 	writeFile(t, filepath.Join(home, ".config", "systemd", "user", unitName), "[Unit]\n")
@@ -189,7 +189,7 @@ func TestStatusReportsTheInstalledBackend(t *testing.T) {
 		stubHost(t, hostStub{goos: "linux", euid: 1000})
 		stubCrontab(t, "")
 		stubRun(t)
-		writeFile(t, filepath.Join(home, "service", "9router-go", "run"), "#!/bin/sh\n")
+		writeFile(t, filepath.Join(home, "service", "axonrouter-go", "run"), "#!/bin/sh\n")
 
 		info, ok := Status()
 		if !ok || info.Backend != BackendRunit {
@@ -201,7 +201,7 @@ func TestStatusReportsTheInstalledBackend(t *testing.T) {
 		setHome(t)
 		redirectInitPaths(t)
 		stubHost(t, hostStub{goos: "linux", euid: 1000})
-		stubCrontab(t, renderCronLine("/usr/local/bin/9router-go", nil)+"\n")
+		stubCrontab(t, renderCronLine("/usr/local/bin/axonrouter-go", nil)+"\n")
 		stubRun(t)
 
 		info, ok := Status()

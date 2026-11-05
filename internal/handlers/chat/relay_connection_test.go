@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/providers"
 )
 
 // An edge relay pool is a transport, not a rewrite.

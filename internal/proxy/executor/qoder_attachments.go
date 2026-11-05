@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // Qoder attachment rewrite & OSS image upload — port of
@@ -102,7 +102,7 @@ func qoderStubText(name, mime string, sizeBytes int, reason string) string {
 }
 
 func qoderBuildMultipartFile(data []byte, fileName, mediaType string) (string, []byte) {
-	boundary := fmt.Sprintf("----9routerQoder%x%s", time.Now().UnixNano(), uuid.NewString()[:8])
+	boundary := fmt.Sprintf("----AxonRouterGoQoder%x%s", time.Now().UnixNano(), uuid.NewString()[:8])
 	if fileName == "" {
 		fileName = "upload." + qoderMimeExt(mediaType)
 	}

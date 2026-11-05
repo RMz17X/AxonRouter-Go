@@ -6,7 +6,7 @@ import (
 	json "encoding/json/v2"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // The dashboard stores a provider-level pool under the provider's short alias

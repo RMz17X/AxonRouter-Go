@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/analyticsrange"
+	"axonrouter/proxy/internal/analyticsrange"
 )
 
 func setupAnalyticsTestDB(t *testing.T) (*Repo, func()) {

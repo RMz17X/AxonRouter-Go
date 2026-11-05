@@ -5,7 +5,7 @@ package chat
 import (
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // A provider node publishes its models as "<prefix>/<id>", and the prefix only

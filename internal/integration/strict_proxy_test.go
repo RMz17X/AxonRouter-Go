@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // addStrictPool stores a pool whose proxy refuses every tunnel, so a request

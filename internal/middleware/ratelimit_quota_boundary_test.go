@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 // TestQuotaAndTPMCoexistOnOneRequest proves a key bounded on both axes charges

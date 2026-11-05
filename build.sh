@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build 9router-go reproducibly: web assets first (embedded at compile time),
+# Build axonrouter-go reproducibly: web assets first (embedded at compile time),
 # then the binary with the version from VERSION.
 #
 # web/dist is gitignored, so a fresh clone has no SPA to embed and the Go build
@@ -24,7 +24,7 @@ if [[ ! -f web/dist/index.html ]]; then
 fi
 
 VERSION="$(cat VERSION)"
-echo "==> building 9router-go ${VERSION}"
-go build -ldflags="-s -w -X 9router/proxy/internal/updater.CurrentVersion=${VERSION}" \
-  -o ./9router-go ./cmd/9router-go/
-echo "==> ./9router-go"
+echo "==> building axonrouter-go ${VERSION}"
+go build -ldflags="-s -w -X axonrouter/proxy/internal/updater.CurrentVersion=${VERSION}" \
+  -o ./axonrouter-go ./cmd/axonrouter-go/
+echo "==> ./axonrouter-go"

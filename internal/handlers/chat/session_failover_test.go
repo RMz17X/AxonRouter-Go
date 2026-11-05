@@ -8,8 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 func TestFallback_RebindsAffinityOn429(t *testing.T) {

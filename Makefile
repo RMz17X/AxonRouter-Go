@@ -1,5 +1,5 @@
 BINARY_SUFFIX := $(if $(findstring Windows_NT,$(OS)),.exe,)
-BINARY_NAME := 9router-go$(BINARY_SUFFIX)
+BINARY_NAME := axonrouter-go$(BINARY_SUFFIX)
 # A bare `make` builds the binary and stops there — it never runs the server.
 # `run`/`dev` are explicit, separate goals on purpose.
 .DEFAULT_GOAL := build
@@ -28,9 +28,9 @@ BINARY := ./$(BINARY_NAME)
 endif
 
 # DATA_DIR stays empty unless the caller overrides it, so the binary applies its
-# own per-platform default (%APPDATA%\9router on Windows, ~/.9router elsewhere).
-# Do NOT default to $(HOME)/.9router: GNU Make on native Windows expands $(HOME)
-# to empty, which resolved to a literal "/.9router" -> C:/Program Files/Git/.9router,
+# own per-platform default (%APPDATA%\axonrouter-go on Windows, ~/.axonrouter-go elsewhere).
+# Do NOT default to $(HOME)/.axonrouter-go: GNU Make on native Windows expands $(HOME)
+# to empty, which resolved to a literal "/.axonrouter-go" -> C:/Program Files/Git/.axonrouter-go,
 # so every launch wrote a throwaway DB and 401'd on every dashboard call.
 DATA_DIR ?=
 RTK ?=
@@ -40,7 +40,7 @@ AUTO_UPDATE ?= false
 
 # Double quotes, not single: cmd.exe treats ' as a literal character, so the
 # single-quoted form passed a quoted symbol name straight to the linker.
-LDFLAGS := -s -w -X "9router/proxy/internal/updater.CurrentVersion=$(VERSION)"
+LDFLAGS := -s -w -X "axonrouter/proxy/internal/updater.CurrentVersion=$(VERSION)"
 
 .PHONY: build run dev version update test test-short test-live test-integration vet vet-integration bench bench-go cross docker docker-build clean help web-build web-dev changelog-merge
 
@@ -62,10 +62,10 @@ web-build:
 
 ## build — compile binary with version embedding
 build: web-build
-	go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) ./cmd/9router-go/
-	go build -ldflags="$(LDFLAGS)" -o opencode-go$(BINARY_SUFFIX) ./cmd/9router-go/
+	go build -ldflags="$(LDFLAGS)" -o $(BINARY_NAME) ./cmd/axonrouter-go/
+	go build -ldflags="$(LDFLAGS)" -o opencode-go$(BINARY_SUFFIX) ./cmd/axonrouter-go/
 
-# `PORT=20130 ./9router-go` is POSIX env-assignment prefix syntax. cmd.exe does
+# `PORT=20130 ./axonrouter-go` is POSIX env-assignment prefix syntax. cmd.exe does
 # not parse it: it tried to execute a program literally named "PORT" and failed
 # with "'PORT' is not recognized as an internal or external command". GNU Make's
 # export directive is portable, so use it and drop the prefix entirely.
@@ -97,7 +97,7 @@ run: build
 
 ## dev — start with go run (auto-rebuild)
 dev:
-	go run -ldflags="$(LDFLAGS)" ./cmd/9router-go/ $(if $(RTK),--rtk=$(RTK)) $(if $(CAVEMAN),--caveman=$(CAVEMAN)) $(if $(PONYTAIL),--ponytail=$(PONYTAIL)) --auto-update=$(AUTO_UPDATE)
+	go run -ldflags="$(LDFLAGS)" ./cmd/axonrouter-go/ $(if $(RTK),--rtk=$(RTK)) $(if $(CAVEMAN),--caveman=$(CAVEMAN)) $(if $(PONYTAIL),--ponytail=$(PONYTAIL)) --auto-update=$(AUTO_UPDATE)
 
 ## web-dev — Vite dev server (HMR) on :5173, API proxied to Go :20130. FE changes hot-reload without rebuilding the binary.
 web-dev:
@@ -191,7 +191,7 @@ bench-go:
 ## cross — cross-compile Linux/macOS/Windows release binaries
 #
 # `GOOS=linux GOARCH=amd64 go build` is a POSIX env-assignment prefix, and
-# cmd.exe chokes on it the same way it choked on `PORT=20130 ./9router-go`.
+# cmd.exe chokes on it the same way it choked on `PORT=20130 ./axonrouter-go`.
 # Instead the per-target OS/ARCH go through `export`, which is a Make directive
 # and therefore identical under sh and cmd. The export is scoped to cross-one
 # so an empty GOARCH can never leak into the normal build target.
@@ -202,7 +202,7 @@ export GOOS := $(CROSS_OS)
 export GOARCH := $(CROSS_ARCH)
 endif
 
-CROSS_BIN := 9router-go
+CROSS_BIN := axonrouter-go
 
 cross-linux-amd64:
 	@$(MAKE) --no-print-directory cross-one CROSS_OS=linux CROSS_ARCH=amd64 OUT=$(CROSS_BIN)-linux-amd64
@@ -229,10 +229,10 @@ cross: web-build
 	@cat SHA256SUMS.txt
 .PHONY: cross-one cross-tray-one $(CROSS_BUILD_TARGETS)
 cross-one:
-	go build -ldflags="$(LDFLAGS)" -o $(OUT) ./cmd/9router-go/
+	go build -ldflags="$(LDFLAGS)" -o $(OUT) ./cmd/axonrouter-go/
 
 cross-tray-one:
-	go build -ldflags="$(LDFLAGS)" -o $(OUT) ./cmd/9router-tray/
+	go build -ldflags="$(LDFLAGS)" -o $(OUT) ./cmd/axonrouter-tray/
 ## docker — docker compose up (single stack)
 docker:
 	docker compose -f docker-compose.single.yml up -d
@@ -258,7 +258,7 @@ clean:
 
 ## help — show targets
 help:
-	@echo "9router-go — Makefile targets:"
+	@echo "axonrouter-go — Makefile targets:"
 	@grep -E '^## ' Makefile | sed 's/## /  make /' | sed 's/ — /  /'
 	@echo ""
 	@echo "Options:"

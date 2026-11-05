@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/proxy/oauth"
 )
 
 // errRefreshRefused stands in for a refresh token the provider will not honour.

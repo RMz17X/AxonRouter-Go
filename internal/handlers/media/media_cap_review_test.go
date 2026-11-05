@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/middleware"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/middleware"
+	"axonrouter/proxy/internal/models"
 )
 
 // The tests here pin the ways the caps could still be walked around after the

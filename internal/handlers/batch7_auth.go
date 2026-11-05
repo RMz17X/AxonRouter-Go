@@ -15,10 +15,10 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/middleware"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/middleware"
 )
 
 // Dashboard auth surface (batch 7, AxonRouter parity): GET

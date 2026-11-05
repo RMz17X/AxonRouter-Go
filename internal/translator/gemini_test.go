@@ -692,7 +692,7 @@ func TestTranslateOpenAIToGemini_CarriesToolCallIDs(t *testing.T) {
 }
 
 func TestTranslateOpenAIToGemini_ToolCallIDDropsThoughtSigSuffix(t *testing.T) {
-	// The __ts__<sig> suffix is 9router-go's private transport for thought
+	// The __ts__<sig> suffix is axonrouter-go's private transport for thought
 	// signatures. It must not reach the wire nor break call/response pairing.
 	openaiJSON := []byte(`{
 		"model": "gemini-3.8-flash",

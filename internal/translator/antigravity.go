@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/log"
+	"axonrouter/proxy/internal/log"
 )
 
 // maxAntigravityOutputTokens caps generationConfig.maxOutputTokens; Google's
@@ -482,7 +482,7 @@ var antigravityUpstreamModelIDs = map[string]string{
 // backend expects, applying the registry's upstreamModelId column.
 //
 // The parenthesised effort the registry carries ("gemini-3.8-flash-high(high)")
-// is 9router's own thinking notation, not a Google model id, and it is stripped
+// is AxonRouter-Go's own thinking notation, not a Google model id, and it is stripped
 // before the id reaches the wire — exactly as upstream's chatCore does with
 // stripThinkingSuffix(upstreamModel) on both the passthrough and the
 // translateRequest branch. Cloud Code answers 404 NOT_FOUND for every
@@ -830,7 +830,7 @@ func fixAntigravityContents(req *GeminiRequest, model string) bool {
 
 // WrapForAntigravity wraps a standard Gemini request in Antigravity API envelope.
 func WrapForAntigravity(geminiBody []byte, projectID, modelName string) ([]byte, error) {
-	// The wire id is the registry's upstreamModelId with 9router's own effort
+	// The wire id is the registry's upstreamModelId with AxonRouter-Go's own effort
 	// notation stripped, not the bare synonym the lock and quota paths share.
 	// proxy.ForwardGemini normalises the model before calling this, so the
 	// synonym lookup inside AntigravityUpstreamModel is idempotent and the two

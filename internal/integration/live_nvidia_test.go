@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // nvidiaLiveKey returns the live key or skips the test. Every test in this file

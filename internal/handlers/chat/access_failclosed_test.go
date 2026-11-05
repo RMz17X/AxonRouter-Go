@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/dbtest"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/dbtest"
+	"axonrouter/proxy/internal/models"
 )
 
 // errorEnvelope is the OpenAI-style error body the access gate writes.

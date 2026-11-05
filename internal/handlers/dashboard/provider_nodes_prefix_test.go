@@ -3,7 +3,7 @@
 package dashboard
 
 import (
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 	"bytes"
 	"net/http"
 	"net/http/httptest"

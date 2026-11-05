@@ -56,7 +56,7 @@ func TestSameExecutable(t *testing.T) {
 	}{
 		{name: "identical paths", a: self, b: self, want: true},
 		{name: "trailing separator resolves to the same file", a: self, b: self + string(os.PathSeparator), want: true},
-		{name: "different binaries", a: self, b: "/some/other/9router-go", want: false},
+		{name: "different binaries", a: self, b: "/some/other/axonrouter-go", want: false},
 		{name: "an empty path never matches", a: "", b: self, want: false},
 		{name: "two empty paths never match", a: "", b: "", want: false},
 	}

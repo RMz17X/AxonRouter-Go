@@ -49,9 +49,9 @@
   // The white-label branding card in Settings writes these two; an empty value
   // falls back to the project's own name and favicon, so an operator who never
   // opens that card sees exactly what the sidebar showed before.
-  const displayBrandName = $derived(brandName || '9router-go')
+  const displayBrandName = $derived(brandName || 'AxonRouter-Go')
   const displayBrandLogo = $derived(brandLogo || '/favicon.svg')
-  const INSTALL_CMD = '9router-go update'
+  const INSTALL_CMD = 'axonrouter-go update'
   let copied = $state(false)
 
   // Which accordions are open, by id, and which labelled groups are collapsed.
@@ -215,7 +215,7 @@
     ? 'w-[56px]'
     : 'w-64'} flex-col overflow-hidden border-r border-border bg-sidebar transition-all duration-300 flex-shrink-0 select-none z-30"
 >
-  <!-- Brand header: 9router-go with official favicon.svg logo -->
+  <!-- Brand header: AxonRouter-Go with official favicon.svg logo -->
   <div class="flex flex-col shrink-0">
     <a
       href={TAB_ROUTES.endpoint}

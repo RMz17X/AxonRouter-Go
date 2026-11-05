@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"9router/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/handlers/chat"
 )
 
 // Upstream b08f12d5: the codex image lane resolves the ChatGPT plan at request

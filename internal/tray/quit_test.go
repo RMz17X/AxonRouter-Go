@@ -24,7 +24,7 @@ import (
 // that called a helper named Quit would prove the helper does nothing; this one
 // fails when somebody makes the menu item do something.
 func TestTray_QuitDecoupling(t *testing.T) {
-	path := filepath.Join("..", "..", "cmd", "9router-tray", "gui.go")
+	path := filepath.Join("..", "..", "cmd", "axonrouter-tray", "gui.go")
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)

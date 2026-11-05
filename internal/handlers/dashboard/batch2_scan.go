@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/models"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
 )
 
 // POST /api/providers/{id}/scan-free-models — port of AxonRouter's

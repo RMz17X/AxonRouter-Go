@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/proxy"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/proxy"
 )
 
 // displayCurrencySettingKey is the settings key the dashboard's Currency section

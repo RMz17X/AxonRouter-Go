@@ -3,7 +3,7 @@ package db
 import (
 	"database/sql"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 // comboColumns is the shared column list for every combos read.

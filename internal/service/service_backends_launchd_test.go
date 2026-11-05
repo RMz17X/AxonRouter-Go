@@ -15,7 +15,7 @@ func TestInstallLaunchdWritesPlistAndLoads(t *testing.T) {
 	home := setHome(t)
 	calls := stubRun(t)
 
-	info, err := installLaunchd("/Applications/9router-go", []string{"--rtk=true"})
+	info, err := installLaunchd("/Applications/axonrouter-go", []string{"--rtk=true"})
 	if err != nil {
 		t.Fatalf("installLaunchd() error = %v", err)
 	}
@@ -44,7 +44,7 @@ func TestInstallLaunchdLoadFailure(t *testing.T) {
 		return "", nil
 	})
 
-	info, err := installLaunchd("/Applications/9router-go", nil)
+	info, err := installLaunchd("/Applications/axonrouter-go", nil)
 	if err == nil {
 		t.Fatal("installLaunchd() error = nil, want error when load fails")
 	}
@@ -64,7 +64,7 @@ func TestStatusLaunchd(t *testing.T) {
 	t.Run("plist present and job listed", func(t *testing.T) {
 		home := setHome(t)
 		writeFile(t, filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist"), "<plist/>")
-		stubRunFunc(t, func(string, ...string) (string, error) { return launchdLabel + "\t0\tcom.9router.gateway", nil })
+		stubRunFunc(t, func(string, ...string) (string, error) { return launchdLabel + "\t0\tcom.axonrouter-go.gateway", nil })
 
 		info, ok := statusLaunchd()
 		if !ok {
@@ -175,7 +175,7 @@ func TestControlLaunchd(t *testing.T) {
 // TestLaunchdPlistRoundTripsThroughXMLParser checks the plist is well-formed and
 // that args with &, <, > and quotes decode back byte for byte.
 func TestLaunchdPlistRoundTripsThroughXMLParser(t *testing.T) {
-	exe := "/Applications/9router-go"
+	exe := "/Applications/axonrouter-go"
 	args := []string{"--rtk=true", "--name=A & B <c> \"d\""}
 	dict, version := parseLaunchdPlist(t, renderLaunchdPlist(exe, args))
 
@@ -204,7 +204,7 @@ func TestLaunchdPlistRoundTripsThroughXMLParser(t *testing.T) {
 // skipped where neither exists.
 func TestLaunchdPlistAcceptedByValidator(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "agent.plist")
-	plist := renderLaunchdPlist("/Applications/9router-go", []string{"--rtk=true", "--name=A & B"})
+	plist := renderLaunchdPlist("/Applications/axonrouter-go", []string{"--rtk=true", "--name=A & B"})
 	if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
 		t.Fatal(err)
 	}

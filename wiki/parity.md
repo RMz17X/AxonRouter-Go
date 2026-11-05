@@ -10,7 +10,7 @@ Both projects share the same database and schema. What differs is the runtime.
 
 ## Comparison
 
-| | 9router-go | 9Router (upstream) |
+| | axonrouter-go | 9Router (upstream) |
 |---|---|---|
 | Runtime | Single Go binary | Node.js + Next.js |
 | Dashboard | Embedded Svelte 5 | React 19 |
@@ -29,14 +29,14 @@ Both projects share the same database and schema. What differs is the runtime.
   handling.
 - Data-shape compatibility: the PostgreSQL schema carries the upstream table/JSON shapes. (The legacy file database is a one-way migration source via `tools/migrate-db`; the products no longer share a live database.)
 
-The two dashboards no longer share a live database: 9router-go moved to
+The two dashboards no longer share a live database: axonrouter-go moved to
 PostgreSQL while upstream keeps its file database. A legacy install's data
 crosses over once, through the migration tool.
 
 ## What version am I running?
 
 ```bash
-9router-go version
+axonrouter-go version
 ```
 
 The dashboard's changelog modal shows both `CHANGELOG.md` and any fragment merged
@@ -53,7 +53,7 @@ since the last tag, so what you read there is current even between releases.
 
 ## Go-only features
 
-Some features exist only in 9router-go and do not collide with upstream:
+Some features exist only in axonrouter-go and do not collide with upstream:
 
 - Per-custom-provider limits (RPM/TPM/concurrency/quota/expiry)
 - Per-API-key rate limiting with a FIFO queue
@@ -66,8 +66,8 @@ Some features exist only in 9router-go and do not collide with upstream:
 
 ## Further reading
 
-- [`COMPARISON.md`](https://github.com/luqman-v1/9router-go/blob/main/COMPARISON.md)
-- [`PARITY-REMAINING.md`](https://github.com/luqman-v1/9router-go/blob/main/docs/PARITY-REMAINING.md)
+- [`COMPARISON.md`](https://github.com/RMz17X/AxonRouter-Go/blob/main/COMPARISON.md)
+- [`PARITY-REMAINING.md`](https://github.com/RMz17X/AxonRouter-Go/blob/main/docs/PARITY-REMAINING.md)
 - Upstream: [decolua/9router](https://github.com/decolua/9router)
 
 For the KeiRouter port specifically — what was taken, what was skipped, and what

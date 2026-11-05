@@ -5,7 +5,7 @@ section: Contributing
 ---
 # Owner & Contributors
 
-9router-go is built in the open. This page lists everyone whose commit landed
+AxonRouter-Go is built in the open. This page lists everyone whose commit landed
 in the repository, with the profile photo and username each person uses on
 GitHub. The list is generated from the GitHub API, so it is the same one
 GitHub shows on the repository's contributors page.

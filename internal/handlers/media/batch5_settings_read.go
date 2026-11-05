@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"strings"
 
-	"9router/proxy/internal/clisetup"
+	"axonrouter/proxy/internal/clisetup"
 )
 
 // *-settings GET readers (batch 5 re-score). Axon keeps read-only

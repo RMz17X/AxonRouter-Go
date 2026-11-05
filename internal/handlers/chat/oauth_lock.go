@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/providers"
 )
 
 // parkRejectedOAuthAccount cools a connection down after the provider rejected

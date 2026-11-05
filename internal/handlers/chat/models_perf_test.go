@@ -9,8 +9,8 @@ import (
 	"reflect"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/models"
 )
 
 func TestHandleModels_DataModelsIdentical(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 )
 
 // TestEvictionPrunesEveryMap proves the bound covers the maps this change added,

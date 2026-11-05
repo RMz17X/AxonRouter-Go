@@ -382,7 +382,7 @@ var modelCapabilities = map[string]Capabilities{
 }
 
 // codexExtendedContextWindow is the context window the codex registry
-// publishes for the `[1m]` extended-context variants. The suffix is a 9router
+// publishes for the `[1m]` extended-context variants. The suffix is an AxonRouter-Go
 // catalog id, not a wire id — upstream resolves it to the base model through
 // `upstreamModelId` — so these entries carry their own window rather than
 // inheriting the base model's.

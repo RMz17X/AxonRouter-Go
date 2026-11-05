@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/handlerutil"
-	"9router/proxy/internal/keikey"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/keikey"
 )
 
 // HandleUpdateApiKey handles PUT /api/keys/{id}.

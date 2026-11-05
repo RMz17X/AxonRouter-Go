@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/netguard"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/netguard"
 )
 
 // Safe image prefetch (G11). Remote image URLs in an inbound request are

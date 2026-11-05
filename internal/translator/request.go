@@ -1,8 +1,8 @@
 package translator
 
 import (
-	"9router/proxy/internal/log"
-	"9router/proxy/internal/thinking"
+	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/thinking"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"fmt"

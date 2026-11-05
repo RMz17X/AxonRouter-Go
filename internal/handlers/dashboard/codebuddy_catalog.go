@@ -3,7 +3,7 @@ package dashboard
 import (
 	"strings"
 
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/providers"
 )
 
 // CodeBuddy-family model discovery.

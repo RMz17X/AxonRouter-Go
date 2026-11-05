@@ -32,7 +32,7 @@ curl http://localhost:20130/v1/chat/completions \
 |---|---|---|
 | `PORT` | `20130` | HTTP port |
 | `HOST` / `BIND_ADDR` | all interfaces | Listener address |
-| `DATA_DIR` | `~/.9router` (`%APPDATA%/9router` on Windows) | Non-database state root |
+| `DATA_DIR` | `~/.axonrouter-go` (`%APPDATA%/axonrouter-go` on Windows); a pre-rename `~/.9router` is still used when it is the only one that exists | Non-database state root |
 | `DATABASE_URL` | — (**required**) | PostgreSQL connection URL |
 | `INITIAL_PASSWORD` | unset (fallback `123456` locally) | First dashboard password |
 | `RTK_ENABLED` | `true` | RTK input compression |

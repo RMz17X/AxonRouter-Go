@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/handlers/shared"
-	"9router/proxy/internal/providers"
+	"axonrouter/proxy/internal/handlers/shared"
+	"axonrouter/proxy/internal/providers"
 )
 
 // TestFetchAntigravityProjectID_outcomes pins the classification that drives the

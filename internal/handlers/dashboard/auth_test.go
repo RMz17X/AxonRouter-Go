@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/db"
 )
 
 // authTestEnv pins the JWT secret and data dir so session cookies are

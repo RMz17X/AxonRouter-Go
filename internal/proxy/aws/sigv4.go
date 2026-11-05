@@ -1,4 +1,4 @@
-// Package aws implements the AWS protocol primitives 9router needs to speak to
+// Package aws implements the AWS protocol primitives AxonRouter-Go needs to speak to
 // Amazon Bedrock: Signature Version 4 request signing and AWS credential resolution.
 //
 // SigV4 is hand-rolled rather than pulled from the AWS SDK for Go because every request

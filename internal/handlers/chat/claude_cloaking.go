@@ -1,14 +1,14 @@
 package chat
 
 import (
-	json "9router/proxy/internal/fastjson"
+	json "axonrouter/proxy/internal/fastjson"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"strings"
 
-	"9router/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/proxy/executor"
 )
 
 // Claude OAuth cloaking — ports the Next.js dashboard's

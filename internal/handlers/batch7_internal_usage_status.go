@@ -7,7 +7,7 @@ import (
 
 	json "encoding/json/v2"
 
-	"9router/proxy/internal/db"
+	"axonrouter/proxy/internal/db"
 )
 
 // Connection usage-status engine for the internal proxy report route

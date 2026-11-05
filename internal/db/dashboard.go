@@ -1,7 +1,7 @@
 package db
 
 import (
-	"9router/proxy/internal/models"
+	"axonrouter/proxy/internal/models"
 	"context"
 	json "encoding/json/v2"
 	"fmt"

@@ -9,8 +9,8 @@ import (
 	"os"
 	"testing"
 
-	"9router/proxy/internal/db"
-	"9router/proxy/internal/dbtest"
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/dbtest"
 )
 
 func setupTestDB(t *testing.T) (*sql.DB, func()) {

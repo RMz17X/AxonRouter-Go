@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"9router/proxy/internal/auth"
-	"9router/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/auth"
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // TestLedgerPrunePreservesKeyQuotaEnforcement drives the whole chain:
