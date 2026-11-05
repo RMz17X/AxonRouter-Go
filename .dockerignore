@@ -17,6 +17,7 @@ web/node_modules
 web/dist
 axonrouter-go
 axonrouter-go-*
+!axonrouter-go-linux-amd64
 *.exe
 *.test
 *.out
