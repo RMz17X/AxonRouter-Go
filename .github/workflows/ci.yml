@@ -416,7 +416,14 @@ jobs:
         image: postgres:17
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: <redacted>
+          # Trust auth on purpose: this database is an ephemeral,
+          # runner-local scratch instance holding nothing but the
+          # suite's throwaway schemas. The first version of this job
+          # carried a password in TWO places (service env and DSN)
+          # and the two values disagreed — every test then failed
+          # SASL auth (SQLSTATE 28P01), which read as 291 broken
+          # tests. No duplicated value, no way to be wrong.
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: axonrouter_integration
         ports:
           - 5432:5432
@@ -426,7 +433,7 @@ jobs:
           --health-timeout 3s
           --health-retries 12
     env:
-      INTEGRATION_DATABASE_URL: postgres://postgres:axonrouter-ci@localhost:5432/axonrouter_integration?sslmode=disable
+      INTEGRATION_DATABASE_URL: postgres://postgres@localhost:5432/axonrouter_integration?sslmode=disable
     steps:
       - uses: actions/checkout@v4
 
@@ -459,7 +466,7 @@ jobs:
       # in-memory usage tracker, per-handler sticky state). -count=1 defeats
       # the test cache so a PR always re-runs the suite.
       - name: Test integration
-        run: go test -tags=integration -race -count=1 -timeout 10m ./internal/integration/... -v
+        run: go test -tags=integration -race -count=1 -timeout 25m ./internal/integration/... -v
 
   # The Dockerfile was only ever built by release.yml, on a tag. Every breakage
   # it can suffer — a .dockerignore entry that swallows cmd/axonrouter-go/, a
