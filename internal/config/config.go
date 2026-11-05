@@ -79,7 +79,11 @@ func ProvideConfig(v *viper.Viper) *Config {
 
 // ResolveDataDir returns the base data directory: DATA_DIR env, else the
 // value from .env, else the platform default (~/.axonrouter-go, or
-// %APPDATA%/axonrouter-go on Windows).
+// %APPDATA%/axonrouter-go on Windows). When the renamed default does not
+// exist yet but the legacy 9router data dir does, the legacy dir wins, so
+// an install that predates the AxonRouter-Go rename keeps resolving to
+// the state it already owns (CLI tokens, machine-id, uploads, tunnel
+// state) instead of booting against an empty directory.
 //
 // The .env read is load-bearing, not a convenience. The server resolves its
 // data dir through viper (LoadConfigFromViper), which does read .env, while
@@ -102,11 +106,25 @@ func ResolveDataDir() string {
 			if appData == "" {
 				appData = filepath.Join(homeDir, "AppData", "Roaming")
 			}
-			return filepath.Join(appData, "axonrouter-go")
+			return preferredDataDir(filepath.Join(appData, "axonrouter-go"), filepath.Join(appData, "9router"))
 		}
-		return filepath.Join(homeDir, ".axonrouter-go")
+		return preferredDataDir(filepath.Join(homeDir, ".axonrouter-go"), filepath.Join(homeDir, ".9router"))
 	}
 	return ".axonrouter-go"
+}
+
+// preferredDataDir picks the renamed product's data dir, unless only the
+// legacy 9router dir exists — the rename must not orphan an existing
+// install's state. Once the new dir exists it always wins, so a migrated
+// or fresh install never falls back.
+func preferredDataDir(current, legacy string) string {
+	if _, err := os.Stat(current); err == nil {
+		return current
+	}
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy
+	}
+	return current
 }
 
 // dataDirFromEnvFile reads DATA_DIR out of the .env next to the binary or in

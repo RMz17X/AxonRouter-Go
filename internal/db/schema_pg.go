@@ -71,6 +71,15 @@ func EnsureCoreSchema(db *sql.DB) error {
 	); err != nil {
 		return fmt.Errorf("postgres schema: create index on apiKeys(lookupHash): %w", err)
 	}
+	// idx_pc_last_used_at likewise indexes an additive column (lastUsedAt),
+	// so it is created here rather than in the providerConnections table
+	// DDL: on a fresh database the column does not exist yet when the table
+	// DDL runs, and index creation there aborts the boot (42703).
+	if _, err := db.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_pc_last_used_at ON providerConnections(lastUsedAt DESC NULLS LAST)`,
+	); err != nil {
+		return fmt.Errorf("postgres schema: create index on providerConnections(lastUsedAt): %w", err)
+	}
 	if _, err := db.Exec(
 		`INSERT INTO _meta(key, value) VALUES('schemaVersion', '1') ON CONFLICT (key) DO NOTHING`,
 	); err != nil {
