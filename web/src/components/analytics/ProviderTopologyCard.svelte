@@ -454,11 +454,7 @@
   <!-- Upstream empty state: nothing has been used in the period, so there is
        nothing honest to draw. The router core and the zoom controls stay put so
        the card keeps its shape instead of collapsing. -->
-  {#if displayProviders.length === 0}
-    <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-sm text-text-muted">
-      No providers connected
-    </div>
-  {/if}
+
 
   <!-- Bottom-left React Flow style controls -->
   <div class="absolute bottom-4 left-4 z-20 flex flex-col rounded-md border border-border bg-surface/90 shadow-md overflow-hidden backdrop-blur">
