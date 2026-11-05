@@ -508,6 +508,33 @@
     return Array.from(set).sort()
   })
 
+  let proxyGroupsList = $state<Array<{ id: string; name: string; key?: string; activeCount?: number; poolCount?: number }>>([])
+  let allProxyGroups = $derived.by(() => {
+    const list: Array<{ id: string; label: string; activeCount: number }> = []
+    const seen = new Set<string>()
+    for (const g of proxyGroupsList) {
+      const gid = g.key || g.id || g.name
+      if (!gid || seen.has(gid)) continue
+      seen.add(gid)
+      list.push({
+        id: `group:${gid}`,
+        label: g.name || gid,
+        activeCount: g.activeCount ?? 0,
+      })
+    }
+    for (const grp of availableProxyGroups) {
+      if (seen.has(grp)) continue
+      seen.add(grp)
+      const count = proxyPools.filter((p) => p.group === grp && p.isActive).length
+      list.push({
+        id: `group:${grp}`,
+        label: grp,
+        activeCount: count,
+      })
+    }
+    return list
+  })
+
   // Selection state
   let selectedConnIds = $state<string[]>([])
   let isAllSelected = $derived(
@@ -983,6 +1010,16 @@
       proxyPools = poolsData
       modelCaps = capsMerged
 
+      // Fetch proxy groups
+      fetch('/api/proxy-groups')
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => {
+          if (data?.groups && Array.isArray(data.groups)) {
+            proxyGroupsList = data.groups
+          }
+        })
+        .catch(() => {})
+
       // Suggested free models from the provider's public catalog (if configured in upstream registry).
       const fetcher = selectedCatalogItem?.modelsFetcher
       if (fetcher?.url && fetcher?.type) {
@@ -1027,6 +1064,10 @@
       const currentStrat = { ...(currentStrategies[providerId] || {}) }
       if (newPool === 'none' || !newPool) {
         delete currentStrat.proxyPoolId
+        delete currentStrat.proxyGroup
+      } else if (newPool.startsWith('group:')) {
+        currentStrat.proxyPoolId = newPool
+        currentStrat.proxyGroup = newPool.slice(6)
       } else {
         currentStrat.proxyPoolId = newPool
       }
@@ -3578,40 +3619,45 @@
         {/if}
       </div>
 
-      <!-- Proxy Pool Selector -->
-      <div class="flex flex-col gap-1.5">
-        <label for="free-proxy-pool" class="text-sm font-medium text-text-main">Proxy Pool</label>
-        <select
-          id="free-proxy-pool"
-          value={freeProxyPoolId}
-          onchange={(e) => handleFreeProxyChange(e.currentTarget.value, freeRotateStrategy)}
-          disabled={isSavingFreeProxy || freeRotateStrategy !== 'none'}
-          class="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-sm text-text-main focus:outline-none focus:border-primary disabled:opacity-50 cursor-pointer"
-        >
-          <option value="none">None (direct)</option>
-          {#if availableProxyGroups.length > 0}
-            <optgroup label="Proxy Groups (Smart Fitness)">
-              {#each availableProxyGroups as grp}
-                <option value="group:{grp}">Group: {grp} ({proxyPools.filter((p) => p.group === grp && p.isActive).length} active)</option>
-              {/each}
-            </optgroup>
-          {/if}
-          {#if availableProxyTypes.length > 0}
-            <optgroup label="Proxy Types (Smart Fitness)">
-              {#each availableProxyTypes as typ}
-                <option value="type:{typ}">Type: {typ} ({proxyPools.filter((p) => p.type === typ && p.isActive).length} active)</option>
-              {/each}
-            </optgroup>
-          {/if}
-          <optgroup label="Individual Pools">
-            {#each activeProxyPools as pool}
-              <option value={pool.id}>{pool.name}{pool.group ? ` [${pool.group}]` : ''}</option>
-            {/each}
-          </optgroup>
-        </select>
+      <!-- Proxy Group Selector (Lightweight chips, no heavy select) -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <label class="text-sm font-medium text-text-main">Proxy Group</label>
+          <span class="text-xs text-text-muted">No-Auth provider routes via Proxy Group</span>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onclick={() => handleFreeProxyChange('none', freeRotateStrategy)}
+            disabled={isSavingFreeProxy || freeRotateStrategy !== 'none'}
+            class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {freeProxyPoolId === 'none' || !freeProxyPoolId
+              ? 'bg-primary text-white border-primary shadow-sm'
+              : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
+          >
+            <span class="material-symbols-outlined text-[16px]">link_off</span>
+            <span>Direct (None)</span>
+          </button>
+          {#each allProxyGroups as grp}
+            {@const isSelected = freeProxyPoolId === grp.id || freeProxyPoolId === grp.id.replace('group:', '')}
+            <button
+              type="button"
+              onclick={() => handleFreeProxyChange(grp.id, freeRotateStrategy)}
+              disabled={isSavingFreeProxy || freeRotateStrategy !== 'none'}
+              class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {isSelected
+                ? 'bg-primary text-white border-primary shadow-sm'
+                : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
+            >
+              <span class="material-symbols-outlined text-[16px]">hub</span>
+              <span>{grp.label}</span>
+              <span class="text-[10px] px-1.5 py-0.2 rounded-full {isSelected ? 'bg-white/20 text-white' : 'bg-black/5 dark:bg-white/10 text-text-muted'}">
+                {grp.activeCount}
+              </span>
+            </button>
+          {/each}
+        </div>
         {#if freeRotateStrategy !== 'none'}
           <p class="text-xs text-text-muted">
-            Pool selector is ignored when rotation is active — all active pools are used.
+            Group selector is disabled when rotation is active — all active pools are used.
           </p>
         {/if}
       </div>

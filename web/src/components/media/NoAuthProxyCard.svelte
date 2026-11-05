@@ -17,7 +17,7 @@
     { value: 'random', label: 'Random' },
   ]
 
-  let proxyPools = $state<Array<{ id: string; name: string }>>([])
+  let proxyGroups = $state<Array<{ id: string; name: string; key?: string; activeCount?: number; poolCount?: number }>>([])
   let proxyPoolId = $state(NONE_PROXY_POOL_VALUE)
   let rotateStrategy = $state('none')
   let saving = $state(false)
@@ -26,11 +26,11 @@
   onMount(() => {
     let cancelled = false
     Promise.all([
-      api.getProxyPools ? api.getProxyPools() : fetch('/api/proxy-pools?isActive=true').then((r) => r.ok ? r.json() : { proxyPools: [] }),
+      fetch('/api/proxy-groups').then((r) => r.ok ? r.json() : { groups: [] }),
       api.getSettings(),
-    ]).then(([poolData, settingsData]) => {
+    ]).then(([groupData, settingsData]) => {
       if (cancelled) return
-      proxyPools = (poolData as any)?.proxyPools || poolData || []
+      proxyGroups = (groupData as any)?.groups || []
       const override = (settingsData?.providerStrategies || {})[providerId] || {}
       proxyPoolId = override.proxyPoolId || NONE_PROXY_POOL_VALUE
       rotateStrategy = override.rotateStrategy || 'none'
@@ -46,8 +46,15 @@
       const data = res.ok ? await res.json() : {}
       const current = data.providerStrategies || {}
       const override = { ...(current[providerId] || {}) }
-      if (poolId === NONE_PROXY_POOL_VALUE) delete override.proxyPoolId
-      else override.proxyPoolId = poolId
+      if (poolId === NONE_PROXY_POOL_VALUE) {
+        delete override.proxyPoolId
+        delete override.proxyGroup
+      } else if (poolId.startsWith('group:')) {
+        override.proxyPoolId = poolId
+        override.proxyGroup = poolId.slice(6)
+      } else {
+        override.proxyPoolId = poolId
+      }
       if (strategy === 'none') delete override.rotateStrategy
       else override.rotateStrategy = strategy
       const updated = { ...current }
@@ -77,7 +84,23 @@
     save(proxyPoolId, newStrategy)
   }
 
-  let canRotate = $derived(proxyPools.length >= 2)
+  let allProxyGroups = $derived.by(() => {
+    const list: Array<{ id: string; label: string; activeCount: number }> = []
+    const seen = new Set<string>()
+    for (const g of proxyGroups) {
+      const gid = g.key || g.id || g.name
+      if (!gid || seen.has(gid)) continue
+      seen.add(gid)
+      list.push({
+        id: `group:${gid}`,
+        label: g.name || gid,
+        activeCount: g.activeCount ?? 0,
+      })
+    }
+    return list
+  })
+
+  let canRotate = $derived(allProxyGroups.length >= 2)
   let isRotation = $derived(rotateStrategy !== 'none')
 </script>
 
@@ -88,28 +111,50 @@
     </div>
     <div class="flex-1">
       <p class="text-sm font-medium text-text-main">No authentication required</p>
-      <p class="text-xs text-text-muted">This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.</p>
+      <p class="text-xs text-text-muted">This provider is ready to use. Optionally route requests through a proxy group to bypass IP-based limits.</p>
     </div>
     {#if savedFlash}
       <Badge variant="success" size="sm">Saved</Badge>
     {/if}
   </div>
 
-  <div class="flex flex-col gap-1.5 mb-4">
-    <label class="text-sm font-medium text-text-main">Proxy Pool</label>
-    <select
-      value={proxyPoolId}
-      onchange={(e) => handlePoolChange(e.currentTarget.value)}
-      disabled={saving || isRotation}
-      class="py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all disabled:opacity-50"
-    >
-      <option value={NONE_PROXY_POOL_VALUE}>None (direct)</option>
-      {#each proxyPools as pool}
-        <option value={pool.id}>{pool.name}</option>
+  <div class="flex flex-col gap-2 mb-4">
+    <div class="flex items-center justify-between">
+      <label class="text-sm font-medium text-text-main">Proxy Group</label>
+      <span class="text-xs text-text-muted">Routes through selected Proxy Group</span>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <button
+        type="button"
+        onclick={() => handlePoolChange(NONE_PROXY_POOL_VALUE)}
+        disabled={saving || isRotation}
+        class="px-3.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {proxyPoolId === NONE_PROXY_POOL_VALUE
+          ? 'bg-primary text-white border-primary shadow-sm'
+          : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
+      >
+        <span class="material-symbols-outlined text-[16px]">link_off</span>
+        <span>Direct (None)</span>
+      </button>
+      {#each allProxyGroups as grp}
+        {@const isSelected = proxyPoolId === grp.id || proxyPoolId === grp.id.replace('group:', '')}
+        <button
+          type="button"
+          onclick={() => handlePoolChange(grp.id)}
+          disabled={saving || isRotation}
+          class="px-3.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {isSelected
+            ? 'bg-primary text-white border-primary shadow-sm'
+            : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
+        >
+          <span class="material-symbols-outlined text-[16px]">hub</span>
+          <span>{grp.label}</span>
+          <span class="text-[10px] px-1.5 py-0.5 rounded-full {isSelected ? 'bg-white/20 text-white' : 'bg-black/5 dark:bg-white/10 text-text-muted'}">
+            {grp.activeCount}
+          </span>
+        </button>
       {/each}
-    </select>
+    </div>
     {#if isRotation}
-      <p class="text-xs text-text-muted">Pool selector is ignored when rotation is active — all active pools are used.</p>
+      <p class="text-xs text-text-muted">Group selector is disabled when rotation is active — all active pools are used.</p>
     {/if}
   </div>
 
@@ -129,15 +174,15 @@
     </select>
     <p class="text-xs text-text-muted">
       {#if !canRotate}
-        Need at least 2 active proxy pools for rotation.
+        Need at least 2 active proxy groups for rotation.
       {:else if isRotation}
         {#if rotateStrategy === 'round-robin'}
-          Rotating through all {proxyPools.length} active pools in order. State is in-memory (resets on restart).
+          Rotating through all {allProxyGroups.length} active groups in order. State is in-memory (resets on restart).
         {:else}
-          Picking a random pool from {proxyPools.length} active pools each request.
+          Picking a random group from {allProxyGroups.length} active groups each request.
         {/if}
       {:else}
-        Uses the selected pool above. Set to Round-robin or Random to rotate across all active pools.
+        Uses the selected group above. Set to Round-robin or Random to rotate across all active groups.
       {/if}
     </p>
   </div>
