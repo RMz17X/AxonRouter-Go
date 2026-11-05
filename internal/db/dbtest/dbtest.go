@@ -23,6 +23,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -37,10 +38,19 @@ import (
 // that database tests run against the instance DATABASE_URL names.
 const DSNEnvVar = "INTEGRATION_DATABASE_URL"
 
+// ErrNoDatabase reports that no scratch database was configured (neither
+// INTEGRATION_DATABASE_URL nor DATABASE_URL is set). It is a distinct
+// state from a configured-but-unreachable database: owner rule
+// (2026-11-06) — a test that needs a database SKIPS when none is
+// configured, instead of failing. Callers check it with errors.Is and
+// skip; every other provisioning error stays a failure.
+var ErrNoDatabase = errors.New("dbtest: no database configured")
+
 // BaseDSN resolves the provisioning DSN: INTEGRATION_DATABASE_URL,
-// falling back to DATABASE_URL. The returned error names both
-// variables when neither is set, because "connection refused" against
-// an empty DSN is the failure this check exists to replace.
+// falling back to DATABASE_URL. When neither is set it returns
+// ErrNoDatabase (wrapped with the variable names), because "connection
+// refused" against an empty DSN is the failure this check exists to
+// replace.
 func BaseDSN() (string, error) {
 	if dsn := strings.TrimSpace(os.Getenv(DSNEnvVar)); dsn != "" {
 		return dsn, nil
@@ -48,7 +58,7 @@ func BaseDSN() (string, error) {
 	if dsn := strings.TrimSpace(os.Getenv("DATABASE_URL")); dsn != "" {
 		return dsn, nil
 	}
-	return "", fmt.Errorf("dbtest: neither %s nor DATABASE_URL is set; database-backed tests need a reachable PostgreSQL scratch database", DSNEnvVar)
+	return "", fmt.Errorf("%w: neither %s nor DATABASE_URL is set", ErrNoDatabase, DSNEnvVar)
 }
 
 // NewSchemaHandle creates a fresh schema in the base database and

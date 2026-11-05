@@ -404,36 +404,12 @@ jobs:
   integration:
     name: Integration tests
     runs-on: ubuntu-latest
-    # The suite provisions throwaway schemas in a scratch PostgreSQL database
-    # (internal/db/dbtest): without a server and INTEGRATION_DATABASE_URL
-    # every DB-backed test failed at 0.00s with "neither
-    # INTEGRATION_DATABASE_URL nor DATABASE_URL is set" — the job was red
-    # from the day the suite moved to PostgreSQL and the failure read as a
-    # code problem. The database is scratch by contract: the suite creates
-    # and drops its own schemas, never tables it did not create.
-    services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          # Trust auth on purpose: this database is an ephemeral,
-          # runner-local scratch instance holding nothing but the
-          # suite's throwaway schemas. The first version of this job
-          # carried a password in TWO places (service env and DSN)
-          # and the two values disagreed — every test then failed
-          # SASL auth (SQLSTATE 28P01), which read as 291 broken
-          # tests. No duplicated value, no way to be wrong.
-          POSTGRES_HOST_AUTH_METHOD: trust
-          POSTGRES_DB: axonrouter_integration
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d axonrouter_integration"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 12
-    env:
-      INTEGRATION_DATABASE_URL: postgres://postgres@localhost:5432/axonrouter_integration?sslmode=disable
+    # Owner rule (2026-11-06): tests that need a database SKIP when none
+    # is configured — CI provisions no database for this job. The suite
+    # still runs in full wherever INTEGRATION_DATABASE_URL (or
+    # DATABASE_URL) names a scratch PostgreSQL; dbtest.ErrNoDatabase is
+    # the skip signal. (This job briefly carried a postgres service —
+    # fragments 953/965 — removed again by 966.)
     steps:
       - uses: actions/checkout@v4
 
@@ -466,7 +442,7 @@ jobs:
       # in-memory usage tracker, per-handler sticky state). -count=1 defeats
       # the test cache so a PR always re-runs the suite.
       - name: Test integration
-        run: go test -tags=integration -race -count=1 -timeout 25m ./internal/integration/... -v
+        run: go test -tags=integration -race -count=1 -timeout 10m ./internal/integration/... -v
 
   # The Dockerfile was only ever built by release.yml, on a tag. Every breakage
   # it can suffer — a .dockerignore entry that swallows cmd/axonrouter-go/, a

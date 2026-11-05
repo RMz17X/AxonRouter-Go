@@ -4,6 +4,7 @@ package integration
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -93,6 +94,12 @@ func newEnvWithTokenSaver(t *testing.T, build func(*db.Repo) *handlers.TokenSave
 	// the file database this replaced was removed in P4).
 	conn, _, cleanupDB, err := dbtest.NewSchemaHandle("itest")
 	if err != nil {
+		// Owner rule (2026-11-06): a test that needs a database skips
+		// when none is configured — CI provisions none. A configured
+		// database that fails to provision stays a failure.
+		if errors.Is(err, dbtest.ErrNoDatabase) {
+			t.Skipf("skipping database-backed test: %v", err)
+		}
 		t.Fatalf("provision integration database: %v", err)
 	}
 	t.Cleanup(cleanupDB)

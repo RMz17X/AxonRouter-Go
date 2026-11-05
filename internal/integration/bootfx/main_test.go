@@ -5,6 +5,7 @@ package bootfx
 import (
 	"context"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -84,6 +85,14 @@ func TestMain(m *testing.M) {
 	// isolated as the temp file ever was.
 	dsn, cleanupDB, derr := dbtest.NewSchemaDSN("bootfx")
 	if derr != nil {
+		// Owner rule (2026-11-06): database-backed tests skip when no
+		// database is configured. TestMain cannot Skip, so it reports
+		// and exits clean — every test in this package needs the boot
+		// database. A configured database failing stays a failure.
+		if errors.Is(derr, dbtest.ErrNoDatabase) {
+			fmt.Fprintln(os.Stderr, "skipping bootfx: no database configured")
+			os.Exit(0)
+		}
 		fmt.Fprintln(os.Stderr, "provision boot database:", derr)
 		os.Exit(1)
 	}
