@@ -27,9 +27,30 @@ func EnsureCoreSchema(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	for _, t := range pgCoreSchema() {
-		if err := ensureTablePG(db, cat, t); err != nil {
-			return err
+	// The bootstrap runs in three phases, and the phase boundary is the
+	// load-bearing part: NO index is created before every column exists.
+	// An index may reference an additive column (pgGoOnlyColumns — e.g.
+	// apiKeys.lookupHash, providerConnections.lastUsedAt), and those are
+	// only added in phase 2; an index executed during table creation
+	// against such a column aborts the boot on a fresh database
+	// (SQLSTATE 42703 — the idx_pc_last_used_at incident, fragment 945).
+	// Declaring every index in its table's def and executing them all in
+	// phase 3 makes that failure class impossible by construction.
+	//
+	// Phase 1 — tables and their declared columns.
+	// thoughtSignatureTables is declared with plain TEXT definitions that
+	// are already valid PostgreSQL, so the same defs are reused as-is.
+	groups := [][]tableDef{
+		pgCoreSchema(),
+		pgKeiRouterTables(),
+		pgUsageLedgerTables(),
+		thoughtSignatureTables,
+	}
+	for _, group := range groups {
+		for _, t := range group {
+			if err := ensureTableColumnsPG(db, cat, t); err != nil {
+				return err
+			}
 		}
 	}
 	if err := ensurePartitionedUsageTables(db, cat); err != nil {
@@ -38,47 +59,23 @@ func EnsureCoreSchema(db *sql.DB) error {
 	if err := ensureMonthlyPartitions(db, time.Now().UTC()); err != nil {
 		return err
 	}
-	for _, t := range pgKeiRouterTables() {
-		if err := ensureTablePG(db, cat, t); err != nil {
-			return err
-		}
-	}
 	if err := ensureDefaultPlanPG(db); err != nil {
 		return err
 	}
-	for _, t := range pgUsageLedgerTables() {
-		if err := ensureTablePG(db, cat, t); err != nil {
-			return err
-		}
-	}
-	// thoughtSignatureTables is declared with plain TEXT definitions that
-	// are already valid PostgreSQL, so the same defs are reused as-is.
-	for _, t := range thoughtSignatureTables {
-		if err := ensureTablePG(db, cat, t); err != nil {
-			return err
-		}
-	}
+	// Phase 2 — additive columns.
 	if err := ensureAdditiveColumnsPG(db, cat); err != nil {
 		return err
 	}
-	// idx_ak_lookup serves the hashed-key auth lookup
-	// (FindApiKeyByLookup), the primary authentication path for hashed
-	// rows; it is created only after the additive columns exist because
-	// lookupHash is one of them, so the table DDL cannot index it on a
-	// fresh database.
-	if _, err := db.Exec(
-		`CREATE INDEX IF NOT EXISTS idx_ak_lookup ON apiKeys(lookupHash)`,
-	); err != nil {
-		return fmt.Errorf("postgres schema: create index on apiKeys(lookupHash): %w", err)
+	// Phase 3 — every declared index, now that every column exists.
+	for _, group := range groups {
+		for _, t := range group {
+			if err := ensureTableIndexesPG(db, t); err != nil {
+				return err
+			}
+		}
 	}
-	// idx_pc_last_used_at likewise indexes an additive column (lastUsedAt),
-	// so it is created here rather than in the providerConnections table
-	// DDL: on a fresh database the column does not exist yet when the table
-	// DDL runs, and index creation there aborts the boot (42703).
-	if _, err := db.Exec(
-		`CREATE INDEX IF NOT EXISTS idx_pc_last_used_at ON providerConnections(lastUsedAt DESC NULLS LAST)`,
-	); err != nil {
-		return fmt.Errorf("postgres schema: create index on providerConnections(lastUsedAt): %w", err)
+	if err := ensurePartitionedIndexesPG(db); err != nil {
+		return err
 	}
 	if _, err := db.Exec(
 		`INSERT INTO _meta(key, value) VALUES('schemaVersion', '1') ON CONFLICT (key) DO NOTHING`,
@@ -204,8 +201,8 @@ func loadPGCatalog(db *sql.DB) (*pgCatalog, error) {
 // partition key, so both parents key on (id, timestamp) rather than id
 // alone — the same widening Axon's schema carries. The monthly
 // partitions themselves are created by ensureMonthlyPartitions.
-func ensurePartitionedUsageTables(db *sql.DB, cat *pgCatalog) error {
-	parents := []tableDef{
+func partitionedUsageParents() []tableDef {
+	return []tableDef{
 		{
 			name: "usageHistory",
 			columns: [][2]string{
@@ -257,7 +254,13 @@ func ensurePartitionedUsageTables(db *sql.DB, cat *pgCatalog) error {
 			},
 		},
 	}
-	for _, t := range parents {
+}
+
+// ensurePartitionedUsageTables creates the two partitioned parents
+// (declared columns only — their indexes belong to the index phase,
+// see EnsureCoreSchema).
+func ensurePartitionedUsageTables(db *sql.DB, cat *pgCatalog) error {
+	for _, t := range partitionedUsageParents() {
 		defs := make([]string, 0, len(t.columns)+1)
 		for _, c := range t.columns {
 			defs = append(defs, c[0]+" "+c[1])
@@ -269,12 +272,17 @@ func ensurePartitionedUsageTables(db *sql.DB, cat *pgCatalog) error {
 			return fmt.Errorf("postgres schema: create partitioned table %s: %w", t.name, err)
 		}
 		cat.recordTable(t)
-		// Declared on the parent, PostgreSQL maintains these indexes on
-		// every current and future partition.
-		for _, idx := range t.indexes {
-			if _, err := db.Exec(idx); err != nil {
-				return fmt.Errorf("postgres schema: create index on %s: %w", t.name, err)
-			}
+	}
+	return nil
+}
+
+// ensurePartitionedIndexesPG creates the partitioned parents' declared
+// indexes in the index phase. Declared on the parent, PostgreSQL
+// maintains these indexes on every current and future partition.
+func ensurePartitionedIndexesPG(db *sql.DB) error {
+	for _, t := range partitionedUsageParents() {
+		if err := ensureTableIndexesPG(db, t); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -340,9 +348,12 @@ func ensureAdditiveColumnsPG(db *sql.DB, cat *pgCatalog) error {
 	return nil
 }
 
-// ensureTablePG creates or extends one table, with the catalog
-// snapshot standing in for per-column probes.
-func ensureTablePG(db *sql.DB, cat *pgCatalog, t tableDef) error {
+// ensureTableColumnsPG creates or extends one table's declared
+// columns, with the catalog snapshot standing in for per-column
+// probes. Indexes are NOT created here: they belong to the index
+// phase (ensureTableIndexesPG), which runs after the additive
+// columns exist — see EnsureCoreSchema.
+func ensureTableColumnsPG(db *sql.DB, cat *pgCatalog, t tableDef) error {
 	if !cat.hasTable(t.name) {
 		defs := make([]string, 0, len(t.columns)+1)
 		for _, c := range t.columns {
@@ -367,6 +378,15 @@ func ensureTablePG(db *sql.DB, cat *pgCatalog, t tableDef) error {
 		}
 		cat.recordColumn(t.name, c[0])
 	}
+	return nil
+}
+
+// ensureTableIndexesPG creates one table's declared indexes. It runs
+// in EnsureCoreSchema's index phase, after every declared and
+// additive column exists, so an index may reference any column of its
+// table — including additive ones such as apiKeys.lookupHash (the
+// hashed-key auth lookup, FindApiKeyByLookup's index).
+func ensureTableIndexesPG(db *sql.DB, t tableDef) error {
 	for _, idx := range t.indexes {
 		if _, err := db.Exec(idx); err != nil {
 			return fmt.Errorf("postgres schema: create index on %s: %w", t.name, err)
