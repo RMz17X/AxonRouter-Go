@@ -214,6 +214,19 @@ func LoadConfigFromViper(v *viper.Viper) *Config {
 // would bury the signal it carries.
 var jwtEphemeralWarnOnce sync.Once
 
+// jwtEphemeralSecret is the process-wide ephemeral JWT secret, generated
+// on the first JWT_SECRET-unset LoadConfig call and returned by every
+// later call. LoadConfig runs on request paths, so an unmemoized
+// generate-per-call would mint a different secret for the request that
+// signs a login than for the request that verifies it — sessions could
+// never validate. A generation failure is deliberately NOT memoized:
+// ephemeralJWTSecret keeps returning "" (callers fail closed) and a
+// later call retries generation.
+var (
+	jwtEphemeralMu     sync.Mutex
+	jwtEphemeralSecret string
+)
+
 // loadJWTSecret resolves the JWT signing secret. JWT_SECRET is the only
 // durable source (P4 removed the per-node jwt-secret file): in a cluster
 // every node must hold the SAME secret, and an env value is the only
@@ -236,13 +249,25 @@ func loadJWTSecret(v *viper.Viper) string {
 		log.Warn("config", "JWT_SECRET is not set; generated an ephemeral per-boot secret — sessions will NOT survive a restart and will NOT span nodes; set JWT_SECRET so every node shares one secret")
 	})
 
-	// Generate 32 cryptographically secure random bytes. The value is
-	// never written anywhere: persisting it per node is exactly the
-	// drift the env-only rule exists to prevent.
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
+	return ephemeralJWTSecret()
+}
+
+// ephemeralJWTSecret returns the process-wide ephemeral JWT secret,
+// generating it on first use (see jwtEphemeralSecret). The value is
+// never written anywhere: persisting it per node is exactly the drift
+// the env-only rule exists to prevent.
+func ephemeralJWTSecret() string {
+	jwtEphemeralMu.Lock()
+	defer jwtEphemeralMu.Unlock()
+	if jwtEphemeralSecret != "" {
+		return jwtEphemeralSecret
+	}
+	// Generate 32 cryptographically secure random bytes.
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
 		log.Error("config", "crypto/rand failed to generate JWT secret; refusing to fall back to a static secret", "error", err)
 		return ""
 	}
-	return hex.EncodeToString(bytes)
+	jwtEphemeralSecret = hex.EncodeToString(raw)
+	return jwtEphemeralSecret
 }
