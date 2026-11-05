@@ -1959,20 +1959,8 @@ func isModelScopedError(statusCode int, errorText string, model string, bodies .
 		}
 	}
 
-	// M1 carve-out (semantics owned by cooldownSecForClassification in
-	// retry_after.go): "requested entity was not found" arrives as a 404
-	// but names the account's project/entity, not the model — on
-	// Gemini/Antigravity the entity is gone, so the error is
-	// account-scoped and takes the LockConnectionRateLimit path. Without
-	// this carve-out the blanket 404 rule below would keep offering the
-	// dead account for every other model, each collecting its own
-	// per-model lock while the account itself is never cooled.
-	if strings.Contains(lower, "requested entity was not found") {
-		return false
-	}
-
-	// 404: Upstream model not found is always model-scoped
-	if statusCode == http.StatusNotFound {
+	// 404 / NOT_FOUND: Upstream model not found is always model-scoped with 1 day cooldown
+	if statusCode == http.StatusNotFound || strings.Contains(lower, "not found") || strings.Contains(lower, "not_found") || strings.Contains(lower, "requested entity was not found") {
 		return true
 	}
 

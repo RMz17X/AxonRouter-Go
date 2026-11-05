@@ -113,7 +113,7 @@ func comboPassRetryWait(earliest time.Duration, rateLimited bool) time.Duration 
 // loops (fallback.go, combo.go) use to turn a classification into parked
 // seconds, so the two cannot drift back into disagreeing halves.
 func cooldownSecForClassification(statusCode int, cls providers.ErrorClassification, ue *upstreamError, provider string) int {
-	if cls.BannedAccount {
+	if cls.BannedAccount || statusCode == http.StatusNotFound {
 		return ceilSeconds(time.Duration(cls.CooldownMs) * time.Millisecond)
 	}
 	return retryableCooldownSec(statusCode, time.Duration(cls.CooldownMs)*time.Millisecond, ue, provider)

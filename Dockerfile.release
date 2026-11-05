@@ -1,0 +1,25 @@
+# AxonRouter-Go — Minimal Runtime Image using prebuilt binary
+# Used by GitHub Actions release workflow for fast, unified image packaging.
+FROM alpine:3.21
+
+RUN apk add --no-cache ca-certificates tzdata su-exec \
+    && addgroup -S -g 10001 app \
+    && adduser -S -u 10001 -G app app \
+    && mkdir -p /data \
+    && chown app:app /data
+
+COPY axonrouter-go-linux-amd64 /usr/local/bin/axonrouter-go
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/axonrouter-go
+
+ENV PORT=3177 \
+    DATA_DIR=/data \
+    AXONROUTER_IN_CONTAINER=1
+
+EXPOSE 3177
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["axonrouter-go"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-3177}/api/auth/status" || exit 1

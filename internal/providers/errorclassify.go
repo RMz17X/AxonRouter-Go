@@ -183,6 +183,9 @@ var ErrorRules = []ErrorRule{
 	{Text: "resource has been exhausted", Backoff: true},
 	{Text: "model_capacity_exhausted", Backoff: true},
 	{Text: "server is temporarily unavailable", Backoff: true},
+	{Text: "not found", CooldownMs: cooldownBannedAccount},
+	{Text: "requested entity was not found", CooldownMs: cooldownBannedAccount},
+	{Text: "not_found", CooldownMs: cooldownBannedAccount},
 
 	{Text: "11158", CooldownMs: cooldownLong},
 	{Text: "model_not_in_plan", CooldownMs: cooldownLong},
@@ -308,7 +311,6 @@ var permanentFailurePatterns = []string{
 	"tos_violation",
 	"disabled in this account",
 	"refresh_token_reused",
-	"not found",
 }
 
 // LooksLikePermanentFailure reports whether an error means the credential is

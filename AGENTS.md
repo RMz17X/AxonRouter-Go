@@ -20,11 +20,8 @@ Whenever you implement features, fix bugs, add providers, update routing logic, 
    - Dashboard endpoints `/api/*` (Connections, Combos, ProxyPools, Settings, ProviderNodes, Usage, Auth).
    - Combo expansion, model fallback, account rotation, and strike-breaker quota handling.
    - Data-shape compatibility: the PostgreSQL schema (`internal/db/schema_pg_defs.go`) carries the upstream table/JSON shapes. The legacy file database (`~/.9router/db/data.sqlite`) is no longer opened by the gateway — it is a migration *source* only, read by the separate `tools/migrate-db` module (and by `internal/foreigndb` when the source is another application's file).
-3. **Changelog Tracking**:
-   - When porting features or fixes, reference the upstream commit/issue/PR in
-     your `.changes/<pr-number>-<slug>.md` fragment (e.g. `upstream
-     decolua/9router#4197 parity`). **Never write it into `CHANGELOG.md`** — see
-     §7.6 for the rule and the reason behind it.
+3. **Commit & PR Tracking**:
+   - Use standard conventional commit messages (`feat:`, `fix:`, `refactor:`, `perf:`).
 
 ### Secondary Reference: OmniRoute (source of many feature requests)
 
@@ -534,75 +531,10 @@ When tasked with syncing a feature, bugfix, or provider from upstream:
    ```
    That last check is the machine-checkable half of §7.6: it prints nothing on a
    clean PR and fails loudly the moment an entry is written to the wrong file.
-6. **Update Changelog (a fragment file — NEVER edit `CHANGELOG.md`)**:
-   - **Create `.changes/<pr-number>-<slug>.md`.** That is the whole step. Name
-     it after the PR you are opening (e.g. `.changes/219-chat-402-model-scoped.md`).
-     The file body is the entry exactly as it would have appeared under
-     `## [Unreleased]`: a `###` heading plus bullets covering what changed, why,
-     and how it was verified. No front matter, no wrapping heading.
-   - **`CHANGELOG.md` is written by exactly one thing: `make changelog-merge`, at
-     release time.** If a PR's diff contains a `CHANGELOG.md` hunk, that PR is
-     wrong — move the entry into a fragment and revert the hunk. A stray edit is
-     also what will re-introduce the merge conflicts described below.
-   - **Why a fragment instead of a shared `[Unreleased]` section.** Every PR
-     prepended its entry at the top of `## [Unreleased]`, which made those few
-     lines the most contested hunk in the repository: any two PRs landing in the
-     same window collided there, and `## [Unreleased]` had grown to 675 lines of
-     backlog. `.gitattributes` with `merge=union` does **not** fix it here —
-     this repo merges through GitHub's web merge button, which ignores merge
-     drivers entirely, so no setting merged them automatically. A per-PR fragment
-     is a new unique file, so two concurrent PRs never share a line and cannot
-     conflict. Do not propose `merge=union` or a conflict bot as the fix again.
-   - **The dashboard is unaffected.** `GET /api/changelog` assembles
-     `CHANGELOG.md` plus every fragment (`internal/changelogfrag`), so an entry
-     appears as soon as its PR merges — no waiting for a release. Fragments
-     render newest-first by PR number, numerically.
-   - **At release time only:** `make changelog-merge TAG=v<version>` after
-     `scripts/bump-version.sh`. It files every fragment under
-     `## [TAG] - <date>`, drops the emptied `[Unreleased]` section, and clears
-     `.changes/`. Contributors do not run this per PR.
-   - Format reference: [`.changes/README.md`](.changes/README.md).
-
-6b. **Owner rules — changelog discipline & versioning (Ricki, 2026-11-05 —
-    MANDATORY, overrides any conflicting habit above)**:
-   - **A change without its fragment is unfinished work.** Every commit that
-     changes behaviour lands its `.changes/<number>-<slug>.md` fragment in the
-     SAME commit. This is doubly absolute for a **big bug** — a boot blocker,
-     data loss or orphaned state, a security hole, a crash, wrong results, or
-     a silent contract/behaviour break: no fragment, no merge, no push. The
-     fragment for a big bug MUST state four things: the **symptom**, the
-     **root cause**, the **fix**, and the **verification** evidence. "Fixed
-     X" alone is not a changelog entry.
-   - **No silent side-effects.** A commit does what its message says and
-     nothing else. Deleting or reverting recorded behaviour (a compatibility
-     shim, a fallback, a default) inside an unrelated feature or fix commit
-     is forbidden — split it into its own commit, name it in the message,
-     and give it its own fragment. (Standing example: the port-3177 commit
-     also deleted the `~/.9router` data-dir fallback and orphaned
-     pre-rename installs; fragment 945 restored it.)
-   - **Version arithmetic is sequential, PATCH+1 only.** Every release moves
-     the version exactly one step: PATCH increments by 1 (e.g. 1.9.15 →
-     1.9.16); PATCH runs to 99 and only then does MINOR increment with
-     PATCH reset to 0. MAJOR bumps are forbidden without the owner's
-     explicit order. Numbers never jump and are never reused.
-   - **One version, three carriers, always in agreement at a release:**
-     the `VERSION` file, `version.json`'s `latestVersion`, and
-     `internal/updater`'s `CurrentVersion` — all set together by
-     `scripts/bump-version.sh <X.Y.Z>` — plus the git tag `vX.Y.Z` naming
-     the same number.
-   - **Release procedure (the only path that may write `CHANGELOG.md`):**
-     (1) confirm every change since the last tag has its fragment —
-     backfill any missing fragment BEFORE releasing, never after;
-     (2) `./scripts/bump-version.sh X.Y.Z` (one PATCH step up);
-     (3) `make changelog-merge TAG=vX.Y.Z` — this folds all fragments
-     into `CHANGELOG.md` under the new version and clears `.changes/`;
-     (4) build + vet green; (5) one release commit carrying the bump, the
-     merged changelog and the cleared fragments; (6) tag `vX.Y.Z` and
-     push `main` AND the tag — the tag push triggers the GHCR publish
-     workflow automatically; (7) the release is not done until the
-     workflow run is green and the registry shows the new version.
-   - **Current line:** last stable `1.9.15`; in-development `1.9.16-exp.1`.
-     The first release cut under these rules is `v1.9.16`.
+6. **Commit & Versioning Discipline**:
+   - Commits follow standard conventional commit messages (`feat:`, `fix:`, `refactor:`, `perf:`).
+   - Versioning is sequential PATCH+1. `VERSION`, `version.json`, and git tags are aligned on release.
+   - Releases trigger the unified GitHub Actions release workflow to build binaries and push Docker images to GHCR.
 
 7. **Branch & PR Targeting (`main` ONLY — MANDATORY)**:
    - **Every pull request in this repository targets `main`.** Never open a PR

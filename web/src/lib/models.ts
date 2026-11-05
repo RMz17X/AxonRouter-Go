@@ -391,21 +391,6 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "upstreamModelId": "gemini-3.8-flash-medium(medium)"
     },
     {
-      "id": "gemini-3.7-flash-high",
-      "name": "Gemini 3.7 Flash (High)",
-      "upstreamModelId": "gemini-3.7-flash-tiered(high)"
-    },
-    {
-      "id": "gemini-3.7-flash-medium",
-      "name": "Gemini 3.7 Flash (Medium)",
-      "upstreamModelId": "gemini-3.7-flash-tiered(medium)"
-    },
-    {
-      "id": "gemini-3.7-flash-low",
-      "name": "Gemini 3.7 Flash (Low)",
-      "upstreamModelId": "gemini-3.7-flash-tiered(low)"
-    },
-    {
       "id": "gemini-3.1-pro-high",
       "name": "Gemini 3.1 Pro (High)"
     },
@@ -1312,14 +1297,6 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "Gemini 3.5 Flash Lite"
     },
     {
-      "id": "gemini/gemini-3.7-flash",
-      "name": "Gemini 3.7 Flash"
-    },
-    {
-      "id": "gemini/gemini-3.8-flash",
-      "name": "Gemini 3.8 Flash"
-    },
-    {
       "id": "glm-5",
       "name": "GLM 5"
     },
@@ -2123,10 +2100,6 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "Gemini 3.8 Flash"
     },
     {
-      "id": "gemini-3.7-flash",
-      "name": "Gemini 3.7 Flash"
-    },
-    {
       "id": "gemini-3.6-flash",
       "name": "Gemini 3.6 Flash"
     },
@@ -2276,10 +2249,6 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "Gemini 3.1 Pro"
     },
     {
-      "id": "gemini-3.7-flash",
-      "name": "Gemini 3.7 Flash"
-    },
-    {
       "id": "gemini-3.1-flash-lite",
       "name": "Gemini 3.1 Flash-Lite"
     },
@@ -2400,10 +2369,6 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     {
       "id": "claude-sonnet-5.5",
       "name": "Claude Sonnet 5.5"
-    },
-    {
-      "id": "gemini-3.7-flash",
-      "name": "Gemini 3.7 Flash"
     },
     {
       "id": "gemini-3.8-flash",
@@ -4411,11 +4376,6 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     {
       "id": "gemini-3.8-flash",
       "name": "Gemini 3.8 Flash",
-      "supportedFormats": ["openai"]
-    },
-    {
-      "id": "gemini-3.7-flash",
-      "name": "Gemini 3.7 Flash",
       "supportedFormats": ["openai"]
     },
     {

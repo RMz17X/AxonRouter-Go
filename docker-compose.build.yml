@@ -1,0 +1,66 @@
+# AxonRouter-Go — Direct Build Stack (docker-compose.build.yml)
+# Build and run directly from local source for staging / local testing on hijilaptop.
+#
+# Usage:
+#   docker compose -f docker-compose.build.yml up -d --build
+#   docker compose -f docker-compose.build.yml logs -f app
+#   docker compose -f docker-compose.build.yml down
+#
+# Access:
+#   Web UI & API: http://100.81.73.83:${PORT:-3177} (or http://127.0.0.1:${PORT:-3177})
+#   Default staging admin password: ${INITIAL_PASSWORD:-12345677}
+services:
+  postgres:
+    image: postgres:17
+    command: >
+      postgres
+      -c max_connections=${PG_MAX_CONNECTIONS:-100}
+      -c shared_buffers=512MB
+      -c work_mem=32MB
+      -c maintenance_work_mem=128MB
+      -c effective_cache_size=2GB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-axonrouter}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12345677}
+      POSTGRES_DB: ${POSTGRES_DB:-axonrouter}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-axonrouter} -d ${POSTGRES_DB:-axonrouter}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: axonrouter-go:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-axonrouter}:${POSTGRES_PASSWORD:-12345677}@postgres:5432/${POSTGRES_DB:-axonrouter}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-axonrouter_build_staging_jwt_secret_12345677}
+      INITIAL_PASSWORD: ${INITIAL_PASSWORD:-12345677}
+      PG_POOL_MAX_OPEN: ${PG_POOL_MAX_OPEN:-50}
+      PG_POOL_MAX_IDLE: ${PG_POOL_MAX_IDLE:-25}
+      PORT: "3177"
+      DATA_DIR: /data
+      AXONROUTER_IN_CONTAINER: "1"
+      SHUTDOWN_GRACE_SECONDS: ${SHUTDOWN_GRACE_SECONDS:-30}
+    ports:
+      - "${PORT:-3177}:3177"
+    volumes:
+      - appdata:/data
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  appdata:

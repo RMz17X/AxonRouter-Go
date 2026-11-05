@@ -233,6 +233,10 @@ cross-one:
 docker:
 	docker compose -f docker-compose.single.yml up -d
 
+## compose-build — build and run directly via docker-compose.build.yml
+compose-build:
+	docker compose -f docker-compose.build.yml up -d --build
+
 ## docker-build — build Docker image only
 docker-build:
 	docker build -t $(BINARY_NAME) .
