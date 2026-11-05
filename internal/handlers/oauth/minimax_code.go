@@ -2,10 +2,15 @@ package oauth
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
 	"net/url"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -48,18 +53,17 @@ const (
 	miniMaxCodePollByUser = "minimaxPollByUser"
 )
 
-// miniMaxCodeSite is one mcode site's OAuth host.
+// miniMaxCodeSite is one mcode site's OAuth host and agent API.
 type miniMaxCodeSite struct {
 	accountBase string
+	agentBase   string
+	lang        string
 }
 
-// miniMaxCodeSites maps each mcode provider id to its account host. The two
-// sites hold separate sign-ins — an account on account.minimax.cn says
-// nothing about account.minimax.io — so they are never cross-falled
-// (AGENTS.md §3.A).
+// miniMaxCodeSites maps each mcode provider id to its account host and agent API.
 var miniMaxCodeSites = map[string]miniMaxCodeSite{
-	"minimax-code":        {accountBase: "https://account.minimax.cn"},
-	"minimax-code-global": {accountBase: "https://account.minimax.io"},
+	"minimax-code":        {accountBase: "https://account.minimax.cn", agentBase: "https://agent.minimaxi.com", lang: "zh"},
+	"minimax-code-global": {accountBase: "https://account.minimax.io", agentBase: "https://agent.minimax.io", lang: "en"},
 }
 
 func miniMaxCodeSiteFor(provider string) (miniMaxCodeSite, bool) {
@@ -249,11 +253,117 @@ func minimaxCodePoll(ctx context.Context, provider, code string, session map[str
 		return t, fmt.Errorf("no access_token in the MiniMax token reply")
 	}
 	t.expiresIn = positiveIntOr(data, "expires_in", miniMaxCodeDefaultExpiresIn)
-	// The usage panel signs its account-API calls with the account id mcode
-	// answers /v1/api/user/info with. The login reply carries none, so it is
-	// resolved lazily on the first usage read rather than guessed here.
 	t.extra = map[string]any{}
+
+	email, name, realUserID := fetchMiniMaxCodeIdentity(ctx, site, t.access)
+	if email != "" {
+		t.email = email
+	}
+	if name != "" {
+		t.name = name
+	} else if realUserID != "" {
+		t.name = "MiniMax " + realUserID
+	}
+	if realUserID != "" {
+		t.extra["realUserID"] = realUserID
+	}
 	return t, nil
+}
+
+func md5Hex(s string) string {
+	sum := md5.Sum([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+func encodeMiniMaxURI(s string) string {
+	const safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.!~*'()"
+	var b strings.Builder
+	b.Grow(len(s) * 3)
+	for i := range len(s) {
+		if strings.IndexByte(safe, s[i]) >= 0 {
+			b.WriteByte(s[i])
+			continue
+		}
+		fmt.Fprintf(&b, "%%%02X", s[i])
+	}
+	return b.String()
+}
+
+func fetchMiniMaxCodeIdentity(ctx context.Context, site miniMaxCodeSite, access string) (email, name, realUserID string) {
+	if site.agentBase == "" || access == "" {
+		return "", "", ""
+	}
+	now := time.Now()
+	nowMs := strconv.FormatInt(now.UnixMilli(), 10)
+	ts := strconv.FormatInt(now.Unix(), 10)
+	_, offsetSec := now.Zone()
+
+	q := url.Values{
+		"device_platform": {"mcode"},
+		"biz_id":          {"3"},
+		"app_id":          {"3001"},
+		"version_code":    {"22201"},
+		"unix":            {nowMs},
+		"timezone_offset": {strconv.Itoa(-offsetSec)},
+		"sys_language":    {site.lang},
+		"lang":            {site.lang},
+		"device_id":       {"0"},
+		"os_name":         {runtime.GOOS},
+		"browser_name":    {"mcode"},
+		"user_id":         {"0"},
+		"client":          {"mcode"},
+	}
+	at := "/v1/api/user/info?" + q.Encode()
+	rawURL := site.agentBase + at
+
+	signedPath := encodeMiniMaxURI(at) + "_" + md5Hex(nowMs) + "ooui"
+	yy := md5Hex(signedPath)
+	sig := md5Hex(ts + "I*7Cf%WZ#S&%1RlZJ&C2")
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", "", ""
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "MiniMaxCode")
+	req.Header.Set("Authorization", "Bearer "+access)
+	req.Header.Set("yy", yy)
+	req.Header.Set("x-timestamp", ts)
+	req.Header.Set("x-signature", sig)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", "", ""
+	}
+
+	var parsed struct {
+		Data struct {
+			UserInfo struct {
+				Name       string `json:"name"`
+				Email      string `json:"email"`
+				UserEmail  string `json:"userEmail"`
+				RealUserID string `json:"realUserID"`
+			} `json:"userInfo"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return "", "", ""
+	}
+	u := parsed.Data.UserInfo
+	email = strings.TrimSpace(u.Email)
+	if email == "" {
+		email = strings.TrimSpace(u.UserEmail)
+	}
+	name = strings.TrimSpace(u.Name)
+	realUserID = strings.TrimSpace(u.RealUserID)
+	return email, name, realUserID
 }
 
 // pollByUserCode reports whether this poll targets MiniMax's user-code variant.

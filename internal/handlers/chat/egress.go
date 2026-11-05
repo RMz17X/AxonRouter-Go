@@ -72,7 +72,11 @@ func resolveEgress(connData *ConnectionData, cfg *providers.ProviderConfig) Egre
 	if connData == nil {
 		return Egress{Kind: "direct"}
 	}
-	if poolID != "" {
+	if poolID != "" && poolID != "direct" && poolName != "direct" {
+		// If poolID is a selector (e.g. group:..., type:...) but no real pool was resolved, it ran direct.
+		if (strings.HasPrefix(poolID, "group:") || strings.HasPrefix(poolID, "type:")) && poolName == "" {
+			return Egress{Kind: "direct"}
+		}
 		return Egress{Kind: "http", PoolID: poolID, PoolName: poolName}
 	}
 	if enabled, proxyURL := legacyProxyFields(connData); enabled {

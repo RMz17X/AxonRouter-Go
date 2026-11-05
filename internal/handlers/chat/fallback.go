@@ -1662,7 +1662,7 @@ var (
 
 const (
 	minResetCooldown = 5 * time.Second
-	maxResetCooldown = 2 * time.Hour
+	maxResetCooldown = 72 * time.Hour
 )
 
 // extractResetDuration attempts to extract a structured reset duration from an error payload.

@@ -522,6 +522,7 @@ func (h *OAuthHandler) saveDeviceConnection(provider string, t deviceTokens) sav
 		"github": "GitHub", "kiro": "Kiro", "kimi": "Kimi", "muse": "Muse",
 		"codebuddy-cn": "CodeBuddy", "codebuddy-intl": "CodeBuddy",
 		"zcode": "ZCode",
+		"minimax-code": "MiniMax Code", "minimax-code-global": "MiniMax Code Global",
 		"nous":  "Nous Research", "glm": "Zai GLM Coding",
 	}[provider])
 	id := provider + "-" + shortHash(t.access)

@@ -190,7 +190,7 @@ describe('providers & media separation', () => {
     assert.ok(p, 'sumopod missing from the dashboard catalog')
     assert.strictEqual(p.category, 'apikey')
     assert.ok(isChatProvider(p))
-    assert.strictEqual(getModelsByProviderId('sumopod').length, 61)
+    assert.strictEqual(getModelsByProviderId('sumopod').length, 60)
     assert.strictEqual(Boolean(p.modelsFetcher), true)
   })
 

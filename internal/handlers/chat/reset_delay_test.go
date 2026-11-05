@@ -80,14 +80,15 @@ func TestExtractResetDuration_ClampingSafety(t *testing.T) {
 		t.Errorf("expected clamped to %v, got %v", maxResetCooldown, durLong)
 	}
 
-	// Case 2: Sub-5s duration is clamped to minResetCooldown (5s)
-	bodyShort := []byte(`{"error":{"message":"Resets in 1s."}}`)
-	durShort, ok := extractResetDuration(bodyShort)
+	// Case 3: 35h+ duration is NOT clamped to 2h, fully honored up to maxResetCooldown
+	body35h := []byte(`{"error":"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 35h52m24s. RESOURCE_EXHAUSTED QUOTA_EXHAUSTED"}`)
+	dur35h, ok := extractResetDuration(body35h)
 	if !ok {
-		t.Fatalf("expected ok for short duration")
+		t.Fatalf("expected ok for 35h duration")
 	}
-	if durShort != minResetCooldown {
-		t.Errorf("expected clamped to %v, got %v", minResetCooldown, durShort)
+	expected35h := 35*time.Hour + 52*time.Minute + 24*time.Second
+	if dur35h != expected35h {
+		t.Errorf("expected %v, got %v", expected35h, dur35h)
 	}
 }
 

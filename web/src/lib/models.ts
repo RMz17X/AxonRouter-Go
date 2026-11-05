@@ -1297,6 +1297,10 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "Gemini 3.5 Flash Lite"
     },
     {
+      "id": "gemini/gemini-3.8-flash",
+      "name": "Gemini 3.8 Flash"
+    },
+    {
       "id": "glm-5",
       "name": "GLM 5"
     },

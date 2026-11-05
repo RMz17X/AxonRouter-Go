@@ -115,6 +115,8 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 				}
 				// Non-strict: fallback to direct connection
 				log.Warn("proxy", "assigned proxy group/type has no fit pool, falling back to direct", "target", connData.ProxyPoolID)
+				connData.ProxyPoolID = ""
+				connData.ResolvedProxyPool = "direct"
 				return h.Client, nil
 			}
 		} else {
@@ -133,6 +135,8 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 					return nil, fmt.Errorf("proxy pool %q is currently unfit or cooling down in strict mode", pool.ID)
 				}
 				log.Warn("proxy", "assigned pool is currently unfit/in cooldown, falling back to direct", "pool", pool.ID)
+				connData.ProxyPoolID = ""
+				connData.ResolvedProxyPool = "direct"
 				return h.Client, nil
 			}
 		}
