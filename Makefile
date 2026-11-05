@@ -228,7 +228,7 @@ cross: web-build
 	@cat SHA256SUMS.txt
 .PHONY: cross-one $(CROSS_BUILD_TARGETS)
 cross-one:
-	go build -ldflags="$(LDFLAGS)" -o $(OUT) ./cmd/axonrouter-go/
+	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o $(OUT) ./cmd/axonrouter-go/
 ## docker — docker compose up (single stack)
 docker:
 	docker compose -f docker-compose.single.yml up -d
