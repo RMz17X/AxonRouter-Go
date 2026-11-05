@@ -53,6 +53,7 @@
   } from './types'
   import { proxyBadgeInfo } from './proxyBadge'
   import NoAuthProxyCard from '../media/NoAuthProxyCard.svelte'
+  import ProxyResolutionNote from '../media/ProxyResolutionNote.svelte'
   import {
     formatCheckAllSummary,
     getBlockedModelIds,
@@ -3654,6 +3655,12 @@
         </div>
       </div>
     </div>
+
+    {#if lockedProxyGroup}
+      <div class="mb-4">
+        <ProxyResolutionNote {providerId} refreshKey={lockedProxyGroup} />
+      </div>
+    {/if}
 
     <!-- One-by-One summary (upstream parity) -->
     {#if oneByOneSummary}

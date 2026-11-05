@@ -474,3 +474,8 @@ func isKnownProxyType(s string) bool {
 	}
 	return false
 }
+
+// IsKnownProxyType is isKnownProxyType for callers outside this package
+// (the dashboard's proxy-resolution readout applies the same bare-value
+// heal as the chat resolver).
+func IsKnownProxyType(s string) bool { return isKnownProxyType(s) }

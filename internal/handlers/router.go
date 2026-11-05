@@ -331,6 +331,7 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	// only: a route added there alone is reachable in a unit test and 404s on the
 	// real server.
 	r.Get("/api/providers/catalog", dashH.HandleGetProviderCatalog)
+	r.Get("/api/providers/proxy-resolution", dashH.HandleProviderProxyResolution)
 	r.Post("/api/providers/gemini-web/browser-login", dashH.HandleGeminiWebBrowserLogin)
 	r.Post("/api/providers/gemini-web/import-chrome", dashH.HandleGeminiWebImportChrome)
 	r.Post("/api/providers/deepseek-web/browser-login", dashH.HandleDeepSeekWebBrowserLogin)

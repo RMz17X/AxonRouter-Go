@@ -3,6 +3,7 @@
   import { api } from '../../api/client'
   import Badge from '../../lib/ui/Badge.svelte'
   import Card from '../../lib/ui/Card.svelte'
+  import ProxyResolutionNote from './ProxyResolutionNote.svelte'
 
   interface Props {
     providerId: string
@@ -16,6 +17,7 @@
   let proxyPoolId = $state(NONE_PROXY_POOL_VALUE)
   let saving = $state(false)
   let savedFlash = $state(false)
+  let resolutionKey = $state(0)
 
   onMount(() => {
     let cancelled = false
@@ -54,8 +56,13 @@
       // Rotation is no longer offered for NoAuth providers (owner rule:
       // the choice is a proxy group or a proxy type, nothing else), so a
       // strategy stored by the old UI must not survive a save from this
-      // card and keep rotating invisibly.
+      // card and keep rotating invisibly. Both spellings go: the stored
+      // rotateStrategy key is the live one (the settings parser maps it
+      // onto the resolver's ProxyRotateStrategy field), and a stray
+      // proxyRotateStrategy key is never parsed back — dead weight that
+      // only pretends to be a setting.
       delete override.rotateStrategy
+      delete override.proxyRotateStrategy
       const updated = { ...current }
       if (Object.keys(override).length === 0) delete updated[providerId]
       else updated[providerId] = override
@@ -64,6 +71,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ providerStrategies: updated }),
       })
+      resolutionKey += 1
       savedFlash = true
       setTimeout(() => { savedFlash = false }, 1500)
     } catch (e) {
@@ -180,5 +188,6 @@
         </button>
       {/each}
     </div>
+    <ProxyResolutionNote {providerId} refreshKey={resolutionKey} />
   </div>
 </Card>

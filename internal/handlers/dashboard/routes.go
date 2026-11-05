@@ -112,6 +112,7 @@ func RegisterRoutes(r chi.Router, h *DashboardHandler) {
 		// catalog (category, icon, colour, auth type, service kinds), so the SPA
 		// fetches it instead of shipping a second copy that can drift.
 		r.Get("/providers/catalog", h.HandleGetProviderCatalog)
+		r.Get("/providers/proxy-resolution", h.HandleProviderProxyResolution)
 
 		// Provider Nodes (Custom Endpoints)
 		r.Get("/provider-nodes", h.HandleGetProviderNodes)
