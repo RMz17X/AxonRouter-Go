@@ -1,9 +1,14 @@
 name: Release
 
+# One workflow for everything a push publishes (owner order, 2026-11-06:
+# the separate Publish Docker Image workflow and this one ran as two
+# Actions runs per tag and ate quota twice). A main push builds only the
+# container image; a version tag builds the image AND the release
+# binaries. There is no Telegram notify job — the owner removed it.
 on:
   push:
-    tags:
-      - "v*"
+    branches: [ main ]
+    tags: [ 'v*' ]
   workflow_dispatch:
 
 permissions:
@@ -11,23 +16,62 @@ permissions:
   packages: write
 
 env:
-  # The image this fork publishes: GHCR under the fork's own owner, built
-  # by docker-publish.yml. (This used to name the upstream author's
-  # Docker Hub repository — a leftover coordinate this fork neither owns
-  # nor may push to.)
+  # The image this fork publishes: GHCR under the fork's own owner,
+  # built by the docker job below. (This used to name the upstream
+  # author's Docker Hub repository — a leftover coordinate this fork
+  # neither owns nor may push to.)
   REGISTRY_IMAGE: ghcr.io/rmz17x/axonrouter-go
 
 jobs:
+  # The container image: built on every main push and every version tag.
+  # Dewacloud pulls the new tag from GHCR and redeploys on its own, so
+  # this job is the whole downstream pipeline.
+  docker:
+    name: Publish Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_PAT }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY_IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,format=short
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+
   # The release channel is derived from the tag and nothing else — not the
   # branch, not the commit, not an input. That keeps the switch auditable: what
   # you tag is what you publish.
   #
   #   stable       v1.10.0        -> GitHub Release (final)
   #   experimental v1.10.0-exp.1  -> GitHub Release (PRERELEASE)
-  #
-  # Container images are not published from this workflow at all: the
-  # Publish Docker Image workflow (docker-publish.yml) builds and pushes
-  # the GHCR image on the same tag push.
   #
   # Both halves matter for user safety. GitHub excludes prereleases from
   # /releases/latest, which is the endpoint `internal/updater` falls back to,
@@ -38,6 +82,7 @@ jobs:
   # per-channel tag lists computed below.
   channel:
     name: Resolve release channel
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.resolve.outputs.channel }}
@@ -115,6 +160,7 @@ jobs:
 
   binaries:
     name: Build release binaries
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: channel
     runs-on: ubuntu-latest
     steps:
@@ -253,19 +299,6 @@ jobs:
           printf '%s\n' "$NOTES" >> /tmp/notes.md
           cat /tmp/notes.md
 
-      # The notify job runs on its own runner, where /tmp/notes.md does not
-      # exist. An artifact carries the exact text the release page was built
-      # from, so the Telegram message cannot drift from what users actually
-      # read — regenerating the notes in a second job would duplicate the
-      # 40-line fallback chain and let the two answers disagree.
-      - name: Share release notes with the notify job
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-notes
-          path: /tmp/notes.md
-          retention-days: 1
-          if-no-files-found: error
-
       - name: Upload binaries to release
         uses: softprops/action-gh-release@v2
         with:
@@ -285,36 +318,3 @@ jobs:
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Announce the release to the Telegram group.
-  #
-  # `needs: [binaries]` is the design: it runs only after the release page
-  # exists, so the link in the message resolves. The container image is
-  # published by the separate Publish Docker Image workflow on the same
-  # tag push and is deliberately not gated on here — that workflow's run
-  # is the image's own success signal.
-  #
-  # continue-on-error is deliberate. A Telegram outage or a revoked token must
-  # not turn a successful release red — the artifacts are already published by
-  # this point, and a failed job here reads as "the release failed" to anyone
-  # watching the run list.
-  notify:
-    name: Notify Telegram
-    needs: [binaries]
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download release notes
-        uses: actions/download-artifact@v4
-        with:
-          name: release-notes
-          path: /tmp
-
-      - name: Send release notification
-        run: bash scripts/notify-telegram.sh --tag "${GITHUB_REF_NAME}" --notes /tmp/notes.md
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
