@@ -167,8 +167,21 @@
     const byKey = new Map<string, RecentRequestItem>()
     const keyOf = (r: RecentRequestItem) =>
       `${r.model}|${r.provider}|${r.promptTokens}|${r.completionTokens}|${(r.timestamp || '').slice(0, 16)}`
-    for (const r of prev || []) byKey.set(keyOf(r), r)
     for (const r of next || []) byKey.set(keyOf(r), r)
+    for (const r of prev || []) {
+      const k = keyOf(r)
+      const existing = byKey.get(k)
+      if (existing) {
+        byKey.set(k, {
+          ...existing,
+          comboName: existing.comboName || r.comboName,
+          requestedModel: existing.requestedModel || r.requestedModel,
+          proxy: existing.proxy || r.proxy,
+        })
+      } else {
+        byKey.set(k, r)
+      }
+    }
     return [...byKey.values()]
       .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
       .slice(0, 20)
@@ -223,7 +236,7 @@
                 successRate: res.successRate,
                 byProvider: res.byProvider,
                 activeRequests: res.activeRequests,
-                recentRequests: res.recentRequests,
+                recentRequests: mergeRecent(stats.recentRequests, res.recentRequests),
                 errorProvider: res.errorProvider,
                 last10Minutes: res.last10Minutes,
                 pending: res.pending,

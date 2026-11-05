@@ -69,6 +69,8 @@ type RecentRequest struct {
 	// must not present one as the other.
 	LatencyMs   int64  `json:"latencyMs,omitempty"`
 	LoopWarning string `json:"loopWarning,omitempty"`
+	Proxy       string `json:"proxy,omitempty"`
+	Egress      string `json:"egress,omitempty"`
 }
 
 // StreamPayload represents the payload sent over SSE on /api/usage/stream.

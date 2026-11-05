@@ -116,12 +116,18 @@ func (h *ChatHandler) LogFailure(
 	if isClientCanceled(ctx, err) {
 		statusCode = StatusClientClosedRequest
 	}
-	message := extractErrorText([]byte(err.Error()))
-	if message == "" {
-		var upstreamErr *upstreamError
-		if errors.As(err, &upstreamErr) {
-			message = extractErrorText(upstreamErr.Body)
+	message := ""
+	if errors.As(err, &upstreamErr) && len(upstreamErr.Body) > 0 {
+		message = extractErrorText(upstreamErr.Body)
+		if message == "" {
+			message = strings.TrimSpace(string(upstreamErr.Body))
 		}
+	}
+	if message == "" && err != nil {
+		message = extractErrorText([]byte(err.Error()))
+	}
+	if message == "" && err != nil {
+		message = err.Error()
 	}
 	if message == "" {
 		message = "request failed"
@@ -174,6 +180,8 @@ func (h *ChatHandler) LogFailure(
 		"tokens":   tokens,
 		"request":  map[string]any{"messages": extractMessagesForLogging(openaiReq.Messages)},
 		"response": map[string]any{"error": message, "status": statusCode, "content": responseContent},
+		"proxy":    info.Egress,
+		"egress":   info.Egress,
 	}
 	if len(findings) > 0 {
 		failurePayload["anomalies"] = findings
@@ -243,6 +251,8 @@ func (h *ChatHandler) LogFailure(
 		Endpoint:         info.Endpoint,
 		APIKey:           maskAPIKey(info.APIKey),
 		Account:          info.AccountLabel(),
+		Proxy:            info.Egress,
+		Egress:           info.Egress,
 	}, h.Repo)
 
 	observ.RecordRequest(info.Provider, info.Model, info.Endpoint, statusCode)
@@ -488,6 +498,7 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		"cost":           cost,
 		"request":        map[string]any{"messages": reqMsgs},
 		"response":       map[string]any{"content": respContent},
+		"proxy":          info.Egress,
 		"egress":         info.Egress,
 	}
 	if len(findings) > 0 {
@@ -547,6 +558,8 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		Endpoint:         info.Endpoint,
 		APIKey:           maskAPIKey(info.APIKey),
 		Account:          info.AccountLabel(),
+		Proxy:            info.Egress,
+		Egress:           info.Egress,
 	}, h.Repo)
 }
 

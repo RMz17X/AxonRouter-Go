@@ -858,7 +858,7 @@ const requestDetailListSelect = `
 	       COALESCE(data #>> '{protocol}', ''),
 	       COALESCE(data #>> '{loopWarning}', COALESCE(data #>> '{anomalies,0,message}', '')),
 	       CASE WHEN data IS NULL THEN 0 ELSE 1 END,
-	       COALESCE(NULLIF(data #>> '{egress,poolId}', ''), COALESCE(NULLIF(data #>> '{egress,PoolID}', ''), COALESCE(NULLIF(data #>> '{egress,target}', ''), 'direct')))
+	       COALESCE(NULLIF(data ->> 'proxy', ''), NULLIF(data ->> 'egress', ''), NULLIF(data #>> '{egress,poolName}', ''), NULLIF(data #>> '{egress,poolId}', ''), NULLIF(data #>> '{egress,PoolID}', ''), NULLIF(data #>> '{egress,target}', ''), 'direct')
 	FROM requestDetails
 	%s
 	ORDER BY timestamp DESC, id DESC
