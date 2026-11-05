@@ -11,15 +11,10 @@
   let { providerId }: Props = $props()
 
   const NONE_PROXY_POOL_VALUE = '__none__'
-  const STRATEGIES = [
-    { value: 'none', label: 'None (single pool)' },
-    { value: 'round-robin', label: 'Round-robin' },
-    { value: 'random', label: 'Random' },
-  ]
 
   let proxyGroups = $state<Array<{ id: string; name: string; key?: string; activeCount?: number; poolCount?: number }>>([])
+  let proxyPools = $state<Array<{ type?: string; isActive?: boolean }>>([])
   let proxyPoolId = $state(NONE_PROXY_POOL_VALUE)
-  let rotateStrategy = $state('none')
   let saving = $state(false)
   let savedFlash = $state(false)
 
@@ -27,19 +22,20 @@
     let cancelled = false
     Promise.all([
       fetch('/api/proxy-groups').then((r) => r.ok ? r.json() : { groups: [] }),
+      api.getProxyPools().catch(() => []),
       api.getSettings(),
-    ]).then(([groupData, settingsData]) => {
+    ]).then(([groupData, poolsData, settingsData]) => {
       if (cancelled) return
       proxyGroups = (groupData as any)?.groups || []
+      proxyPools = (poolsData as any) || []
       const override = (settingsData?.providerStrategies || {})[providerId] || {}
-      proxyPoolId = override.proxyPoolId || NONE_PROXY_POOL_VALUE
-      rotateStrategy = override.rotateStrategy || 'none'
+      proxyPoolId = override.proxyPoolId || (override.proxyGroup ? `group:${override.proxyGroup}` : NONE_PROXY_POOL_VALUE)
     }).catch(() => {})
 
     return () => { cancelled = true }
   })
 
-  async function save(poolId: string, strategy: string) {
+  async function save(poolId: string) {
     saving = true
     try {
       const res = await fetch('/api/settings', { cache: 'no-store' })
@@ -53,10 +49,16 @@
         override.proxyPoolId = poolId
         override.proxyGroup = poolId.slice(6)
       } else {
+        // type:<type> — the resolver reads the prefix natively; there is
+        // no group name to mirror into proxyGroup.
         override.proxyPoolId = poolId
+        delete override.proxyGroup
       }
-      if (strategy === 'none') delete override.rotateStrategy
-      else override.rotateStrategy = strategy
+      // Rotation is no longer offered for NoAuth providers (owner rule:
+      // the choice is a proxy group or a proxy type, nothing else), so a
+      // strategy stored by the old UI must not survive a save from this
+      // card and keep rotating invisibly.
+      delete override.rotateStrategy
       const updated = { ...current }
       if (Object.keys(override).length === 0) delete updated[providerId]
       else updated[providerId] = override
@@ -74,14 +76,9 @@
     }
   }
 
-  function handlePoolChange(newPoolId: string) {
+  function handleTargetChange(newPoolId: string) {
     proxyPoolId = newPoolId
-    save(newPoolId, rotateStrategy)
-  }
-
-  function handleStrategyChange(newStrategy: string) {
-    rotateStrategy = newStrategy
-    save(proxyPoolId, newStrategy)
+    save(newPoolId)
   }
 
   let allProxyGroups = $derived.by(() => {
@@ -100,8 +97,18 @@
     return list
   })
 
-  let canRotate = $derived(allProxyGroups.length >= 2)
-  let isRotation = $derived(rotateStrategy !== 'none')
+  let allProxyTypes = $derived.by(() => {
+    const counts = new Map<string, number>()
+    for (const p of proxyPools) {
+      const t = (p.type || '').trim()
+      if (!t) continue
+      if (!counts.has(t)) counts.set(t, 0)
+      if (p.isActive) counts.set(t, (counts.get(t) ?? 0) + 1)
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([type, activeCount]) => ({ id: `type:${type}`, label: type, activeCount }))
+  })
 </script>
 
 <Card>
@@ -111,23 +118,23 @@
     </div>
     <div class="flex-1">
       <p class="text-sm font-medium text-text-main">No authentication required</p>
-      <p class="text-xs text-text-muted">This provider is ready to use. Optionally route requests through a proxy group to bypass IP-based limits.</p>
+      <p class="text-xs text-text-muted">This provider is ready to use. Optionally route requests through a proxy group or type to bypass IP-based limits.</p>
     </div>
     {#if savedFlash}
       <Badge variant="success" size="sm">Saved</Badge>
     {/if}
   </div>
 
-  <div class="flex flex-col gap-2 mb-4">
+  <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
-      <label class="text-sm font-medium text-text-main">Proxy Group</label>
-      <span class="text-xs text-text-muted">Routes through selected Proxy Group</span>
+      <label class="text-sm font-medium text-text-main">Proxy</label>
+      <span class="text-xs text-text-muted">Routes through the selected proxy group or type</span>
     </div>
     <div class="flex items-center gap-2 flex-wrap">
       <button
         type="button"
-        onclick={() => handlePoolChange(NONE_PROXY_POOL_VALUE)}
-        disabled={saving || isRotation}
+        onclick={() => handleTargetChange(NONE_PROXY_POOL_VALUE)}
+        disabled={saving}
         class="px-3.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {proxyPoolId === NONE_PROXY_POOL_VALUE
           ? 'bg-primary text-white border-primary shadow-sm'
           : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
@@ -139,8 +146,8 @@
         {@const isSelected = proxyPoolId === grp.id || proxyPoolId === grp.id.replace('group:', '')}
         <button
           type="button"
-          onclick={() => handlePoolChange(grp.id)}
-          disabled={saving || isRotation}
+          onclick={() => handleTargetChange(grp.id)}
+          disabled={saving}
           class="px-3.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {isSelected
             ? 'bg-primary text-white border-primary shadow-sm'
             : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
@@ -152,38 +159,23 @@
           </span>
         </button>
       {/each}
-    </div>
-    {#if isRotation}
-      <p class="text-xs text-text-muted">Group selector is disabled when rotation is active — all active pools are used.</p>
-    {/if}
-  </div>
-
-  <div class="flex flex-col gap-2">
-    <label class="text-sm font-medium text-text-main">Rotation Strategy</label>
-    <select
-      value={rotateStrategy}
-      onchange={(e) => handleStrategyChange(e.currentTarget.value)}
-      disabled={saving}
-      class="py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all disabled:opacity-50"
-    >
-      {#each STRATEGIES as s}
-        <option value={s.value} disabled={s.value !== 'none' && !canRotate}>
-          {s.label}
-        </option>
+      {#each allProxyTypes as typ}
+        {@const isSelected = proxyPoolId === typ.id}
+        <button
+          type="button"
+          onclick={() => handleTargetChange(typ.id)}
+          disabled={saving}
+          class="px-3.5 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {isSelected
+            ? 'bg-primary text-white border-primary shadow-sm'
+            : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
+        >
+          <span class="material-symbols-outlined text-[16px]">category</span>
+          <span>Type: {typ.label}</span>
+          <span class="text-[10px] px-1.5 py-0.5 rounded-full {isSelected ? 'bg-white/20 text-white' : 'bg-black/5 dark:bg-white/10 text-text-muted'}">
+            {typ.activeCount}
+          </span>
+        </button>
       {/each}
-    </select>
-    <p class="text-xs text-text-muted">
-      {#if !canRotate}
-        Need at least 2 active proxy groups for rotation.
-      {:else if isRotation}
-        {#if rotateStrategy === 'round-robin'}
-          Rotating through all {allProxyGroups.length} active groups in order. State is in-memory (resets on restart).
-        {:else}
-          Picking a random group from {allProxyGroups.length} active groups each request.
-        {/if}
-      {:else}
-        Uses the selected group above. Set to Round-robin or Random to rotate across all active groups.
-      {/if}
-    </p>
+    </div>
   </div>
 </Card>

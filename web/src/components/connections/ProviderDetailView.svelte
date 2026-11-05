@@ -52,6 +52,7 @@
     type SuggestedModel
   } from './types'
   import { proxyBadgeInfo } from './proxyBadge'
+  import NoAuthProxyCard from '../media/NoAuthProxyCard.svelte'
   import {
     formatCheckAllSummary,
     getBlockedModelIds,
@@ -176,11 +177,6 @@
   let isNoAuth = $derived(selectedCatalogItem?.noAuth === true)
   let hasRiskNotice = $derived(providerId === 'antigravity' || Boolean(selectedCatalogItem?.notice?.text?.includes('RISK_NOTICE')))
 
-  // Free provider proxy & rotation state
-  let freeProxyPoolId = $state('none')
-  let freeRotateStrategy = $state<'none' | 'round-robin' | 'random'>('none')
-  let isSavingFreeProxy = $state(false)
-  let savedFreeProxy = $state(false)
   // Quota & Cooldown tracking state
   let connectionQuotas = $state<Record<string, ConnectionUsageResponse>>({})
   let currentTime = $state(Date.now())
@@ -506,33 +502,6 @@
       }
     }
     return Array.from(set).sort()
-  })
-
-  let proxyGroupsList = $state<Array<{ id: string; name: string; key?: string; activeCount?: number; poolCount?: number }>>([])
-  let allProxyGroups = $derived.by(() => {
-    const list: Array<{ id: string; label: string; activeCount: number }> = []
-    const seen = new Set<string>()
-    for (const g of proxyGroupsList) {
-      const gid = g.key || g.id || g.name
-      if (!gid || seen.has(gid)) continue
-      seen.add(gid)
-      list.push({
-        id: `group:${gid}`,
-        label: g.name || gid,
-        activeCount: g.activeCount ?? 0,
-      })
-    }
-    for (const grp of availableProxyGroups) {
-      if (seen.has(grp)) continue
-      seen.add(grp)
-      const count = proxyPools.filter((p) => p.group === grp && p.isActive).length
-      list.push({
-        id: `group:${grp}`,
-        label: grp,
-        activeCount: count,
-      })
-    }
-    return list
   })
 
   // Selection state
@@ -1010,15 +979,6 @@
       proxyPools = poolsData
       modelCaps = capsMerged
 
-      // Fetch proxy groups
-      fetch('/api/proxy-groups')
-        .then((r) => r.ok ? r.json() : null)
-        .then((data) => {
-          if (data?.groups && Array.isArray(data.groups)) {
-            proxyGroupsList = data.groups
-          }
-        })
-        .catch(() => {})
 
       // Suggested free models from the provider's public catalog (if configured in upstream registry).
       const fetcher = selectedCatalogItem?.modelsFetcher
@@ -1042,11 +1002,6 @@
       // Extract Thinking Level
       const thinking = (settingsData as any)?.providerThinking?.[providerId]
       thinkingLevel = thinking?.mode || 'auto'
-      // Extract free provider proxy & rotation settings
-      if (strategy && !isSavingFreeProxy) {
-        freeProxyPoolId = strategy.proxyPoolId || 'none'
-        freeRotateStrategy = (strategy.rotateStrategy as 'none' | 'round-robin' | 'random') || 'none'
-      }
       if (isFreebuff) {
         loadFreebuffSession()
       }
@@ -1055,42 +1010,6 @@
     }
   }
 
-  async function handleFreeProxyChange(newPool: string, newRotate: 'none' | 'round-robin' | 'random') {
-    freeProxyPoolId = newPool
-    freeRotateStrategy = newRotate
-    isSavingFreeProxy = true
-    try {
-      const currentStrategies = { ...(settings?.providerStrategies || {}) }
-      const currentStrat = { ...(currentStrategies[providerId] || {}) }
-      if (newPool === 'none' || !newPool) {
-        delete currentStrat.proxyPoolId
-        delete currentStrat.proxyGroup
-      } else if (newPool.startsWith('group:')) {
-        currentStrat.proxyPoolId = newPool
-        currentStrat.proxyGroup = newPool.slice(6)
-      } else {
-        currentStrat.proxyPoolId = newPool
-      }
-      if (newRotate === 'none' || !newRotate) {
-        delete currentStrat.rotateStrategy
-      } else {
-        currentStrat.rotateStrategy = newRotate
-      }
-      if (Object.keys(currentStrat).length === 0) {
-        delete currentStrategies[providerId]
-      } else {
-        currentStrategies[providerId] = currentStrat
-      }
-      await api.updateSettings({ providerStrategies: currentStrategies })
-      if (settings) settings.providerStrategies = currentStrategies
-      savedFreeProxy = true
-      setTimeout(() => (savedFreeProxy = false), 1500)
-    } catch (err) {
-      console.error('Failed to save proxy config:', err)
-    } finally {
-      isSavingFreeProxy = false
-    }
-  }
   function getCooldownInfo(conn: ProviderConnection): { label: string; title: string; isExhausted: boolean; isLock?: boolean } | null {
     // 1. Check modelLock_* and rateLimitedUntil across conn, conn.data, and providerSpecificData (matching upstream ⏱ {timeLeft})
     const dataObj = conn.providerSpecificData as Record<string, unknown> | undefined
@@ -3602,107 +3521,7 @@
   {/if}
 
   {#if isNoAuth}
-    <!-- Free Provider: NoAuthProxyCard -->
-    <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6 flex flex-col gap-4">
-      <div class="flex items-start gap-3">
-        <span class="material-symbols-outlined text-[20px] text-primary mt-0.5">lock_open</span>
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-text-main">No authentication required</p>
-          <p class="text-xs text-text-muted mt-0.5">
-            This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.
-          </p>
-        </div>
-        {#if savedFreeProxy}
-          <span class="px-2 py-0.5 rounded text-xs bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
-            Saved
-          </span>
-        {/if}
-      </div>
-
-      <!-- Proxy Group Selector (Lightweight chips, no heavy select) -->
-      <div class="flex flex-col gap-2">
-        <div class="flex items-center justify-between">
-          <label class="text-sm font-medium text-text-main">Proxy Group</label>
-          <span class="text-xs text-text-muted">No-Auth provider routes via Proxy Group</span>
-        </div>
-        <div class="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onclick={() => handleFreeProxyChange('none', freeRotateStrategy)}
-            disabled={isSavingFreeProxy || freeRotateStrategy !== 'none'}
-            class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {freeProxyPoolId === 'none' || !freeProxyPoolId
-              ? 'bg-primary text-white border-primary shadow-sm'
-              : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
-          >
-            <span class="material-symbols-outlined text-[16px]">link_off</span>
-            <span>Direct (None)</span>
-          </button>
-          {#each allProxyGroups as grp}
-            {@const isSelected = freeProxyPoolId === grp.id || freeProxyPoolId === grp.id.replace('group:', '')}
-            <button
-              type="button"
-              onclick={() => handleFreeProxyChange(grp.id, freeRotateStrategy)}
-              disabled={isSavingFreeProxy || freeRotateStrategy !== 'none'}
-              class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 {isSelected
-                ? 'bg-primary text-white border-primary shadow-sm'
-                : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
-            >
-              <span class="material-symbols-outlined text-[16px]">hub</span>
-              <span>{grp.label}</span>
-              <span class="text-[10px] px-1.5 py-0.2 rounded-full {isSelected ? 'bg-white/20 text-white' : 'bg-black/5 dark:bg-white/10 text-text-muted'}">
-                {grp.activeCount}
-              </span>
-            </button>
-          {/each}
-        </div>
-        {#if freeRotateStrategy !== 'none'}
-          <p class="text-xs text-text-muted">
-            Group selector is disabled when rotation is active — all active pools are used.
-          </p>
-        {/if}
-      </div>
-
-      <!-- Rotation Strategy -->
-      <div class="flex flex-col gap-1.5">
-        <span class="text-sm font-medium text-text-main">Rotation Strategy</span>
-        <div class="flex items-center gap-2 flex-wrap">
-          <button
-            type="button"
-            onclick={() => handleFreeProxyChange(freeProxyPoolId, 'none')}
-            class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer {freeRotateStrategy === 'none'
-              ? 'bg-primary text-white border-primary'
-              : 'bg-surface-2 text-text-main border-border hover:bg-surface-3'}"
-          >
-            None (single pool)
-          </button>
-          <button
-            type="button"
-            onclick={() => handleFreeProxyChange(freeProxyPoolId, 'round-robin')}
-            disabled={activeProxyPools.length < 2}
-            class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed {freeRotateStrategy === 'round-robin'
-              ? 'bg-primary text-white border-primary'
-              : 'bg-surface-2 text-text-main border-border hover:bg-surface-3'}"
-          >
-            Round-robin
-          </button>
-          <button
-            type="button"
-            onclick={() => handleFreeProxyChange(freeProxyPoolId, 'random')}
-            disabled={activeProxyPools.length < 2}
-            class="px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed {freeRotateStrategy === 'random'
-              ? 'bg-primary text-white border-primary'
-              : 'bg-surface-2 text-text-main border-border hover:bg-surface-3'}"
-          >
-            Random
-          </button>
-        </div>
-        {#if activeProxyPools.length < 2}
-          <p class="text-xs text-text-muted">
-            Need at least 2 active proxy pools for rotation.
-          </p>
-        {/if}
-      </div>
-    </div>
+    <NoAuthProxyCard providerId={providerId} />
   {:else}
   <!-- 3. Connections Card -->
   <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6">
