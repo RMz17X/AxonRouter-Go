@@ -29,6 +29,16 @@ export function proxyBadgeInfo(
   const psd = (conn.providerSpecificData as Record<string, unknown> | undefined) || {}
   const poolId = typeof psd.proxyPoolId === 'string' && psd.proxyPoolId ? psd.proxyPoolId : null
 
+  if (poolId === '__none__' || poolId === 'direct') {
+    return {
+      hasAnyProxy: false,
+      variant: 'success',
+      displayText: 'Direct (manual)',
+      maskedProxyUrl: 'Direct (No proxy)',
+      noProxyText: ''
+    }
+  }
+
   if (poolId) {
     if (poolId.startsWith('group:')) {
       const grp = poolId.slice(6)

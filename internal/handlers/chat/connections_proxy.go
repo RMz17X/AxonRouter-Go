@@ -84,20 +84,20 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 	// bound to a pool.
 	strictProxy := connData.StrictProxy
 	// Whether the operator meant this connection to leave through a proxy at
-	// all. Upstream gates its strictProxy refusal on exactly this
+	// Upstream gates its strictProxy refusal on exactly this
 	// (decolua/9router#4333): executors such as Qoder set strictProxy to mean
 	// "do not replay this request directly if the proxy fails" — a replayed
 	// COSY signature answers 403 — not "a proxy must exist". With nothing
 	// configured those callers must keep working direct, so a strict flag
 	// alone may never turn into an error.
-	proxyIntended := connData.ProxyPoolID != ""
+	proxyIntended := connData.ProxyPoolID != "" && connData.ProxyPoolID != "__none__" && connData.ProxyPoolID != "direct"
 
 	// 1. Resolve from ProxyPool. A pool that cannot serve traffic (deleted,
 	// inactive, or carrying no URL) makes the request fail: silently going
 	// direct would publish the operator's egress IP, which is the one thing a
 	// proxy was assigned to prevent, and the dashboard would keep showing the
 	// connection as proxied.
-	if connData.ProxyPoolID != "" {
+	if connData.ProxyPoolID != "" && connData.ProxyPoolID != "__none__" && connData.ProxyPoolID != "direct" {
 		isGroupOrType := strings.HasPrefix(connData.ProxyPoolID, "type:") ||
 			strings.HasPrefix(connData.ProxyPoolID, "group:") ||
 			isKnownProxyType(connData.ProxyPoolID)

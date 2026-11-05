@@ -531,6 +531,7 @@
 
   // Row UI state
   let activeProxyDropdownId = $state<string | null>(null)
+  let proxySearch = $state('')
   let dropdownPos = $state<{ top: number; right: number }>({ top: 0, right: 0 })
   let updatingProxyConnId = $state<string | null>(null)
   let copiedModelId = $state<string | null>(null)
@@ -4143,8 +4144,10 @@
                           e.stopPropagation()
                           if (activeProxyDropdownId === conn.id) {
                             activeProxyDropdownId = null
+                            proxySearch = ''
                           } else {
                             activeProxyDropdownId = conn.id
+                            proxySearch = ''
                             const rect = e.currentTarget.getBoundingClientRect()
                             dropdownPos = {
                               top: rect.bottom + 4,
@@ -4154,9 +4157,10 @@
                         }}
                         disabled={updatingProxyConnId === conn.id}
                         class="flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-60 {proxyBadge.hasAnyProxy ? 'text-primary' : 'text-text-muted hover:text-primary'} cursor-pointer"
+                        title={proxyBadge.displayText}
                       >
                         <span class="material-symbols-outlined text-[18px] {updatingProxyConnId === conn.id ? 'animate-spin' : ''}">
-                          {updatingProxyConnId === conn.id ? 'progress_activity' : 'lan'}
+                          {updatingProxyConnId === conn.id ? 'progress_activity' : (proxyBadge.hasAnyProxy ? 'vpn_lock' : 'lan')}
                         </span>
                         <span class="text-[10px] leading-tight">Proxy</span>
                       </button>
@@ -4165,86 +4169,181 @@
                         <!-- Backdrop -->
                         <div
                           class="fixed inset-0 z-[80]"
-                          onclick={() => (activeProxyDropdownId = null)}
+                          onclick={() => { activeProxyDropdownId = null; proxySearch = ''; }}
                           role="presentation"
                         ></div>
                         <div
-                          class="fixed z-[85] max-w-[78vw] min-w-[180px] rounded-lg border border-border bg-bg py-1 shadow-lg"
+                          class="fixed z-[85] max-w-[85vw] w-[290px] max-h-[380px] flex flex-col rounded-xl border border-border bg-surface shadow-2xl overflow-hidden"
                           style="top: {dropdownPos.top}px; right: {dropdownPos.right}px;"
                         >
-                          {#if proxyPools.length === 0}
-                            <div class="px-3 py-2 text-xs text-text-muted">
-                              <p>No proxy pools available.</p>
-                              <a
-                                href="/dashboard/proxypools"
-                                class="mt-1.5 inline-flex items-center gap-1 font-medium text-primary hover:underline"
-                              >
-                                <span class="material-symbols-outlined text-sm">add</span>
-                                Create proxy pool
-                              </a>
+                          <!-- Search Header -->
+                          <div class="p-2 border-b border-border bg-surface-2/40 shrink-0">
+                            <div class="relative">
+                              <span class="material-symbols-outlined absolute left-2 top-1.5 text-[16px] text-text-muted">search</span>
+                              <input
+                                type="text"
+                                bind:value={proxySearch}
+                                placeholder="Search proxy or group..."
+                                class="w-full pl-7 pr-2 py-1 text-xs rounded-lg border border-border bg-surface text-text-main placeholder:text-text-muted/60 focus:outline-none focus:border-primary"
+                              />
                             </div>
-                          {:else}
-                            <button
-                              type="button"
-                              onclick={() => assignProxyPool(conn, null)}
-                              class="flex w-full items-center px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors cursor-pointer {!assignedPoolId ? 'text-primary font-medium' : 'text-text-main'}"
-                            >
-                              None
-                            </button>
-                            {#if availableProxyGroups.length > 0}
-                              <div class="px-3 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-t border-border mt-1 pt-1">
-                                Proxy Groups
-                              </div>
-                              {#each availableProxyGroups as grp}
-                                {@const activeCount = proxyPools.filter((p) => p.group === grp && p.isActive).length}
+                          </div>
+
+                          <div class="overflow-y-auto flex-1 divide-y divide-border/40 py-1">
+                            <!-- Default / Direct Options -->
+                            <div class="p-1 space-y-0.5">
+                              {#if lockedProxyGroup}
                                 <button
                                   type="button"
-                                  onclick={() => assignProxyPool(conn, `group:${grp}`)}
-                                  class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors cursor-pointer {assignedPoolId === `group:${grp}` || assignedPoolId === grp ? 'text-primary font-medium' : 'text-text-main'}"
+                                  onclick={() => { assignProxyPool(conn, null); proxySearch = ''; }}
+                                  class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {!assignedPoolId ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
                                 >
-                                  <div class="flex items-center gap-1.5 truncate">
-                                    <span class="material-symbols-outlined text-[14px] text-primary">folder</span>
-                                    <span class="truncate">{grp}</span>
+                                  <div class="flex items-center gap-2 truncate">
+                                    <span class="material-symbols-outlined text-[16px] text-primary">lock</span>
+                                    <div class="flex flex-col text-left truncate">
+                                      <span class="truncate font-medium">Auto: Group {lockedProxyGroup.replace(/^(group|type):/, '')}</span>
+                                      <span class="text-[10px] text-text-muted font-normal">Inherit provider lock (Default)</span>
+                                    </div>
                                   </div>
-                                  <span class="text-[10px] text-text-muted shrink-0">({activeCount})</span>
+                                  {#if !assignedPoolId}
+                                    <span class="material-symbols-outlined text-[16px] text-primary shrink-0">check</span>
+                                  {/if}
                                 </button>
-                              {/each}
-                            {/if}
-                            {#if availableProxyTypes.length > 0}
-                              <div class="px-3 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-t border-border mt-1 pt-1">
-                                Proxy Types
-                              </div>
-                              {#each availableProxyTypes as typ}
-                                {@const activeCount = proxyPools.filter((p) => p.type === typ && p.isActive).length}
                                 <button
                                   type="button"
-                                  onclick={() => assignProxyPool(conn, `type:${typ}`)}
-                                  class="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors cursor-pointer {assignedPoolId === `type:${typ}` ? 'text-primary font-medium' : 'text-text-main'}"
+                                  onclick={() => { assignProxyPool(conn, '__none__'); proxySearch = ''; }}
+                                  class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {assignedPoolId === '__none__' || assignedPoolId === 'direct' ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
                                 >
-                                  <div class="flex items-center gap-1.5 truncate">
-                                    <span class="material-symbols-outlined text-[14px]">category</span>
-                                    <span class="capitalize truncate">{typ}</span>
+                                  <div class="flex items-center gap-2 truncate">
+                                    <span class="material-symbols-outlined text-[16px] text-text-muted">block</span>
+                                    <div class="flex flex-col text-left truncate">
+                                      <span class="truncate">Direct (Bypass lock)</span>
+                                      <span class="text-[10px] text-text-muted font-normal">No proxy for this account</span>
+                                    </div>
                                   </div>
-                                  <span class="text-[10px] text-text-muted shrink-0">({activeCount})</span>
+                                  {#if assignedPoolId === '__none__' || assignedPoolId === 'direct'}
+                                    <span class="material-symbols-outlined text-[16px] text-primary shrink-0">check</span>
+                                  {/if}
                                 </button>
-                              {/each}
-                            {/if}
-                            <div class="px-3 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider border-t border-border mt-1 pt-1">
-                              Individual Pools
+                              {:else}
+                                <button
+                                  type="button"
+                                  onclick={() => { assignProxyPool(conn, null); proxySearch = ''; }}
+                                  class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {!assignedPoolId ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
+                                >
+                                  <div class="flex items-center gap-2 truncate">
+                                    <span class="material-symbols-outlined text-[16px] text-text-muted">public_off</span>
+                                    <span>Direct (No proxy)</span>
+                                  </div>
+                                  {#if !assignedPoolId}
+                                    <span class="material-symbols-outlined text-[16px] text-primary shrink-0">check</span>
+                                  {/if}
+                                </button>
+                              {/if}
                             </div>
-                            {#each proxyPools as pool}
-                              <button
-                                type="button"
-                                onclick={() => assignProxyPool(conn, pool.id)}
-                                class="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-surface-2 transition-colors cursor-pointer {assignedPoolId === pool.id ? 'text-primary font-medium' : 'text-text-main'}"
-                              >
-                                <span class="truncate">{pool.name}{pool.group ? ` [${pool.group}]` : ''}</span>
-                                {#if !pool.isActive}
-                                  <span class="text-[10px] text-text-muted shrink-0">(inactive)</span>
-                                {/if}
-                              </button>
-                            {/each}
-                          {/if}
+
+                            {#if proxyPools.length === 0}
+                              <div class="px-3 py-2 text-xs text-text-muted">
+                                <p>No proxy pools available.</p>
+                                <a
+                                  href="/dashboard/proxypools"
+                                  class="mt-1.5 inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                                >
+                                  <span class="material-symbols-outlined text-sm">add</span>
+                                  Create proxy pool
+                                </a>
+                              </div>
+                            {:else}
+                              <!-- Filtered Groups -->
+                              {@const q = proxySearch.trim().toLowerCase()}
+                              {@const filteredGroups = availableProxyGroups.filter((g) => !q || g.toLowerCase().includes(q))}
+                              {#if filteredGroups.length > 0}
+                                <div class="p-1">
+                                  <div class="px-2 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider">
+                                    Proxy Groups
+                                  </div>
+                                  {#each filteredGroups as grp}
+                                    {@const activeCount = proxyPools.filter((p) => p.group === grp && p.isActive).length}
+                                    {@const isSelected = assignedPoolId === `group:${grp}` || assignedPoolId === grp}
+                                    <button
+                                      type="button"
+                                      onclick={() => { assignProxyPool(conn, `group:${grp}`); proxySearch = ''; }}
+                                      class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {isSelected ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
+                                    >
+                                      <div class="flex items-center gap-2 truncate">
+                                        <span class="material-symbols-outlined text-[16px] text-primary">folder</span>
+                                        <span class="truncate">{grp}</span>
+                                      </div>
+                                      <div class="flex items-center gap-1.5 shrink-0">
+                                        <span class="text-[10px] text-text-muted">({activeCount})</span>
+                                        {#if isSelected}
+                                          <span class="material-symbols-outlined text-[16px] text-primary">check</span>
+                                        {/if}
+                                      </div>
+                                    </button>
+                                  {/each}
+                                </div>
+                              {/if}
+
+                              <!-- Filtered Types -->
+                              {@const filteredTypes = availableProxyTypes.filter((t) => !q || t.toLowerCase().includes(q))}
+                              {#if filteredTypes.length > 0}
+                                <div class="p-1">
+                                  <div class="px-2 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider">
+                                    Proxy Types
+                                  </div>
+                                  {#each filteredTypes as typ}
+                                    {@const activeCount = proxyPools.filter((p) => p.type === typ && p.isActive).length}
+                                    {@const isSelected = assignedPoolId === `type:${typ}`}
+                                    <button
+                                      type="button"
+                                      onclick={() => { assignProxyPool(conn, `type:${typ}`); proxySearch = ''; }}
+                                      class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {isSelected ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
+                                    >
+                                      <div class="flex items-center gap-2 truncate">
+                                        <span class="material-symbols-outlined text-[16px]">category</span>
+                                        <span class="capitalize truncate">{typ}</span>
+                                      </div>
+                                      <div class="flex items-center gap-1.5 shrink-0">
+                                        <span class="text-[10px] text-text-muted">({activeCount})</span>
+                                        {#if isSelected}
+                                          <span class="material-symbols-outlined text-[16px] text-primary">check</span>
+                                        {/if}
+                                      </div>
+                                    </button>
+                                  {/each}
+                                </div>
+                              {/if}
+
+                              <!-- Filtered Individual Pools -->
+                              {@const filteredPools = proxyPools.filter((p) => !q || p.name.toLowerCase().includes(q) || (p.group && p.group.toLowerCase().includes(q)))}
+                              {#if filteredPools.length > 0}
+                                <div class="p-1">
+                                  <div class="px-2 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider">
+                                    Individual Pools
+                                  </div>
+                                  {#each filteredPools as pool}
+                                    {@const isSelected = assignedPoolId === pool.id}
+                                    <button
+                                      type="button"
+                                      onclick={() => { assignProxyPool(conn, pool.id); proxySearch = ''; }}
+                                      class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {isSelected ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
+                                    >
+                                      <div class="flex items-center gap-2 truncate">
+                                        <span class="truncate">{pool.name}{pool.group ? ` [${pool.group}]` : ''}</span>
+                                        {#if !pool.isActive}
+                                          <span class="text-[10px] text-text-muted shrink-0">(inactive)</span>
+                                        {/if}
+                                      </div>
+                                      {#if isSelected}
+                                        <span class="material-symbols-outlined text-[16px] text-primary shrink-0">check</span>
+                                      {/if}
+                                    </button>
+                                  {/each}
+                                </div>
+                              {/if}
+                            {/if}
+                          </div>
                         </div>
                       {/if}
                     </div>

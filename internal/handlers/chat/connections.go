@@ -816,7 +816,7 @@ func (h *ChatHandler) getProviderConfig(provider string, connData *ConnectionDat
 // connection, plus the pool's noProxy list. An inactive or non-relay pool
 // answers "", which leaves the request direct.
 func (h *ChatHandler) resolveEdgeRelay(connData *ConnectionData) (relayURL, noProxy string) {
-	if connData.ProxyPoolID != "" && h.Repo != nil {
+	if connData.ProxyPoolID != "" && connData.ProxyPoolID != "__none__" && connData.ProxyPoolID != "direct" && h.Repo != nil {
 		var pool *db.ProxyPool
 		if strings.HasPrefix(connData.ProxyPoolID, "group:") || strings.HasPrefix(connData.ProxyPoolID, "type:") || isKnownProxyType(connData.ProxyPoolID) || connData.ProxyPoolID == "cloudflare" {
 			candidates := h.Repo.ActivePoolsByTarget(connData.ProxyPoolID)
