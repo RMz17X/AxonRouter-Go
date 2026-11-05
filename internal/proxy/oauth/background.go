@@ -134,9 +134,9 @@ func runBackgroundRefreshTick(ctx context.Context, repo *db.Repo) {
 	if repo == nil {
 		return
 	}
-	conns, err := repo.GetProviderConnections("", true)
+	conns, err := repo.GetActiveOAuthConnections(ctx)
 	if err != nil {
-		log.Printf("[BG_TOKEN_REFRESH] load active connections failed: %v", err)
+		log.Printf("[BG_TOKEN_REFRESH] load active oauth connections failed: %v", err)
 		return
 	}
 

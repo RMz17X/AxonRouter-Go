@@ -281,17 +281,25 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			ErrorProvider:  activeState.ErrorProvider,
 		}
 
-		// Load connection mapping for friendly account names
+		// Connection names are resolved on-demand for accounts present in the result,
+		// avoiding loading 170k rows on every stats request.
 		connMap := make(map[string]string)
-		if conns, err := repo.GetProviderConnections("", true); err == nil {
-			for _, c := range conns {
-				name := c.ID
-				if c.Name != nil && *c.Name != "" {
-					name = *c.Name
-				} else if c.Email != nil && *c.Email != "" {
-					name = *c.Email
+		resolveConnMap := func(ids []string) {
+			if len(ids) == 0 || repo == nil {
+				return
+			}
+			var missing []string
+			for _, id := range ids {
+				if id != "" && connMap[id] == "" {
+					missing = append(missing, id)
 				}
-				connMap[c.ID] = name
+			}
+			if len(missing) > 0 {
+				if m, err := repo.GetConnectionNames(r.Context(), missing); err == nil {
+					for k, v := range m {
+						connMap[k] = v
+					}
+				}
 			}
 		}
 
@@ -440,6 +448,11 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 
 				// byAccount
 				if ba, ok := dayData["byAccount"].(map[string]any); ok && views.account {
+					var acctIDs []string
+					for connID := range ba {
+						acctIDs = append(acctIDs, connID)
+					}
+					resolveConnMap(acctIDs)
 					for connID, aVal := range ba {
 						if am, ok := aVal.(map[string]any); ok {
 							rawModel, _ := am["rawModel"].(string)
@@ -548,6 +561,13 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			if err != nil {
 				writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch usage stats")
 				return
+			}
+			if views.account && agg != nil {
+				var acctIDs []string
+				for _, meta := range agg.accountMeta {
+					acctIDs = append(acctIDs, meta.connectionID)
+				}
+				resolveConnMap(acctIDs)
 			}
 			applyRawAggregate(&resp, agg, nodeNameMap, connMap, keyNames, views)
 			if !window.since.IsZero() {

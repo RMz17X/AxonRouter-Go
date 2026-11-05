@@ -32,8 +32,8 @@ import (
 // bigger shared server; idle is clamped to open, and non-positive or
 // unparseable values fall back to the defaults.
 const (
-	pgDefaultMaxOpenConns = 10
-	pgDefaultMaxIdleConns = 5
+	pgDefaultMaxOpenConns = 50
+	pgDefaultMaxIdleConns = 25
 )
 
 func pgPoolSizes() (maxOpen, maxIdle int) {

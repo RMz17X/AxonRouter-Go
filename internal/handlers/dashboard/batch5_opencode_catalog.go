@@ -223,7 +223,7 @@ func ocLoadCatalog(repo *db.Repo, client *http.Client) *ocCatalog {
 		add(ocCatalogEntry(name, "combo", clisetup.NewJObj("name", combo.Name)))
 	}
 
-	connections, err := repo.GetProviderConnections("", true)
+	connections, err := repo.GetFirstConnectionPerProvider(context.Background())
 	if err != nil {
 		connections = nil
 	}

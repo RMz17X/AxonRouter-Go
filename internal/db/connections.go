@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	json "encoding/json/v2"
 	"fmt"
+	"strings"
 	"time"
 
 	"axonrouter/proxy/internal/models"
@@ -239,15 +240,13 @@ type providerConnsEntry struct {
 // served. Selection used to re-read and re-parse every connection row
 // of a provider on EVERY request (review m1, feeding F1): one query
 // plus a JSON hydration per row, per request, from the pool the
-// completions were also fighting over. One second collapses a burst
-// of concurrent selections into one read while bounding staleness for
-// the writers that cannot invalidate (raw-SQL writers in the oauth
-// handlers, a second process, the shared Next.js dashboard). Writers
-// through this Repo invalidate immediately (see
-// invalidateProviderConnections), and the rotation stamp writer
+// completions were also fighting over. 15 seconds keeps hot provider
+// selections entirely in RAM under heavy concurrency (e.g. hundreds of
+// SSE requests per minute). Writers through this Repo invalidate immediately
+// (see invalidateProviderConnections), and the rotation stamp writer
 // patches the snapshot in place, so the in-process selection ordering
 // never trails the stamps this process minted.
-const providerConnsTTL = time.Second
+const providerConnsTTL = 15 * time.Second
 
 // cachedProviderConnections returns a clone of the snapshot for key
 // when it is still fresh.
@@ -390,6 +389,23 @@ func (r *Repo) GetProviderConnections(provider string, activeOnly bool) ([]*mode
 	return connections, nil
 }
 
+// GetConnectionsWithProxyPool queries only rows that have proxyPoolId set in their data JSON,
+// avoiding scanning 170k rows when inspecting proxy pool bindings.
+func (r *Repo) GetConnectionsWithProxyPool(ctx context.Context) ([]*models.ProviderConnection, error) {
+	query := "SELECT " + providerConnectionColumns + " FROM providerConnections " +
+		"WHERE (data->>'proxyPoolId') IS NOT NULL " +
+		"   OR (data->'providerSpecificData'->>'proxyPoolId') IS NOT NULL"
+	return r.listProviderConnections(query, nil)
+}
+
+// GetFirstConnectionPerProvider returns at most one connection per provider,
+// avoiding pulling 170k duplicate rows when listing models or providers.
+func (r *Repo) GetFirstConnectionPerProvider(ctx context.Context) ([]*models.ProviderConnection, error) {
+	query := "SELECT DISTINCT ON (provider) " + providerConnectionColumns + " FROM providerConnections " +
+		"ORDER BY provider, (CASE WHEN priority IS NULL THEN 999999 ELSE priority END) ASC, updatedAt DESC"
+	return r.listProviderConnections(query, nil)
+}
+
 // GetLockedOrUnavailableConnections queries only rows that have lockedAllUntil,
 // modelLocks, or testStatus=unavailable in their data JSON, avoiding a 170k-row scan.
 func (r *Repo) GetLockedOrUnavailableConnections(ctx context.Context) ([]*models.ProviderConnection, error) {
@@ -425,4 +441,68 @@ func (r *Repo) listProviderConnections(query string, args []any) ([]*models.Prov
 		return nil, err
 	}
 	return connections, nil
+}
+
+// GetActiveProviders returns the unique list of providers that have at least one active connection.
+func (r *Repo) GetActiveProviders(ctx context.Context) ([]string, error) {
+	query := "SELECT DISTINCT provider FROM providerConnections WHERE isActive = 1 ORDER BY provider"
+	rows, err := r.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var provs []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err == nil && p != "" {
+			provs = append(provs, p)
+		}
+	}
+	return provs, rows.Err()
+}
+
+// GetActiveOAuthConnections returns only active connections with authType = 'oauth'
+// and non-empty refreshToken, avoiding pulling 150k static API keys on every background tick.
+func (r *Repo) GetActiveOAuthConnections(ctx context.Context) ([]*models.ProviderConnection, error) {
+	query := "SELECT " + providerConnectionColumns + " FROM providerConnections " +
+		"WHERE LOWER(authType) = 'oauth' AND isActive = 1 " +
+		"  AND (data->>'refreshToken') IS NOT NULL " +
+		"  AND trim(data->>'refreshToken') != ''"
+	return r.listProviderConnections(query, nil)
+}
+
+// GetConnectionNames returns a map of id -> displayName (name or email or id) for the specified IDs only.
+func (r *Repo) GetConnectionNames(ctx context.Context, ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return make(map[string]string), nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := r.Rebind("SELECT id, name, email FROM providerConnections WHERE id IN (" + strings.Join(placeholders, ",") + ")")
+	rows, err := r.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make(map[string]string, len(ids))
+	for rows.Next() {
+		var id string
+		var name, email sql.NullString
+		if err := rows.Scan(&id, &name, &email); err == nil {
+			displayName := id
+			if name.Valid && strings.TrimSpace(name.String) != "" {
+				displayName = name.String
+			} else if email.Valid && strings.TrimSpace(email.String) != "" {
+				displayName = email.String
+			}
+			out[id] = displayName
+		}
+	}
+	return out, rows.Err()
 }

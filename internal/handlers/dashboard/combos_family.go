@@ -75,13 +75,13 @@ func (h *DashboardHandler) HandleAutoFamilyCombos(w http.ResponseWriter, r *http
 // usableModelFamilies maps a normalized family to every usable "alias/model"
 // id belonging to it, across all providers with an active connection.
 func (h *DashboardHandler) usableModelFamilies(ctx context.Context) (map[string][]string, error) {
-	conns, err := h.Repo.GetProviderConnections("", true)
+	provList, err := h.Repo.GetActiveProviders(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("usableModelFamilies: list connections: %w", err)
+		return nil, fmt.Errorf("usableModelFamilies: list active providers: %w", err)
 	}
-	active := make(map[string]struct{}, len(conns))
-	for _, c := range conns {
-		active[c.Provider] = struct{}{}
+	active := make(map[string]struct{}, len(provList))
+	for _, p := range provList {
+		active[p] = struct{}{}
 	}
 	disabled, err := h.disabledModelsByAlias()
 	if err != nil {

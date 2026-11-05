@@ -371,16 +371,16 @@ func (t *Tracker) buildPayload(repo *db.Repo) StreamPayload {
 
 	// Build connection name map
 	connMap := make(map[string]string)
-	if repo != nil {
-		if conns, err := repo.GetProviderConnections("", true); err == nil {
-			for _, c := range conns {
-				name := c.ID
-				if c.Name != nil && *c.Name != "" {
-					name = *c.Name
-				} else if c.Email != nil && *c.Email != "" {
-					name = *c.Email
-				}
-				connMap[c.ID] = name
+	if repo != nil && len(byAccount) > 0 {
+		var connIDs []string
+		for connID := range byAccount {
+			if connID != "" && connID != "__direct__" {
+				connIDs = append(connIDs, connID)
+			}
+		}
+		if len(connIDs) > 0 {
+			if m, err := repo.GetConnectionNames(context.Background(), connIDs); err == nil {
+				connMap = m
 			}
 		}
 	}

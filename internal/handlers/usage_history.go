@@ -143,18 +143,21 @@ func HandleUsageHistory(repo *db.Repo) http.HandlerFunc {
 			return
 		}
 
-		// Account names resolve from the connections table, the same chain
-		// /api/usage/stats uses (name, then email, then the id itself).
+		// Account names resolve from the connections table for the unique connection IDs in groups:
 		connMap := make(map[string]string)
-		if conns, err := repo.GetProviderConnections("", false); err == nil {
-			for _, c := range conns {
-				name := c.ID
-				if c.Name != nil && *c.Name != "" {
-					name = *c.Name
-				} else if c.Email != nil && *c.Email != "" {
-					name = *c.Email
+		var connIDs []string
+		connIDSet := make(map[string]struct{})
+		for _, g := range groups {
+			if g.ConnectionID != "" {
+				if _, ok := connIDSet[g.ConnectionID]; !ok {
+					connIDSet[g.ConnectionID] = struct{}{}
+					connIDs = append(connIDs, g.ConnectionID)
 				}
-				connMap[c.ID] = name
+			}
+		}
+		if len(connIDs) > 0 {
+			if m, err := repo.GetConnectionNames(r.Context(), connIDs); err == nil {
+				connMap = m
 			}
 		}
 		// API-key names resolve against both the stored form and its mask,

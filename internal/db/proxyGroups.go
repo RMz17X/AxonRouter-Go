@@ -367,27 +367,21 @@ func (r *Repo) CountProxyGroupBoundConnections(value string) (int, error) {
 	if value == "" {
 		return 0, nil
 	}
-	conns, err := r.GetProviderConnections("", false)
-	if err != nil {
-		return 0, err
-	}
-	count := 0
-	for _, c := range conns {
-		if c == nil {
-			continue
-		}
-		if psd := connectionPSD(c.Data); psd != nil && handlerutil.GetString(psd, "proxyGroup") == value {
-			count++
-		}
-	}
-	return count, nil
+	var count int
+	query := `SELECT COUNT(*) FROM providerConnections WHERE (data->'providerSpecificData'->>'proxyGroup') = ?`
+	err := r.QueryRow(query, value).Scan(&count)
+	return count, err
 }
 
 // ClearProxyGroupIDReferences removes providerSpecificData.proxyGroupId == id
 // from every connection and returns how many connections were cleared
 // (upstream remove-all route's connection pass).
 func (r *Repo) ClearProxyGroupIDReferences(id string) (int, error) {
-	conns, err := r.GetProviderConnections("", false)
+	if id == "" {
+		return 0, nil
+	}
+	query := `SELECT ` + providerConnectionColumns + ` FROM providerConnections WHERE (data->'providerSpecificData'->>'proxyGroupId') = ?`
+	conns, err := r.listProviderConnections(query, []any{id})
 	if err != nil {
 		return 0, err
 	}

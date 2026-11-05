@@ -355,7 +355,7 @@ func isUsableProvider(providerID string, usable map[string]bool) bool {
 func (h *ChatHandler) buildModelsListResult(ctx context.Context, mode ModelsListMode) ModelsListResult {
 	var allConns []*models.ProviderConnection
 	if h.Repo != nil {
-		allConns, _ = h.Repo.GetProviderConnections("", false)
+		allConns, _ = h.Repo.GetFirstConnectionPerProvider(ctx)
 	}
 
 	// Connections is the number of distinct providers with an active
@@ -404,12 +404,13 @@ func (h *ChatHandler) buildModelsList(ctx context.Context) []ModelInfoObject {
 	return h.buildModelsListForMode(ctx, modeListAll, conns, activeConnections(conns), nil)
 }
 
-// allConnections returns every provider connection row, or nil without a Repo.
+// allConnections returns one representative row per provider to discover active models,
+// avoiding loading 170k duplicate rows into memory.
 func (h *ChatHandler) allConnections() []*models.ProviderConnection {
 	if h.Repo == nil {
 		return nil
 	}
-	conns, _ := h.Repo.GetProviderConnections("", false)
+	conns, _ := h.Repo.GetFirstConnectionPerProvider(context.Background())
 	return conns
 }
 
@@ -1192,7 +1193,7 @@ func (h *ChatHandler) appendCombosFiltered(data []ModelInfoObject, seen map[stri
 		return data
 	}
 	var connMap map[string]*ModelInfo
-	if conns, err := h.Repo.GetProviderConnections("", false); err == nil {
+	if conns, err := h.Repo.GetFirstConnectionPerProvider(context.Background()); err == nil {
 		connMap = make(map[string]*ModelInfo, len(conns)*2)
 		for _, conn := range conns {
 			if conn == nil || conn.Provider == "" {
@@ -1472,12 +1473,11 @@ func (h *ChatHandler) aliveAliases() map[string]bool {
 			}
 		}
 	}
-	if conns, err := h.Repo.GetProviderConnections("", false); err == nil {
-		for _, c := range conns {
-			if c == nil || c.Provider == "" {
-				continue
+	if provs, err := h.Repo.GetActiveProviders(context.Background()); err == nil {
+		for _, p := range provs {
+			if p != "" {
+				alive[p] = true
 			}
-			alive[c.Provider] = true
 		}
 	}
 	return alive

@@ -48,10 +48,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-axonrouter}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-axonrouter}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
       INITIAL_PASSWORD: ${INITIAL_PASSWORD:-}
-      # Per-node PostgreSQL pool (code defaults 10/5). Keep
+      # Per-node PostgreSQL pool (code defaults 50/25 for high concurrency). Keep
       # APP_REPLICAS × PG_POOL_MAX_OPEN + 10 ≤ PG_MAX_CONNECTIONS.
-      PG_POOL_MAX_OPEN: ${PG_POOL_MAX_OPEN:-10}
-      PG_POOL_MAX_IDLE: ${PG_POOL_MAX_IDLE:-5}
+      PG_POOL_MAX_OPEN: ${PG_POOL_MAX_OPEN:-50}
+      PG_POOL_MAX_IDLE: ${PG_POOL_MAX_IDLE:-25}
       PORT: "3177"
       DATA_DIR: /data
       # Container marker: disables the self-updater — updates are new

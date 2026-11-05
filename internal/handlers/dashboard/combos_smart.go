@@ -346,13 +346,13 @@ func (h *DashboardHandler) reconcileSmartCombosBestEffort(ctx context.Context, r
 // a registry model are carried (alias and canonical id) so a member is never
 // pruned for being written the other way round.
 func (h *DashboardHandler) smartComboCandidates(ctx context.Context) ([]smart.Candidate, error) {
-	conns, err := h.Repo.GetProviderConnections("", true)
+	provList, err := h.Repo.GetActiveProviders(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("smart candidates: connections: %w", err)
+		return nil, fmt.Errorf("smart candidates: active providers: %w", err)
 	}
-	active := make(map[string]bool, len(conns))
-	for _, c := range conns {
-		active[c.Provider] = true
+	active := make(map[string]bool, len(provList))
+	for _, p := range provList {
+		active[p] = true
 	}
 	disabled, err := h.disabledModelsByAlias()
 	if err != nil {

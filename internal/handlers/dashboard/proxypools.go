@@ -23,7 +23,10 @@ import (
 // pool rotation would pick, so none of them can be deleted underneath it.
 func (h *DashboardHandler) countProxyPoolBindings() map[string]int {
 	boundCounts := make(map[string]int)
-	conns, _ := h.Repo.GetProviderConnections("", false)
+	if h.Repo == nil {
+		return boundCounts
+	}
+	conns, _ := h.Repo.GetConnectionsWithProxyPool(context.Background())
 	for _, c := range conns {
 		if c == nil {
 			continue

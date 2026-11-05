@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
 )
 
 type QuotaWindow struct {
@@ -241,20 +242,14 @@ func (h *ChatHandler) resolveProviderTokenmaxxingScore(ctx context.Context, cano
 		return nil
 	}
 	conns, err := h.Repo.GetProviderConnections(canonicalProvider, true)
-	if err != nil || len(conns) == 0 {
-		if !*allTableConnsFetched {
-			*allTableConnsFetched = true
-			if conns2, err2 := h.Repo.GetProviderConnections("", true); err2 == nil {
-				*allTableConns = conns2
+	if (err != nil || len(conns) == 0) && len(canonicalProvider) > 0 {
+		for alias, canon := range providers.ProviderAliasMap {
+			if strings.EqualFold(canon, canonicalProvider) {
+				if aConns, aErr := h.Repo.GetProviderConnections(alias, true); aErr == nil && len(aConns) > 0 {
+					conns = append(conns, aConns...)
+				}
 			}
 		}
-		var filtered []*models.ProviderConnection
-		for _, c := range *allTableConns {
-			if c != nil && (strings.EqualFold(c.Provider, canonicalProvider) || strings.EqualFold(resolveProviderAlias(c.Provider), canonicalProvider)) {
-				filtered = append(filtered, c)
-			}
-		}
-		conns = filtered
 		if len(conns) == 0 {
 			return nil
 		}

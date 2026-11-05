@@ -151,7 +151,7 @@ func (h *DashboardHandler) findDuplicateConnection(provider string, dataMap map[
 	if incoming.Kind == "" {
 		return nil, nil
 	}
-	conns, err := h.Repo.GetProviderConnections("", false)
+	conns, err := h.Repo.GetProviderConnections(provider, false)
 	if err != nil {
 		return nil, nil
 	}

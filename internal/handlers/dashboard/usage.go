@@ -170,7 +170,7 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 
 // HandleGetUsageProviders handles GET /api/usage/providers
 func (h *DashboardHandler) HandleGetUsageProviders(w http.ResponseWriter, r *http.Request) {
-	conns, err := h.Repo.GetProviderConnections("", false)
+	provList, err := h.Repo.GetActiveProviders(r.Context())
 	if err != nil {
 		writePlainError(w, http.StatusInternalServerError, "Failed to fetch providers")
 		return
@@ -182,16 +182,16 @@ func (h *DashboardHandler) HandleGetUsageProviders(w http.ResponseWriter, r *htt
 		Name string `json:"name"`
 	}
 	var list []ProviderItem
-	for _, c := range conns {
-		if c.Provider != "" && !seen[c.Provider] {
-			canonical := providers.ResolveAlias(c.Provider)
+	for _, prov := range provList {
+		if prov != "" && !seen[prov] {
+			canonical := providers.ResolveAlias(prov)
 			if cfg, ok := providers.KnownProviders[canonical]; ok && cfg.Hidden {
 				continue
 			}
-			seen[c.Provider] = true
+			seen[prov] = true
 			list = append(list, ProviderItem{
-				ID:   c.Provider,
-				Name: c.Provider,
+				ID:   prov,
+				Name: prov,
 			})
 		}
 	}
