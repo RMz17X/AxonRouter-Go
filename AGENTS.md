@@ -117,6 +117,13 @@ Every upstream provider in this repository (`antigravity`, `opencode`, `claude`,
   - Use `json.RawMessage` to forward opaque/passthrough payload segments without unmarshaling into generic intermediate `map[string]any`.
 - **HTTP Transport Hygiene**:
   - Reuse `*http.Client` instances with pooled `http.Transport` (`MaxIdleConnsPerHost`, keep-alives enabled, appropriate response header timeouts). Never instantiate an unconfigured `&http.Client{}` per request.
+- **Wajib Deteksi & Auto-Fix Bottleneck (Zero-Tolerance Bottleneck Standard)**:
+  - Setiap kali membuka, memeriksa, atau mereview kode di repository ini, **WAJIB sekalian memindai dan langsung mem-fix bottleneck** tanpa menunggu perintah lanjutan:
+    1. **Database:** Eliminasi N+1, unindexed sequential scan, per-request `EXCLUSIVE TABLE LOCK` tanpa index, dan redundant point-lookup di hot path.
+    2. **Network/Upstream:** Pangkas timeout blocking lambat (>3-5s) pada sync endpoint (`/v1/models`), perpanjang negative cache agar tidak cascading retry.
+    3. **Payload/Memory:** Batasi string repetitif (misal token bullet-dot masking max 24 chars alih-alih ribuan dot), hindari load massal JSON tak perlu.
+    4. **Frontend/DOM:** Jangan me-render ribuan `<option>` di dalam `<select>` atau ribuan node DOM tanpa pagination/grouping.
+  - **Tindakan:** DILARANG hanya melaporkan kode bottleneck — langsung perbaiki dan optimalkan di turn yang sama.
 - **Database Access (PostgreSQL): One Read Per Page, Never N+1 (STRICTLY MANDATORY)**:
   - Never issue a query per row inside a loop over query results. A list endpoint that reads related data per row pays 1 + N statements and one ledger pass per row; on the §4.G hardware that pattern measured ~700 ms for one dashboard list (GET /api/keys on a 108k-row ledger, fixed 2026-10-29).
   - Batch the read: one statement over the whole page with an `IN (...)` list or a `VALUES` CTE. In-repo patterns to copy: `GetAllowedModelsForKeys` (`internal/db/modelaccess.go`), `GetPlansForKeys` (`internal/db/plans.go`), `GetApiKeyTokenUsageForKeys` (`internal/db/quota_reset.go`).
