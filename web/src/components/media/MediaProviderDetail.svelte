@@ -9,7 +9,7 @@
   import Badge from '../../lib/ui/Badge.svelte'
   import ProviderArtwork from '../providers/ProviderArtwork.svelte'
   import { type MediaKind, MEDIA_KIND_INFO } from './mediaTypes'
-  import NoAuthProxyCard from './NoAuthProxyCard.svelte'
+
   import TtsExampleCard from './TtsExampleCard.svelte'
   import SttExampleCard from './SttExampleCard.svelte'
 
@@ -689,10 +689,12 @@
     </div>
   {/if}
 
-  <!-- 3. Connections Card / NoAuthProxyCard -->
-  {#if provider.noAuth}
-    <NoAuthProxyCard providerId={provider.id} />
-  {:else}
+  <!-- 3. Connections Card. NoAuth providers have no connections to list, and
+       their proxy strategy is NOT set here: the card that owns it lives on the
+       provider's Connections detail page (ProviderDetailView). This page used
+       to render that card too, offering a chat-egress setting media handlers
+       never read — one setting, one home. -->
+  {#if !provider.noAuth}
     <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <h2 class="text-lg font-semibold text-text-main">Connections</h2>
