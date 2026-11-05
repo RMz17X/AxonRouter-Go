@@ -55,6 +55,16 @@ export async function startDashboard(port: number): Promise<Dashboard> {
   if (!existsSync(BINARY)) {
     throw new Error(`gateway binary not found at ${BINARY}; build it before running the e2e suite`)
   }
+  // The gateway's database is PostgreSQL via DATABASE_URL (the SQLite
+  // file this suite was written against was removed in P4). Without a
+  // DSN the binary exits at boot, which used to surface as nineteen
+  // copies of "gateway exited during boot with code 1". Name the
+  // actual requirement instead. CI gates this step on a database
+  // being configured at all (owner rule: database-backed tests skip
+  // when none is configured).
+  if (!process.env.DATABASE_URL && !process.env.INTEGRATION_DATABASE_URL) {
+    throw new Error('e2e needs a database: set DATABASE_URL (or INTEGRATION_DATABASE_URL) to a scratch PostgreSQL before running this suite')
+  }
 
   const dataDir = mkdtempSync(join(tmpdir(), 'axonrouter-go-e2e-'))
   const server = spawn(BINARY, [], {

@@ -303,8 +303,17 @@ jobs:
         working-directory: web
         run: bunx playwright install --with-deps chromium
 
+      # The E2E suite boots the real gateway, whose database is
+      # PostgreSQL via DATABASE_URL — so it is a database-backed test
+      # surface and follows the owner rule (2026-11-06): skip when no
+      # database is configured. The job configures none by default; set
+      # the E2E_DATABASE_URL repository variable to a reachable scratch
+      # PostgreSQL DSN to enable the step.
       - name: Dashboard E2E
+        if: ${{ vars.E2E_DATABASE_URL != '' }}
         working-directory: web
+        env:
+          DATABASE_URL: ${{ vars.E2E_DATABASE_URL }}
         run: bun run e2e
 
   # `internal/service` picks which init system owns the gateway on the running
