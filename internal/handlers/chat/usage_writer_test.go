@@ -114,15 +114,27 @@ func TestUsageWriter_SynchronousModeRunsInline(t *testing.T) {
 	}
 }
 
-// TestUsageWriter_FlushWithoutWorker pins the cold path: a process that never
-// served a request has no worker, and the drain must report success rather
-// than waiting out its timeout.
+// TestUsageWriter_FlushWithoutWorker pins the idle-drain contract: flushing
+// when nothing is in flight reports success promptly instead of waiting out
+// its timeout. Both process states satisfy it — a cold process has no worker
+// (usageWorkerReady false, the drain is a no-op) and a warm one reaches its
+// empty queues' barriers at once.
+//
+// The previous form reset the package's Once and queue variables to fake
+// the cold state. In the full suite another test has usually started the
+// worker already, so the reset (a) raced the running worker loop, which
+// re-read the queue variables in its select, and (b) still left
+// usageWorkerReady true, so the drain waited on the nilled queue and the
+// test failed. The worker loop now captures its queues at start, and this
+// test mutates no shared state at all.
 func TestUsageWriter_FlushWithoutWorker(t *testing.T) {
 	asyncModeForTest(t)
 
-	usageWriteOnce = sync.Once{}
-	usageWriteQueue = nil
-	if !FlushUsageWrites(50 * time.Millisecond) {
-		t.Fatal("flush waited on a queue that was never created")
+	start := time.Now()
+	if !FlushUsageWrites(5 * time.Second) {
+		t.Fatal("flush of an idle writer did not report success")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("idle flush took %v; it must not wait out its timeout", elapsed)
 	}
 }

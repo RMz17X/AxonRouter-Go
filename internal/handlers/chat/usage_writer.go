@@ -110,13 +110,18 @@ func ensureUsageWorker() {
 		usageWriteQueue = make(chan usageWriteJob, usageWriteQueueDepth)
 		ledgerWriteQueue = make(chan ledgerWrite, ledgerWriteQueueDepth)
 		usageWorkerReady.Store(true)
-		go usageWorkerLoop()
+		go usageWorkerLoop(usageWriteQueue, ledgerWriteQueue)
 	})
 }
 
 // usageWorkerLoop is the single drain for both lanes. It owns the
-// pending ledger batches; only this goroutine touches them.
-func usageWorkerLoop() {
+// pending ledger batches; only this goroutine touches them. The queues
+// arrive as parameters, captured at start: the loop must never re-read
+// the package variables, which are written under the Once and (in tests)
+// reset without synchronisation — the same rule FlushUsageWrites follows
+// via usageWorkerReady (review cycle 2, N8). A loop that re-reads the
+// variables in its select races any such reset for its whole lifetime.
+func usageWorkerLoop(genericQueue chan usageWriteJob, ledgerQueue chan ledgerWrite) {
 	var pendingHistory []ledgerWrite
 	var pendingDetails []ledgerWrite
 
@@ -151,9 +156,9 @@ func usageWorkerLoop() {
 
 	for {
 		select {
-		case job := <-usageWriteQueue:
+		case job := <-genericQueue:
 			job()
-		case lw := <-ledgerWriteQueue:
+		case lw := <-ledgerQueue:
 			switch {
 			case lw.barrier != nil:
 				flushPending()
