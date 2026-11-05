@@ -577,6 +577,14 @@ func (h *ChatHandler) HandleToggleAutoUpdate(w http.ResponseWriter, r *http.Requ
 
 // HandleCheckUpdate fetches fresh update info from remote release server.
 func (h *ChatHandler) HandleCheckUpdate(w http.ResponseWriter, r *http.Request) {
+	if updater.InContainer() {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"currentVersion": updater.CurrentVersion,
+			"hasUpdate":      false,
+			"message":        "container deployment: updates delivered via container images",
+		})
+		return
+	}
 	info, err := updater.CheckUpdate(r.Context())
 	if err != nil {
 		// The version family's failure shape is {success:false,

@@ -9,6 +9,8 @@ import (
 	"axonrouter/proxy/internal/observ"
 	"axonrouter/proxy/internal/providers"
 	"axonrouter/proxy/internal/proxy/executor"
+	"axonrouter/proxy/internal/proxy/poolstate"
+	"axonrouter/proxy/internal/proxy/smart"
 	"axonrouter/proxy/internal/thinking"
 	"axonrouter/proxy/internal/tokensaver"
 	"axonrouter/proxy/internal/tracing"
@@ -262,7 +264,29 @@ func (h *ChatHandler) handleAccountFallback(
 		}
 
 		var ue *upstreamError
-		if errors.As(lastErr, &ue) && providers.IsModelDeprecation(ue.StatusCode, ue.Body) {
+		errors.As(lastErr, &ue)
+		isLocErr := isProxyLocationError(lastErr, func() []byte {
+			if ue != nil {
+				return ue.Body
+			}
+			return nil
+		}())
+		if isLocErr {
+			poolID := connData.ResolvedProxyPoolID
+			if poolID == "" {
+				poolID = connData.ProxyPoolID
+			}
+			if poolID != "" && poolID != "__none__" && poolID != "direct" {
+				smart.DefaultTracker.RecordFailureWithCooldown(provider, poolID, 24*time.Hour, "FAILED_PRECONDITION: user location not supported")
+				poolstate.MarkUnfit(poolID, provider+"::*", time.Now().Add(24*time.Hour).UnixMilli(), "FAILED_PRECONDITION: user location not supported")
+				log.Warn("fallback", "proxy pool rejected by location policy, locked for 24h via smartfit",
+					"conn", connObj.ID, "provider", provider, "model", model, "pool", poolID)
+				excludedPools[poolID] = true
+				continue
+			}
+		}
+
+		if ue != nil && providers.IsModelDeprecation(ue.StatusCode, ue.Body) {
 			// A retired model fails on every account of this provider, so the
 			// remaining connections are skipped and the badge the operator
 			// needs is recorded before the client sees the 410 (#179). The
@@ -1872,4 +1896,23 @@ func sanitizeOutboundToolSchemas(body []byte, provider string) []byte {
 		return newBody
 	}
 	return body
+}
+
+// isProxyLocationError reports whether an upstream error is caused by egress IP location restrictions
+// (e.g. Google's FAILED_PRECONDITION: "User location is not supported for the API use").
+func isProxyLocationError(err error, body []byte) bool {
+	if err == nil && len(body) == 0 {
+		return false
+	}
+	text := ""
+	if err != nil {
+		text = strings.ToLower(err.Error())
+	}
+	if len(body) > 0 {
+		text += " " + strings.ToLower(string(body))
+	}
+	return strings.Contains(text, "user location is not supported") ||
+		(strings.Contains(text, "failed_precondition") && strings.Contains(text, "location")) ||
+		strings.Contains(text, "location_not_supported") ||
+		strings.Contains(text, "free_tier_region_blocked")
 }

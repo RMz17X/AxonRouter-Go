@@ -140,6 +140,7 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 			strictProxy = true
 		}
 		connData.ResolvedProxyPool = pool.Name
+		connData.ResolvedProxyPoolID = pool.ID
 
 		if pool.IsEdgeRelay() {
 			logProxyOnce(pool.ID, proxyURLStr, proxyType)

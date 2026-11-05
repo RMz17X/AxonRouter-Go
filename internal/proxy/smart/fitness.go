@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/proxy/poolstate"
 )
 
 var (
@@ -121,6 +122,34 @@ func (t *FitnessTracker) RecordFailure(provider, poolID string, _ error) {
 	s.FitnessScore = calculateScore(s, now)
 }
 
+// RecordFailureWithCooldown records a live request failure with an explicit cooldown duration
+// (e.g. 24h for FAILED_PRECONDITION / location not supported) and marks poolstate unfit.
+func (t *FitnessTracker) RecordFailureWithCooldown(provider, poolID string, cooldown time.Duration, reason string) {
+	if poolID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	key := statKey(provider, poolID)
+	s, ok := t.stats[key]
+	if !ok {
+		s = &PoolStats{
+			PoolID:   poolID,
+			Provider: provider,
+		}
+		t.stats[key] = s
+	}
+
+	now := time.Now()
+	s.FailureCount++
+	s.ConsecutiveFails++
+	s.LastFailureAt = now
+	s.CooldownUntil = now.Add(cooldown)
+	s.FitnessScore = 10.0 // lowest fitness
+	poolstate.MarkUnfit(poolID, provider+"::*", now.Add(cooldown).UnixMilli(), reason)
+}
+
 // RecordProbe records a canary background probe result for this pool.
 // Returns the updated consecutive probe failure count.
 func (t *FitnessTracker) RecordProbe(poolID string, success bool, latency time.Duration) uint64 {
@@ -211,6 +240,9 @@ func (t *FitnessTracker) PickBest(provider string, candidates []*db.ProxyPool) (
 
 	for _, pool := range candidates {
 		if pool == nil {
+			continue
+		}
+		if poolstate.IsUnfit(pool.ID, provider+"::*") {
 			continue
 		}
 		key := statKey(provider, pool.ID)

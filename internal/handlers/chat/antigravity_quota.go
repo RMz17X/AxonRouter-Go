@@ -405,6 +405,17 @@ func HandleAntigravityQuotaError(p AntigravityQuotaError) *time.Time {
 
 	quotas, err := RefreshAntigravityQuota(p.Ctx, p.Client, p.ConnectionID, p.AccessToken, p.ProjectID)
 	if err != nil || len(quotas) == 0 {
+		now := time.Now().UTC()
+		if strings.Contains(p.ErrorMessage, quotaMarkerQuotaExhausted) || strings.Contains(p.ErrorMessage, quotaMarkerIndividualQuota) {
+			blockDur := agStrikeBlockDuration
+			if dur, ok := extractResetDuration([]byte(p.ErrorMessage)); ok && dur > 0 {
+				blockDur = dur
+			}
+			blockUntil := now.Add(blockDur)
+			BlockAntigravityModelUntil(p.ConnectionID, p.Model, blockUntil)
+			log.Warn("ag_quota", "definitive quota exhausted (no refresh): immediate CACHE_BLOCK", "connection", shortConn, "model", p.Model, "blockUntil", blockUntil.Format(time.RFC3339))
+			return &blockUntil
+		}
 		return nil
 	}
 
@@ -441,9 +452,14 @@ func HandleAntigravityQuotaError(p AntigravityQuotaError) *time.Time {
 				}
 				kept = append(kept, now)
 				agStrikes[key] = kept
-				shouldBlock := len(kept) >= agStrikeThreshold
+				isDefinitive := strings.Contains(p.ErrorMessage, quotaMarkerQuotaExhausted) || strings.Contains(p.ErrorMessage, quotaMarkerIndividualQuota)
+				shouldBlock := isDefinitive || len(kept) >= agStrikeThreshold
 				if shouldBlock {
-					blockUntil := now.Add(agStrikeBlockDuration)
+					blockDur := agStrikeBlockDuration
+					if dur, ok := extractResetDuration([]byte(p.ErrorMessage)); ok && dur > 0 {
+						blockDur = dur
+					}
+					blockUntil := now.Add(blockDur)
 					agStrikeBlocks[key] = blockUntil
 					agStrikeMu.Unlock()
 					// Store blocked quota so IsAntigravityModelBlocked sees it even after optimistic refresh
@@ -456,7 +472,7 @@ func HandleAntigravityQuotaError(p AntigravityQuotaError) *time.Time {
 						ResetAt:             blockUntil,
 					}
 					agQuotaMu.Unlock()
-					log.Warn("ag_quota", "optimistic quota strike-break: 3x429 within 60s while quota>0, CACHE_BLOCK 15m", "connection", shortConn, "model", m, "blockUntil", blockUntil.Format(time.RFC3339))
+					log.Warn("ag_quota", "quota exhausted: immediate CACHE_BLOCK", "connection", shortConn, "model", m, "blockUntil", blockUntil.Format(time.RFC3339))
 					return &blockUntil
 				}
 				agStrikeMu.Unlock()

@@ -41,6 +41,9 @@ type ConnectionData struct {
 	// persisted, so a rename shows up in the next log line.
 	ResolvedProxyPool string `json:"-"`
 
+	// ResolvedProxyPoolID is the ID of the resolved proxy pool.
+	ResolvedProxyPoolID string `json:"-"`
+
 	// Provider is the canonical provider name for this connection turn (e.g. "anthropic", "openai").
 	Provider string `json:"-"`
 }

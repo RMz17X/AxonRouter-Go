@@ -19,6 +19,8 @@ import (
 	"axonrouter/proxy/internal/models"
 	"axonrouter/proxy/internal/providers"
 	internalproxy "axonrouter/proxy/internal/proxy"
+	"axonrouter/proxy/internal/proxy/poolstate"
+	"axonrouter/proxy/internal/proxy/smart"
 	"axonrouter/proxy/internal/translator"
 )
 
@@ -966,6 +968,25 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 					}
 					var ue *upstreamError
 					if errors.As(fwdErr, &ue) {
+						isLocErr := isProxyLocationError(fwdErr, func() []byte {
+							if ue != nil {
+								return ue.Body
+							}
+							return nil
+						}())
+						if isLocErr {
+							poolID := connData.ResolvedProxyPoolID
+							if poolID == "" {
+								poolID = connData.ProxyPoolID
+							}
+							if poolID != "" && poolID != "__none__" && poolID != "direct" {
+								smart.DefaultTracker.RecordFailureWithCooldown(modelInfo.Provider, poolID, 24*time.Hour, "FAILED_PRECONDITION: user location not supported")
+								poolstate.MarkUnfit(poolID, modelInfo.Provider+"::*", time.Now().Add(24*time.Hour).UnixMilli(), "FAILED_PRECONDITION: user location not supported")
+								log.Warn("combo", "proxy pool rejected by location policy, locked for 24h via smartfit",
+									"conn", connID, "provider", modelInfo.Provider, "model", modelInfo.Model, "pool", poolID)
+								continue
+							}
+						}
 						// A 410 naming a dead model is a routing fact, not an account
 						// fault: every connection to this provider answers the same
 						// way. Record it, then leave this entry for the next combo

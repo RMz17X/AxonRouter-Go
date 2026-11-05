@@ -87,6 +87,39 @@ func MarkUnfit(poolID, scope string, until int64, reason string) {
 	persist()
 }
 
+// IsUnfit reports whether a pool is marked unfit for the given scope (or provider wildcard).
+func IsUnfit(poolID, scope string) bool {
+	if poolID == "" {
+		return false
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	byScope, ok := marks[poolID]
+	if !ok {
+		return false
+	}
+	now := time.Now().UnixMilli()
+	if m, exists := byScope[scope]; exists {
+		if m.Until > now {
+			return true
+		}
+		delete(byScope, scope)
+	}
+	if idx := strings.Index(scope, "::"); idx != -1 {
+		wildcard := scope[:idx] + "::*"
+		if m, exists := byScope[wildcard]; exists {
+			if m.Until > now {
+				return true
+			}
+			delete(byScope, wildcard)
+		}
+	}
+	if len(byScope) == 0 {
+		delete(marks, poolID)
+	}
+	return false
+}
+
 // SnapshotLive returns the non-expired marks, pruning expired entries.
 func SnapshotLive() Snapshot {
 	mu.Lock()

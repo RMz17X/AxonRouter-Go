@@ -77,8 +77,7 @@
         <thead class="sticky top-0 z-10 bg-surface">
           <tr class="border-b border-border">
             <th class="py-1.5 pl-2 text-left font-semibold text-text-muted">Model</th>
-            <th class="py-1.5 text-right font-semibold whitespace-nowrap text-text-muted">In</th>
-            <th class="py-1.5 text-right font-semibold whitespace-nowrap text-text-muted">Out</th>
+            <th class="py-1.5 text-right font-semibold whitespace-nowrap text-text-muted">In / Out</th>
             <th class="py-1.5 text-center font-semibold whitespace-nowrap text-text-muted">Status</th>
             <th class="py-1.5 pr-2 text-right font-semibold whitespace-nowrap text-text-muted">When</th>
           </tr>
@@ -86,16 +85,19 @@
         <tbody class="divide-y divide-border/50">
           {#each recentRequests as req}
             <tr class="transition-colors hover:bg-surface-2">
-              <td class="max-w-0 py-1.5 pr-2 pl-2">
-                <span class="inline-flex max-w-full items-center gap-1" title={req.loopWarning ? `${req.loopWarning} · ${modelLabel(req)}` : modelLabel(req)}>
+              <td class="py-1.5 pr-2 pl-2">
+                <span class="inline-flex max-w-full items-start gap-1" title={req.loopWarning ? `${req.loopWarning} · ${modelLabel(req)}` : modelLabel(req)}>
                   {#if req.loopWarning}
-                    <span class="material-symbols-outlined shrink-0 text-[13px] text-warning" aria-hidden="true">warning</span>
+                    <span class="material-symbols-outlined shrink-0 text-[13px] text-warning mt-0.5" aria-hidden="true">warning</span>
                   {/if}
-                  <span class="truncate font-mono text-[11px]">{modelLabel(req)}</span>
+                  <span class="break-words font-mono text-[11px] leading-tight">{modelLabel(req)}</span>
                 </span>
               </td>
-              <td class="py-1.5 text-right whitespace-nowrap tabular-nums">{fmtNumberUS(req.promptTokens)}</td>
-              <td class="py-1.5 text-right whitespace-nowrap tabular-nums">{fmtNumberUS(req.completionTokens)}</td>
+              <td class="py-1.5 text-right whitespace-nowrap tabular-nums text-[11px]">
+                <span class="text-text-main">{fmtNumberUS(req.promptTokens)}</span>
+                <span class="text-text-muted/60 mx-0.5">/</span>
+                <span class="text-text-muted">{fmtNumberUS(req.completionTokens)}</span>
+              </td>
               <td class="py-1.5 text-center whitespace-nowrap">
                 <span class="inline-block rounded-full border px-1.5 py-0.5 text-[10px] font-medium {badgeClass(req)}">{badgeLabel(req)}</span>
               </td>
@@ -111,11 +113,11 @@
       {#each recentRequests as req}
         <div class="rounded-brand border border-border bg-surface-2/50 px-3 py-2">
           <div class="flex items-start justify-between gap-2">
-            <span class="inline-flex min-w-0 items-center gap-1" title={modelLabel(req)}>
+            <span class="inline-flex min-w-0 items-start gap-1" title={modelLabel(req)}>
               {#if req.loopWarning}
-                <span class="material-symbols-outlined shrink-0 text-[13px] text-warning" aria-hidden="true">warning</span>
+                <span class="material-symbols-outlined shrink-0 text-[13px] text-warning mt-0.5" aria-hidden="true">warning</span>
               {/if}
-              <span class="truncate font-mono text-[11px]">{modelLabel(req)}</span>
+              <span class="break-words font-mono text-[11px] leading-tight">{modelLabel(req)}</span>
             </span>
             <span class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium {badgeClass(req)}">{badgeLabel(req)}</span>
           </div>
