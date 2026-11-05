@@ -1274,9 +1274,14 @@ export function normalizeConnection(c: ProviderConnection): ProviderConnection {
 // Connections API
 export const api = {
   // Connections
-  getConnections: async () => {
-    const conns = await request<ProviderConnection[]>('/api/connections')
+  getConnections: async (provider?: string) => {
+    const url = provider ? `/api/connections?provider=${encodeURIComponent(provider)}` : '/api/connections'
+    const conns = await request<ProviderConnection[]>(url)
     return conns.map(normalizeConnection)
+  },
+  getProviderStats: async () => {
+    const res = await request<{ stats?: Record<string, Record<string, { total: number; connected: number; error: number; allDisabled: boolean; lastError?: string }>> }>('/api/providers/stats')
+    return res.stats || {}
   },
   createConnection: (payload: CreateConnectionPayload) =>
     request<{ success: boolean; id: string }>('/api/connections', {

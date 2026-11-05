@@ -7,7 +7,8 @@
   import { getProviderStats, matchesFilter, matchesSearch, providerAuthTypes } from './types'
 
   interface Props {
-    connections: ProviderConnection[]
+    connections?: ProviderConnection[]
+    providerStats?: Record<string, Record<string, any>>
     providerNodes: ProviderNode[]
     onSelectProvider: (id: string) => void
     onToggleAll: (id: string, active: boolean) => void
@@ -19,6 +20,7 @@
 
   let {
     connections = [],
+    providerStats = {},
     providerNodes = [],
     onSelectProvider,
     onToggleAll,
@@ -35,31 +37,31 @@
   // 1. Custom Providers
   let customNodes = $derived(
     providerNodes
-      .filter((n) => matchesSearch(n.name, searchQuery, n.id) && matchesFilter(getProviderStats(connections, n.id), statusFilter))
-      .map((n) => ({ ...n, stats: getProviderStats(connections, n.id) }))
+      .filter((n) => matchesSearch(n.name, searchQuery, n.id) && matchesFilter(getProviderStats(connections, n.id, undefined, providerStats), statusFilter))
+      .map((n) => ({ ...n, stats: getProviderStats(connections, n.id, undefined, providerStats) }))
   )
 
   // 2. OAuth Providers
   let oauthProviders = $derived(
     PROVIDER_CATALOG
-      .filter((p) => isChatProvider(p) && !p.hidden && p.category === 'oauth' && matchesSearch(p.name, searchQuery, p.id, p.alias) && matchesFilter(getProviderStats(connections, p.id, providerAuthTypes(p, ['oauth'])), statusFilter))
-      .map((p) => ({ ...p, stats: getProviderStats(connections, p.id, providerAuthTypes(p, ['oauth'])) }))
+      .filter((p) => isChatProvider(p) && !p.hidden && p.category === 'oauth' && matchesSearch(p.name, searchQuery, p.id, p.alias) && matchesFilter(getProviderStats(connections, p.id, providerAuthTypes(p, ['oauth']), providerStats), statusFilter))
+      .map((p) => ({ ...p, stats: getProviderStats(connections, p.id, providerAuthTypes(p, ['oauth']), providerStats) }))
       .sort((a, b) => (b.stats.connected > 0 ? 1 : 0) - (a.stats.connected > 0 ? 1 : 0) || a.name.localeCompare(b.name))
   )
 
   // 3. Free Tier Providers
   let freeTierProviders = $derived(
     PROVIDER_CATALOG
-      .filter((p) => isChatProvider(p) && !p.hidden && (p.category === 'free' || p.category === 'freeTier') && matchesSearch(p.name, searchQuery, p.id, p.alias) && matchesFilter(getProviderStats(connections, p.id), statusFilter, p.noAuth))
-      .map((p) => ({ ...p, stats: getProviderStats(connections, p.id) }))
+      .filter((p) => isChatProvider(p) && !p.hidden && (p.category === 'free' || p.category === 'freeTier') && matchesSearch(p.name, searchQuery, p.id, p.alias) && matchesFilter(getProviderStats(connections, p.id, undefined, providerStats), statusFilter, p.noAuth))
+      .map((p) => ({ ...p, stats: getProviderStats(connections, p.id, undefined, providerStats) }))
       .sort((a, b) => (b.stats.connected > 0 || b.noAuth ? 1 : 0) - (a.stats.connected > 0 || a.noAuth ? 1 : 0) || a.name.localeCompare(b.name))
   )
 
   // 4. API Key Providers
   let apikeyProviders = $derived(
     PROVIDER_CATALOG
-      .filter((p) => isChatProvider(p) && !p.hidden && (p.category === 'apikey' || p.category === 'webCookie') && matchesSearch(p.name, searchQuery, p.id, p.alias) && matchesFilter(getProviderStats(connections, p.id, providerAuthTypes(p, ['apikey', 'api_key'])), statusFilter))
-      .map((p) => ({ ...p, stats: getProviderStats(connections, p.id, providerAuthTypes(p, ['apikey', 'api_key'])) }))
+      .filter((p) => isChatProvider(p) && !p.hidden && (p.category === 'apikey' || p.category === 'webCookie') && matchesSearch(p.name, searchQuery, p.id, p.alias) && matchesFilter(getProviderStats(connections, p.id, providerAuthTypes(p, ['apikey', 'api_key']), providerStats), statusFilter))
+      .map((p) => ({ ...p, stats: getProviderStats(connections, p.id, providerAuthTypes(p, ['apikey', 'api_key']), providerStats) }))
       .sort((a, b) => (b.stats.connected > 0 ? 1 : 0) - (a.stats.connected > 0 ? 1 : 0) || a.name.localeCompare(b.name))
   )
 

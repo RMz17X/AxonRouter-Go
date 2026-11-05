@@ -214,7 +214,20 @@ export function providerDisplayName(
   const cat = PROVIDER_CATALOG.find(
     (p) => p.id === id || p.alias === id || p.id.toLowerCase() === lower || p.alias?.toLowerCase() === lower
   )
-  return cat?.name || id
+  if (cat?.name) return cat.name
+  if (id.startsWith('openai-compatible-chat-')) {
+    const raw = id.replace('openai-compatible-chat-', '')
+    return raw.charAt(0).toUpperCase() + raw.slice(1)
+  }
+  if (id.startsWith('openai-compatible-responses-')) {
+    const raw = id.replace('openai-compatible-responses-', '')
+    return raw.charAt(0).toUpperCase() + raw.slice(1)
+  }
+  if (id.startsWith('openai-compatible-')) {
+    const raw = id.replace('openai-compatible-', '')
+    return raw.charAt(0).toUpperCase() + raw.slice(1)
+  }
+  return id
 }
 
 export function fmt(n?: number): string {

@@ -26,7 +26,13 @@ import (
 // endpoint is reachable with a low-privilege client API key — full rows must
 // never leave the server (same sanitizer as the paged providers endpoint).
 func (h *DashboardHandler) HandleGetConnections(w http.ResponseWriter, r *http.Request) {
-	conns, err := h.Repo.GetProviderConnections("", false)
+	providerFilter := r.URL.Query().Get("provider")
+	if providerFilter == "" {
+		// Stop dumping the entire 170k-row table over HTTP. Require a provider filter or return empty.
+		handlerutil.WriteJSON(w, http.StatusOK, []map[string]any{})
+		return
+	}
+	conns, err := h.Repo.GetProviderConnections(providerFilter, false)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return

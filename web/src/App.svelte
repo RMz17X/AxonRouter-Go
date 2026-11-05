@@ -54,6 +54,7 @@
     typeof window !== 'undefined' ? pathToTab(window.location.pathname) : 'endpoint'
   )
   let connections = $state<ProviderConnection[]>([])
+  let providerStats = $state<Record<string, Record<string, any>>>({})
   let providerNodes = $state<ProviderNode[]>([])
   let combos = $state<Combo[]>([])
   let apiKeys = $state<APIKey[]>([])
@@ -172,14 +173,15 @@
       console.error('provider catalog failed to load', err)
     }
     try {
-      const [connsRes, nodesRes, combosRes, keysRes, settingsRes] = await Promise.all([
-        api.getConnections().catch(() => []),
+      const [statsRes, nodesRes, combosRes, keysRes, settingsRes] = await Promise.all([
+        api.getProviderStats().catch(() => ({})),
         api.getProviderNodes().catch(() => []),
         api.getCombos().catch(() => []),
         api.getApiKeys().catch(() => []),
         api.getSettings().catch(() => ({})),
       ])
-      connections = connsRes
+      providerStats = statsRes
+      connections = []
       providerNodes = nodesRes
       combos = combosRes
       apiKeys = keysRes
@@ -323,13 +325,34 @@
     }
   })
 
-  let activeConnectionsCount = $derived(connections.filter((c) => c.isActive === 1).length)
-  // Connections whose last probe or request failed. `lastError` is what the
-  // detail page reads, so the badge counts the same thing the operator would
-  // see there rather than a second opinion about health.
-  let failingConnections = $derived(
-    connections.filter((c) => c.isActive === 1 && !!c.lastError).length
-  )
+  let activeConnectionsCount = $derived.by(() => {
+    let count = 0
+    for (const prov of Object.values(providerStats)) {
+      for (const stat of Object.values(prov)) {
+        count += (stat as any).connected || 0
+      }
+    }
+    return count
+  })
+  let totalConnectionsCount = $derived.by(() => {
+    let count = 0
+    for (const prov of Object.values(providerStats)) {
+      for (const stat of Object.values(prov)) {
+        count += (stat as any).total || 0
+      }
+    }
+    return count
+  })
+  // Connections whose last probe or request failed.
+  let failingConnections = $derived.by(() => {
+    let count = 0
+    for (const prov of Object.values(providerStats)) {
+      for (const stat of Object.values(prov)) {
+        count += (stat as any).error || 0
+      }
+    }
+    return count
+  })
   let selectedMediaCatalogItem = $derived.by(() => {
     if (!selectedMedia) return null
     return PROVIDER_CATALOG.find((p) => p.id === selectedMedia!.providerId) || null
@@ -479,7 +502,7 @@
           navigate(tab, replace, null)
         }}
         activeConnections={activeConnectionsCount}
-        totalConnections={connections.length}
+        totalConnections={totalConnectionsCount}
         comboCount={combos.length}
         apiKeyCount={apiKeys.length}
         failingConnections={failingConnections}
@@ -536,7 +559,7 @@
           {#if isLoading}
             <div class="flex flex-col items-center justify-center h-[70vh] gap-3 text-text-muted">
               <Loader2 class="w-7 h-7 animate-spin text-primary" />
-              <span class="font-body text-sm text-text-muted">Connecting to AxonRouter-Go Localhost Gateway (:20130)...</span>
+              <span class="font-body text-sm text-text-muted">Connecting to AxonRouter-Go Gateway...</span>
             </div>
           {:else}
             {#if activeTab === 'endpoint'}
@@ -544,6 +567,7 @@
             {:else if activeTab === 'connections'}
               <ConnectionsView
                 {connections}
+                {providerStats}
                 {providerNodes}
                 onRefresh={loadData}
                 bind:selectedProviderId

@@ -7,6 +7,7 @@
 
   interface Props {
     connections?: ProviderConnection[]
+    providerStats?: Record<string, Record<string, any>>
     providerNodes?: ProviderNode[]
     onRefresh: () => void
     selectedProviderId?: string | null
@@ -18,6 +19,7 @@
 
   let {
     connections = [],
+    providerStats = {},
     providerNodes = [],
     onRefresh,
     onImport = () => {},
@@ -27,6 +29,24 @@
   }: Props = $props()
 
   let showAddNodeModal = $state(false)
+  let providerConnections = $state<ProviderConnection[]>([])
+
+  async function loadProviderConns(provId: string) {
+    try {
+      providerConnections = await api.getConnections(provId)
+    } catch (err) {
+      console.error('Failed to load connections for provider', provId, err)
+      providerConnections = []
+    }
+  }
+
+  $effect(() => {
+    if (selectedProviderId) {
+      loadProviderConns(selectedProviderId)
+    } else {
+      providerConnections = []
+    }
+  })
 
   // The dialog owns the protocol choice now (#182), so opening it takes no
   // argument — passing one through onclick would hand this a MouseEvent.
@@ -85,18 +105,22 @@
 {#if selectedProviderId}
   <ProviderDetailView
     providerId={selectedProviderId}
-    {connections}
+    connections={providerConnections.length > 0 ? providerConnections : connections.filter((c) => c.provider === selectedProviderId)}
     {providerNodes}
     onBack={() => {
       selectedProviderId = null
       onBackToOverview?.()
     }}
-    {onRefresh}
+    onRefresh={() => {
+      if (selectedProviderId) loadProviderConns(selectedProviderId)
+      onRefresh()
+    }}
     {onSelectProvider}
   />
 {:else}
   <ProvidersOverviewGrid
     {connections}
+    {providerStats}
     {providerNodes}
     onSelectProvider={(id) => {
       selectedProviderId = id

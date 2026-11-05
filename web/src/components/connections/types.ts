@@ -93,19 +93,62 @@ export function getProviderGlyph(
   const entry = clean
     ? (PROVIDER_CATALOG_MAP.get(clean) ?? PROVIDER_CATALOG.find((p) => p.alias === clean))
     : undefined
-  const name = entry?.name ?? clean ?? 'OpenAI'
+  let name = entry?.name ?? clean ?? 'OpenAI'
+  if (name.startsWith('openai-compatible-chat-')) {
+    const raw = name.replace('openai-compatible-chat-', '')
+    name = raw.charAt(0).toUpperCase() + raw.slice(1)
+  } else if (name.startsWith('openai-compatible-responses-')) {
+    const raw = name.replace('openai-compatible-responses-', '')
+    name = raw.charAt(0).toUpperCase() + raw.slice(1)
+  } else if (name.startsWith('openai-compatible-')) {
+    const raw = name.replace('openai-compatible-', '')
+    name = raw.charAt(0).toUpperCase() + raw.slice(1)
+  }
   // Take the initials of the leading words, so "B.AI" reads "BA" rather than
   // collapsing to a single letter, and "Dahl Inference" reads "DI".
   const words = name.split(/[\s._/-]+/).filter(Boolean)
   const initials = (words.length > 1 ? words[0][0] + words[1][0] : words[0]?.slice(0, 2) ?? '?').toUpperCase()
-  return { name, color: entry?.color ?? '#6B7280', initials }
+  return { name, color: entry?.color ?? '#10A37F', initials }
 }
 
 export function getProviderStats(
   connections: ProviderConnection[],
   providerId: string,
-  authTypes?: string[]
+  authTypes?: string[],
+  summaryStats?: Record<string, Record<string, { total?: number; connected?: number; error?: number; allDisabled?: boolean; lastError?: string }>>
 ): ProviderStats {
+  if (summaryStats && summaryStats[providerId]) {
+    const provStats = summaryStats[providerId]
+    let total = 0
+    let connected = 0
+    let errorCount = 0
+    let allDisabled = true
+    let hasEntries = false
+
+    for (const [aType, stat] of Object.entries(provStats)) {
+      if (authTypes && authTypes.length > 0 && !authTypes.includes(aType)) {
+        continue
+      }
+      hasEntries = true
+      total += stat.total || 0
+      connected += stat.connected || 0
+      errorCount += stat.error || 0
+      if (!stat.allDisabled && (stat.connected || 0) > 0) {
+        allDisabled = false
+      }
+    }
+    if (hasEntries) {
+      return {
+        total,
+        connected,
+        errorCount,
+        allDisabled: total > 0 ? allDisabled : false,
+        latestError: undefined,
+        connections: [],
+      }
+    }
+  }
+
   const list = connections.filter((c) => {
     if (c.provider !== providerId) return false
     if (authTypes && authTypes.length > 0) {
