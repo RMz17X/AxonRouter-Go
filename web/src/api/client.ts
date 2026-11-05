@@ -1401,6 +1401,19 @@ export const api = {
     request<{ valid: boolean; error?: string }>(`/api/providers/${encodeURIComponent(id)}/test`, {
       method: 'POST',
     }),
+  resetConnectionStatus: (id: string) =>
+    request<{ ok: boolean; connection?: ProviderConnection }>(
+      `/api/providers/${encodeURIComponent(id)}/reset-status`,
+      { method: 'POST' }
+    ),
+  bulkResetStatus: (payload: { provider?: string; ids?: string[] }) =>
+    request<{ ok: boolean; count?: number }>(
+      '/api/providers/bulk-reset-status',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    ),
 
   // Provider Nodes (Custom Endpoints)
   getProviderNodes: async () => {

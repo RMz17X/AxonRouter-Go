@@ -64,6 +64,7 @@ var ProviderAliasMap = map[string]string{
 	"if":             "iflow",
 	"jina":           "jina-ai",
 	"kc":             "kilocode",
+	"kcf":            "kilocode-free",
 	"km":             "kimi",
 	"kr":             "kiro",
 	"mimo":           "xiaomi-mimo",

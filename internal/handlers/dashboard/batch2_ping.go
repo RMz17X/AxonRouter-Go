@@ -192,6 +192,13 @@ func pingChatVerdict(parsed map[string]any, latencyMs int64, status int) pingRes
 	}
 	choices, _ := parsed["choices"].([]any)
 	if len(choices) == 0 {
+		// Support Claude/Anthropic Messages format if upstream returned raw Claude content:
+		if contentArr, ok := parsed["content"].([]any); ok && len(contentArr) > 0 {
+			return pingResult{OK: true, LatencyMs: latencyMs, Error: nil, Status: &status}
+		}
+		if contentStr, ok := parsed["content"].(string); ok && strings.TrimSpace(contentStr) != "" {
+			return pingResult{OK: true, LatencyMs: latencyMs, Error: nil, Status: &status}
+		}
 		return pingFailure(latencyMs, status, "Provider returned no completion choices for this model")
 	}
 	first, _ := choices[0].(map[string]any)

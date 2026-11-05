@@ -1511,33 +1511,82 @@ func resolveCacheSource(u *translator.OpenAIUsage) string {
 // extractErrorText attempts to extract a human-readable error message from an upstream error JSON body.
 // Returns "" when the body isn't parseable or has no message field.
 func extractErrorText(body []byte) string {
-	var parsed struct {
-		Error struct {
-			Message string `json:"message"`
-			Status  string `json:"status"`
-			Details []struct {
-				Reason string `json:"reason"`
-			} `json:"details"`
-		} `json:"error"`
-		Message string `json:"message"`
+	if len(body) == 0 {
+		return ""
 	}
-	if err := json.Unmarshal(body, &parsed); err == nil {
+	var rawMap map[string]any
+	if err := json.Unmarshal(body, &rawMap); err == nil && rawMap != nil {
 		var parts []string
-		if parsed.Error.Message != "" {
-			parts = append(parts, parsed.Error.Message)
-		} else if parsed.Message != "" {
-			parts = append(parts, parsed.Message)
-		}
-		if parsed.Error.Status != "" {
-			parts = append(parts, parsed.Error.Status)
-		}
-		for _, d := range parsed.Error.Details {
-			if d.Reason != "" {
-				parts = append(parts, d.Reason)
+		// 1. Check displayMsg (Tencent / CodeBuddy)
+		if dm, ok := rawMap["displayMsg"]; ok {
+			if s, ok := dm.(string); ok && s != "" {
+				parts = append(parts, s)
+			} else if m, ok := dm.(map[string]any); ok {
+				if en, ok := m["en"].(string); ok && en != "" {
+					parts = append(parts, en)
+				} else if zh, ok := m["zh"].(string); ok && zh != "" {
+					parts = append(parts, zh)
+				}
 			}
 		}
-		if len(parts) > 0 {
-			return strings.Join(parts, " ")
+		// 2. Check msg (Tencent / CodeBuddy, Alibaba, Baidu)
+		if len(parts) == 0 {
+			if msg, ok := rawMap["msg"].(string); ok && msg != "" {
+				parts = append(parts, msg)
+			}
+		}
+		// 3. Check standard error.message or message
+		if len(parts) == 0 {
+			if errVal, ok := rawMap["error"]; ok {
+				if errStr, ok := errVal.(string); ok && errStr != "" {
+					parts = append(parts, errStr)
+				} else if errMap, ok := errVal.(map[string]any); ok {
+					if msg, ok := errMap["message"].(string); ok && msg != "" {
+						parts = append(parts, msg)
+					}
+					if st, ok := errMap["status"].(string); ok && st != "" {
+						parts = append(parts, st)
+					}
+					if details, ok := errMap["details"].([]any); ok {
+						for _, d := range details {
+							if dm, ok := d.(map[string]any); ok {
+								if r, ok := dm["reason"].(string); ok && r != "" {
+									parts = append(parts, r)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		if len(parts) == 0 {
+			if msg, ok := rawMap["message"].(string); ok && msg != "" {
+				parts = append(parts, msg)
+			} else if detail, ok := rawMap["detail"].(string); ok && detail != "" {
+				parts = append(parts, detail)
+			}
+		}
+
+		res := strings.Join(parts, " ")
+		// Append upstream app-level error code if present (AxonRouter JS parity: appendUpstreamCode)
+		var codeStr string
+		if codeVal, ok := rawMap["code"]; ok && codeVal != nil {
+			switch cv := codeVal.(type) {
+			case float64:
+				if cv > 0 {
+					codeStr = strconv.FormatInt(int64(cv), 10)
+				}
+			case string:
+				codeStr = cv
+			}
+		}
+		if codeStr != "" && res != "" && !strings.Contains(res, codeStr) {
+			res = fmt.Sprintf("%s (code %s)", res, codeStr)
+		} else if res == "" && codeStr != "" {
+			res = fmt.Sprintf("upstream error (code %s)", codeStr)
+		}
+		if res != "" {
+			return res
 		}
 	}
 	trimmed := bytes.TrimSpace(body)
@@ -1890,6 +1939,14 @@ func isModelScopedError(statusCode int, errorText string, model string, bodies .
 	if statusCode == http.StatusPaymentRequired {
 		if (strings.Contains(lower, "insufficient account funds") || strings.Contains(lower, "insufficient funds")) &&
 			!strings.Contains(lower, "credits are exhausted") && !strings.Contains(lower, "spending limit") {
+			return true
+		}
+	}
+
+	// 400/403 CodeBuddy/Tencent plan-gated model (e.g. personal_free_user) is model-scoped
+	if statusCode == http.StatusBadRequest || statusCode == http.StatusForbidden {
+		if strings.Contains(lower, "11158") || strings.Contains(lower, "model_not_in_plan") ||
+			strings.Contains(lower, "not allowed for user type") || strings.Contains(lower, "当前账号类型暂不支持该模型") {
 			return true
 		}
 	}

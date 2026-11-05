@@ -436,6 +436,9 @@ func chatVerdict(parsed probeBody, status int) testModelResult {
 	}
 	choice, ok := parsed.firstChoice()
 	if !ok {
+		if parsed.hasClaudeContent() {
+			return testModelResult{OK: true, Status: status}
+		}
 		return testModelResult{Status: status, Error: "Provider returned no completion choices for this model"}
 	}
 	if choice.finishReason == "length" && choice.reasoningOnly() {
@@ -475,6 +478,19 @@ func (b probeBody) hasEmbedding() bool {
 		return false
 	}
 	return len(vectors) > 0 && len(vectors[0].Embedding) > 0
+}
+
+func (b probeBody) hasClaudeContent() bool {
+	if items, ok := b.array("content"); ok && len(items) > 0 {
+		var contentList []any
+		if json.Unmarshal(items, &contentList) == nil && len(contentList) > 0 {
+			return true
+		}
+	}
+	if str := b.fieldString("content"); strings.TrimSpace(str) != "" {
+		return true
+	}
+	return false
 }
 
 func (b probeBody) hasImages() bool {

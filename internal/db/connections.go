@@ -390,6 +390,17 @@ func (r *Repo) GetProviderConnections(provider string, activeOnly bool) ([]*mode
 	return connections, nil
 }
 
+// GetLockedOrUnavailableConnections queries only rows that have lockedAllUntil,
+// modelLocks, or testStatus=unavailable in their data JSON, avoiding a 170k-row scan.
+func (r *Repo) GetLockedOrUnavailableConnections(ctx context.Context) ([]*models.ProviderConnection, error) {
+	query := "SELECT " + providerConnectionColumns + " FROM providerConnections " +
+		"WHERE (data->>'lockedAllUntil') IS NOT NULL " +
+		"   OR (data->>'modelLocks') IS NOT NULL " +
+		"   OR (data->>'testStatus') = 'unavailable' " +
+		connectionSortOrder
+	return r.listProviderConnections(query, nil)
+}
+
 // listProviderConnections drains a providerConnections query and closes
 // its rows before returning. Callers that hydrate or write per row must
 // go through a drain-first helper like this one: a nested pool checkout

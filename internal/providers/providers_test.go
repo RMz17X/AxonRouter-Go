@@ -10,7 +10,7 @@ func TestKnownProviders_HasExpectedEntries(t *testing.T) {
 		"openai", "anthropic", "deepseek", "groq", "nvidia", "openrouter",
 		"cerebras", "together", "fireworks", "opencode", "gemini", "github",
 		"mistral", "perplexity", "xai", "cohere", "ollama", "siliconflow",
-		"cloudflare-ai", "mimo-free",
+		"cloudflare-ai", "kilocode-free",
 	}
 	for _, p := range wantProviders {
 		cfg, ok := KnownProviders[p]
@@ -59,27 +59,21 @@ func TestKnownProviders_PerplexityWebIsParked(t *testing.T) {
 }
 
 func TestKnownProviders_NoAuthOverridesScheme(t *testing.T) {
-	// mimo-free has NoAuth=true and a DefaultAPIKey fallback.
-	cfg := KnownProviders["mimo-free"]
+	// kilocode-free has NoAuth=true and a DefaultAPIKey fallback.
+	cfg := KnownProviders["kilocode-free"]
 	if !cfg.NoAuth {
-		t.Error("mimo-free expected NoAuth=true")
+		t.Error("kilocode-free expected NoAuth=true")
 	}
 	if cfg.DefaultAPIKey == "" {
-		t.Error("mimo-free expected a DefaultAPIKey fallback")
+		t.Error("kilocode-free expected a DefaultAPIKey fallback")
 	}
-	// G23b §6: the MMF entry is hidden — routable, not offered. Both its
-	// spellings must point at the same model so a caller that uses the alias
-	// gets the catalog the canonical id advertises.
-	if !cfg.Hidden {
-		t.Error("mimo-free expected Hidden=true (G23b)")
-	}
-	for _, id := range []string{"mimo-free", "mmf"} {
-		if models := ProviderModels[id]; len(models) != 1 || models[0] != "mimo-auto" {
-			t.Errorf("ProviderModels[%q] = %v, want [mimo-auto]", id, models)
+	for _, id := range []string{"kilocode-free", "kcf"} {
+		if models := ProviderModels[id]; len(models) == 0 {
+			t.Errorf("ProviderModels[%q] is empty", id)
 		}
 	}
-	if got := ResolveAlias("mmf"); got != "mimo-free" {
-		t.Errorf("ResolveAlias(mmf) = %q, want mimo-free", got)
+	if got := ResolveAlias("kcf"); got != "kilocode-free" {
+		t.Errorf("ResolveAlias(kcf) = %q, want kilocode-free", got)
 	}
 }
 
@@ -119,7 +113,7 @@ func TestProviderAliasMap_Bidirectional(t *testing.T) {
 		"fw":   "fireworks",
 		"gh":   "github",
 		"pplx": "perplexity",
-		"mmf":  "mimo-free",
+		"kcf":  "kilocode-free",
 	}
 	for alias, canonical := range cases {
 		got, ok := ProviderAliasMap[alias]

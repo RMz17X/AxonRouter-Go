@@ -98,10 +98,14 @@ func quotaMessage(body []byte) string {
 // the same way every other Claude upstream is.
 func ForwardMinimaxCode(w http.ResponseWriter, req *Request) error {
 	body := req.Body
+	provider := req.Provider
+	if provider == "" {
+		provider = "minimax-code"
+	}
 	if req.ClaudeClient {
 		body = translator.SanitizeClaudePassthrough(body, translator.ClaudeIntentionalPrefill(req.Body))
 	} else {
-		body = EnsureClaudeMessagesFor(body, "minimax-code", req.ModelName)
+		body = EnsureClaudeMessagesFor(body, provider, req.ModelName)
 	}
 
 	resp, err := proxy.DoRequest(reqCtx(req), req.Client, http.MethodPost,
@@ -117,20 +121,15 @@ func ForwardMinimaxCode(w http.ResponseWriter, req *Request) error {
 	// below writes a status, exactly like every other executor.
 	forwardUpstreamResponseHeaders(w, resp.Header)
 
-	// handleClaudeMessages* are the "translate a Claude reply for a non-Claude
-	// client" helpers: their passthrough branch is taken on TranslateResp, which
-	// is only ever true for such a client. A Claude client is the opposite case,
-	// so its reply is relayed untouched.
-	if req.TranslateResp {
-		if req.IsStream {
-			return handleClaudeMessagesStream(w, req, resp.Body)
-		}
-		return handleClaudeMessagesNonStream(w, req, resp.Body)
-	}
+	// The upstream answers in Claude Messages on every lane, so the reply
+	// always flows through handleClaudeMessages*: a /v1/messages client
+	// (TranslateResp=true) gets the frames passed through, an OpenAI
+	// /v1/chat/completions client (TranslateResp=false) gets each event
+	// rewritten into chat.completion chunks or OpenAI completion JSON.
 	if req.IsStream {
-		return execSSEStream(w, resp.Body, req)
+		return handleClaudeMessagesStream(w, req, resp.Body)
 	}
-	return jsonResponse(req.Ctx, w, resp.Body, false, req.ResponseBuf)
+	return handleClaudeMessagesNonStream(w, req, resp.Body)
 }
 
 // normalizedQuotaError rewrites a credits refusal carried by an upstream

@@ -52,8 +52,8 @@ func UpstreamFailure(code int, message string) error {
 // JSON document. Only the leading field name decides: a JSON document starts
 // with `{`, so requiring an SSE prefix there cannot misfire on one.
 func LooksLikeSSE(body []byte) bool {
-	trimmed := bytes.TrimLeft(body, " \t\r\n")
-	return bytes.HasPrefix(trimmed, []byte("data:")) || bytes.HasPrefix(trimmed, []byte("event:"))
+	trimmed := bytes.TrimLeft(body, " 	\r\n")
+	return bytes.HasPrefix(trimmed, []byte("data:")) || bytes.HasPrefix(trimmed, []byte("event:")) || bytes.HasPrefix(trimmed, []byte(":"))
 }
 
 // EmptyUpstreamError reports whether a body that arrived with HTTP 200

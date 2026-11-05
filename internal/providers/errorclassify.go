@@ -77,19 +77,45 @@ const (
 	// seconds — retrying that often just burns a guaranteed-failed upstream
 	// call and keeps the dashboard showing a false recovery.
 	QuotaExhaustedCooldownMs = 60 * 60 * 1000 // 1 hour
+
+	// cooldownSevenDays is the cooldown for Tencent/CodeBuddy account restriction
+	// ("Your account has been restricted due to unusual activity"). Operator standard:
+	// unusual activity restriction lasts up to 7 days.
+	cooldownSevenDays = 7 * 24 * 60 * 60 * 1000 // 7 days
 )
 
 // ErrorRules is the ordered list of error classification rules, matching Next.js ERROR_RULES.
 // Checked top-to-bottom: text rules first (by order), then status rules.
 var ErrorRules = []ErrorRule{
+	// CodeBuddy/WorkBuddy account restriction (unusual activity): 7 days cooldown
+	{Provider: "codebuddy-intl", Text: "unusual activity", CooldownMs: cooldownSevenDays},
+	{Provider: "codebuddy-cn", Text: "unusual activity", CooldownMs: cooldownSevenDays},
+	{Provider: "workbuddy", Text: "unusual activity", CooldownMs: cooldownSevenDays},
+	{Provider: "codebuddy-intl", Text: "restricted", CooldownMs: cooldownSevenDays},
+	{Provider: "codebuddy-cn", Text: "restricted", CooldownMs: cooldownSevenDays},
+	{Provider: "workbuddy", Text: "restricted", CooldownMs: cooldownSevenDays},
+	{Provider: "codebuddy-cn", Text: "账号存在异常行为", CooldownMs: cooldownSevenDays},
+	{Provider: "codebuddy-intl", Text: "账号存在异常行为", CooldownMs: cooldownSevenDays},
+	// Safety review / content filter (request-level prompt refusal, no cooldown):
+	{Provider: "codebuddy-intl", Text: "safety review", CooldownMs: 0},
+	{Provider: "codebuddy-cn", Text: "safety review", CooldownMs: 0},
+	{Provider: "codebuddy-intl", Text: "content filter", CooldownMs: 0},
+	{Provider: "codebuddy-cn", Text: "content filter", CooldownMs: 0},
+
+	// CodeBuddy / WorkBuddy transient 11140 throttle / insufficient quota: 5 minutes cooldown
+	{Provider: "codebuddy-intl", Text: "11140", CooldownMs: 5 * 60 * 1000},
+	{Provider: "codebuddy-cn", Text: "11140", CooldownMs: 5 * 60 * 1000},
+	{Provider: "workbuddy", Text: "11140", CooldownMs: 5 * 60 * 1000},
+
 	{Text: "11158", CooldownMs: cooldownLong},
 	{Text: "model_not_in_plan", CooldownMs: cooldownLong},
 	{Text: "当前账号类型暂不支持该模型", CooldownMs: cooldownLong},
 	{Text: "14018", CooldownMs: cooldownLong},
 	{Text: "额度已用尽", CooldownMs: cooldownLong},
+	{Text: "account has been restricted due to unusual activity", CooldownMs: cooldownSevenDays},
+	{Text: "账号存在异常行为", CooldownMs: cooldownSevenDays},
+	{Text: "unusual activity", CooldownMs: cooldownSevenDays},
 	{Text: "11140", CooldownMs: cooldownAddressRefused},
-	{Text: "account has been restricted due to unusual activity", CooldownMs: cooldownAddressRefused},
-	{Text: "账号存在异常行为", CooldownMs: cooldownAddressRefused},
 	// --- Quota / credit exhaustion (checked before generic rules) ---
 	// A spent budget is not a transient throttle: give it the long cooldown
 	// instead of the 30s transient default. Without this, "insufficient

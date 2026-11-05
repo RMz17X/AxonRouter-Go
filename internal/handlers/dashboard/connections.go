@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -71,7 +73,16 @@ func (h *DashboardHandler) HandleGetProvidersClient(w http.ResponseWriter, r *ht
 		pageSize = maxProvidersPageSize
 	}
 
-	conns, err := h.Repo.GetProviderConnections("", false)
+	var conns []*models.ProviderConnection
+	var err error
+	var providerOptions []string
+
+	if providerFilter != "all" && providerFilter != "" {
+		conns, err = h.Repo.GetProviderConnections(providerFilter, false)
+		providerOptions = h.getUsageProviderOptions(r.Context())
+	} else {
+		conns, err = h.Repo.GetProviderConnections("", false)
+	}
 	if err != nil {
 		writePlainError(w, http.StatusInternalServerError, "Failed to fetch providers")
 		return
@@ -82,7 +93,9 @@ func (h *DashboardHandler) HandleGetProvidersClient(w http.ResponseWriter, r *ht
 			eligible = append(eligible, c)
 		}
 	}
-	providerOptions := uniqueSortedProviders(eligible)
+	if providerFilter == "all" || providerFilter == "" {
+		providerOptions = uniqueSortedProviders(eligible)
+	}
 	providerFiltered := make([]*models.ProviderConnection, 0, len(eligible))
 	for _, c := range eligible {
 		if providerFilter == "all" || c.Provider == providerFilter {
@@ -192,6 +205,49 @@ func uniqueSortedProviders(conns []*models.ProviderConnection) []string {
 		out = append(out, p)
 	}
 	sort.Strings(out)
+	return out
+}
+
+var (
+	usageProviderOptionsMu      sync.Mutex
+	usageProviderOptionsCache   []string
+	usageProviderOptionsExpires time.Time
+)
+
+func (h *DashboardHandler) getUsageProviderOptions(ctx context.Context) []string {
+	usageProviderOptionsMu.Lock()
+	if len(usageProviderOptionsCache) > 0 && time.Now().Before(usageProviderOptionsExpires) {
+		cached := make([]string, len(usageProviderOptionsCache))
+		copy(cached, usageProviderOptionsCache)
+		usageProviderOptionsMu.Unlock()
+		return cached
+	}
+	usageProviderOptionsMu.Unlock()
+
+	rows, err := h.Repo.QueryContext(ctx, "SELECT DISTINCT provider FROM providerConnections ORDER BY provider")
+	if err != nil {
+		return usageSupportedProviders
+	}
+	defer func() { _ = rows.Close() }()
+
+	var list []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err == nil && strSliceContains(usageSupportedProviders, p) {
+			list = append(list, p)
+		}
+	}
+	if len(list) == 0 {
+		list = usageSupportedProviders
+	}
+
+	usageProviderOptionsMu.Lock()
+	usageProviderOptionsCache = list
+	usageProviderOptionsExpires = time.Now().Add(60 * time.Second)
+	usageProviderOptionsMu.Unlock()
+
+	out := make([]string, len(list))
+	copy(out, list)
 	return out
 }
 

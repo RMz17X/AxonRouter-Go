@@ -61,6 +61,8 @@ const ICON_ALIASES: Record<string, string> = {
   // served (getIconPath resolves the alias first) and only drifts from the
   // original, so the artwork stays in one place.
   'zcode': 'glm',
+  'kilocode-free': 'kilocode',
+  'kcf': 'kilocode',
 }
 
 export function getIconPath(id?: string | null, apiType?: string): string {

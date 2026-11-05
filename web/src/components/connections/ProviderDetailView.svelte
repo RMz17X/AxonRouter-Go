@@ -1429,6 +1429,36 @@
     }
   }
 
+  async function handleResetConnectionStatus(conn: ProviderConnection) {
+    try {
+      const res = await api.resetConnectionStatus(conn.id)
+      if (res.ok) {
+        onRefresh()
+      } else {
+        alert('Failed to reset connection status')
+      }
+    } catch (err) {
+      alert(`Reset failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  async function handleBulkResetStatus() {
+    const isSelected = selectedConnectionIds.length > 0
+    try {
+      const res = await api.bulkResetStatus({
+        provider: providerId,
+        ids: isSelected ? selectedConnectionIds : undefined,
+      })
+      if (res.ok) {
+        onRefresh()
+      } else {
+        alert('Failed to bulk reset status')
+      }
+    } catch (err) {
+      alert(`Bulk reset failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
   // Per-row proxy badge (upstream ConnectionRow) — see proxyBadge.ts.
   function proxyBadgeFor(conn: ProviderConnection) {
     return proxyBadgeInfo(conn, proxyPools, lockedProxyGroup)
@@ -3782,18 +3812,42 @@
           Select All
         </label>
 
-        <!-- Sensor Email Toggle Button -->
-        <button
-          type="button"
-          onclick={() => emailPrivacy.toggle()}
-          class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors cursor-pointer {$emailPrivacy ? 'border-brand-500/40 bg-brand-500/10 text-brand-500 font-medium' : 'border-border-subtle bg-surface text-text-muted hover:text-text-main hover:bg-surface-2'}"
-          title={$emailPrivacy ? 'Tampilkan email lengkap' : 'Sensor / sembunyikan email'}
-        >
-          <span class="material-symbols-outlined text-[15px]">
-            {$emailPrivacy ? 'visibility_off' : 'visibility'}
-          </span>
-          <span>{$emailPrivacy ? 'Email Disensor' : 'Sensor Email'}</span>
-        </button>
+        <div class="flex items-center gap-2">
+          {#if selectedConnectionIds.length > 0}
+            <button
+              type="button"
+              onclick={handleBulkResetStatus}
+              class="flex items-center gap-1.5 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-1 text-xs font-medium text-warning hover:bg-warning/20 transition-colors cursor-pointer"
+              title="Reset status and clear cooldowns for selected connections"
+            >
+              <span class="material-symbols-outlined text-[15px]">restart_alt</span>
+              <span>Reset Cooldown ({selectedConnectionIds.length})</span>
+            </button>
+          {:else}
+            <button
+              type="button"
+              onclick={handleBulkResetStatus}
+              class="flex items-center gap-1.5 rounded-lg border border-border-subtle bg-surface px-2.5 py-1 text-xs text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors cursor-pointer"
+              title="Reset status and clear all cooldowns/exhausted for this provider"
+            >
+              <span class="material-symbols-outlined text-[15px]">restart_alt</span>
+              <span>Reset All Cooldowns</span>
+            </button>
+          {/if}
+
+          <!-- Sensor Email Toggle Button -->
+          <button
+            type="button"
+            onclick={() => emailPrivacy.toggle()}
+            class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors cursor-pointer {$emailPrivacy ? 'border-brand-500/40 bg-brand-500/10 text-brand-500 font-medium' : 'border-border-subtle bg-surface text-text-muted hover:text-text-main hover:bg-surface-2'}"
+            title={$emailPrivacy ? 'Tampilkan email lengkap' : 'Sensor / sembunyikan email'}
+          >
+            <span class="material-symbols-outlined text-[15px]">
+              {$emailPrivacy ? 'visibility_off' : 'visibility'}
+            </span>
+            <span>{$emailPrivacy ? 'Email Disensor' : 'Sensor Email'}</span>
+          </button>
+        </div>
       </div>
     {/if}
 
@@ -4367,6 +4421,11 @@
                         icon="sync"
                         disabled={isTestingOneByOne || status?.state === 'testing'}
                         onSelect={() => refreshOneConnection(conn)}
+                      />
+                      <MenuItem
+                        label="Reset Cooldown / Status"
+                        icon="restart_alt"
+                        onSelect={() => handleResetConnectionStatus(conn)}
                       />
                       {#if isDeepSeekWeb}
                         <MenuItem

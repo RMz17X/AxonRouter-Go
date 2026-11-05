@@ -71,7 +71,7 @@ func TestClassifyError_CodebuddyCodes(t *testing.T) {
 		t.Errorf("14018 classified %+v, want cooldownLong", cls2)
 	}
 	cls3 := ClassifyError(400, "11140: account has been restricted due to unusual activity", 0)
-	if !cls3.ShouldFallback || cls3.CooldownMs != cooldownAddressRefused {
-		t.Errorf("11140 classified %+v, want cooldownAddressRefused", cls3)
+	if !cls3.ShouldFallback || cls3.CooldownMs != cooldownSevenDays {
+		t.Errorf("11140 classified %+v, want cooldownSevenDays", cls3)
 	}
 }

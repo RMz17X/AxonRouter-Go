@@ -648,6 +648,13 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},
+	"kilocode-free": {
+		BaseURL:       "https://api.kilo.ai/api/gateway/chat/completions",
+		AuthHeader:    "Authorization",
+		AuthScheme:    "bearer",
+		DefaultAPIKey: "public",
+		NoAuth:        true,
+	},
 	"nanobanana": {
 		BaseURL:    "https://api.nanobananaapi.ai/v1/chat/completions",
 		AuthHeader: "Authorization",

@@ -290,6 +290,20 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Notice:        &Notice{SignupURL: "https://kilocode.ai"},
 		ModelsFetcher: &Fetcher{URL: "https://api.kilo.ai/api/gateway/models", Type: "openrouter-free"},
 	},
+	"kilocode-free": {
+		ID:            "kilocode-free",
+		Name:          "Kilo Code Free",
+		Alias:         "kcf",
+		Category:      CategoryFree,
+		Color:         "#FF6B35",
+		Icon:          "code",
+		Priority:      45,
+		NoAuth:        true,
+		ServiceKinds:  []string{"llm"},
+		Website:       "https://kilo.ai",
+		Notice:        &Notice{Text: "Free AI models powered by Kilo AI Gateway. No account or API key required (IP rate-limited to 200 req/hr)."},
+		ModelsFetcher: &Fetcher{URL: "https://api.kilo.ai/api/gateway/models", Type: "kilocode-free"},
+	},
 	// ZCode (zcode.z.ai) rides the same Z.ai account as glm-coding but is its
 	// own gateway: it serves the Start Plan / Weekend Build quota, which the
 	// coding-plan lane does not. Registered here because the catalog the

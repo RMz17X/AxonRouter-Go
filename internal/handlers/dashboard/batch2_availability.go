@@ -28,7 +28,7 @@ type availabilityEntry struct {
 }
 
 func (h *DashboardHandler) HandleModelAvailability(w http.ResponseWriter, r *http.Request) {
-	conns, err := h.Repo.GetProviderConnections("", false)
+	conns, err := h.Repo.GetLockedOrUnavailableConnections(r.Context())
 	if err != nil {
 		handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to fetch model availability"})
 		return

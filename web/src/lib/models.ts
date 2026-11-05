@@ -82,6 +82,7 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "jina-ai": "jina-ai",
   "kilo-gateway": "kgw",
   "kilocode": "kc",
+  "kilocode-free": "kcf",
   "kimchi": "kimchi",
   "kimi": "kimi",
   "kiro": "kr",
@@ -2926,6 +2927,22 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
   ],
   "kc": [
     {
+      "id": "kilo-auto/efficient",
+      "name": "Kilo Auto Efficient"
+    },
+    {
+      "id": "kilo-auto/balanced",
+      "name": "Kilo Auto Balanced"
+    },
+    {
+      "id": "kilo-auto/frontier",
+      "name": "Kilo Auto Frontier"
+    },
+    {
+      "id": "anthropic/claude-opus-5.5",
+      "name": "Claude Opus 5.5"
+    },
+    {
       "id": "anthropic/claude-sonnet-4-20250514",
       "name": "Claude Sonnet 4"
     },
@@ -2934,12 +2951,24 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "Claude Opus 4"
     },
     {
-      "id": "google/gemini-2.5-pro",
-      "name": "Gemini 2.5 Pro"
+      "id": "anthropic/claude-haiku-5.5",
+      "name": "Claude Haiku 5.5"
     },
     {
-      "id": "google/gemini-2.5-flash",
-      "name": "Gemini 2.5 Flash"
+      "id": "openai/gpt-6.1-sol",
+      "name": "GPT-6.1 Sol"
+    },
+    {
+      "id": "openai/gpt-6.1-sol-pro",
+      "name": "GPT-6.1 Sol Pro"
+    },
+    {
+      "id": "openai/gpt-6.1-terra",
+      "name": "GPT-6.1 Terra"
+    },
+    {
+      "id": "openai/gpt-6.1-terra-pro",
+      "name": "GPT-6.1 Terra Pro"
     },
     {
       "id": "openai/gpt-4.1",
@@ -2950,12 +2979,110 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "o3"
     },
     {
+      "id": "deepseek/deepseek-v4.1-flash-1017",
+      "name": "DeepSeek V4.1 Flash"
+    },
+    {
       "id": "deepseek/deepseek-chat",
       "name": "DeepSeek Chat"
     },
     {
       "id": "deepseek/deepseek-reasoner",
       "name": "DeepSeek Reasoner"
+    },
+    {
+      "id": "z-ai/glm-5.3-flash",
+      "name": "GLM 5.3 Flash"
+    },
+    {
+      "id": "moonshotai/kimi-k3.1-pro",
+      "name": "Kimi K3.1 Pro"
+    },
+    {
+      "id": "minimax/minimax-m3.1-flash",
+      "name": "MiniMax M3.1 Flash"
+    },
+    {
+      "id": "google/gemini-4-argon",
+      "name": "Gemini 4 Argon"
+    },
+    {
+      "id": "google/gemini-2.5-pro",
+      "name": "Gemini 2.5 Pro"
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "name": "Gemini 2.5 Flash"
+    },
+    {
+      "id": "mistralai/mistral-large-4-0",
+      "name": "Mistral Large 4.0"
+    }
+  ],
+  "kcf": [
+    {
+      "id": "kilo-auto/free",
+      "name": "Kilo Auto Free"
+    },
+    {
+      "id": "reflection/beam-free",
+      "name": "Beam Free"
+    },
+    {
+      "id": "poolside/laguna-s-2.1:free",
+      "name": "Laguna S 2.1 (Free)"
+    },
+    {
+      "id": "poolside/laguna-xs-2.1:free",
+      "name": "Laguna XS 2.1 (Free)"
+    },
+    {
+      "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+      "name": "Nemotron 3 Ultra 550B (Free)"
+    },
+    {
+      "id": "nvidia/nemotron-3.5-super-vl:free",
+      "name": "Nemotron 3.5 Super VL (Free)"
+    },
+    {
+      "id": "nvidia/nemotron-3.5-lightning:free",
+      "name": "Nemotron 3.5 Lightning (Free)"
+    },
+    {
+      "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      "name": "Nemotron 3 Nano Omni 30B (Free)"
+    },
+    {
+      "id": "nvidia/nemotron-3.5-content-safety:free",
+      "name": "Nemotron 3.5 Content Safety (Free)"
+    },
+    {
+      "id": "dots-studio/dots-3-note-preview:free",
+      "name": "Dots 3 Note Preview (Free)"
+    },
+    {
+      "id": "stealth/glyph-cluster",
+      "name": "Glyph Cluster"
+    },
+    {
+      "id": "recursive/flint-v1.0:free",
+      "name": "Flint v1.0 (Free)"
+    },
+    {
+      "id": "xingchen-agi/xing4.0-29b-a4b:free",
+      "name": "Xing 4.0 29B (Free)"
+    },
+    {
+      "id": "cohere/north-mini-code:free",
+      "name": "North Mini Code (Free)"
+    },
+    {
+      "id": "liquid/lfm-2.5-2.6b:free",
+      "name": "LFM 2.5 2.6B (Free)"
+    },
+    {
+      "id": "openrouter/free",
+      "name": "OpenRouter Free"
     }
   ],
   "kimchi": [
@@ -3434,6 +3561,12 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
   ],
   "minimax-code": [
     {
+      "id": "MiniMax-M3.1-Flash",
+      "name": "MiniMax M3.1 Flash",
+      "targetFormat": "claude",
+      "supportedFormats": ["claude"]
+    },
+    {
       "id": "MiniMax-M3.1-Flash-Preview",
       "name": "MiniMax M3.1 Flash Preview",
       "targetFormat": "claude",
@@ -3459,6 +3592,12 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     }
   ],
   "minimax-code-global": [
+    {
+      "id": "MiniMax-M3.1-Flash",
+      "name": "MiniMax M3.1 Flash",
+      "targetFormat": "claude",
+      "supportedFormats": ["claude"]
+    },
     {
       "id": "MiniMax-M3.1-Flash-Preview",
       "name": "MiniMax M3.1 Flash Preview",
