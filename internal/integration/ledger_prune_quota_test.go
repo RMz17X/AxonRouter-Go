@@ -24,7 +24,7 @@ func TestLedgerPrunePreservesKeyQuotaEnforcement(t *testing.T) {
 	id, plaintext := limitKey(t, env, "ledger-prune")
 
 	// Set a 100-token budget.
-	if put := env.Put(t, "/api/keys/"+id, map[string]any{"tokenQuota": 100}); put.Status != http.StatusOK {
+	if put := env.PutOp(t, "/api/keys/"+id, map[string]any{"tokenQuota": 100}); put.Status != http.StatusOK {
 		t.Fatalf("set token quota: status %d: %s", put.Status, truncate(put.Body))
 	}
 

@@ -62,7 +62,7 @@ func policyOf(t *testing.T, env *Env, id string) policyRow {
 func TestKeyPolicyRoundTrip(t *testing.T) {
 	env := newEnv(t)
 
-	create := env.Post(t, "/api/keys", map[string]any{"name": "policy-roundtrip", "key": "sk-policy-216"})
+	create := env.PostOp(t, "/api/keys", map[string]any{"name": "policy-roundtrip", "key": "sk-policy-216"})
 	if create.Status != http.StatusCreated {
 		t.Fatalf("create key = %d, want 201 (body: %s)", create.Status, truncate(create.Body))
 	}
@@ -72,7 +72,7 @@ func TestKeyPolicyRoundTrip(t *testing.T) {
 	create.Decode(t, &made)
 
 	metadata := `{"customerId":"acme","priceCents":5000}`
-	put := env.Put(t, "/api/keys/"+made.ID, map[string]any{
+	put := env.PutOp(t, "/api/keys/"+made.ID, map[string]any{
 		"rateLimitRpm":         30,
 		"rateLimitTpm":         1500,
 		"rateLimitConcurrency": 4,
@@ -108,13 +108,13 @@ func TestKeyPolicyRoundTrip(t *testing.T) {
 func TestKeyModelAllowlistRoundTrip(t *testing.T) {
 	env := newEnv(t)
 
-	create := env.Post(t, "/api/keys", map[string]any{"name": "allowlist", "key": "sk-allowlist-216"})
+	create := env.PostOp(t, "/api/keys", map[string]any{"name": "allowlist", "key": "sk-allowlist-216"})
 	var made struct {
 		ID string `json:"id"`
 	}
 	create.Decode(t, &made)
 
-	set := env.Put(t, "/api/keys/"+made.ID+"/models", map[string]any{
+	set := env.PutOp(t, "/api/keys/"+made.ID+"/models", map[string]any{
 		"models": []string{"e2e/allowed-*", "gpt-4o"},
 	})
 	if set.Status != http.StatusOK {
@@ -141,19 +141,19 @@ func TestKeyModelAllowlistRoundTrip(t *testing.T) {
 func TestKeyPolicySavePreservesAllowlist(t *testing.T) {
 	env := newEnv(t)
 
-	create := env.Post(t, "/api/keys", map[string]any{"name": "preserve", "key": "sk-preserve-216"})
+	create := env.PostOp(t, "/api/keys", map[string]any{"name": "preserve", "key": "sk-preserve-216"})
 	var made struct {
 		ID string `json:"id"`
 	}
 	create.Decode(t, &made)
 
-	seed := env.Put(t, "/api/keys/"+made.ID+"/models", map[string]any{"models": []string{"claude/*"}})
+	seed := env.PutOp(t, "/api/keys/"+made.ID+"/models", map[string]any{"models": []string{"claude/*"}})
 	if seed.Status != http.StatusOK {
 		t.Fatalf("seed allowlist = %d, want 200 (body: %s)", seed.Status, truncate(seed.Body))
 	}
 
 	// A policy-only write: the modal's other fields, with no models payload.
-	if put := env.Put(t, "/api/keys/"+made.ID, map[string]any{
+	if put := env.PutOp(t, "/api/keys/"+made.ID, map[string]any{
 		"rateLimitRpm": 60,
 		"metadata":     `{"customerId":"acme"}`,
 	}); put.Status != http.StatusOK {

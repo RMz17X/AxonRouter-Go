@@ -19,7 +19,7 @@ func TestQuotaResetReopensAnExhaustedKey(t *testing.T) {
 	id, plaintext := limitKey(t, env, "quota-reset")
 
 	// A budget of one token: any real completion blows straight through it.
-	if put := env.Put(t, "/api/keys/"+id, map[string]any{"tokenQuota": 1}); put.Status != http.StatusOK {
+	if put := env.PutOp(t, "/api/keys/"+id, map[string]any{"tokenQuota": 1}); put.Status != http.StatusOK {
 		t.Fatalf("set token quota: status %d: %s", put.Status, truncate(put.Body))
 	}
 
@@ -51,7 +51,7 @@ func TestQuotaResetReopensAnExhaustedKey(t *testing.T) {
 		t.Errorf("the refused request reached the provider (%d -> %d dispatches)", dispatched, upstream.Count())
 	}
 
-	reset := env.Post(t, "/api/keys/"+id+"/reset-quota", nil)
+	reset := env.PostOp(t, "/api/keys/"+id+"/reset-quota", nil)
 	if reset.Status != http.StatusOK {
 		t.Fatalf("reset-quota = %d, want 200 (body: %s)", reset.Status, truncate(reset.Body))
 	}
@@ -92,7 +92,7 @@ func TestQuotaResetReopensAnExhaustedKey(t *testing.T) {
 func TestQuotaResetRejectsAnUnknownKey(t *testing.T) {
 	env, _ := newProviderEnv(t)
 
-	res := env.Post(t, "/api/keys/does-not-exist/reset-quota", nil)
+	res := env.PostOp(t, "/api/keys/does-not-exist/reset-quota", nil)
 	if res.Status != http.StatusNotFound {
 		t.Fatalf("reset-quota for an unknown key = %d, want 404 (body: %s)", res.Status, truncate(res.Body))
 	}

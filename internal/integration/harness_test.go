@@ -15,6 +15,7 @@ import (
 	json "encoding/json/v2"
 
 	"axonrouter/proxy/internal/app"
+	"axonrouter/proxy/internal/auth"
 	"axonrouter/proxy/internal/db"
 	"axonrouter/proxy/internal/db/dbtest"
 	"axonrouter/proxy/internal/handlers"
@@ -49,6 +50,13 @@ type Env struct {
 	BaseURL string
 	Repo    *db.Repo
 	APIKey  string
+
+	// OperatorToken is this Env's local CLI token: the operator-class
+	// credential the dashboard write sweep (RequireOperatorForWrites)
+	// requires for state-changing /api calls. It is derived from the
+	// Env's pinned DATA_DIR at construction, so it stays this Env's
+	// token even after a later test re-pins the process env.
+	OperatorToken string
 
 	client *http.Client
 }
@@ -109,15 +117,22 @@ func newEnvWithTokenSaver(t *testing.T, build func(*db.Repo) *handlers.TokenSave
 		ts = build(repo)
 	}
 
+	// Derive the operator credential while this Env's DATA_DIR is the
+	// pinned one: auth.CLIToken reads (and on first use creates) the
+	// machine-id / cli-secret files under DATA_DIR, and the in-process
+	// server derives the same value when it validates the header.
+	operatorToken := auth.CLIToken()
+
 	router, _ := app.ProvideRouter(repo, ts)
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
 
 	return &Env{
-		BaseURL: srv.URL,
-		Repo:    repo,
-		APIKey:  testAPIKey,
-		client:  srv.Client(),
+		BaseURL:       srv.URL,
+		Repo:          repo,
+		APIKey:        testAPIKey,
+		OperatorToken: operatorToken,
+		client:        srv.Client(),
 	}
 }
 
@@ -256,6 +271,45 @@ func (e *Env) Put(t *testing.T, path string, body any, opts ...RequestOpt) *Resu
 // Delete performs an authenticated DELETE.
 func (e *Env) Delete(t *testing.T, path string, opts ...RequestOpt) *Result {
 	return e.Do(t, http.MethodDelete, path, nil, opts...)
+}
+
+// asOperator rewrites a request to authenticate as the operator instead of
+// the client key: the Authorization header is dropped and the Env's CLI
+// token is presented. That is the shape the dashboard write sweep admits
+// (a session cookie would do equally; the CLI token is the credential the
+// harness can derive per Env without seeding a dashboard password, and it
+// is already how this suite authenticates operator-only calls — see
+// TestDashboardAuthGate). A test whose subject is the client key itself
+// must NOT use the Op variants: the key's own view of a route — including
+// its 401 on dashboard writes — is measured with Get/Post/Put/Delete and
+// explicit opts, exactly as before.
+func (e *Env) asOperator() RequestOpt {
+	return func(r *http.Request) {
+		r.Header.Del("Authorization")
+		r.Header.Set(auth.CLITokenHeader, e.OperatorToken)
+	}
+}
+
+// GetOp performs a GET authenticated as the operator.
+func (e *Env) GetOp(t *testing.T, path string, opts ...RequestOpt) *Result {
+	return e.Do(t, http.MethodGet, path, nil, append([]RequestOpt{e.asOperator()}, opts...)...)
+}
+
+// PostOp performs a POST authenticated as the operator: the caller shape
+// for dashboard administration (minting keys, writing settings, editing
+// connections) since the round-3 write sweep refuses the client key.
+func (e *Env) PostOp(t *testing.T, path string, body any, opts ...RequestOpt) *Result {
+	return e.Do(t, http.MethodPost, path, body, append([]RequestOpt{e.asOperator()}, opts...)...)
+}
+
+// PutOp performs a PUT authenticated as the operator.
+func (e *Env) PutOp(t *testing.T, path string, body any, opts ...RequestOpt) *Result {
+	return e.Do(t, http.MethodPut, path, body, append([]RequestOpt{e.asOperator()}, opts...)...)
+}
+
+// DeleteOp performs a DELETE authenticated as the operator.
+func (e *Env) DeleteOp(t *testing.T, path string, opts ...RequestOpt) *Result {
+	return e.Do(t, http.MethodDelete, path, nil, append([]RequestOpt{e.asOperator()}, opts...)...)
 }
 
 // ChatBody builds a minimal OpenAI chat request. The prompt is deliberately

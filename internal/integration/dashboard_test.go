@@ -53,7 +53,7 @@ func requireConnection(t *testing.T, rows []connectionRow, id string) connection
 func TestConnectionLifecycle(t *testing.T) {
 	env := newEnv(t)
 
-	created := env.Post(t, "/api/connections", map[string]any{
+	created := env.PostOp(t, "/api/connections", map[string]any{
 		"provider": "deepseek",
 		"authType": "apikey",
 		"name":     "DeepSeek Primary",
@@ -93,7 +93,7 @@ func TestConnectionLifecycle(t *testing.T) {
 	})
 
 	t.Run("update renames it", func(t *testing.T) {
-		res := env.Put(t, "/api/connections/"+id, map[string]any{
+		res := env.PutOp(t, "/api/connections/"+id, map[string]any{
 			"provider": "deepseek",
 			"authType": "apikey",
 			"name":     "DeepSeek Renamed",
@@ -109,7 +109,7 @@ func TestConnectionLifecycle(t *testing.T) {
 	})
 
 	t.Run("delete removes it", func(t *testing.T) {
-		res := env.Delete(t, "/api/connections/"+id)
+		res := env.DeleteOp(t, "/api/connections/"+id)
 		if res.Status != http.StatusOK {
 			t.Fatalf("DELETE /api/connections/%s = %d, want 200 (body: %s)", id, res.Status, truncate(res.Body))
 		}
@@ -127,7 +127,7 @@ func TestConnectionLifecycle(t *testing.T) {
 func TestConnectionNameConflictIsRefused(t *testing.T) {
 	env := newEnv(t)
 
-	first := env.Post(t, "/api/connections", map[string]any{
+	first := env.PostOp(t, "/api/connections", map[string]any{
 		"provider": "deepseek", "authType": "apikey", "name": "Primary", "apiKey": "sk-first",
 	})
 	if first.Status != http.StatusOK {
@@ -139,7 +139,7 @@ func TestConnectionNameConflictIsRefused(t *testing.T) {
 	first.Decode(t, &firstResp)
 
 	t.Run("duplicate name is a 409", func(t *testing.T) {
-		second := env.Post(t, "/api/connections", map[string]any{
+		second := env.PostOp(t, "/api/connections", map[string]any{
 			"provider": "deepseek", "authType": "apikey", "name": "Primary", "apiKey": "sk-second",
 		})
 		if second.Status != http.StatusConflict {
@@ -159,7 +159,7 @@ func TestConnectionNameConflictIsRefused(t *testing.T) {
 	})
 
 	t.Run("allowOverwrite replaces in place", func(t *testing.T) {
-		res := env.Post(t, "/api/connections", map[string]any{
+		res := env.PostOp(t, "/api/connections", map[string]any{
 			"provider": "deepseek", "authType": "apikey", "name": "Primary",
 			"apiKey": "sk-second", "allowOverwrite": true,
 		})
@@ -181,7 +181,7 @@ func TestConnectionNameConflictIsRefused(t *testing.T) {
 func TestConnectionValidationRejectsAnIncompletePayload(t *testing.T) {
 	env := newEnv(t)
 
-	res := env.Post(t, "/api/connections", map[string]any{"name": "No Provider"})
+	res := env.PostOp(t, "/api/connections", map[string]any{"name": "No Provider"})
 	if res.Status != http.StatusBadRequest {
 		t.Fatalf("POST /api/connections without a provider = %d, want 400 (body: %s)", res.Status, truncate(res.Body))
 	}

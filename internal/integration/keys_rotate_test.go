@@ -11,7 +11,7 @@ import (
 // createKey mints a client key and returns its id and the plaintext shown once.
 func createKey(t *testing.T, env *Env, name string) (id, plaintext string) {
 	t.Helper()
-	res := env.Post(t, "/api/keys", map[string]any{"name": name})
+	res := env.PostOp(t, "/api/keys", map[string]any{"name": name})
 	if res.Status != http.StatusCreated {
 		t.Fatalf("create key: status %d: %s", res.Status, truncate(res.Body))
 	}
@@ -33,7 +33,7 @@ func TestRotateApiKeyReplacesSecret(t *testing.T) {
 	env := newEnv(t)
 	id, oldKey := createKey(t, env, "rotate me")
 
-	res := env.Post(t, "/api/keys/"+id+"/rotate", nil)
+	res := env.PostOp(t, "/api/keys/"+id+"/rotate", nil)
 	if res.Status != 200 {
 		t.Fatalf("rotate: status %d: %s", res.Status, truncate(res.Body))
 	}
@@ -65,11 +65,11 @@ func TestRotateApiKeyKeepsPolicy(t *testing.T) {
 	env := newEnv(t)
 	id, _ := createKey(t, env, "policy survives rotation")
 
-	if put := env.Put(t, "/api/keys/"+id, map[string]any{"rateLimitRpm": 7}); put.Status != 200 {
+	if put := env.PutOp(t, "/api/keys/"+id, map[string]any{"rateLimitRpm": 7}); put.Status != 200 {
 		t.Fatalf("set policy: status %d: %s", put.Status, truncate(put.Body))
 	}
 
-	if res := env.Post(t, "/api/keys/"+id+"/rotate", nil); res.Status != 200 {
+	if res := env.PostOp(t, "/api/keys/"+id+"/rotate", nil); res.Status != 200 {
 		t.Fatalf("rotate: status %d: %s", res.Status, truncate(res.Body))
 	}
 
@@ -87,7 +87,7 @@ func TestRotateApiKeyKeepsPolicy(t *testing.T) {
 func TestRotateUnknownKeyIsNotFound(t *testing.T) {
 	env := newEnv(t)
 
-	res := env.Post(t, "/api/keys/does-not-exist/rotate", nil)
+	res := env.PostOp(t, "/api/keys/does-not-exist/rotate", nil)
 	if res.Status != 404 {
 		t.Errorf("status = %d, want 404: %s", res.Status, truncate(res.Body))
 	}

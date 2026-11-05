@@ -77,7 +77,7 @@ func TestProviderShareLinkBulkBlockWritesEveryKey(t *testing.T) {
 	})
 
 	const prov = "openai-compatible-chat-bulkme"
-	nodeRes := env.Post(t, "/api/provider-nodes", map[string]any{
+	nodeRes := env.PostOp(t, "/api/provider-nodes", map[string]any{
 		"name": "Bulk Me", "prefix": "bulkme", "apiType": "chat",
 		"baseUrl": up.URL + "/v1", "type": "openai-compatible", "urlSuffix": "bulkme",
 	})
@@ -87,7 +87,7 @@ func TestProviderShareLinkBulkBlockWritesEveryKey(t *testing.T) {
 
 	// Three keys, in the order the link lists them.
 	for i, key := range []string{"sk-a", "sk-b", "sk-c"} {
-		res := env.Post(t, "/api/connections", map[string]any{
+		res := env.PostOp(t, "/api/connections", map[string]any{
 			"provider": prov, "authType": "compatible", "apiKey": key,
 			"name": fmt.Sprintf("Bulk Key %d", i+1), "priority": i + 1,
 		})
@@ -142,7 +142,7 @@ func TestProviderShareLinkAddsNodeConnectionAndModels(t *testing.T) {
 	const prov = "openai-compatible-chat-shareme"
 
 	// 1. The node, exactly as the receiver modal creates it from the link.
-	nodeRes := env.Post(t, "/api/provider-nodes", map[string]any{
+	nodeRes := env.PostOp(t, "/api/provider-nodes", map[string]any{
 		"name": "Share Me", "prefix": "shareme", "apiType": "chat",
 		"baseUrl": up.URL + "/v1", "type": "openai-compatible", "urlSuffix": "shareme",
 	})
@@ -160,7 +160,7 @@ func TestProviderShareLinkAddsNodeConnectionAndModels(t *testing.T) {
 	}
 
 	// 2. The key, with the authType a compatible node stores.
-	connRes := env.Post(t, "/api/connections", map[string]any{
+	connRes := env.PostOp(t, "/api/connections", map[string]any{
 		"provider": prov, "authType": "compatible", "apiKey": "sk-shared", "name": "Share Me Key",
 	})
 	if connRes.Status != http.StatusOK && connRes.Status != http.StatusCreated {

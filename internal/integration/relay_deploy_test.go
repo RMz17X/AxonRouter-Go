@@ -93,9 +93,14 @@ func TestRelayDeployRoutesAcceptDashboardSession(t *testing.T) {
 }
 
 // TestRelayDeployRoutesRejectEngineKeyOnEmptyToken is the other half of the
-// dashboard guard: RequireDashboardAuth still admits a client API key for CLI
-// compatibility, so moving the routes must not have left them open to any
-// bearer key. Both credential carriers land on the same 400.
+// dashboard guard, updated for the round-3 write sweep. Before the sweep,
+// RequireDashboardAuth admitted a client API key for CLI compatibility, so
+// the key reached the handler and its empty-token validation answered 400.
+// The sweep (RequireOperatorForWrites) refuses the key at the gate, so the
+// same call now lands on 401 — the deploy is rejected more strongly, never
+// more weakly. Both halves are asserted: the key stops at the gate, and an
+// operator caller carrying the same empty payload reaches the handler and
+// gets its own 400 validation.
 func TestRelayDeployRoutesRejectEngineKeyOnEmptyToken(t *testing.T) {
 	env := newEnv(t)
 	if err := env.Repo.UpdateSettingsRaw(map[string]any{"requireLogin": true}); err != nil {
@@ -103,8 +108,22 @@ func TestRelayDeployRoutesRejectEngineKeyOnEmptyToken(t *testing.T) {
 	}
 
 	res := env.Post(t, "/api/proxy-pools/deno-deploy", map[string]any{})
+	if res.Status != http.StatusUnauthorized {
+		t.Fatalf("POST /api/proxy-pools/deno-deploy with the client api key = %d, want 401 from the operator write gate (body: %s)",
+			res.Status, truncate(res.Body))
+	}
+	var gateBody struct {
+		Error string `json:"error"`
+	}
+	res.Decode(t, &gateBody)
+	if gateBody.Error != "Unauthorized" {
+		t.Fatalf("gate body error = %q, want the sweep's flat %q (body: %s)",
+			gateBody.Error, "Unauthorized", truncate(res.Body))
+	}
+
+	res = env.PostOp(t, "/api/proxy-pools/deno-deploy", map[string]any{})
 	if res.Status != http.StatusBadRequest {
-		t.Fatalf("POST /api/proxy-pools/deno-deploy with the client api key = %d, want 400 (body: %s)",
+		t.Fatalf("POST /api/proxy-pools/deno-deploy as the operator = %d, want 400 from the handler's own validation (body: %s)",
 			res.Status, truncate(res.Body))
 	}
 	if got := res.ErrorMessage(t); got != "Organization domain is required" {

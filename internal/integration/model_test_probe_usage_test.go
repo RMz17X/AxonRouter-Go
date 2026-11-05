@@ -13,7 +13,7 @@ import (
 func TestModelTestProbeRecordsNoUsage(t *testing.T) {
 	env, up := newProviderEnv(t)
 
-	res := env.Post(t, "/api/models/test", map[string]string{"model": "ds/deepseek-chat"})
+	res := env.PostOp(t, "/api/models/test", map[string]string{"model": "ds/deepseek-chat"})
 	if res.Status != 200 {
 		t.Fatalf("probe status = %d, body %s", res.Status, truncate(res.Body))
 	}

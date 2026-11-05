@@ -201,7 +201,7 @@ func TestProviderNodeLimitsAreEditableThroughTheRouter(t *testing.T) {
 	upstream := env.NewUpstream(t, chatCompletionResponder())
 	seedNaraNode(t, env, upstream, db.ProviderLimits{})
 
-	put := env.Put(t, "/api/provider-nodes/node-nara/limits",
+	put := env.PutOp(t, "/api/provider-nodes/node-nara/limits",
 		map[string]any{"rpm": 42, "tokenQuota": 1000, "contractExpiresAt": "2027-01-31"})
 	if put.Status != http.StatusOK {
 		t.Fatalf("PUT limits = %d, want 200 (body: %s)", put.Status, truncate(put.Body))
@@ -251,7 +251,7 @@ func TestProviderNodeLimitsAreEditableThroughTheRouter(t *testing.T) {
 		t.Fatalf("node-nara is absent from GET /api/provider-nodes: %s", truncate(res.Body))
 	}
 
-	reset := env.Post(t, "/api/provider-nodes/node-nara/quota/reset", nil)
+	reset := env.PostOp(t, "/api/provider-nodes/node-nara/quota/reset", nil)
 	if reset.Status != http.StatusOK {
 		t.Fatalf("POST quota reset = %d, want 200 (body: %s)", reset.Status, truncate(reset.Body))
 	}
@@ -278,7 +278,7 @@ func TestProviderNodeLimits_ClearedToZero(t *testing.T) {
 	}
 
 	// The editor sends an explicit all-zero patch when every field is cleared.
-	put := env.Put(t, "/api/provider-nodes/node-nara/limits",
+	put := env.PutOp(t, "/api/provider-nodes/node-nara/limits",
 		map[string]any{
 			"rpm":         0,
 			"tpm":         0,

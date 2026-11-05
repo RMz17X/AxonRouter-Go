@@ -51,7 +51,7 @@ func requireApiKey(t *testing.T, rows []apiKeyRow, id string) apiKeyRow {
 func TestApiKeyLifecycle(t *testing.T) {
 	env := newEnv(t)
 
-	created := env.Post(t, "/api/keys", map[string]any{"name": "CI Key"})
+	created := env.PostOp(t, "/api/keys", map[string]any{"name": "CI Key"})
 	if created.Status != http.StatusCreated {
 		t.Fatalf("POST /api/keys = %d, want 201 (body: %s)", created.Status, truncate(created.Body))
 	}
@@ -76,7 +76,7 @@ func TestApiKeyLifecycle(t *testing.T) {
 	})
 
 	t.Run("deactivating revokes it", func(t *testing.T) {
-		if res := env.Put(t, "/api/keys/"+id+"/toggle", map[string]any{"isActive": false}); res.Status != http.StatusOK {
+		if res := env.PutOp(t, "/api/keys/"+id+"/toggle", map[string]any{"isActive": false}); res.Status != http.StatusOK {
 			t.Fatalf("PUT /api/keys/%s/toggle = %d, want 200 (body: %s)", id, res.Status, truncate(res.Body))
 		}
 		if got := requireApiKey(t, listApiKeys(t, env), id).IsActive; got != 0 {
@@ -92,7 +92,7 @@ func TestApiKeyLifecycle(t *testing.T) {
 		if err := env.Repo.SetApiKeyStatus(id, true); err != nil {
 			t.Fatalf("reactivate key: %v", err)
 		}
-		if res := env.Delete(t, "/api/keys/"+id); res.Status != http.StatusOK {
+		if res := env.DeleteOp(t, "/api/keys/"+id); res.Status != http.StatusOK {
 			t.Fatalf("DELETE /api/keys/%s = %d, want 200 (body: %s)", id, res.Status, truncate(res.Body))
 		}
 		res := env.Get(t, "/v1/models", WithAPIKey(createResp.Key))
@@ -180,13 +180,13 @@ func TestComboLifecycleThroughTheDashboard(t *testing.T) {
 	env := newEnv(t)
 
 	t.Run("create requires a name", func(t *testing.T) {
-		res := env.Post(t, "/api/combos", map[string]any{"models": []string{"deepseek/deepseek-chat"}})
+		res := env.PostOp(t, "/api/combos", map[string]any{"models": []string{"deepseek/deepseek-chat"}})
 		if res.Status != http.StatusBadRequest {
 			t.Fatalf("POST /api/combos without a name = %d, want 400 (body: %s)", res.Status, truncate(res.Body))
 		}
 	})
 
-	created := env.Post(t, "/api/combos", map[string]any{
+	created := env.PostOp(t, "/api/combos", map[string]any{
 		"name":   "dashboard-combo",
 		"kind":   "llm",
 		"models": []string{"deepseek/deepseek-chat", "groq/llama-3.3-70b-versatile"},
@@ -211,7 +211,7 @@ func TestComboLifecycleThroughTheDashboard(t *testing.T) {
 	})
 
 	t.Run("update replaces the member list", func(t *testing.T) {
-		res := env.Put(t, "/api/combos/"+id, map[string]any{
+		res := env.PutOp(t, "/api/combos/"+id, map[string]any{
 			"name":   "dashboard-combo",
 			"kind":   "llm",
 			"models": []string{"groq/llama-3.3-70b-versatile"},
@@ -225,7 +225,7 @@ func TestComboLifecycleThroughTheDashboard(t *testing.T) {
 	})
 
 	t.Run("delete removes it", func(t *testing.T) {
-		res := env.Delete(t, "/api/combos/"+id)
+		res := env.DeleteOp(t, "/api/combos/"+id)
 		if res.Status != http.StatusOK {
 			t.Fatalf("DELETE /api/combos/%s = %d, want 200 (body: %s)", id, res.Status, truncate(res.Body))
 		}

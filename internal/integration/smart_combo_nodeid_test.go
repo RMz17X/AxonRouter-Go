@@ -53,7 +53,7 @@ func TestSmartRulesMatchCustomModelsKeyedByNodeID(t *testing.T) {
 		{"re:^cutad/deepseek-v4-flash$", "regex", "cutad/deepseek-v4-flash"},
 	}
 	for _, tc := range cases {
-		res := env.Post(t, "/api/combos/combo-ds/smart/preview", map[string]any{
+		res := env.PostOp(t, "/api/combos/combo-ds/smart/preview", map[string]any{
 			"matchRules": []any{map[string]any{"pattern": tc.pattern, "mode": tc.mode}},
 		})
 		if res.Status != http.StatusOK {
@@ -90,7 +90,7 @@ func TestSmartRulesMatchCustomModelsKeyedByNodeID(t *testing.T) {
 	}
 
 	// Saving the rules materializes the member under the prefix spelling.
-	res := env.Post(t, "/api/combos", map[string]any{
+	res := env.PostOp(t, "/api/combos", map[string]any{
 		"id":         "combo-save",
 		"name":       "ds-save",
 		"models":     []string{},
@@ -141,7 +141,7 @@ func TestSmartRulesKeepNodeIDSpelledMember(t *testing.T) {
 		t.Fatalf("store rules: %v", err)
 	}
 
-	res := env.Post(t, "/api/combos/reconcile", nil)
+	res := env.PostOp(t, "/api/combos/reconcile", nil)
 	if res.Status != http.StatusOK {
 		t.Fatalf("POST reconcile = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}
@@ -202,7 +202,7 @@ func TestSmartRulesMatchAlternateSpellings(t *testing.T) {
 		{"node id keyword", "node-cutad/", "keyword", "cutad/deepseek-v4-flash"},
 	}
 	for _, tc := range cases {
-		res := env.Post(t, "/api/combos/combo-alt/smart/preview", map[string]any{
+		res := env.PostOp(t, "/api/combos/combo-alt/smart/preview", map[string]any{
 			"matchRules": []any{map[string]any{"pattern": tc.pattern, "mode": tc.mode}},
 		})
 		if res.Status != http.StatusOK {
@@ -228,7 +228,7 @@ func TestSmartRulesMatchAlternateSpellings(t *testing.T) {
 	}
 	// An exclude rule spelled the same way keeps the model out: the deny map is
 	// keyed by the candidate's own id, so the alternate spelling still denies.
-	res := env.Post(t, "/api/combos/combo-alt/smart/preview", map[string]any{
+	res := env.PostOp(t, "/api/combos/combo-alt/smart/preview", map[string]any{
 		"matchRules": []any{
 			map[string]any{"pattern": "*", "mode": "glob"},
 			map[string]any{"pattern": "deepseek/*", "mode": "glob", "effect": "exclude"},
@@ -275,7 +275,7 @@ func TestSmartRulesExcludedHoldsUnderEverySpelling(t *testing.T) {
 	// The operator removed the member while the dashboard spelled it with the
 	// node id; the rule claims the prefix spelling.
 	rules := `[{"id":"r1","pattern":"cutad/*","mode":"glob","effect":"include","enabled":true,"maxMembers":20,"resolved":["cutad/deepseek-v4-flash"],"excluded":["node-cutad/deepseek-v4-flash"]}]`
-	res := env.Post(t, "/api/combos/combo-excl/smart/preview", map[string]any{"matchRules": []any{
+	res := env.PostOp(t, "/api/combos/combo-excl/smart/preview", map[string]any{"matchRules": []any{
 		map[string]any{"pattern": "cutad/*", "mode": "glob", "resolved": []string{"cutad/deepseek-v4-flash"}, "excluded": []string{"node-cutad/deepseek-v4-flash"}},
 	}})
 	if res.Status != http.StatusOK {
@@ -322,7 +322,7 @@ func TestSmartRulesCapKeepsExistingMembers(t *testing.T) {
 	}
 	// mmm is already a member and sorts between the other two.
 	env.AddCombo(t, "combo-cap", "cap", []string{"cap/mmm"})
-	res := env.Post(t, "/api/combos/combo-cap/smart/preview", map[string]any{"matchRules": []any{
+	res := env.PostOp(t, "/api/combos/combo-cap/smart/preview", map[string]any{"matchRules": []any{
 		map[string]any{"pattern": "cap/*", "mode": "glob", "maxMembers": 2},
 	}})
 	if res.Status != http.StatusOK {
@@ -372,7 +372,7 @@ func TestSmartRulesSegmentNegation(t *testing.T) {
 	env.AddCombo(t, "combo-neg", "neg", []string{})
 	// Everything except the deepseek family: the 8 registry models are denied
 	// and the kenari custom model survives.
-	res := env.Post(t, "/api/combos/combo-neg/smart/preview", map[string]any{"matchRules": []any{
+	res := env.PostOp(t, "/api/combos/combo-neg/smart/preview", map[string]any{"matchRules": []any{
 		map[string]any{"pattern": "*!deepseek*", "mode": "glob"},
 	}})
 	if res.Status != http.StatusOK {
@@ -395,7 +395,7 @@ func TestSmartRulesSegmentNegation(t *testing.T) {
 		t.Fatalf("models = %v, want only the non-deepseek model", out.Models)
 	}
 	// A pattern that is nothing but negations selects nothing.
-	res2 := env.Post(t, "/api/combos/combo-neg/smart/preview", map[string]any{"matchRules": []any{
+	res2 := env.PostOp(t, "/api/combos/combo-neg/smart/preview", map[string]any{"matchRules": []any{
 		map[string]any{"pattern": "!deepseek*", "mode": "glob"},
 	}})
 	if res2.Status != http.StatusBadRequest {
@@ -431,7 +431,7 @@ func TestSmartRulesLoadMergesWithoutDroppingPins(t *testing.T) {
 	// of death (the same reading the reconcile path applies), so only a live
 	// member the rules no longer claim is removed.
 	env.AddCombo(t, "combo-load", "load", []string{"ds/pinned", "cutad/old-model"})
-	res := env.Post(t, "/api/combos/combo-load/smart/load", map[string]any{"matchRules": []any{
+	res := env.PostOp(t, "/api/combos/combo-load/smart/load", map[string]any{"matchRules": []any{
 		map[string]any{"pattern": "cutad/*", "mode": "glob"},
 	}})
 	if res.Status != http.StatusOK {
@@ -470,7 +470,7 @@ func TestSmartRulesLoadMergesWithoutDroppingPins(t *testing.T) {
 		t.Fatalf("stored rules = %q, want the rule list persisted", stored)
 	}
 	// A second load with the same rules is a no-op, and the pin is still there.
-	res2 := env.Post(t, "/api/combos/combo-load/smart/load", map[string]any{"matchRules": []any{
+	res2 := env.PostOp(t, "/api/combos/combo-load/smart/load", map[string]any{"matchRules": []any{
 		map[string]any{"pattern": "cutad/*", "mode": "glob"},
 	}})
 	if res2.Status != http.StatusOK {

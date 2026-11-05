@@ -47,7 +47,7 @@ func addProxyPool(t *testing.T, env *Env, name, proxyURL string) string {
 
 func assignPool(t *testing.T, env *Env, connID, poolID string) {
 	t.Helper()
-	res := env.Put(t, "/api/connections/"+connID, map[string]any{
+	res := env.PutOp(t, "/api/connections/"+connID, map[string]any{
 		"proxyPoolId":          poolID,
 		"providerSpecificData": map[string]any{"proxyPoolId": poolID},
 	})

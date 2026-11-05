@@ -106,7 +106,7 @@ func TestComboPresetsCreateThenNoop(t *testing.T) {
 	env.AddCombo(t, "combo-sonnet", "sonnet", []string{"cc/claude-sonnet-5"})
 	wantTotal := expectedClaudePresets()
 
-	first := env.Post(t, "/api/combos/presets", map[string]any{"source": "claude"})
+	first := env.PostOp(t, "/api/combos/presets", map[string]any{"source": "claude"})
 	if first.Status != http.StatusOK {
 		t.Fatalf("POST presets = %d, want 200 (body: %s)", first.Status, truncate(first.Body))
 	}
@@ -125,7 +125,7 @@ func TestComboPresetsCreateThenNoop(t *testing.T) {
 		t.Errorf("after creation toCreate = %d / toSkip = %d, want 0 / %d", stored.ToCreate, stored.ToSkip, wantTotal)
 	}
 
-	second := env.Post(t, "/api/combos/presets", map[string]any{"source": "claude"})
+	second := env.PostOp(t, "/api/combos/presets", map[string]any{"source": "claude"})
 	if second.Status != http.StatusOK {
 		t.Fatalf("second POST presets = %d, want 200 (body: %s)", second.Status, truncate(second.Body))
 	}
@@ -144,7 +144,7 @@ func TestComboPresetsCreateThenNoop(t *testing.T) {
 func TestComboPresetsCreatedComboIsRoutable(t *testing.T) {
 	env := newEnv(t)
 
-	if res := env.Post(t, "/api/combos/presets", map[string]any{"source": "claude"}); res.Status != http.StatusOK {
+	if res := env.PostOp(t, "/api/combos/presets", map[string]any{"source": "claude"}); res.Status != http.StatusOK {
 		t.Fatalf("POST presets = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}
 
@@ -209,7 +209,7 @@ func TestComboPresetsCursorSeedsRegistryModels(t *testing.T) {
 func TestComboPresetsCursorCreateStoresSeededModels(t *testing.T) {
 	env := newEnv(t)
 
-	if res := env.Post(t, "/api/combos/presets", map[string]any{"source": "cursor"}); res.Status != http.StatusOK {
+	if res := env.PostOp(t, "/api/combos/presets", map[string]any{"source": "cursor"}); res.Status != http.StatusOK {
 		t.Fatalf("POST cursor presets = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}
 
@@ -262,7 +262,7 @@ func TestComboPresetsRejectUnknownSource(t *testing.T) {
 		}
 	}
 
-	post := env.Post(t, "/api/combos/presets", map[string]any{"source": "unknown"})
+	post := env.PostOp(t, "/api/combos/presets", map[string]any{"source": "unknown"})
 	if post.Status != http.StatusBadRequest {
 		t.Errorf("POST unknown source = %d, want 400 (body: %s)", post.Status, truncate(post.Body))
 	}

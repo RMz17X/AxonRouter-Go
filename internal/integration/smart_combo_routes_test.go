@@ -31,7 +31,7 @@ func TestSmartComboRulesAreReachableThroughTheRouter(t *testing.T) {
 	env.AddCombo(t, "combo-ds", "ds-all", []string{})
 
 	// The dry run the editor calls as the operator types.
-	preview := env.Post(t, "/api/combos/combo-ds/smart/preview", map[string]any{
+	preview := env.PostOp(t, "/api/combos/combo-ds/smart/preview", map[string]any{
 		"matchRules": []any{map[string]any{"pattern": "nara/deepseek*", "mode": "glob"}},
 	})
 	if preview.Status != http.StatusOK {
@@ -70,7 +70,7 @@ func TestSmartComboRulesAreReachableThroughTheRouter(t *testing.T) {
 
 	// The manual apply, which is the half that catches what no model write
 	// announces.
-	reconcile := env.Post(t, "/api/combos/reconcile", nil)
+	reconcile := env.PostOp(t, "/api/combos/reconcile", nil)
 	if reconcile.Status != http.StatusOK {
 		t.Fatalf("POST reconcile = %d, want 200 (body: %s)", reconcile.Status, truncate(reconcile.Body))
 	}

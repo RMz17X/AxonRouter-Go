@@ -149,7 +149,7 @@ func TestSuffixLevelApplies(t *testing.T) {
 func TestProviderThinkingOffOnStepModel(t *testing.T) {
 	env, upstream := newProviderEnv(t)
 
-	res := env.Put(t, "/api/settings", map[string]any{
+	res := env.PutOp(t, "/api/settings", map[string]any{
 		"providerThinking": map[string]any{"deepseek": map[string]any{"mode": "off"}},
 	})
 	if res.Status != http.StatusOK {

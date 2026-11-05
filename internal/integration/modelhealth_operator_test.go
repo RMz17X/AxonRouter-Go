@@ -53,7 +53,7 @@ func TestDisabledModelsWriteReachesModelHealthAudit(t *testing.T) {
 	}
 
 	// The operator re-enables it: the list goes from ["m1"] to [].
-	res := env.Put(t, "/api/models/disabled/node-vsllm", map[string]any{"models": []string{}})
+	res := env.PutOp(t, "/api/models/disabled/node-vsllm", map[string]any{"models": []string{}})
 	if res.Status != http.StatusOK {
 		t.Fatalf("PUT disabled = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}

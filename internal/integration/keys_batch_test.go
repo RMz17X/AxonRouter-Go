@@ -37,7 +37,7 @@ func TestCreateApiKeyBatchPersistsPerKey(t *testing.T) {
 	}
 	created := make([]minted, 0, len(lines))
 	for _, w := range lines {
-		res := env.Post(t, "/api/keys", map[string]any{"name": w.name, "machineId": w.machine})
+		res := env.PostOp(t, "/api/keys", map[string]any{"name": w.name, "machineId": w.machine})
 		if w.refused {
 			if res.Status != http.StatusBadRequest {
 				t.Fatalf("create %+v: status %d, want Axon's 400 for a nameless key: %s", w, res.Status, truncate(res.Body))
