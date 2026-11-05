@@ -100,6 +100,7 @@ export interface RequestDetailItem {
   combo?: string
   protocol?: string
   cacheSource?: string
+  proxy?: string
   cost?: number
   error?: string
   loopWarning?: string

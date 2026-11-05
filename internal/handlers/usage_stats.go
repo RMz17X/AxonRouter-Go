@@ -693,6 +693,7 @@ type detailListItem struct {
 	Combo        string           `json:"combo,omitempty"`
 	Protocol     string           `json:"protocol,omitempty"`
 	LoopWarning  string           `json:"loopWarning,omitempty"`
+	Proxy        string           `json:"proxy"`
 }
 
 // HandleRequestDetails returns paged request detail objects for the Details tab.
@@ -779,6 +780,10 @@ func newDetailListItem(row db.RequestDetailListRow) detailListItem {
 	if protocol == "" {
 		protocol = "OpenAI-Chat"
 	}
+	proxy := row.Proxy
+	if proxy == "" {
+		proxy = "direct"
+	}
 	return detailListItem{
 		ID:           row.ID,
 		Timestamp:    row.Timestamp,
@@ -793,6 +798,7 @@ func newDetailListItem(row db.RequestDetailListRow) detailListItem {
 		Combo:        row.Combo,
 		Protocol:     protocol,
 		LoopWarning:  row.LoopWarning,
+		Proxy:        proxy,
 	}
 }
 

@@ -110,11 +110,11 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 			}
 			if pool == nil {
 				if strictProxy {
-					log.Warn("proxy", "assigned proxy group/type has no active pool in strict mode", "target", connData.ProxyPoolID)
-					return nil, fmt.Errorf("proxy target %q is unavailable in strict mode", connData.ProxyPoolID)
+					log.Warn("proxy", "assigned proxy group/type has no fit pool in strict mode", "target", connData.ProxyPoolID)
+					return nil, fmt.Errorf("proxy target %q has no fit proxy pools in strict mode", connData.ProxyPoolID)
 				}
 				// Non-strict: fallback to direct connection
-				log.Warn("proxy", "assigned proxy group/type has no active pool, falling back to direct", "target", connData.ProxyPoolID)
+				log.Warn("proxy", "assigned proxy group/type has no fit pool, falling back to direct", "target", connData.ProxyPoolID)
 				return h.Client, nil
 			}
 		} else {
@@ -127,6 +127,13 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 			case !pool.IsActive:
 				log.Warn("proxy", "assigned pool is inactive", "pool", connData.ProxyPoolID)
 				return nil, fmt.Errorf("proxy pool %q is assigned but inactive", connData.ProxyPoolID)
+			case !smart.DefaultTracker.IsPoolUsable(connData.Provider, pool.ID):
+				if strictProxy {
+					log.Warn("proxy", "assigned pool is currently unfit/in cooldown in strict mode", "pool", pool.ID)
+					return nil, fmt.Errorf("proxy pool %q is currently unfit or cooling down in strict mode", pool.ID)
+				}
+				log.Warn("proxy", "assigned pool is currently unfit/in cooldown, falling back to direct", "pool", pool.ID)
+				return h.Client, nil
 			}
 		}
 

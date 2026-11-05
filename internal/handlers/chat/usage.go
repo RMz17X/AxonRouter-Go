@@ -488,6 +488,7 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		"cost":           cost,
 		"request":        map[string]any{"messages": reqMsgs},
 		"response":       map[string]any{"content": respContent},
+		"egress":         info.Egress,
 	}
 	if len(findings) > 0 {
 		detailPayload["anomalies"] = findings

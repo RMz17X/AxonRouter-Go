@@ -108,18 +108,30 @@ func (t *FitnessTracker) RecordFailure(provider, poolID string, _ error) {
 	s.ConsecutiveFails++
 	s.LastFailureAt = now
 
-	// Exponential cooldown progression: 1st=10s, 2nd=30s, 3+=60s
+	// Progressive cooldown progression:
+	// 1st fail: 30s
+	// 2nd fail: 2m (120s)
+	// 3rd fail: 10m (600s)
+	// 4th fail: 30m (1800s)
+	// 5+ fails: 1h (3600s)
 	var cooldownSec int
 	switch s.ConsecutiveFails {
 	case 1:
-		cooldownSec = 10
-	case 2:
 		cooldownSec = 30
+	case 2:
+		cooldownSec = 120
+	case 3:
+		cooldownSec = 600
+	case 4:
+		cooldownSec = 1800
 	default:
-		cooldownSec = 60
+		cooldownSec = 3600
 	}
 	s.CooldownUntil = now.Add(time.Duration(cooldownSec) * time.Second)
 	s.FitnessScore = calculateScore(s, now)
+	if s.ConsecutiveFails >= 2 {
+		poolstate.MarkUnfit(poolID, provider+"::*", s.CooldownUntil.UnixMilli(), "consecutive proxy transport failures")
+	}
 }
 
 // RecordFailureWithCooldown records a live request failure with an explicit cooldown duration
@@ -218,6 +230,26 @@ func calculateScore(s *PoolStats, now time.Time) float64 {
 	return math.Round(score*10) / 10
 }
 
+// IsInCooldown checks whether a pool is currently in cooldown or marked unfit.
+func (t *FitnessTracker) IsInCooldown(provider, poolID string) bool {
+	if poolstate.IsUnfit(poolID, provider+"::*") {
+		return true
+	}
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	key := statKey(provider, poolID)
+	s := t.stats[key]
+	if s == nil {
+		return false
+	}
+	return time.Now().Before(s.CooldownUntil)
+}
+
+// IsPoolUsable reports whether a pool is healthy and ready for traffic (not unfit, not in cooldown).
+func (t *FitnessTracker) IsPoolUsable(provider, poolID string) bool {
+	return !t.IsInCooldown(provider, poolID)
+}
+
 // PickBest selects the pool with the highest fitness score among candidates.
 // Pools currently in cooldown are excluded unless all candidates are failing.
 func (t *FitnessTracker) PickBest(provider string, candidates []*db.ProxyPool) (*db.ProxyPool, error) {
@@ -225,7 +257,11 @@ func (t *FitnessTracker) PickBest(provider string, candidates []*db.ProxyPool) (
 		return nil, ErrNoPoolsSupplied
 	}
 	if len(candidates) == 1 {
-		return candidates[0], nil
+		p := candidates[0]
+		if p != nil && (poolstate.IsUnfit(p.ID, provider+"::*") || t.IsInCooldown(provider, p.ID)) {
+			return nil, errors.New("candidate proxy pool is unfit or cooling down")
+		}
+		return p, nil
 	}
 
 	now := time.Now()
@@ -267,11 +303,12 @@ func (t *FitnessTracker) PickBest(provider string, candidates []*db.ProxyPool) (
 	if bestHealthy != nil {
 		return bestHealthy, nil
 	}
-	// All candidates on cooldown: fallback to the pool recovering soonest
-	if bestCooldownPool != nil {
+	// All candidates on cooldown: fallback to the pool recovering soonest (soft failover),
+	// provided it's recovering within 60s and not on a long quarantine
+	if bestCooldownPool != nil && time.Until(earliestExpiry) <= 60*time.Second {
 		return bestCooldownPool, nil
 	}
-	return candidates[0], nil
+	return nil, errors.New("no fit proxy pools available in candidate list")
 }
 
 // PoolHealthSummary summarizes fitness & cooldown status for a pool across providers.

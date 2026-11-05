@@ -1025,6 +1025,17 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 							// In combo loops, fail over immediately to the next connection/model without blocking the client turn
 							log.Info("combo", "transient failover skip", "status", ue.StatusCode, "provider", modelInfo.Provider, "conn", connID)
 						}
+						if isProxyTransportError(fwdErr, ue.StatusCode) {
+							poolID := connData.ResolvedProxyPoolID
+							if poolID == "" {
+								poolID = connData.ProxyPoolID
+							}
+							if poolID != "" && poolID != "__none__" && poolID != "direct" {
+								smart.DefaultTracker.RecordFailure(modelInfo.Provider, poolID, fwdErr)
+								log.Warn("combo", "proxy pool transport error, penalizing fitness",
+									"conn", connID, "provider", modelInfo.Provider, "model", modelInfo.Model, "pool", poolID, "status", ue.StatusCode)
+							}
+						}
 						retry.note(ue)
 						lastErr = ue
 						if isKnownNoAuth {
@@ -1040,6 +1051,15 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 				}
 
 				entrySuccess = true
+				if connData != nil {
+					poolID := connData.ResolvedProxyPoolID
+					if poolID == "" {
+						poolID = connData.ProxyPoolID
+					}
+					if poolID != "" && poolID != "__none__" && poolID != "direct" {
+						smart.DefaultTracker.RecordSuccess(modelInfo.Provider, poolID, time.Since(attemptStart))
+					}
+				}
 				break
 			}
 			if timeoutGate != nil && timeoutGate.finish() && ctx.Err() == nil {

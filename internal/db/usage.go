@@ -828,6 +828,7 @@ type RequestDetailListRow struct {
 	Combo        string
 	Protocol     string
 	LoopWarning  string
+	Proxy        string
 }
 
 // The sort carries an id tiebreaker (council round 1, C-3): timestamps
@@ -856,7 +857,8 @@ const requestDetailListSelect = `
 	       COALESCE(data #>> '{combo}', ''),
 	       COALESCE(data #>> '{protocol}', ''),
 	       COALESCE(data #>> '{loopWarning}', COALESCE(data #>> '{anomalies,0,message}', '')),
-	       CASE WHEN data IS NULL THEN 0 ELSE 1 END
+	       CASE WHEN data IS NULL THEN 0 ELSE 1 END,
+	       COALESCE(NULLIF(data #>> '{egress,poolId}', ''), COALESCE(NULLIF(data #>> '{egress,PoolID}', ''), COALESCE(NULLIF(data #>> '{egress,target}', ''), 'direct')))
 	FROM requestDetails
 	%s
 	ORDER BY timestamp DESC, id DESC
@@ -903,7 +905,8 @@ func (r *Repo) GetRequestDetailsPaged(ctx context.Context, limit, offset int, si
 			&row.ConnectionID, &row.Status, &row.LatencyTTFT, &row.LatencyTotal, &row.TokensJSON,
 			&row.Account, &row.Cost, &row.Combo, &row.Protocol,
 			&row.LoopWarning,
-			&dataValid); err != nil {
+			&dataValid,
+			&row.Proxy); err != nil {
 			return nil, total, fmt.Errorf("scan requestDetails: %w", err)
 		}
 		// A stored `data` that is NULL or not JSON is a broken read, not an

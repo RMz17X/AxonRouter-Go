@@ -286,6 +286,24 @@ func (h *ChatHandler) handleAccountFallback(
 			}
 		}
 
+		statusCode := 0
+		if ue != nil {
+			statusCode = ue.StatusCode
+		}
+		if isProxyTransportError(lastErr, statusCode) {
+			poolID := connData.ResolvedProxyPoolID
+			if poolID == "" {
+				poolID = connData.ProxyPoolID
+			}
+			if poolID != "" && poolID != "__none__" && poolID != "direct" {
+				smart.DefaultTracker.RecordFailure(provider, poolID, lastErr)
+				log.Warn("fallback", "proxy transport failed, penalizing proxy fitness",
+					"conn", connObj.ID, "provider", provider, "model", model, "pool", poolID, "status", statusCode, "error", lastErr)
+				excludedPools[poolID] = true
+				continue
+			}
+		}
+
 		if ue != nil && providers.IsModelDeprecation(ue.StatusCode, ue.Body) {
 			// A retired model fails on every account of this provider, so the
 			// remaining connections are skipped and the badge the operator
@@ -1243,6 +1261,17 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		logInfo.ConnName, logInfo.ConnEmail = identityNames(h.connIdentityKVOr(f, connectionID))
 		h.logUsage(ctx, logInfo, usage, latencyMs, body, metrics)
 		metrics.ResponseBuf.Reset()
+
+		if connData != nil {
+			poolID := connData.ResolvedProxyPoolID
+			if poolID == "" {
+				poolID = connData.ProxyPoolID
+			}
+			if poolID != "" && poolID != "__none__" && poolID != "direct" {
+				smart.DefaultTracker.RecordSuccess(provider, poolID, time.Duration(latencyMs)*time.Millisecond)
+			}
+		}
+
 		fwdErr = nil
 		return nil
 	}
@@ -1915,4 +1944,23 @@ func isProxyLocationError(err error, body []byte) bool {
 		(strings.Contains(text, "failed_precondition") && strings.Contains(text, "location")) ||
 		strings.Contains(text, "location_not_supported") ||
 		strings.Contains(text, "free_tier_region_blocked")
+}
+
+// isProxyTransportError reports whether an upstream failure appears to be a transport/gateway error
+// originating from the proxy relay or proxy connection rather than the model itself.
+func isProxyTransportError(err error, statusCode int) bool {
+	if statusCode == http.StatusBadGateway || statusCode == http.StatusGatewayTimeout {
+		return true
+	}
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "proxy") ||
+		strings.Contains(text, "connect tunnel failed") ||
+		strings.Contains(text, "connection refused") ||
+		strings.Contains(text, "connection reset") ||
+		strings.Contains(text, "i/o timeout") ||
+		strings.Contains(text, "context deadline exceeded") ||
+		strings.Contains(text, "eof")
 }

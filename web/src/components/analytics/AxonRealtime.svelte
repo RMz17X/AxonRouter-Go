@@ -81,6 +81,21 @@
     const model = r.model || r.requestedModel || '—'
     return r.comboName ? `${r.comboName} -> ${model}` : model
   }
+  function proxyLabel(row: RequestDetailItem): string {
+    const p = row.proxy
+    if (typeof p === 'string' && p.trim() && p !== 'direct') {
+      return p.trim()
+    }
+    const egress = (row as any).egress
+    if (egress) {
+      if (typeof egress === 'string' && egress !== 'direct') return egress
+      if (typeof egress === 'object') {
+        const pool = egress.poolId || egress.poolName || egress.target
+        if (pool && pool !== 'direct') return String(pool)
+      }
+    }
+    return 'direct'
+  }
   // Axon's realtime rows carry no "ago" suffix.
   function relTime(timestamp?: string): string {
     if (!timestamp) return 'just now'
@@ -259,6 +274,7 @@
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">Model</th>
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">Provider</th>
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">Upstream Account</th>
+            <th class="py-2 pr-2 text-left font-semibold text-text-muted">Proxy</th>
             <th class="py-2 pr-2 text-right font-semibold whitespace-nowrap text-text-muted">Tokens In/Out</th>
             <th class="py-2 pr-2 text-right font-semibold text-text-muted">Cost</th>
             <th class="py-2 pr-2 text-right font-semibold text-text-muted">When</th>
@@ -273,6 +289,13 @@
                 <span class="inline-block rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
               </td>
               <td class="max-w-[160px] truncate py-2 pr-2" title={row.account || 'Direct (Free)'}>{row.account || 'Direct (Free)'}</td>
+              <td class="py-2 pr-2 whitespace-nowrap font-mono text-[11px]">
+                {#if proxyLabel(row) !== 'direct'}
+                  <span class="inline-block rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title={proxyLabel(row)}>{proxyLabel(row)}</span>
+                {:else}
+                  <span class="inline-block rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted">direct</span>
+                {/if}
+              </td>
               <td class="py-2 pr-2 text-right whitespace-nowrap tabular-nums">{fmtNumberUS(row.tokens?.prompt_tokens)} / {fmtNumberUS(row.tokens?.completion_tokens)}</td>
               <td class="py-2 pr-2 text-right whitespace-nowrap tabular-nums">{row.cost != null ? fmtCost(row.cost) : '—'}</td>
               <td class="py-2 pr-2 text-right whitespace-nowrap text-text-muted">{relTime(row.timestamp)}</td>

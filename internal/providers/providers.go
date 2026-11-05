@@ -1333,11 +1333,6 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthScheme: "bearer",
 		Hidden:     true,
 	},
-	"devin-cli": {
-		BaseURL:    "devin://acp/stdio",
-		AuthHeader: "Authorization",
-		AuthScheme: "bearer",
-	},
 	"kilo-gateway": {
 		BaseURL:    "https://api.kilo.ai/api/gateway/chat/completions",
 		AuthHeader: "Authorization",

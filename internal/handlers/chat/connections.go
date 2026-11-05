@@ -157,18 +157,21 @@ func (h *ChatHandler) rotatedActiveProxyPoolWithin(provider, strategy string, ex
 	if len(ids) == 0 {
 		return "", nil
 	}
-	if len(excluded) > 0 {
-		usable := make([]string, 0, len(ids))
-		for _, id := range ids {
-			if !excluded[id] {
-				usable = append(usable, id)
-			}
+
+	usable := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if excluded != nil && excluded[id] {
+			continue
 		}
-		if len(usable) == 0 {
-			return "", errNoUsablePool
+		if !smart.DefaultTracker.IsPoolUsable(provider, id) {
+			continue
 		}
-		ids = usable
+		usable = append(usable, id)
 	}
+	if len(usable) == 0 {
+		return "", errNoUsablePool
+	}
+	ids = usable
 	if strings.ToLower(strings.TrimSpace(strategy)) == "random" {
 		return ids[rand.IntN(len(ids))], nil
 	}
