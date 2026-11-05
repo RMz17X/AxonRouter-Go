@@ -123,9 +123,19 @@ func ForwardMinimaxCode(w http.ResponseWriter, req *Request) error {
 
 	// The upstream answers in Claude Messages on every lane, so the reply
 	// always flows through handleClaudeMessages*: a /v1/messages client
-	// (TranslateResp=true) gets the frames passed through, an OpenAI
-	// /v1/chat/completions client (TranslateResp=false) gets each event
-	// rewritten into chat.completion chunks or OpenAI completion JSON.
+	// gets the frames passed through (with tool decloaking), an OpenAI
+	// /v1/chat/completions client gets each event rewritten into
+	// chat.completion chunks or OpenAI completion JSON.
+	//
+	// The helpers read TranslateResp in THEIR convention (true = the
+	// client speaks Claude). The chat layer's flag has the opposite
+	// polarity on the /v1/messages lane: it arrives false for
+	// Claude-native providers precisely because no translation was
+	// expected there, so obeying it verbatim translated a Claude reply
+	// into OpenAI shape for a Claude client. req.ClaudeClient is derived
+	// from the endpoint itself and is unambiguous, so the helpers are
+	// handed the flag in their own convention.
+	req.TranslateResp = req.ClaudeClient
 	if req.IsStream {
 		return handleClaudeMessagesStream(w, req, resp.Body)
 	}
