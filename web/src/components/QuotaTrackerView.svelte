@@ -1480,12 +1480,34 @@
                 </span>
               </div>
             {:else if error}
-              <div class="py-5 text-center">
-                <p class="text-xs text-text-muted">{error}</p>
+              <div class="py-4 text-center flex flex-col items-center gap-2">
+                <p class="text-xs text-red-500 font-medium px-2">{error}</p>
+                {#if error.toLowerCase().includes('validation_required') || error.toLowerCase().includes('verify your account') || conn.verificationUrl}
+                  <a
+                    href={conn.verificationUrl || 'https://antigravity.google'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                  >
+                    <span>Verifikasi Akun Manual</span>
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
+                {/if}
               </div>
             {:else if quota?.message}
-              <div class="py-5 text-center">
-                <p class="text-xs text-text-muted">{quota.message}</p>
+              <div class="py-4 text-center flex flex-col items-center gap-2">
+                <p class="text-xs text-text-muted px-2">{quota.message}</p>
+                {#if quota.message.toLowerCase().includes('validation_required') || quota.message.toLowerCase().includes('verify your account') || conn.verificationUrl}
+                  <a
+                    href={conn.verificationUrl || 'https://antigravity.google'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                  >
+                    <span>Verifikasi Akun Manual</span>
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
+                {/if}
               </div>
             {:else}
               <QuotaTable

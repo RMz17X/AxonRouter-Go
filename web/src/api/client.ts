@@ -34,6 +34,7 @@ export interface ProviderConnection {
   lastError?: string | null
   lastErrorModel?: string | null
   lastErrorSource?: 'chat' | null
+  verificationUrl?: string | null
   displayName?: string | null
   assignedModel?: string | null
   providerSpecificData?: { assignedModel?: string | null; [key: string]: unknown }
@@ -1269,6 +1270,7 @@ export function normalizeConnection(c: ProviderConnection): ProviderConnection {
     expiresAt: stringField(parsed, 'expiresAt'),
     lastErrorModel: stringField(parsed, 'lastErrorModel') ?? stringField(wire, 'lastErrorModel'),
     lastErrorSource: stringField(parsed, 'lastErrorSource') ?? stringField(wire, 'lastErrorSource'),
+    verificationUrl: stringField(parsed, 'verificationUrl') ?? stringField(wire, 'verificationUrl') ?? (typeof parsed.lastError === 'object' && parsed.lastError ? ((parsed.lastError as Record<string, unknown>).verificationUrl as string) : null) ?? null,
   } as ProviderConnection
 }
 

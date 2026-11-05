@@ -4027,6 +4027,20 @@
                             </a>
                           </div>
                         {/if}
+                        {#if conn.verificationUrl || lastErr.toLowerCase().includes('validation_required') || lastErr.toLowerCase().includes('verify your account')}
+                          <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
+                            <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
+                            <a
+                              href={conn.verificationUrl || 'https://antigravity.google'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm transition-colors"
+                            >
+                              <span>Buka Link Verifikasi Manual</span>
+                              <span class="material-symbols-outlined text-xs">open_in_new</span>
+                            </a>
+                          </div>
+                        {/if}
                       </div>
                     {/if}
                     <!-- Proxy detail line: pool/legacy label, masked endpoint, no_proxy -->

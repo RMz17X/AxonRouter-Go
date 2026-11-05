@@ -375,10 +375,49 @@ func (h *ChatHandler) handleAccountFallback(
 				"conn", connObj.ID, "provider", provider, "model", model,
 				"lockKey", lockKey, "status", ue.StatusCode, "cooldown_s", cooldownSec,
 			}, connIdentityKV(connObj)...)...)
+
+			errLower := strings.ToLower(errorText)
+			if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
+				valURL := extractGoogleValidationURL(ue.Body)
+				if valURL == "" {
+					valURL = "https://antigravity.google"
+				}
+				if h.Repo != nil {
+					_ = h.Repo.SetConnectionVerificationRequired(connObj.ID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
+				}
+				h.getSessionAffinity().EvictConnection(connObj.ID)
+			} else if strings.Contains(errLower, "no project id") {
+				if h.Repo != nil {
+					_ = h.Repo.DisableConnectionWithReason(connObj.ID, http.StatusBadRequest, "antigravity: no project ID — onboard the account in Antigravity (antigravity.google) then re-login")
+				}
+				h.getSessionAffinity().EvictConnection(connObj.ID)
+			} else if strings.Contains(errLower, "invalid_grant") || strings.Contains(errLower, "token revoked") || strings.Contains(errLower, "refresh_token_reused") {
+				if h.Repo != nil {
+					_ = h.Repo.DisableConnectionWithReason(connObj.ID, http.StatusUnauthorized, "OAuth token revoked or expired: "+errorText)
+				}
+				h.getSessionAffinity().EvictConnection(connObj.ID)
+			} else if strings.Contains(errLower, "terms of service") || strings.Contains(errLower, "tos_violation") || strings.Contains(errLower, "account has been deleted") || strings.Contains(errLower, "account has been banned") {
+				if h.Repo != nil {
+					_ = h.Repo.DisableConnectionWithReason(connObj.ID, http.StatusForbidden, "Account disabled: "+errorText)
+				}
+				h.getSessionAffinity().EvictConnection(connObj.ID)
+			}
+
 			excludeIDs = append(excludeIDs, connObj.ID)
 			continue
 		}
-		return lastErr
+
+		// If client disconnected or canceled, stop immediately
+		if ctx.Err() != nil {
+			return lastErr
+		}
+
+		// Non-retryable error, transport error, or client failure: exclude this connection
+		// and auto-rotate to the next available account if one exists!
+		excludeIDs = append(excludeIDs, connObj.ID)
+		log.Warn("fallback", "account failed, auto-rotating to next connection",
+			"conn", connObj.ID, "provider", provider, "model", model, "error", lastErr)
+		continue
 	}
 	if lastErr != nil {
 		return opencodeClosureError(provider, model, lastErr)
@@ -649,6 +688,16 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			apiKey = rekey
 		} else {
 			log.Warn("fallback", "OAuth token refresh error", "conn", connectionID, "error", err)
+			errLower := strings.ToLower(err.Error())
+			if strings.Contains(errLower, "invalid_grant") || strings.Contains(errLower, "token revoked") || strings.Contains(errLower, "refresh_token_reused") {
+				if h.Repo != nil {
+					_ = h.Repo.DisableConnectionWithReason(connectionID, http.StatusUnauthorized, "OAuth token refresh failed: "+err.Error())
+				}
+				return &upstreamError{
+					StatusCode: http.StatusUnauthorized,
+					Body:       []byte(fmt.Sprintf(`{"error":{"message":"OAuth token refresh failed: %s","type":"auth_error","code":401}}`, err.Error())),
+				}
+			}
 		}
 	}
 	apiKey = NormalizeProviderToken(provider, apiKey)

@@ -1598,11 +1598,51 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 		return
 	}
 	currentLevel := h.Repo.GetConnectionBackoffLevel(connID)
-	cls := providers.ClassifyErrorForProvider(ue.StatusCode, extractErrorText(ue.Body), currentLevel, provider)
+	errText := extractErrorText(ue.Body)
+	errLower := strings.ToLower(errText)
+	if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
+		valURL := extractGoogleValidationURL(ue.Body)
+		if valURL == "" {
+			valURL = "https://antigravity.google"
+		}
+		if h.Repo != nil {
+			_ = h.Repo.SetConnectionVerificationRequired(connID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
+		}
+		h.getSessionAffinity().EvictConnection(connID)
+		*excludeIDs = append(*excludeIDs, connID)
+		return
+	}
+	if strings.Contains(errLower, "no project id") {
+		if h.Repo != nil {
+			_ = h.Repo.DisableConnectionWithReason(connID, http.StatusBadRequest, "antigravity: no project ID — onboard the account in Antigravity (antigravity.google) then re-login")
+		}
+		h.getSessionAffinity().EvictConnection(connID)
+		*excludeIDs = append(*excludeIDs, connID)
+		return
+	}
+	if strings.Contains(errLower, "invalid_grant") || strings.Contains(errLower, "token revoked") || strings.Contains(errLower, "refresh_token_reused") {
+		if h.Repo != nil {
+			_ = h.Repo.DisableConnectionWithReason(connID, http.StatusUnauthorized, "OAuth token revoked or expired: "+errText)
+		}
+		h.getSessionAffinity().EvictConnection(connID)
+		*excludeIDs = append(*excludeIDs, connID)
+		return
+	}
+	if strings.Contains(errLower, "terms of service") || strings.Contains(errLower, "tos_violation") || strings.Contains(errLower, "account has been deleted") || strings.Contains(errLower, "account has been banned") {
+		if h.Repo != nil {
+			_ = h.Repo.DisableConnectionWithReason(connID, http.StatusForbidden, "Account disabled: "+errText)
+		}
+		h.getSessionAffinity().EvictConnection(connID)
+		*excludeIDs = append(*excludeIDs, connID)
+		return
+	}
+
+	cls := providers.ClassifyErrorForProvider(ue.StatusCode, errText, currentLevel, provider)
 	// Upstream parity (checkFallbackError): request-scoped 4xx (400/404/405/
 	// 409/422/...) must not lock the account — the bug is in the request,
 	// not the credential. Only lock when ShouldFallback is set.
 	if !cls.ShouldFallback || cls.CooldownMs <= 0 {
+		*excludeIDs = append(*excludeIDs, connID)
 		return
 	}
 	cooldownSec := cooldownSecForClassification(ue.StatusCode, cls, ue, provider)

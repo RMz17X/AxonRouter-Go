@@ -30,6 +30,69 @@ func (r *Repo) SetConnectionProjectID(connID, projectID string) error {
 	return nil
 }
 
+// DisableConnectionWithReason marks a connection as inactive (isActive = 0) and
+// records the fatal error message in data.lastError so the dashboard reflects it
+// and routing stops picking this connection entirely.
+func (r *Repo) DisableConnectionWithReason(id string, status int, reason string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	lastError, err := json.Marshal(map[string]any{
+		"status":    status,
+		"message":   reason,
+		"timestamp": now,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal last error for %s: %w", id, err)
+	}
+	_, err = r.Exec(
+		`UPDATE providerConnections
+		 SET isActive = 0,
+		     data = `+jsonSetExpr("data",
+			jsonSetPairAt(jsonDocParam(), "lastError"),
+			jsonSetPairAt(jsonStringLiteral("disabled"), "status"),
+		)+`,
+		     updatedAt = ?
+		 WHERE id = ?`,
+		string(lastError), now, id,
+	)
+	if err != nil {
+		return fmt.Errorf("disable connection %s: %w", id, err)
+	}
+	r.invalidateProviderConnections()
+	return nil
+}
+
+// SetConnectionVerificationRequired stores verificationUrl and disables the connection
+// so traffic rotates to other accounts while giving the operator a manual link to verify.
+func (r *Repo) SetConnectionVerificationRequired(connID, verificationURL, errText string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	lastError, err := json.Marshal(map[string]any{
+		"status":          403,
+		"message":         errText,
+		"verificationUrl": verificationURL,
+		"timestamp":       now,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = r.Exec(
+		`UPDATE providerConnections
+		 SET isActive = 0,
+		     data = `+jsonSetExpr("data",
+			jsonSetPairAt(jsonStringParam(), "verificationUrl"),
+			jsonSetPairAt(jsonDocParam(), "lastError"),
+			jsonSetPairAt(jsonStringLiteral("validation_required"), "status"),
+		)+`,
+		     updatedAt = ?
+		 WHERE id = ?`,
+		verificationURL, string(lastError), now, connID,
+	)
+	if err != nil {
+		return fmt.Errorf("set connection verification required %s: %w", connID, err)
+	}
+	r.invalidateProviderConnections()
+	return nil
+}
+
 // LockConnectionModel stores a per-connection model lock in the
 // providerConnections.data JSON blob using a json_set-style update.
 // Also stores backoffLevel. Matches Next.js markAccountUnavailable.

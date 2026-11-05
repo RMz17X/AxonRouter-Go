@@ -115,7 +115,13 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 		// an error so the fallback chain moves on instead of burning a request on
 		// a dead lane.
 		if provider == "antigravity" {
-			return fmt.Errorf("antigravity: no project ID — onboard the account in Antigravity (antigravity.google) then re-login")
+			if connectionID != "" && h.Repo != nil {
+				_ = h.Repo.DisableConnectionWithReason(connectionID, http.StatusBadRequest, "antigravity: no project ID — onboard the account in Antigravity (antigravity.google) then re-login")
+			}
+			return &proxy.UpstreamError{
+				StatusCode: http.StatusBadGateway,
+				Body:       []byte(`{"error":{"code":502,"message":"antigravity: no project ID — onboard the account in Antigravity (antigravity.google) then re-login","status":"BAD_GATEWAY"}}`),
+			}
 		}
 		// gemini-cli keeps its OpenAI-style fallback.
 		log.Info("gemini", "no projectID, fallback to OpenAI", "provider", provider)
@@ -141,6 +147,22 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 					Status: uErr.StatusCode, Model: modelName, AccessToken: apiKey,
 					ProjectID: projectID, ErrorMessage: string(uErr.Body),
 				})
+			} else if uErr.StatusCode == http.StatusForbidden || uErr.StatusCode == http.StatusUnauthorized {
+				errText := string(uErr.Body)
+				lower := strings.ToLower(errText)
+				if strings.Contains(lower, "validation_required") || strings.Contains(lower, "verify your account") {
+					valURL := extractGoogleValidationURL(uErr.Body)
+					if valURL == "" {
+						valURL = "https://antigravity.google"
+					}
+					if connectionID != "" && h.Repo != nil {
+						_ = h.Repo.SetConnectionVerificationRequired(connectionID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
+					}
+				} else if strings.Contains(lower, "terms of service") || strings.Contains(lower, "tos_violation") || strings.Contains(lower, "disabled in this account") {
+					if connectionID != "" && h.Repo != nil {
+						_ = h.Repo.DisableConnectionWithReason(connectionID, http.StatusForbidden, "Account disabled for ToS violation")
+					}
+				}
 			}
 		}
 		return fmt.Errorf("ForwardGemini (%s/%s): %w", provider, modelName, err)
