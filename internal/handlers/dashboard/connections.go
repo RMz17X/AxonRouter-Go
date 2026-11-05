@@ -29,11 +29,15 @@ import (
 // never leave the server (same sanitizer as the paged providers endpoint).
 func (h *DashboardHandler) HandleGetConnections(w http.ResponseWriter, r *http.Request) {
 	providerFilter := r.URL.Query().Get("provider")
-	if providerFilter == "" {
-		// Stop dumping the entire 170k-row table over HTTP. Require a provider filter or return empty.
-		handlerutil.WriteJSON(w, http.StatusOK, []map[string]any{})
-		return
-	}
+	// An unfiltered call returns every connection (sanitized below). A
+	// previous guard returned an empty list when no provider filter was
+	// given, to avoid dumping a very large table — but it broke the
+	// endpoint's contract silently: the dashboard's own unfiltered
+	// callers (App boot, the add-from-link modal) and the upstream API
+	// shape both expect the full list, and they received [] with a 200.
+	// The aggregate views that motivated the guard read
+	// /api/providers/stats instead; this endpoint stays the list of
+	// record.
 	conns, err := h.Repo.GetProviderConnections(providerFilter, false)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
