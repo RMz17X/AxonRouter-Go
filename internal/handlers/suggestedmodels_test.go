@@ -199,9 +199,11 @@ func TestSuggestedModelsBadRequests(t *testing.T) {
 		}
 	}
 
-	// Unreachable feed → 200 with empty data (upstream parity).
+	// Unreachable feed → 200 with empty data (upstream parity). The type
+	// must be a live filter: mimo-free's was removed with that provider,
+	// and unknown types are the 400 case pinned above.
 	req := httptest.NewRequest(http.MethodGet,
-		"/api/providers/suggested-models?url=http://127.0.0.1:1/nope&type=mimo-free", nil)
+		"/api/providers/suggested-models?url=http://127.0.0.1:1/nope&type=opencode-free", nil)
 	rec := httptest.NewRecorder()
 	HandleSuggestedModels(rec, req)
 	if rec.Code != http.StatusOK {

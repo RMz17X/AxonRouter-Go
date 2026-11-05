@@ -292,8 +292,13 @@ func TestAntigravityWeeklyQuota_SessionBuckets(t *testing.T) {
 
 // TestAntigravityQuota_Generic429NoStrike is the Go port of the
 // decolua/9router#4197 regression test: generic/content-triggered 429s must
-// not feed the strike-breaker while quota reads optimistic, while explicit
-// quota 429s still block on the third strike.
+// not feed the strike-breaker while quota reads optimistic. One deliberate
+// fork divergence from upstream #3684: an error carrying a DEFINITIVE quota
+// marker (QUOTA_EXHAUSTED / "Individual quota reached") blocks immediately
+// instead of on the third strike ("instant quota 429 rotation", commit
+// 4bc8f72f); non-definitive explicit errors (rate-limit markers) still use
+// the three-strike rule. The #4197 core — generic 429s never strike — is
+// unchanged.
 func TestAntigravityQuota_Generic429NoStrike(t *testing.T) {
 	const model = "test-strike-model"
 
@@ -328,30 +333,49 @@ func TestAntigravityQuota_Generic429NoStrike(t *testing.T) {
 		t.Errorf("generic 429s must not block the model while quota is optimistic")
 	}
 
-	// 2. Explicit quota 429s still strike: nil, nil, then block.
+	// 2. A definitive quota 429 blocks immediately (fork divergence from
+	// upstream #3684's three-strike rule — see the test's doc comment).
 	quotaConn := "test-conn-quota-429"
 	ClearAntigravityQuotaCache()
 	ClearAntigravityStrikes(quotaConn, model)
 	quotaErr := `{"error":{"code":429,"message":"Individual quota reached. Please upgrade your subscription.","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"QUOTA_EXHAUSTED"}]}}`
-	for i := 0; i < 2; i++ {
-		if res := HandleAntigravityQuotaError(AntigravityQuotaError{
-			Ctx: ctx, Client: client, ConnectionID: quotaConn,
-			Status: 429, Model: model, AccessToken: "token", ProjectID: "proj",
-			ErrorMessage: quotaErr,
-		}); res != nil {
-			t.Fatalf("explicit quota 429 #%d must not block yet, got %v", i+1, *res)
-		}
-	}
 	blocked := HandleAntigravityQuotaError(AntigravityQuotaError{
 		Ctx: ctx, Client: client, ConnectionID: quotaConn,
 		Status: 429, Model: model, AccessToken: "token", ProjectID: "proj",
 		ErrorMessage: quotaErr,
 	})
 	if blocked == nil {
-		t.Fatalf("explicit quota 429 #3 must trigger strike block")
+		t.Fatalf("definitive quota 429 must block immediately")
 	}
 	if !IsAntigravityModelBlocked(quotaConn, model) {
-		t.Errorf("model must be blocked after 3 explicit quota 429s")
+		t.Errorf("model must be blocked after a definitive quota 429")
+	}
+
+	// 3. A non-definitive explicit error (rate-limit marker only) still
+	// uses the three-strike rule: nil, nil, then block.
+	rateConn := "test-conn-ratelimit-429"
+	ClearAntigravityQuotaCache()
+	ClearAntigravityStrikes(rateConn, model)
+	rateErr := `{"error":{"code":429,"message":"Rate limit exceeded for this model.","status":"RESOURCE_EXHAUSTED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"RATE_LIMIT_EXCEEDED"}]}}`
+	for i := 0; i < 2; i++ {
+		if res := HandleAntigravityQuotaError(AntigravityQuotaError{
+			Ctx: ctx, Client: client, ConnectionID: rateConn,
+			Status: 429, Model: model, AccessToken: "token", ProjectID: "proj",
+			ErrorMessage: rateErr,
+		}); res != nil {
+			t.Fatalf("rate-limit 429 #%d must not block yet, got %v", i+1, *res)
+		}
+	}
+	blocked = HandleAntigravityQuotaError(AntigravityQuotaError{
+		Ctx: ctx, Client: client, ConnectionID: rateConn,
+		Status: 429, Model: model, AccessToken: "token", ProjectID: "proj",
+		ErrorMessage: rateErr,
+	})
+	if blocked == nil {
+		t.Fatalf("rate-limit 429 #3 must trigger strike block")
+	}
+	if !IsAntigravityModelBlocked(rateConn, model) {
+		t.Errorf("model must be blocked after 3 rate-limit 429s")
 	}
 }
 

@@ -43,13 +43,18 @@ func TestHandleUsageStream(t *testing.T) {
 
 	reader := bufio.NewReader(resp.Body)
 
-	// 1. Read initial state
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		t.Fatalf("read line: %v", err)
-	}
-	if !strings.HasPrefix(line, "data: ") {
-		t.Fatalf("expected data: prefix, got %s", line)
+	// 1. Read initial state. The stream opens with an SSE `retry:` preamble
+	// (the reconnect hint the handler deliberately sends first), so read
+	// until the first data line rather than assuming frame one is data.
+	var line string
+	for {
+		line, err = reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read line: %v", err)
+		}
+		if strings.HasPrefix(line, "data: ") {
+			break
+		}
 	}
 
 	var initPayload usagetracker.StreamPayload
