@@ -995,8 +995,8 @@
       isRoundRobin = strategy?.fallbackStrategy === 'round-robin'
       stickyLimit = String(strategy?.stickyRoundRobinLimit ?? 1)
       lockedProxyGroup =
-        strategy?.proxyGroup ||
-        (strategy?.proxyPoolId?.startsWith('group:') ? strategy.proxyPoolId.slice(6) : '') ||
+        (strategy?.proxyPoolId?.startsWith('group:') || strategy?.proxyPoolId?.startsWith('type:') ? strategy.proxyPoolId : '') ||
+        (strategy?.proxyGroup ? `group:${strategy.proxyGroup}` : '') ||
         ''
 
       // Extract Thinking Level
@@ -1429,14 +1429,25 @@
     lockedProxyGroup = val
     try {
       const existing = settings?.providerStrategies || {}
-      const currentStrat = existing[providerId] || {}
-      const updated = {
-        ...existing,
-        [providerId]: {
-          ...currentStrat,
-          proxyGroup: val || undefined
-        }
+      const currentStrat = { ...(existing[providerId] || {}) }
+      // The lock owns BOTH strategy proxy fields, in the canonical
+      // selector forms the resolver honours. Writing proxyGroup alone
+      // (the old behaviour) broke twice: a bare TYPE name stored there
+      // was re-read by the resolver as a group selector, so a type lock
+      // never resolved; and any stored proxyPoolId — which the resolver
+      // prefers — silently kept control while the UI showed the lock
+      // changed or removed.
+      if (!val) {
+        delete currentStrat.proxyPoolId
+        delete currentStrat.proxyGroup
+      } else if (val.startsWith('group:')) {
+        currentStrat.proxyPoolId = val
+        currentStrat.proxyGroup = val.slice(6)
+      } else if (val.startsWith('type:')) {
+        currentStrat.proxyPoolId = val
+        delete currentStrat.proxyGroup
       }
+      const updated = { ...existing, [providerId]: currentStrat }
       if (settings) settings.providerStrategies = updated
       await api.updateSettings({ providerStrategies: updated })
     } catch (err) {
@@ -3626,7 +3637,7 @@
                 <optgroup label="Proxy Groups">
                   {#each availableProxyGroups as grp}
                     {@const count = proxyPools.filter((p) => p.group === grp && p.isActive).length}
-                    <option value={grp}>Group: {grp} ({count} active)</option>
+                    <option value="group:{grp}">Group: {grp} ({count} active)</option>
                   {/each}
                 </optgroup>
               {/if}
@@ -3634,7 +3645,7 @@
                 <optgroup label="Proxy Types">
                   {#each availableProxyTypes as typ}
                     {@const count = proxyPools.filter((p) => p.type === typ && p.isActive).length}
-                    <option value={typ}>Type: {typ} ({count} active)</option>
+                    <option value="type:{typ}">Type: {typ} ({count} active)</option>
                   {/each}
                 </optgroup>
               {/if}

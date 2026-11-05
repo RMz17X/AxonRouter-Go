@@ -85,6 +85,15 @@ func (h *ChatHandler) resolveProviderProxyPoolID(provider string, excluded map[s
 	if singleID == "" && proxyGroup != "" {
 		if strings.HasPrefix(proxyGroup, "group:") || strings.HasPrefix(proxyGroup, "type:") {
 			singleID = proxyGroup
+		} else if isKnownProxyType(proxyGroup) {
+			// A bare value naming a known proxy TYPE is a type binding,
+			// not a group: the dashboard's provider lock used to store
+			// its Type options as a bare proxyGroup, and prefixing those
+			// with "group:" sent the resolver looking for pools whose
+			// group field equals the type name — a selection that
+			// resolves to nothing and silently falls back to direct.
+			// This mirrors ActivePoolsByTarget's own bare-target rule.
+			singleID = "type:" + proxyGroup
 		} else {
 			singleID = "group:" + proxyGroup
 		}
