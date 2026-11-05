@@ -44,13 +44,13 @@ RUN apk add --no-cache ca-certificates tzdata su-exec \
 COPY --from=builder /app/axonrouter-go /usr/local/bin/axonrouter-go
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-ENV PORT=20130 \
+ENV PORT=3177 \
     DATA_DIR=/data \
     AXONROUTER_IN_CONTAINER=1
-EXPOSE 20130
+EXPOSE 3177
 # The entrypoint hands the state volume to the app user, then drops
 # privileges — the server process itself always runs as uid 10001.
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["axonrouter-go"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-20130}/api/auth/status" || exit 1
+    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-3177}/api/auth/status" || exit 1

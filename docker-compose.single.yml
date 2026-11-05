@@ -42,7 +42,7 @@ services:
       # APP_REPLICAS × PG_POOL_MAX_OPEN + 10 ≤ PG_MAX_CONNECTIONS.
       PG_POOL_MAX_OPEN: ${PG_POOL_MAX_OPEN:-10}
       PG_POOL_MAX_IDLE: ${PG_POOL_MAX_IDLE:-5}
-      PORT: "20130"
+      PORT: "3177"
       DATA_DIR: /data
       # Container marker: disables the self-updater — updates are new
       # images, never an in-place binary swap (also set by the Dockerfile,
@@ -51,7 +51,7 @@ services:
       # Matches stop_grace_period below (P3 drain default is 30s).
       SHUTDOWN_GRACE_SECONDS: ${SHUTDOWN_GRACE_SECONDS:-30}
     ports:
-      - "${PORT:-20130}:20130"
+      - "${PORT:-3177}:3177"
     volumes:
       # Non-DB state root: CLI tokens/machine-id, uploads, provider
       # instruction files, tunnel state, catalog cache. The database

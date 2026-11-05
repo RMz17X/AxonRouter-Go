@@ -88,3 +88,6 @@ stitch-screenshots/
 
 # migrator build artifact (module binary lands in its own directory)
 /tools/migrate-db/migrate-db
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

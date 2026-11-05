@@ -58,7 +58,7 @@ services:
       # APP_REPLICAS × PG_POOL_MAX_OPEN + 10 ≤ PG_MAX_CONNECTIONS.
       PG_POOL_MAX_OPEN: ${PG_POOL_MAX_OPEN:-10}
       PG_POOL_MAX_IDLE: ${PG_POOL_MAX_IDLE:-5}
-      PORT: "20130"
+      PORT: "3177"
       DATA_DIR: /data
       # Container marker: disables the self-updater — updates are new
       # images, never an in-place binary swap (also set by the Dockerfile,
@@ -80,7 +80,7 @@ services:
     depends_on:
       - app
     ports:
-      - "${PORT:-20130}:80"
+      - "${PORT:-3177}:80"
     volumes:
       - ./nginx.cluster.conf:/etc/nginx/conf.d/default.conf:ro
     restart: unless-stopped

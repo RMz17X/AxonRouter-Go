@@ -46,7 +46,7 @@ func NewViperWithFile(configFile string) *viper.Viper {
 
 	v.AutomaticEnv()
 
-	v.SetDefault("PORT", 20130)
+	v.SetDefault("PORT", 3177)
 	v.SetDefault("API_KEY_SECRET", "endpoint-proxy-api-key-secret")
 	v.SetDefault("MACHINE_ID_SALT", "endpoint-proxy-salt")
 	v.SetDefault("RTK_ENABLED", true)
@@ -176,7 +176,7 @@ func LoadConfigFromViper(v *viper.Viper) *Config {
 
 	port := v.GetInt("PORT")
 	if port <= 0 {
-		port = 20130 // Default port (unified port)
+		port = 3177 // Default port (unified port)
 	}
 
 	dataDir := v.GetString("DATA_DIR")
