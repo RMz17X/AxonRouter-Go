@@ -200,7 +200,10 @@ func (r *Repo) ClearConnectionRateLimit(connID string) error {
 // clears' effects, but its WHERE only matches when at least one piece
 // of clearable state is present — a model lock (either key), an
 // account cooldown, a recorded error, or a raised backoff level, which
-// between them cover every writer of that state in this package. In
+// between them cover every writer of that state in this package. One
+// deliberate narrowing of the union (council round 1, C-4): the
+// status-to-"active" stamp lands only on a row the operator has not
+// disabled; the field clears apply either way. In
 // the overwhelmingly common case (nothing was ever locked) the
 // statement matches zero rows: a primary-key probe, no row lock taken,
 // no WAL record written.
@@ -224,10 +227,25 @@ func (r *Repo) ClearConnectionSuccessState(connID, lockKey, model string) error 
 		guards = append(guards, `(data #>> ARRAY[?]) IS NOT NULL`)
 		guardArgs = append(guardArgs, modelLockPrefix+k)
 	}
+	// The status stamp is conditional (council round 1, C-4): a success
+	// that was already in flight when the operator disabled the
+	// connection must still clear its locks and cooldowns, but it must
+	// not flip the row's status back to "active" — the disable would
+	// be silently undone. "Disabled" is the row's own derivation, the
+	// same triple flattenConnection reads: the isActive column, a
+	// disabledAt stamp, or a disabled testStatus. A disabled row keeps
+	// its stored status; the COALESCE covers a row carrying clearable
+	// state but no status key yet (a bare model lock is such a state),
+	// where a JSON null reads as "no status" to every consumer. Like
+	// every column reference in a SET clause, the CASE reads the
+	// pre-update row.
+	statusValue := jsonSetValue(`(CASE WHEN isActive = 1 AND (data #>> '{disabledAt}') IS NULL AND COALESCE(data #>> '{testStatus}', '') <> 'disabled' THEN ` +
+		string(jsonStringLiteral("active")) +
+		` ELSE COALESCE(data #> '{status}', 'null'::jsonb) END)`)
 	pairs = append(pairs,
 		jsonSetPairAt(jsonNullSQLValue(), "rateLimitedUntil"),
 		jsonSetPairAt(jsonNullSQLValue(), "lastError"),
-		jsonSetPairAt(jsonStringLiteral("active"), "status"),
+		jsonSetPairAt(statusValue, "status"),
 		jsonSetPairAt(jsonIntLiteral(0), "backoffLevel"),
 	)
 	guards = append(guards,

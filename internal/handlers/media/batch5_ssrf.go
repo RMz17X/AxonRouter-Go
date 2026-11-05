@@ -12,9 +12,11 @@ import (
 
 // SSRF layer-1 guard + local-request detection for the Cowork MCP
 // tools probe. Ported from Axon's src/shared/utils/ssrfGuard.js
-// (assertPublicUrl — the literal host checks only; the route does not
-// use the DNS-resolving layer) and isLocalRequest from
-// src/dashboardGuard.js.
+// (assertPublicUrl — the literal host checks only) and isLocalRequest
+// from src/dashboardGuard.js. The probe composes this literal layer
+// with the resolving layer for non-local callers (handlerutil
+// .AssertPublicURL + proxy.NewSafeTransport, council round 1 S-4);
+// this file remains the literal fast path and the local-caller test.
 
 // --- isLocalRequest -------------------------------------------------
 

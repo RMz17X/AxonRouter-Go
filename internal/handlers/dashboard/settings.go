@@ -54,8 +54,18 @@ func writePlainError(w http.ResponseWriter, status int, message string) {
 }
 
 // secretSettingKeys are stripped from responses so credentials never leave the
-// server (Next strips the password from GET /api/settings).
-var secretSettingKeys = []string{"password"}
+// server (Next strips the password from GET /api/settings). The internal-proxy
+// tokens joined the list in council round 1 (S-3): GET /api/settings served
+// both to any dashboard-gate caller, and the report token is a write primitive
+// against the usage ledger and connection state. Their handlers read the
+// settings row directly (repo.GetSettingsRaw), never this sanitized view, so
+// stripping them here does not break the worker-proxy path. mitmSudoEncrypted
+// (N-3) is a legacy value from the deleted MITM feature — no code reads it,
+// and a row still carrying it must not serve it either. stripSecretSettings
+// and readSettingsSecrets share this list, so a database backup stops carrying
+// the tokens too and an import preserves the live values, exactly like the
+// password.
+var secretSettingKeys = []string{"password", "internalProxyResolveToken", "internalProxyReportToken", "mitmSudoEncrypted"}
 
 // HandleGetSettings handles GET /api/settings.
 // Reads raw settings data map minus secret keys, mirroring the Next dashboard.

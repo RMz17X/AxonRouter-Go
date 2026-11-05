@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"9router/proxy/internal/auth"
 	"9router/proxy/internal/db"
 	"9router/proxy/internal/handlerutil"
+	"9router/proxy/internal/middleware"
 )
 
 // Dashboard auth surface (batch 7, AxonRouter parity): GET
@@ -182,7 +184,7 @@ func isDirectPrivateRequest(r *http.Request) bool {
 	}
 	peer := ""
 	if token := os.Getenv("AXONROUTER_PEER_TOKEN"); token != "" &&
-		r.Header.Get("x-axonrouter-peer-token") == token {
+		subtle.ConstantTimeCompare([]byte(r.Header.Get("x-axonrouter-peer-token")), []byte(token)) == 1 {
 		peer = r.Header.Get("x-axonrouter-real-ip")
 	} else {
 		peer = remoteAddrHost(r)
@@ -269,6 +271,32 @@ func isPrivateNetworkHostname(h string) bool {
 		return true
 	}
 	return false
+}
+
+// RequireOperatorCaller wraps a handler with the operator-class check:
+// the caller must be dashboard-privileged (a session, the local CLI
+// token, or an install with login disabled) — the CallerIsDashboardPrivileged
+// idiom the F-6 fix established for the API-key list. It exists because
+// the gates these routes already sit behind compose badly (council
+// round 1, S-1): the dashboard group admits any engine API key, and
+// RequireManagementAuth admits any whitelisted source address — the
+// default whitelist covers the whole LAN — so an engine key held by a
+// client app on any LAN machine could export or replace every provider
+// credential. An engine key is the lowest-trust principal in the
+// system; routes that return or accept credential material (and the
+// MCP audit pair sharing their gate) require an operator credential
+// in addition. Failure answers the same flat 401 as
+// RequireManagementAuth.
+func RequireOperatorCaller(repo *db.Repo, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !middleware.CallerIsDashboardPrivileged(repo, r) {
+			handlerutil.WriteJSON(w, http.StatusUnauthorized, map[string]any{
+				"error": "Unauthorized",
+			})
+			return
+		}
+		next(w, r)
+	}
 }
 
 // RequireManagementAuth wraps a handler with the port of

@@ -773,6 +773,12 @@ type RequestDetailListRow struct {
 	LoopWarning  string
 }
 
+// The sort carries an id tiebreaker (council round 1, C-3): timestamps
+// are millisecond strings and same-millisecond rows are routine under
+// burst, so timestamp alone leaves page boundaries over ties arbitrary
+// — the Details list and the usage export, which share this select,
+// could show a row twice or never.
+//
 // requestDetailListSelect pulls the renderable values straight out of
 // the stored JSON. The key paths mirror what internal/handlers/chat
 // writes into `latency` and `tokens`; the extraction returns NULL for
@@ -796,7 +802,7 @@ const requestDetailListSelect = `
 	       CASE WHEN data IS NULL THEN 0 ELSE 1 END
 	FROM requestDetails
 	%s
-	ORDER BY timestamp DESC
+	ORDER BY timestamp DESC, id DESC
 	LIMIT ? OFFSET ?`
 
 // requestDetailCount counts exactly the rows requestDetailListSelect would page.

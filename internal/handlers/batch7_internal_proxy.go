@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"io"
 	"net/http"
@@ -86,13 +87,15 @@ func generateProxyToken() string {
 }
 
 // hasValidInternalAuth checks the x-internal-auth header against the
-// route's token. An empty expected token never validates.
+// route's token. An empty expected token never validates. The compare
+// is constant-time, the standard the session and CLI-token code
+// already holds itself to (council round 1, N-2).
 func hasValidInternalAuth(r *http.Request, expected string) bool {
 	if expected == "" {
 		return false
 	}
 	provided := r.Header.Get("x-internal-auth")
-	return provided != "" && provided == expected
+	return provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) == 1
 }
 
 // flattenProviderConnection builds the single-record view of a stored

@@ -217,7 +217,9 @@ The writer counts every loss path — queue-full drops on the droppable
 lane and rows its per-row fallback could not land — so the number means
 all ledger loss, not just overload loss. Zero is the only healthy value;
 nonzero means investigate, starting with the gateway log's `[usage]`
-lines.
+lines. The counter covers losses while the process runs; a shutdown
+that cannot drain within its grace window logs the fact and the tail
+is lost uncounted.
 
 Account cooldowns, rotation stamps, and upstream leases are *not* in the
 speed layer: they were already database-serialized and stay that way.

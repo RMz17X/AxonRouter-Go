@@ -14,6 +14,7 @@ import (
 
 	"9router/proxy/internal/clisetup"
 	"9router/proxy/internal/handlerutil"
+	"9router/proxy/internal/proxy"
 )
 
 // Cowork MCP routes (batch 5): the Anthropic MCP registry browser and
@@ -31,15 +32,31 @@ const (
 // CoworkMcpHandler holds the registry cache (Axon keeps it in a
 // globalThis slot with a one-hour TTL).
 type CoworkMcpHandler struct {
-	mu        sync.Mutex
-	client    *http.Client
-	cacheTS   time.Time
-	cacheData *clisetup.JObj // {servers, total} without the cached flag
+	mu     sync.Mutex
+	client *http.Client
+	// guardedClient serves the tools probe for non-local callers: the
+	// SSRF-safe transport re-validates the resolved address at dial
+	// time, and every redirect hop is re-checked against the resolving
+	// public-URL guard before it is followed (council round 1, S-4).
+	guardedClient *http.Client
+	cacheTS       time.Time
+	cacheData     *clisetup.JObj // {servers, total} without the cached flag
 }
 
 // NewCoworkMcpHandler returns a CoworkMcpHandler.
 func NewCoworkMcpHandler() *CoworkMcpHandler {
-	return &CoworkMcpHandler{client: &http.Client{}}
+	return &CoworkMcpHandler{
+		client: &http.Client{},
+		guardedClient: &http.Client{
+			Transport: proxy.NewSafeTransport(),
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 {
+					return fmt.Errorf("stopped after 10 redirects")
+				}
+				return handlerutil.AssertPublicURL(req.URL.String())
+			},
+		},
+	}
 }
 
 // --- registry --------------------------------------------------------
@@ -253,6 +270,18 @@ func urlQueryEscape(s string) string {
 // MCP server (initialize + tools/list, no auth) and report its tools.
 // Remote (non-local) callers are SSRF-guarded; local callers may probe
 // self-hosted servers.
+//
+// The non-local guard is the product's full standard, in layers
+// (council round 1, S-4): the literal-host check below stays as the
+// fast path, handlerutil.AssertPublicURL then resolves the name and
+// rejects private results, and the fetch itself runs through the
+// guarded client, whose dial-time check defeats rebinding and whose
+// redirect policy re-validates every hop. Before this fix the probe
+// stopped at the literal check and fetched with a plain client, so a
+// public name resolving to — or redirecting to — an internal address
+// sailed through. The local-caller branch is unchanged: an operator
+// probing their own MCP servers from this machine keeps the plain
+// client and no public-URL requirement.
 func (h *CoworkMcpHandler) HandleTools(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URL any `json:"url"`
@@ -269,18 +298,24 @@ func (h *CoworkMcpHandler) HandleTools(w http.ResponseWriter, r *http.Request) {
 		handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "url required"})
 		return
 	}
+	client := h.client
 	if !isLocalRequest(r) {
 		if err := assertPublicURL(rawURL); err != nil {
 			handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "URL not allowed"})
 			return
 		}
+		if err := handlerutil.AssertPublicURL(rawURL); err != nil {
+			handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "URL not allowed"})
+			return
+		}
+		client = h.guardedClient
 	}
-	result := h.probeMcp(r.Context(), rawURL)
+	result := h.probeMcp(r.Context(), rawURL, client)
 	writeOrderedJSON(w, http.StatusOK, result)
 }
 
 // probeMcp runs the three-step MCP handshake under one 8s budget.
-func (h *CoworkMcpHandler) probeMcp(ctx context.Context, rawURL string) *clisetup.JObj {
+func (h *CoworkMcpHandler) probeMcp(ctx context.Context, rawURL string, client *http.Client) *clisetup.JObj {
 	ctx, cancel := context.WithTimeout(ctx, coworkProbeTimeout)
 	defer cancel()
 
@@ -297,7 +332,7 @@ func (h *CoworkMcpHandler) probeMcp(ctx context.Context, rawURL string) *clisetu
 		for k, v := range hdrs {
 			req.Header.Set(k, v)
 		}
-		return h.client.Do(req)
+		return client.Do(req)
 	}
 	fail := func(err error) *clisetup.JObj {
 		msg := err.Error()

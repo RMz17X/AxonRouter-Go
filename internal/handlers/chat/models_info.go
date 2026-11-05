@@ -95,8 +95,7 @@ func (h *ChatHandler) HandleModelsInfo(w http.ResponseWriter, r *http.Request) {
 
 	modelID := r.URL.Query().Get("id")
 	if modelID == "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest,
-			"Missing required query param: id (e.g.?id=openai/dall-e-3)")
+		writeModelInfoMissingID(w)
 		return
 	}
 	if !h.enforceModelAccess(w, r, modelID) {
@@ -176,6 +175,24 @@ func (h *ChatHandler) HandleModelsInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeModelInfoNotFound(w, modelID)
+}
+
+// writeModelInfoMissingID writes Axon's 400 document for this
+// route, hand-built like the 404 below: the shared
+// handlerutil.WriteJSONError adds a "code" key Axon does not send,
+// and the earlier port also mistyped the message (no space in
+// "e.g. ?id=") — the file header's "served verbatim" claim covers
+// this document only with the hand-built form (council round 1,
+// fidelity NIT-1).
+// {error:{message:"Missing required query param: id (e.g. ?id=openai/dall-e-3)",
+// type:"invalid_request_error"}}
+func writeModelInfoMissingID(w http.ResponseWriter) {
+	handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{
+		"error": map[string]any{
+			"message": "Missing required query param: id (e.g. ?id=openai/dall-e-3)",
+			"type":    "invalid_request_error",
+		},
+	})
 }
 
 // writeModelInfoNotFound writes Axon's 404 document for this

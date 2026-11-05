@@ -76,8 +76,16 @@ func SetupRoutes(r interface {
 	r.Get("/api/v1/models/*", chatH.HandleModelLookup)
 	r.Get("/api/models", chatH.HandleModels)
 	r.Get("/api/models/*", chatH.HandleModelLookup)
-	r.Get("/api/models/catalog-sync", chatH.HandleCatalogSyncStatus)
-	r.Post("/api/models/catalog-sync", chatH.HandleCatalogSyncTrigger)
+	// Catalog sync is an operator action, not an engine one (council
+	// round 1, N-5): Axon's guard admits only a session, the CLI token,
+	// or a login-off install to /api/* — an engine API key never reaches
+	// this route there. These registrations sit in the RequireApiKey
+	// group, so both verbs additionally take the operator-class wrapper
+	// RequireOperatorCaller to land on Axon's caller class; the POST
+	// triggers outbound catalog fetches and the GET discloses the sync
+	// state, and Axon gates the pair identically.
+	r.Get("/api/models/catalog-sync", RequireOperatorCaller(repo, chatH.HandleCatalogSyncStatus))
+	r.Post("/api/models/catalog-sync", RequireOperatorCaller(repo, chatH.HandleCatalogSyncTrigger))
 	r.Get("/api/models", chatH.HandleModels)
 	// HEAD rides the same handlers as the model-catalogue GETs (and the
 	// voices list below): Axon's Next.js serves HEAD from the GET
@@ -267,10 +275,17 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	// MCP HTTP transports carry their own client API-key gate, and their
 	// tools are scope-gated exactly like upstream's (see
 	// batch7_mcp_transport.go).
-	r.Get("/api/credentials/export", RequireManagementAuth(repo, dashH.HandleCredentialsExport))
-	r.Post("/api/credentials/import", RequireManagementAuth(repo, dashH.HandleCredentialsImport))
-	r.Get("/api/mcp/audit", RequireManagementAuth(repo, HandleMCPAuditList(repo)))
-	r.Get("/api/mcp/audit/stats", RequireManagementAuth(repo, HandleMCPAuditStats(repo)))
+	// Council round 1 (S-1): all four routes additionally require an
+	// operator-class caller. Export returns every provider credential
+	// in plaintext and import replaces them; the audit pair shares the
+	// gate and serves the tool-call record (input hashes, output
+	// summaries, key ids). The management gate alone admits any
+	// whitelisted source address, and the dashboard group admits any
+	// engine API key — composed, a client key on the LAN was enough.
+	r.Get("/api/credentials/export", RequireManagementAuth(repo, RequireOperatorCaller(repo, dashH.HandleCredentialsExport)))
+	r.Post("/api/credentials/import", RequireManagementAuth(repo, RequireOperatorCaller(repo, dashH.HandleCredentialsImport)))
+	r.Get("/api/mcp/audit", RequireManagementAuth(repo, RequireOperatorCaller(repo, HandleMCPAuditList(repo))))
+	r.Get("/api/mcp/audit/stats", RequireManagementAuth(repo, RequireOperatorCaller(repo, HandleMCPAuditStats(repo))))
 	r.Get("/api/mcp/sse", HandleMCPSSEStream(repo))
 	r.Post("/api/mcp/sse", HandleMCPSSEMessage(repo))
 	r.Post("/api/mcp/stream", HandleMCPStream(repo))

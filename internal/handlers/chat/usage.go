@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	json "encoding/json/v2"
 	"errors"
@@ -595,12 +596,20 @@ func extractContent(content any) string {
 }
 
 // upsertDailyUsage reads the existing daily aggregate, merges new tokens, and upserts.
+// A base read that fails for any reason other than a missing row
+// aborts the fold (council round 1, C-1): the upsert is a full-row
+// replace, so folding onto a phantom empty base would destroy the
+// day's committed totals.
 func (h *ChatHandler) upsertDailyUsage(provider, model, endpoint, connectionID, apiKey string, promptTokens, completionTokens, cachedTokens int, cost float64) {
 	dailyUsageMu.Lock()
 	defer dailyUsageMu.Unlock()
 
 	dateKey := time.Now().UTC().Format("2006-01-02")
-	existing, _ := h.Repo.GetUsageDaily(dateKey)
+	existing, err := h.Repo.GetUsageDaily(dateKey)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Error("usage", "read daily usage failed; fold aborted", "date", dateKey, "error", err)
+		return
+	}
 
 	data := parseDailyData(existing)
 	mergeDailyUsage(data, provider, model, endpoint, connectionID, apiKey, promptTokens, completionTokens, cachedTokens, cost)
@@ -747,10 +756,51 @@ func parseDailyData(raw string) map[string]any {
 	return m
 }
 
-// getJSONInt extracts an int from a JSON map (stored as float64 after unmarshal).
+// jsonNumberAsFloat reads a numeric value out of a daily-aggregate map in
+// whichever representation it currently holds. A map that came straight from
+// parseDailyData carries float64 (JSON unmarshal), but the merge functions
+// store Go int / float64 results back into the same map — so a second delta
+// folded in the same batch (or any in-memory re-read) sees int, not float64.
+// Accepting only float64 silently read those stored counts back as 0, which
+// reset every integer counter to the latest delta on multi-delta folds while
+// float fields (stored as float64) kept accumulating (found by the council
+// round-1 C-1 probe: three chats folded to requests=1 with the last chat's
+// token counts but the sum of all three costs).
+func jsonNumberAsFloat(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int8:
+		return float64(n), true
+	case int16:
+		return float64(n), true
+	case int32:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case uint:
+		return float64(n), true
+	case uint8:
+		return float64(n), true
+	case uint16:
+		return float64(n), true
+	case uint32:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	}
+	return 0, false
+}
+
+// getJSONInt extracts an int from a JSON map, whatever numeric form the
+// value is stored in (see jsonNumberAsFloat).
 func getJSONInt(m map[string]any, key string) int {
 	if v, ok := m[key]; ok {
-		if n, ok := v.(float64); ok {
+		if n, ok := jsonNumberAsFloat(v); ok {
 			return int(n)
 		}
 	}
@@ -759,7 +809,7 @@ func getJSONInt(m map[string]any, key string) int {
 
 func getJSONFloat(m map[string]any, key string) float64 {
 	if v, ok := m[key]; ok {
-		if n, ok := v.(float64); ok {
+		if n, ok := jsonNumberAsFloat(v); ok {
 			return n
 		}
 	}
@@ -834,15 +884,24 @@ func (h *ChatHandler) upsertDailyUsageError(provider, model, endpoint, connectio
 	dailyUsageMu.Lock()
 	defer dailyUsageMu.Unlock()
 	dateKey := time.Now().UTC().Format("2006-01-02")
-	existing, _ := h.Repo.GetUsageDaily(dateKey)
+	existing, err := h.Repo.GetUsageDaily(dateKey)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		// Same failure-atomic rule as the success fold (council round
+		// 1, C-1): never upsert a blob whose base read failed.
+		log.Error("usage", "read daily usage failed; error fold aborted", "date", dateKey, "error", err)
+		return
+	}
 	data := parseDailyData(existing)
 	mergeDailyUsageError(data, provider, model)
 
 	updatedJSON, err := json.Marshal(data)
 	if err != nil {
+		log.Error("usage", "marshal daily usage failed", "date", dateKey, "error", err)
 		return
 	}
-	_ = h.Repo.UpsertUsageDaily(dateKey, string(updatedJSON))
+	if err := h.Repo.UpsertUsageDaily(dateKey, string(updatedJSON)); err != nil {
+		log.Error("usage", "upsert daily usage failed", "date", dateKey, "error", err)
+	}
 }
 
 // mergeDailyUsageError folds one failed request's contribution into the

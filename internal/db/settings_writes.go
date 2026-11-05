@@ -7,11 +7,19 @@ import (
 	"sync"
 )
 
-// settingsWriteMu serialises the settings read-modify-write cycle.
+// settingsWriteMu serialises the settings read-modify-write cycle
+// within this process.
 //
 // The settings row is one JSON blob: a writer reads it, merges its own keys
 // into it and writes it back. Two writers that interleave lose one another's
-// keys, so the whole cycle runs under one lock.
+// keys, so the whole cycle runs under one lock. The lock is per-process
+// only: in a cluster, two nodes merging settings concurrently can still
+// read the same blob, and the later full-row write silently drops the
+// earlier writer's keys — the same residual window FillSettingsRawIfAbsent
+// documents for its narrower get-or-create case. It is bounded in practice
+// (operator-driven writes, a millisecond window, whole keys lost rather
+// than corruption); a version-guarded or advisory-locked merge is the
+// eventual fix.
 var settingsWriteMu sync.Mutex
 
 // updateSettings merges into the settings row under the write lock.

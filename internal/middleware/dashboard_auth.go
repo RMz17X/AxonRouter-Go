@@ -53,7 +53,15 @@ func IsAlwaysProtectedPath(path string) bool {
 		"/api/version/update",
 		"/admin/health/reset",
 		"/api/oauth/cursor/auto-import",
-		"/api/oauth/kiro/auto-import":
+		"/api/oauth/kiro/auto-import",
+		// The Chrome-import routes read the operator's own browser
+		// profile and hand back live session material (Google cookies,
+		// a DeepSeek user token) — the same host-secret class as the
+		// OAuth auto-imports above, so they take the same gate
+		// (council round 1, S-2). Axon's list predates these routes;
+		// the class match is the codebase's own precedent.
+		"/api/providers/gemini-web/import-chrome",
+		"/api/providers/deepseek-web/import-chrome":
 		return true
 	default:
 		return false
