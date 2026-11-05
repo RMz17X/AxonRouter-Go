@@ -1,7 +1,9 @@
 //go:build integration
+
 package integration
 
 import (
+	"net/http"
 	"testing"
 )
 
@@ -10,20 +12,24 @@ import (
 // machineId, with no batch endpoint and no shared state between the requests.
 //
 // The planner (web/src/lib/bulk-keys.ts) is unit-tested; what it cannot prove is
-// that a line with no name still produces a usable row, or that two lines minted
-// back to back do not bleed into each other. A unit test on the planner would
-// pass while the second create overwrote the first.
+// that two lines minted back to back do not bleed into each other, or that a
+// line with no name is refused the way batch 9's Axon contract requires
+// (400 "Name is required" — the pre-parity endpoint accepted it). A unit test
+// on the planner would pass while the second create overwrote the first.
 func TestCreateApiKeyBatchPersistsPerKey(t *testing.T) {
 	env := newEnv(t)
 
 	type want struct {
 		name, machine string
+		refused       bool
 	}
-	// The three shapes the planner emits: both halves, name only, machineId only.
+	// The three shapes the planner emits: both halves, name only, machineId
+	// only. The third is refused since batch 9: Axon's create requires a
+	// name, so no row is minted for it.
 	lines := []want{
-		{"office", "m-abc-123"},
-		{"laptop", ""},
-		{"", "m-def-456"},
+		{"office", "m-abc-123", false},
+		{"laptop", "", false},
+		{"", "m-def-456", true},
 	}
 
 	type minted struct {
@@ -32,7 +38,20 @@ func TestCreateApiKeyBatchPersistsPerKey(t *testing.T) {
 	created := make([]minted, 0, len(lines))
 	for _, w := range lines {
 		res := env.Post(t, "/api/keys", map[string]any{"name": w.name, "machineId": w.machine})
-		if res.Status != 200 {
+		if w.refused {
+			if res.Status != http.StatusBadRequest {
+				t.Fatalf("create %+v: status %d, want Axon's 400 for a nameless key: %s", w, res.Status, truncate(res.Body))
+			}
+			var refusal struct {
+				Error string `json:"error"`
+			}
+			res.Decode(t, &refusal)
+			if refusal.Error != "Name is required" {
+				t.Fatalf("create %+v: error = %q, want \"Name is required\"", w, refusal.Error)
+			}
+			continue
+		}
+		if res.Status != http.StatusCreated {
 			t.Fatalf("create %+v: status %d: %s", w, res.Status, truncate(res.Body))
 		}
 		var out struct {
@@ -50,8 +69,7 @@ func TestCreateApiKeyBatchPersistsPerKey(t *testing.T) {
 	}
 
 	// Every minted key authenticates. This is the property a client depends on:
-	// a batch of three must be three working keys, not one key written three
-	// times.
+	// a batch must be that many working keys, not one key written repeatedly.
 	for _, c := range created {
 		if got := env.Get(t, "/v1/models", WithAPIKey(c.plaintext)); got.Status != 200 {
 			t.Errorf("key for %q (machineId %q) status = %d, want 200", c.name, c.machine, got.Status)

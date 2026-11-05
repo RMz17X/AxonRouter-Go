@@ -130,21 +130,26 @@ func NewSchemaDSN(prefix string) (dsn string, cleanup func(), err error) {
 		_ = admin.Close()
 		return "", nil, err
 	}
-	cfg, err := pgx.ParseConfig(base)
-	if err != nil {
-		_, _ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`)
-		_ = admin.Close()
-		return "", nil, fmt.Errorf("dbtest: parse DSN: %w", err)
-	}
-	if cfg.RuntimeParams == nil {
-		cfg.RuntimeParams = make(map[string]string)
-	}
-	cfg.RuntimeParams["search_path"] = schema
 	cleanup = func() {
 		_, _ = admin.Exec(`DROP SCHEMA IF EXISTS "` + schema + `" CASCADE`)
 		_ = admin.Close()
 	}
-	return cfg.ConnString(), cleanup, nil
+	// The search_path is appended to the DSN text explicitly: pgx's
+	// ConnString does not serialize RuntimeParams, so a DSN built from
+	// a parsed config silently loses the schema and the application
+	// lands in the database's default schema instead (found by the
+	// council round-1 suite triage, when bootfx's "fresh" schema
+	// collided with rows a previous run had left in public). Both DSN
+	// spellings pgx accepts carry the parameter in the open: as a URL
+	// query parameter, or as a keyword in the space-separated form.
+	if strings.HasPrefix(base, "postgres://") || strings.HasPrefix(base, "postgresql://") {
+		sep := "?"
+		if strings.Contains(base, "?") {
+			sep = "&"
+		}
+		return base + sep + "search_path=" + schema, cleanup, nil
+	}
+	return base + " search_path=" + schema, cleanup, nil
 }
 
 // createSchema mints and creates one throwaway schema on an admin

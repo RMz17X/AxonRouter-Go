@@ -63,8 +63,8 @@ func TestKeyPolicyRoundTrip(t *testing.T) {
 	env := newEnv(t)
 
 	create := env.Post(t, "/api/keys", map[string]any{"name": "policy-roundtrip", "key": "sk-policy-216"})
-	if create.Status != http.StatusOK {
-		t.Fatalf("create key = %d, want 200 (body: %s)", create.Status, truncate(create.Body))
+	if create.Status != http.StatusCreated {
+		t.Fatalf("create key = %d, want 201 (body: %s)", create.Status, truncate(create.Body))
 	}
 	var made struct {
 		ID string `json:"id"`

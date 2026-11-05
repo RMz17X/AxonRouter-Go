@@ -153,12 +153,16 @@ func TestComboPresetsCreatedComboIsRoutable(t *testing.T) {
 		t.Fatalf("GET /api/combos = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}
 	// The combos endpoint answers the stored row, where models is the JSON
-	// string the column holds rather than an array.
-	var combos []struct {
-		Name   string `json:"name"`
-		Models string `json:"models"`
+	// string the column holds rather than an array. The list itself travels
+	// in the {"combos": [...]} envelope Axon's route serves.
+	var listEnvelope struct {
+		Combos []struct {
+			Name   string `json:"name"`
+			Models string `json:"models"`
+		} `json:"combos"`
 	}
-	res.Decode(t, &combos)
+	res.Decode(t, &listEnvelope)
+	combos := listEnvelope.Combos
 
 	opusplan, ok := lo.Find(combos, func(c struct {
 		Name   string `json:"name"`
@@ -213,11 +217,14 @@ func TestComboPresetsCursorCreateStoresSeededModels(t *testing.T) {
 	if res.Status != http.StatusOK {
 		t.Fatalf("GET /api/combos = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}
-	var combos []struct {
-		Name   string `json:"name"`
-		Models string `json:"models"`
+	var listEnvelope struct {
+		Combos []struct {
+			Name   string `json:"name"`
+			Models string `json:"models"`
+		} `json:"combos"`
 	}
-	res.Decode(t, &combos)
+	res.Decode(t, &listEnvelope)
+	combos := listEnvelope.Combos
 
 	stored := make(map[string]string, len(combos))
 	for _, c := range combos {

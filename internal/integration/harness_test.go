@@ -4,11 +4,13 @@ package integration
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	json "encoding/json/v2"
 
@@ -267,6 +269,23 @@ func ChatBody(model string, stream bool) map[string]any {
 		"messages": []map[string]any{
 			{"role": "user", "content": "Summarize the Go memory model."},
 		},
+	}
+}
+
+// ensureUsagePartition provisions the monthly usageHistory partition
+// covering ts. The schema bootstrap ensures only the current and next
+// month (internal/db.ensureMonthlyPartitions) and there is deliberately
+// no DEFAULT partition, so a test that seeds historical rows creates
+// the month it writes into — the same on-demand step tools/migrate-db
+// performs for each month present in a migrated file.
+func ensureUsagePartition(t *testing.T, env *Env, ts time.Time) {
+	t.Helper()
+	first := time.Date(ts.Year(), ts.Month(), 1, 0, 0, 0, 0, time.UTC)
+	next := first.AddDate(0, 1, 0)
+	ddl := fmt.Sprintf("CREATE TABLE IF NOT EXISTS usagehistory_y%04dm%02d PARTITION OF usagehistory FOR VALUES FROM ('%s') TO ('%s')",
+		first.Year(), int(first.Month()), first.Format("2006-01-02"), next.Format("2006-01-02"))
+	if _, err := env.Repo.RawDB().Exec(ddl); err != nil {
+		t.Fatalf("ensure usageHistory partition for %s: %v", first.Format("2006-01"), err)
 	}
 }
 

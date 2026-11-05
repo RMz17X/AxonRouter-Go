@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -172,8 +173,18 @@ func TestProviderNodeStateRefusalDoesNotParkTheConnection(t *testing.T) {
 	}
 	// And the row must name the status the client saw. A hardcoded 429 here would
 	// put "too many requests" on a node whose real condition is a lapsed contract.
-	if !strings.Contains(stored.Data, `"status":403`) {
-		t.Errorf("lastError does not carry the 403 the client received: %s", stored.Data)
+	// The data column is JSONB, whose canonical text spells the pair
+	// `"status": 403`; assert the parsed value instead of one spelling.
+	var connData struct {
+		LastError struct {
+			Status int `json:"status"`
+		} `json:"lastError"`
+	}
+	if err := json.Unmarshal([]byte(stored.Data), &connData); err != nil {
+		t.Fatalf("connection data is not JSON: %v", err)
+	}
+	if connData.LastError.Status != http.StatusForbidden {
+		t.Errorf("lastError status = %d, want the 403 the client received: %s", connData.LastError.Status, stored.Data)
 	}
 	if got := upstream.Count(); got != 0 {
 		t.Fatalf("upstream saw %d requests, want 0", got)

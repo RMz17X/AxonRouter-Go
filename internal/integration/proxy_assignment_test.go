@@ -140,20 +140,14 @@ func TestAssignedProxyPoolIsActuallyDialed(t *testing.T) {
 	}
 }
 
-// A provider that bypasses the shared client — the MiMo free lane builds its
-// own HTTP calls — has to honour a provider-level pool too, or the assignment
-// the dashboard shows is decorative.
-func TestProviderLevelPoolReachesBespokeTransport(t *testing.T) {
-	proxySrv, hits := newCountingProxy(t)
-	env := newEnv(t)
-	poolID := addProxyPool(t, env, "pool-a", proxySrv.URL)
-	setProviderStrategy(t, env, "mmf", poolID)
-
-	chat := env.Post(t, "/v1/chat/completions", ChatBody("mmf/mimo-v2.5-free", false))
-	if hits.Load() == 0 {
-		t.Errorf("the provider-level pool was never dialed on the MiMo lane (status %d): %s", chat.Status, truncate(chat.Body))
-	}
-}
+// TestProviderLevelPoolReachesBespokeTransport used to pin that the MiMo
+// free lane (provider mmf), which built its own HTTP calls instead of
+// using the shared client, honoured a provider-level pool. Its subject
+// no longer exists: the owner ordered mimo-free removed (executor,
+// registry/catalogue entry and combo branch deleted, .changes/914),
+// so an mmf request now fails with "no active connections" before any
+// transport is chosen. The pool-assignment contract itself stays
+// pinned by the shared-client and custom-executor cases above.
 
 // A bound but inactive pool must not silently become "no proxy": the
 // assignment is visible in the dashboard, so a request that cannot use it has

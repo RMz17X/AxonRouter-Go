@@ -10,9 +10,13 @@ import (
 )
 
 // Issue #90 smoke: a custom model on an OpenAI-compatible provider node
-// declares its real limits, and every discovery surface reports those numbers
-// instead of the substring table's guess. Runs through the real router, real
-// middleware stack, and a real HTTP listener.
+// declares its real limits, and the discovery surfaces that carry custom
+// models report those numbers instead of the substring table's guess.
+// /v1/models/info is the one surface that does not: batch 10 made it
+// Axon's static-catalogue lookup, which has never served custom models,
+// so the info leg below pins Axon's 404 document instead of the declared
+// numbers the pre-batch-10 Go document used to answer with. Runs through
+// the real router, real middleware stack, and a real HTTP listener.
 func TestCustomModelDeclaredLimitsReachEveryDiscoverySurface(t *testing.T) {
 	env := newEnv(t)
 
@@ -73,18 +77,22 @@ func TestCustomModelDeclaredLimitsReachEveryDiscoverySurface(t *testing.T) {
 			plainEntry.ContextLength, plainEntry.MaxCompletionTokens)
 	}
 
+	// /v1/models/info answers from Axon's static catalogue only (batch
+	// 10): a custom model is not in it, so the surface returns Axon's
+	// 404 document verbatim rather than the declared limits.
 	info := env.Get(t, "/v1/models/info?id=nara/my-custom-model")
-	if info.Status != http.StatusOK {
-		t.Fatalf("/v1/models/info status = %d: %s", info.Status, truncate(info.Body))
+	if info.Status != http.StatusNotFound {
+		t.Fatalf("/v1/models/info status = %d, want Axon's 404 for a custom model: %s", info.Status, truncate(info.Body))
 	}
 	var infoBody struct {
-		ContextLength   int `json:"context_length"`
-		MaxOutputTokens int `json:"max_output_tokens"`
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
 	}
 	info.Decode(t, &infoBody)
-	if infoBody.ContextLength != 1000000 || infoBody.MaxOutputTokens != 32000 {
-		t.Errorf("/v1/models/info = (%d, %d), want (1000000, 32000)",
-			infoBody.ContextLength, infoBody.MaxOutputTokens)
+	if infoBody.Error.Message != "Model not found: nara/my-custom-model" || infoBody.Error.Type != "not_found" {
+		t.Errorf("/v1/models/info error = %+v, want Axon's not_found document for the custom model", infoBody.Error)
 	}
 
 	caps := env.Get(t, "/api/models/caps?provider=nara", WithHeader(auth.CLITokenHeader, auth.CLIToken()))

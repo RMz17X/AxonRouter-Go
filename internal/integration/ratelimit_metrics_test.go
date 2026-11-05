@@ -14,7 +14,7 @@ import (
 func limitKey(t *testing.T, env *Env, name string) (id, plaintext string) {
 	t.Helper()
 	res := env.Post(t, "/api/keys", map[string]any{"key": "sk-" + name, "name": name})
-	if res.Status != http.StatusOK {
+	if res.Status != http.StatusCreated {
 		t.Fatalf("create key: status %d: %s", res.Status, truncate(res.Body))
 	}
 	var out struct {

@@ -32,9 +32,10 @@ func TestStorageMaintenanceWorksWithoutAdminCredential(t *testing.T) {
 
 	// A ledger row old enough to be pruned, so the action has real work to do.
 	now := time.Now().UTC()
+	ensureUsagePartition(t, env, now.Add(-90*24*time.Hour))
 	if _, err := env.Repo.RawDB().Exec(`
 		INSERT INTO usageHistory (timestamp, provider, model, connectionId, apiKey, clientKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
-		VALUES (?, 'deepseek', 'deepseek-chat', 'c1', 'cred', 'cred', '/v1/chat/completions', 100, 50, 0.01, 'success', '{}', '')`,
+		VALUES ($1, 'deepseek', 'deepseek-chat', 'c1', 'cred', 'cred', '/v1/chat/completions', 100, 50, 0.01, 'success', '{}', '{}')`,
 		now.Add(-90*24*time.Hour).Format(time.RFC3339)); err != nil {
 		t.Fatalf("seed usageHistory: %v", err)
 	}
@@ -111,10 +112,11 @@ func TestAnonymousPruneStillCarriesKeyQuota(t *testing.T) {
 
 	// Seed 200 tokens of old history: it exhausts the key on its own.
 	now := time.Now().UTC()
+	ensureUsagePartition(t, env, now.Add(-90*24*time.Hour))
 	masked := handlerutil.MaskAPIKey(plaintext)
 	if _, err := env.Repo.RawDB().Exec(`
 		INSERT INTO usageHistory (timestamp, provider, model, connectionId, apiKey, clientKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
-		VALUES (?, 'deepseek', 'deepseek-chat', 'c1', 'cred', ?, '/v1/chat/completions', 150, 50, 0.01, 'success', '{}', '')`,
+		VALUES ($1, 'deepseek', 'deepseek-chat', 'c1', 'cred', $2, '/v1/chat/completions', 150, 50, 0.01, 'success', '{}', '{}')`,
 		now.Add(-90*24*time.Hour).Format(time.RFC3339), masked); err != nil {
 		t.Fatalf("seed usageHistory: %v", err)
 	}

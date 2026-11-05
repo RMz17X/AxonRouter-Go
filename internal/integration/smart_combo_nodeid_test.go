@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The dashboard keys a provider node's custom-model rows with the node id —
@@ -95,8 +96,8 @@ func TestSmartRulesMatchCustomModelsKeyedByNodeID(t *testing.T) {
 		"models":     []string{},
 		"matchRules": []any{map[string]any{"pattern": "deepseek*", "mode": "glob"}},
 	})
-	if res.Status != http.StatusOK {
-		t.Fatalf("create combo with rules = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
+	if res.Status != http.StatusCreated {
+		t.Fatalf("create combo with rules = %d, want 201 (body: %s)", res.Status, truncate(res.Body))
 	}
 	combo, err := env.Repo.GetComboById("combo-save")
 	if err != nil {
@@ -565,11 +566,15 @@ func TestModelMetaPublishesBothSpellings(t *testing.T) {
 		`{"providerAlias":"node-cutad","id":"deepseek-v4-flash","type":"llm","contextWindow":131072,"caps":{"vision":true,"reasoning":true}}`); err != nil {
 		t.Fatalf("seed custom model: %v", err)
 	}
-	// One observation in the ring, recorded against the node id.
+	// One observation in the ring, recorded against the node id. The
+	// stamp is "now": requestDetails is range-partitioned by month and
+	// the schema only ensures the current and next month's partitions,
+	// so a fixed past date lands outside the window and is rejected.
 	if _, err := env.Repo.RawDB().Exec(
 		`INSERT INTO requestDetails (id, timestamp, provider, model, connectionId, status, data)
-		 VALUES ('req-meta-1', '2026-10-06T01:00:00Z', 'node-cutad', 'deepseek-v4-flash', 'conn-cutad', 'success', ?)`,
+		 VALUES ('req-meta-1', $2, 'node-cutad', 'deepseek-v4-flash', 'conn-cutad', 'success', $1)`,
 		`{"latency":{"ttft":250,"total":900}}`,
+		time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
 	); err != nil {
 		t.Fatalf("seed request detail: %v", err)
 	}

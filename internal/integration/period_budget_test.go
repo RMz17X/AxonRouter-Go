@@ -133,11 +133,13 @@ func TestPeriodBudgetWindowFloor(t *testing.T) {
 	// A turn from three months ago that would exhaust the ceiling if the
 	// window were ignored. It is written directly because InsertUsageHistory
 	// stamps "now".
-	old := time.Now().UTC().AddDate(0, -3, 0).Format("2006-01-02T15:04:05.000Z")
+	oldTime := time.Now().UTC().AddDate(0, -3, 0)
+	old := oldTime.Format("2006-01-02T15:04:05.000Z")
+	ensureUsagePartition(t, env, oldTime)
 	masked := handlerutil.MaskAPIKey("sk-budget-window-integration")
 	if _, err := env.Repo.RawDB().Exec(
 		`INSERT INTO usageHistory (timestamp, provider, model, connectionId, apiKey, clientKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
-		 VALUES (?, 'deepseek', 'deepseek-chat', 'conn-budget-win', ?, ?, '/v1/chat/completions', 100000, 50000, 9.0, 'success', '{}', '{}')`,
+		 VALUES ($1, 'deepseek', 'deepseek-chat', 'conn-budget-win', $2, $3, '/v1/chat/completions', 100000, 50000, 9.0, 'success', '{}', '{}')`,
 		old, masked, masked,
 	); err != nil {
 		t.Fatalf("seed old usage history: %v", err)

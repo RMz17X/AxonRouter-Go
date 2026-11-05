@@ -30,10 +30,11 @@ func TestLedgerPrunePreservesKeyQuotaEnforcement(t *testing.T) {
 
 	// Seed 200 tokens 60 days ago: this exhausts the key on old history alone.
 	now := time.Now().UTC()
+	ensureUsagePartition(t, env, now.Add(-60*24*time.Hour))
 	masked := handlerutil.MaskAPIKey(plaintext)
 	if _, err := env.Repo.RawDB().Exec(`
 		INSERT INTO usageHistory (timestamp, provider, model, connectionId, apiKey, clientKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta)
-		VALUES (?, 'deepseek', 'deepseek-chat', 'c1', 'cred', ?, '/v1/chat/completions', 150, 50, 0.01, 'success', '{}', '')`,
+		VALUES ($1, 'deepseek', 'deepseek-chat', 'c1', 'cred', $2, '/v1/chat/completions', 150, 50, 0.01, 'success', '{}', '{}')`,
 		now.Add(-60*24*time.Hour).Format(time.RFC3339), masked,
 	); err != nil {
 		t.Fatalf("seed usageHistory: %v", err)

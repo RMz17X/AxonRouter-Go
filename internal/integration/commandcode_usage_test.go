@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -59,10 +60,20 @@ func TestCommandcodeUsageAccountingRecordsRealTokens(t *testing.T) {
 	if row.PromptTokens != 100 || row.CompletionTokens != 5 {
 		t.Errorf("row tokens prompt=%d completion=%d, want upstream 100/5", row.PromptTokens, row.CompletionTokens)
 	}
-	if !strings.Contains(row.Tokens, `"cached_tokens":64`) {
-		t.Errorf("row tokens %q missing cached_tokens=64", row.Tokens)
+	// The tokens column is JSONB: PostgreSQL returns its canonical text
+	// (a space after each colon), so the detail counts are asserted on the
+	// parsed document, not on the compact spelling the writer produced.
+	var rowTokens struct {
+		CachedTokens    int `json:"cached_tokens"`
+		ReasoningTokens int `json:"reasoning_tokens"`
 	}
-	if !strings.Contains(row.Tokens, `"reasoning_tokens":2`) {
-		t.Errorf("row tokens %q missing reasoning_tokens=2", row.Tokens)
+	if err := json.Unmarshal([]byte(row.Tokens), &rowTokens); err != nil {
+		t.Fatalf("row tokens %q are not JSON: %v", row.Tokens, err)
+	}
+	if rowTokens.CachedTokens != 64 {
+		t.Errorf("row tokens cached_tokens = %d, want 64 (tokens: %s)", rowTokens.CachedTokens, row.Tokens)
+	}
+	if rowTokens.ReasoningTokens != 2 {
+		t.Errorf("row tokens reasoning_tokens = %d, want 2 (tokens: %s)", rowTokens.ReasoningTokens, row.Tokens)
 	}
 }

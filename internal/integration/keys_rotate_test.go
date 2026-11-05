@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,7 @@ import (
 func createKey(t *testing.T, env *Env, name string) (id, plaintext string) {
 	t.Helper()
 	res := env.Post(t, "/api/keys", map[string]any{"name": name})
-	if res.Status != 200 {
+	if res.Status != http.StatusCreated {
 		t.Fatalf("create key: status %d: %s", res.Status, truncate(res.Body))
 	}
 	var out struct {

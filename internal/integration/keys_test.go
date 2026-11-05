@@ -52,8 +52,8 @@ func TestApiKeyLifecycle(t *testing.T) {
 	env := newEnv(t)
 
 	created := env.Post(t, "/api/keys", map[string]any{"name": "CI Key"})
-	if created.Status != http.StatusOK {
-		t.Fatalf("POST /api/keys = %d, want 200 (body: %s)", created.Status, truncate(created.Body))
+	if created.Status != http.StatusCreated {
+		t.Fatalf("POST /api/keys = %d, want 201 (body: %s)", created.Status, truncate(created.Body))
 	}
 	var createResp struct {
 		ID  string `json:"id"`
@@ -156,9 +156,11 @@ func listCombos(t *testing.T, env *Env) []comboRow {
 	if res.Status != http.StatusOK {
 		t.Fatalf("GET /api/combos = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}
-	var rows []comboRow
-	res.Decode(t, &rows)
-	return rows
+	var envelope struct {
+		Combos []comboRow `json:"combos"`
+	}
+	res.Decode(t, &envelope)
+	return envelope.Combos
 }
 
 // requireCombo returns the row with the given id, failing when it is absent.
@@ -189,8 +191,8 @@ func TestComboLifecycleThroughTheDashboard(t *testing.T) {
 		"kind":   "llm",
 		"models": []string{"deepseek/deepseek-chat", "groq/llama-3.3-70b-versatile"},
 	})
-	if created.Status != http.StatusOK {
-		t.Fatalf("POST /api/combos = %d, want 200 (body: %s)", created.Status, truncate(created.Body))
+	if created.Status != http.StatusCreated {
+		t.Fatalf("POST /api/combos = %d, want 201 (body: %s)", created.Status, truncate(created.Body))
 	}
 	var createResp struct {
 		ID string `json:"id"`

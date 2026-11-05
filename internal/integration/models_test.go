@@ -21,12 +21,13 @@ type modelEntry struct {
 	MaxCompletionTokens *int   `json:"max_completion_tokens"`
 }
 
-// modelsResponse mirrors the /v1/models envelope: OpenAI's "data" array plus the
-// extra keys the dashboard and CLI tools read.
+// modelsResponse mirrors the /v1/models envelope: exactly Axon's
+// {object, data} pair (src/app/api/v1/models/route.js). The pre-parity
+// fork envelope also carried a "connections" count; batch 9's exact-
+// envelope reshape removed it, so the field is gone from here too.
 type modelsResponse struct {
-	Object      string       `json:"object"`
-	Connections int          `json:"connections"`
-	Data        []modelEntry `json:"data"`
+	Object string       `json:"object"`
+	Data   []modelEntry `json:"data"`
 }
 
 // ids flattens the model ids for order-sensitive assertions.
@@ -56,9 +57,6 @@ func TestModelsListReflectsConnectedProviders(t *testing.T) {
 	res.Decode(t, &list)
 	if list.Object != "list" {
 		t.Errorf("object = %q, want \"list\"", list.Object)
-	}
-	if list.Connections != 1 {
-		t.Errorf("connections = %d, want 1 (the one seeded connection)", list.Connections)
 	}
 	if len(list.Data) == 0 {
 		t.Fatal("model list is empty, want the connected provider's catalog")
@@ -154,13 +152,18 @@ func TestModelsInfoDescribesASingleModel(t *testing.T) {
 		t.Fatalf("GET /v1/models/info = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}
 
+	// The batch-10 document is Axon's buildInfo shape: {id, name, kind,
+	// owned_by, endpoint} plus the fields the catalogue entry itself
+	// carries — contextWindow when the capabilities chain yields one.
+	// The pre-parity Go-only keys (object, context_length,
+	// max_output_tokens) no longer exist on this surface.
 	var info struct {
-		ID           string `json:"id"`
-		Object       string `json:"object"`
-		OwnedBy      string `json:"owned_by"`
-		Endpoint     string `json:"endpoint"`
-		ContextLen   int    `json:"context_length"`
-		MaxOutTokens int    `json:"max_output_tokens"`
+		ID            string `json:"id"`
+		Name          string `json:"name"`
+		Kind          string `json:"kind"`
+		OwnedBy       string `json:"owned_by"`
+		Endpoint      string `json:"endpoint"`
+		ContextWindow int    `json:"contextWindow"`
 	}
 	res.Decode(t, &info)
 	if info.ID != "deepseek/deepseek-chat" {
@@ -169,10 +172,13 @@ func TestModelsInfoDescribesASingleModel(t *testing.T) {
 	if info.OwnedBy != "deepseek" {
 		t.Errorf("owned_by = %q, want the owning provider", info.OwnedBy)
 	}
+	if info.Kind != "llm" {
+		t.Errorf("kind = %q, want llm", info.Kind)
+	}
 	if info.Endpoint != "/v1/chat/completions" {
 		t.Errorf("endpoint = %q, want /v1/chat/completions", info.Endpoint)
 	}
-	if info.ContextLen <= 0 {
-		t.Errorf("context_length = %d, want a positive limit", info.ContextLen)
+	if info.ContextWindow <= 0 {
+		t.Errorf("contextWindow = %d, want a positive limit", info.ContextWindow)
 	}
 }

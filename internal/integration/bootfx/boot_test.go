@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"9router/proxy/internal/db"
 )
 
 // TestRealApplicationBootAndServesTraffic is the end-to-end smoke test: the
@@ -20,16 +22,19 @@ import (
 func TestRealApplicationBootAndServesTraffic(t *testing.T) {
 	t.Setenv("ALLOW_PRIVATE_NETWORKING", "true")
 	t.Run("the schema was created in the configured database", func(t *testing.T) {
-		// A wrong DatabasePath would leave the server serving from a different
-		// file and every other assertion here would fail confusingly.
+		// A wrong DATABASE_URL would leave the server serving from a
+		// different database and every other assertion here would fail
+		// confusingly. PostgreSQL folds the unquoted DDL identifier, so
+		// the catalog carries the table as "apikeys" in the schema the
+		// connection's search_path names.
 		var name string
 		err := repo.RawDB().QueryRow(
-			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'apiKeys'").Scan(&name)
+			"SELECT tablename FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'apikeys'").Scan(&name)
 		if err != nil {
-			t.Fatalf("query sqlite_master for apiKeys: %v", err)
+			t.Fatalf("query pg_tables for apikeys: %v", err)
 		}
-		if name != "apiKeys" {
-			t.Errorf("apiKeys table name = %q, want apiKeys", name)
+		if name != "apikeys" {
+			t.Errorf("apikeys table name = %q, want apikeys", name)
 		}
 	})
 
@@ -71,9 +76,21 @@ func TestRealApplicationBootAndServesTraffic(t *testing.T) {
 	}
 
 	t.Run("the request was recorded in usage history", func(t *testing.T) {
-		rows, err := repo.GetRecentUsageHistory(5)
-		if err != nil {
-			t.Fatalf("read usage history: %v", err)
+		// The usage ledger is written by the batched async writer
+		// (25 ms flush), so the row is awaited rather than read back
+		// synchronously; the assertion itself is unchanged.
+		var rows []db.UsageHistoryRow
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			var err error
+			rows, err = repo.GetRecentUsageHistory(5)
+			if err != nil {
+				t.Fatalf("read usage history: %v", err)
+			}
+			if len(rows) >= 1 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
 		}
 		if len(rows) != 1 {
 			t.Fatalf("usageHistory rows = %d, want 1", len(rows))

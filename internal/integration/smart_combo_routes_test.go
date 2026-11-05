@@ -87,13 +87,16 @@ func TestSmartComboRulesAreReachableThroughTheRouter(t *testing.T) {
 	if res.Status != http.StatusOK {
 		t.Fatalf("GET /api/combos = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
 	}
-	var combos []struct {
-		ID          string   `json:"id"`
-		Models      string   `json:"models"`
-		MatchRules  string   `json:"matchRules"`
-		AutoMembers []string `json:"autoMembers"`
+	var listEnvelope struct {
+		Combos []struct {
+			ID          string   `json:"id"`
+			Models      string   `json:"models"`
+			MatchRules  string   `json:"matchRules"`
+			AutoMembers []string `json:"autoMembers"`
+		} `json:"combos"`
 	}
-	res.Decode(t, &combos)
+	res.Decode(t, &listEnvelope)
+	combos := listEnvelope.Combos
 	var found bool
 	for _, c := range combos {
 		if c.ID != "combo-ds" {
