@@ -290,10 +290,10 @@ func removeEnvVar(envText, key string) string {
 // hermesLocalEndpointRE matches the loopback hosts AxonRouter-Go itself binds.
 var hermesLocalEndpointRE = regexp.MustCompile(`localhost|127\.0\.0\.1|0\.0\.0\.0`)
 
-// has9RouterConfig reports a block pointing at a local 9router endpoint.
+// hasAxonRouterConfig reports a block pointing at a local AxonRouter-Go endpoint.
 // Detection only: a tunnel endpoint reads false here and surfaces as "other"
 // in the UI, exactly like it does upstream.
-func has9RouterConfig(provider, baseURL *string) bool {
+func hasAxonRouterConfig(provider, baseURL *string) bool {
 	if baseURL == nil || *baseURL == "" {
 		return false
 	}

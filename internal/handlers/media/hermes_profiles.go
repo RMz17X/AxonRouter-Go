@@ -48,15 +48,15 @@ type hermesHome struct {
 
 // hermesProfile is one entry of the dashboard's profile picker.
 type hermesProfile struct {
-	Name        string  `json:"name"`
-	Dir         string  `json:"dir"`
-	IsDefault   bool    `json:"isDefault"`
-	DisplayName *string `json:"displayName"`
-	Command     string  `json:"command"`
-	Alias       *string `json:"alias"`
-	Model       *string `json:"model"`
-	BaseURL     *string `json:"baseUrl"`
-	Has9Router  bool    `json:"has9Router"`
+	Name          string  `json:"name"`
+	Dir           string  `json:"dir"`
+	IsDefault     bool    `json:"isDefault"`
+	DisplayName   *string `json:"displayName"`
+	Command       string  `json:"command"`
+	Alias         *string `json:"alias"`
+	Model         *string `json:"model"`
+	BaseURL       *string `json:"baseUrl"`
+	HasAxonRouter bool    `json:"hasAxonRouter"`
 }
 
 // hermesRoot is the install root. HERMES_HOME wins over the home directory so
@@ -165,14 +165,14 @@ func buildHermesEntry(home hermesHome) (hermesProfile, error) {
 	delegation := parseHermesDelegationBlock(yaml)
 
 	entry := hermesProfile{
-		Name:        home.Name,
-		Dir:         home.Dir,
-		IsDefault:   home.IsDefault,
-		DisplayName: parseHermesDisplayName(profileYAML),
-		Command:     "hermes",
-		Model:       model.defaultModel(),
-		BaseURL:     model.baseURL(),
-		Has9Router:  has9RouterConfig(model.provider(), model.baseURL()) || has9RouterConfig(delegation.provider(), delegation.baseURL()),
+		Name:          home.Name,
+		Dir:           home.Dir,
+		IsDefault:     home.IsDefault,
+		DisplayName:   parseHermesDisplayName(profileYAML),
+		Command:       "hermes",
+		Model:         model.defaultModel(),
+		BaseURL:       model.baseURL(),
+		HasAxonRouter: hasAxonRouterConfig(model.provider(), model.baseURL()) || hasAxonRouterConfig(delegation.provider(), delegation.baseURL()),
 	}
 	if !home.IsDefault {
 		// What the user types to run this profile; alias is the
@@ -181,8 +181,8 @@ func buildHermesEntry(home hermesHome) (hermesProfile, error) {
 		entry.Alias = new(home.Name)
 	}
 	for _, cfg := range parseHermesAuxRoles(yaml) {
-		if has9RouterConfig(cfg.Provider, cfg.BaseURL) {
-			entry.Has9Router = true
+		if hasAxonRouterConfig(cfg.Provider, cfg.BaseURL) {
+			entry.HasAxonRouter = true
 			break
 		}
 	}

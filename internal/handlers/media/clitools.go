@@ -18,9 +18,9 @@ import (
 // cliStatus is the per-tool installed/version shape the dashboard expects
 // (port of each Next <tool>-settings GET, trimmed to just install + version).
 type cliStatus struct {
-	Installed  bool    `json:"installed"`
-	Version    *string `json:"version"`
-	Has9Router bool    `json:"has9Router"`
+	Installed     bool    `json:"installed"`
+	Version       *string `json:"version"`
+	HasAxonRouter bool    `json:"hasAxonRouter"`
 }
 
 // cliVersionTimeout bounds each `--version` probe; install detection via
@@ -36,21 +36,21 @@ type toolDetector func(context.Context) (*cliStatus, error)
 // `cowork` checks Claude Desktop config dirs; `copilot` has no binary check
 // (reference hardcodes installed:true).
 type toolDef struct {
-	id         string
-	bin        string
-	hasVer     bool
-	dirCheck   func() bool
-	alwaysOn   bool
-	has9Router func() bool
+	id            string
+	bin           string
+	hasVer        bool
+	dirCheck      func() bool
+	alwaysOn      bool
+	hasAxonRouter func() bool
 }
 
 var cliTools = []toolDef{
-	{id: "claude", bin: "claude", has9Router: claudeHas9Router},
-	{id: "codex", bin: "codex", has9Router: codexHas9Router},
-	{id: "opencode", bin: "opencode", has9Router: opencodeHas9Router},
-	{id: "droid", bin: "droid", has9Router: droidHas9Router},
+	{id: "claude", bin: "claude", hasAxonRouter: claudeHasAxonRouter},
+	{id: "codex", bin: "codex", hasAxonRouter: codexHasAxonRouter},
+	{id: "opencode", bin: "opencode", hasAxonRouter: opencodeHasAxonRouter},
+	{id: "droid", bin: "droid", hasAxonRouter: droidHasAxonRouter},
 	{id: "openclaw", bin: "openclaw"},
-	{id: "hermes", bin: "hermes", has9Router: hermesHas9Router},
+	{id: "hermes", bin: "hermes", hasAxonRouter: hermesHasAxonRouter},
 	{id: "cowork", dirCheck: coworkDirOK},
 	{id: "copilot", alwaysOn: true}, // VS Code config tool; reference returns installed:true
 	{id: "cline", bin: "cline"},
@@ -59,9 +59,9 @@ var cliTools = []toolDef{
 	{id: "jcode", bin: "jcode"},
 	{id: "grok-build", bin: "grok"},
 	{id: "devin", bin: "devin", hasVer: true},
-	{id: "pi", bin: "pi", has9Router: piHas9Router},
-	{id: "omp", bin: "omp", hasVer: true, has9Router: ompHas9Router},
-	{id: "crush", bin: "crush", has9Router: crushHas9Router},
+	{id: "pi", bin: "pi", hasAxonRouter: piHasAxonRouter},
+	{id: "omp", bin: "omp", hasVer: true, hasAxonRouter: ompHasAxonRouter},
+	{id: "crush", bin: "crush", hasAxonRouter: crushHasAxonRouter},
 	{id: "forge", bin: "forge"},
 	{id: "smelt", bin: "smelt"},
 	{id: "codewhale", bin: "codewhale"},
@@ -104,16 +104,16 @@ func (t toolDef) detector() toolDetector {
 	case t.alwaysOn:
 		return func(context.Context) (*cliStatus, error) {
 			s := &cliStatus{Installed: true}
-			if t.has9Router != nil {
-				s.Has9Router = t.has9Router()
+			if t.hasAxonRouter != nil {
+				s.HasAxonRouter = t.hasAxonRouter()
 			}
 			return s, nil
 		}
 	case t.dirCheck != nil:
 		return func(context.Context) (*cliStatus, error) {
 			s := &cliStatus{Installed: t.dirCheck()}
-			if s.Installed && t.has9Router != nil {
-				s.Has9Router = t.has9Router()
+			if s.Installed && t.hasAxonRouter != nil {
+				s.HasAxonRouter = t.hasAxonRouter()
 			}
 			return s, nil
 		}
@@ -123,10 +123,10 @@ func (t toolDef) detector() toolDetector {
 			if _, err := exec.LookPath(t.bin); err == nil {
 				installed = true
 			}
-			has9 := false
-			if t.has9Router != nil {
-				has9 = t.has9Router()
-				if has9 {
+			hasAxon := false
+			if t.hasAxonRouter != nil {
+				hasAxon = t.hasAxonRouter()
+				if hasAxon {
 					installed = true
 				}
 			}
@@ -134,7 +134,7 @@ func (t toolDef) detector() toolDetector {
 				// Not installed is a value, not an error (tool ≠ null).
 				return &cliStatus{Installed: false}, nil
 			}
-			s := &cliStatus{Installed: true, Has9Router: has9}
+			s := &cliStatus{Installed: true, HasAxonRouter: hasAxon}
 			if t.hasVer {
 				if v, err := binVersion(ctx, t.bin); err == nil && v != "" {
 					s.Version = &v
@@ -203,14 +203,14 @@ func coworkDirOK() bool {
 	return false
 }
 
-var claudeREHasBaseURL = regexp.MustCompile(`"(ANTHROPIC_BASE_URL|NINEROUTER_URL)"\s*:\s*"[^"]+"`)
+var claudeREHasBaseURL = regexp.MustCompile(`"(ANTHROPIC_BASE_URL|AXONROUTER_URL)"\s*:\s*"[^"]+"`)
 
-// ToolHas9Router reports whether the named tool has 9router configured.
-func ToolHas9Router(id string) bool {
+// ToolHasAxonRouter reports whether the named tool has AxonRouter configured.
+func ToolHasAxonRouter(id string) bool {
 	for _, t := range cliTools {
 		if t.id == id {
-			if t.has9Router != nil {
-				return t.has9Router()
+			if t.hasAxonRouter != nil {
+				return t.hasAxonRouter()
 			}
 			return false
 		}
@@ -218,12 +218,12 @@ func ToolHas9Router(id string) bool {
 	return false
 }
 
-// claudeHas9Router reports whether Claude Code is configured to use 9router.
-func claudeHas9Router() bool {
+// claudeHasAxonRouter reports whether Claude Code is configured to use AxonRouter.
+func claudeHasAxonRouter() bool {
 	if u := os.Getenv("ANTHROPIC_BASE_URL"); strings.TrimSpace(u) != "" {
 		return true
 	}
-	if u := os.Getenv("NINEROUTER_URL"); strings.TrimSpace(u) != "" {
+	if u := os.Getenv("AXONROUTER_URL"); strings.TrimSpace(u) != "" {
 		return true
 	}
 	home, err := os.UserHomeDir()
@@ -239,14 +239,14 @@ func claudeHas9Router() bool {
 		if err != nil {
 			continue
 		}
-		if claudeConfigBytesHas9Router(raw) {
+		if claudeConfigBytesHasAxonRouter(raw) {
 			return true
 		}
 	}
 	return false
 }
 
-func claudeConfigBytesHas9Router(raw []byte) bool {
+func claudeConfigBytesHasAxonRouter(raw []byte) bool {
 	var cfg struct {
 		Env map[string]any `json:"env"`
 	}
@@ -254,14 +254,14 @@ func claudeConfigBytesHas9Router(raw []byte) bool {
 		if v, ok := cfg.Env["ANTHROPIC_BASE_URL"].(string); ok && strings.TrimSpace(v) != "" {
 			return true
 		}
-		if v, ok := cfg.Env["NINEROUTER_URL"].(string); ok && strings.TrimSpace(v) != "" {
+		if v, ok := cfg.Env["AXONROUTER_URL"].(string); ok && strings.TrimSpace(v) != "" {
 			return true
 		}
 	}
 	return claudeREHasBaseURL.Match(raw)
 }
 
-func codexHas9Router() bool {
+func codexHasAxonRouter() bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return false
@@ -271,10 +271,10 @@ func codexHas9Router() bool {
 		return false
 	}
 	s := string(raw)
-	return strings.Contains(s, `model_provider = "9router"`) || strings.Contains(s, `[model_providers.9router]`)
+	return strings.Contains(s, `model_provider = "axonrouter"`) || strings.Contains(s, `[model_providers.axonrouter]`)
 }
 
-func opencodeHas9Router() bool {
+func opencodeHasAxonRouter() bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return false
@@ -283,10 +283,10 @@ func opencodeHas9Router() bool {
 	if err != nil {
 		return false
 	}
-	return bytes.Contains(raw, []byte(`"9router"`))
+	return bytes.Contains(raw, []byte(`"axonrouter"`))
 }
 
-func droidHas9Router() bool {
+func droidHasAxonRouter() bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return false
@@ -295,10 +295,10 @@ func droidHas9Router() bool {
 	if err != nil {
 		return false
 	}
-	return bytes.Contains(raw, []byte(`"custom:9Router`))
+	return bytes.Contains(raw, []byte(`"custom:AxonRouter`))
 }
 
-func crushHas9Router() bool {
+func crushHasAxonRouter() bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return false
@@ -307,10 +307,10 @@ func crushHas9Router() bool {
 	if err != nil {
 		return false
 	}
-	return bytes.Contains(raw, []byte(`"9router"`))
+	return bytes.Contains(raw, []byte(`"axonrouter"`))
 }
 
-func ompHas9Router() bool {
+func ompHasAxonRouter() bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return false
@@ -319,10 +319,10 @@ func ompHas9Router() bool {
 	if err != nil {
 		return false
 	}
-	return bytes.Contains(raw, []byte("9router"))
+	return bytes.Contains(raw, []byte("axonrouter"))
 }
 
-func hermesHas9Router() bool {
+func hermesHasAxonRouter() bool {
 	home, err := resolveHermesHome("")
 	if err != nil {
 		return false
@@ -331,9 +331,9 @@ func hermesHas9Router() bool {
 	if err != nil || yaml == "" {
 		return false
 	}
-	return parseHermesSettings(yaml).has9RouterConfig()
+	return parseHermesSettings(yaml).hasAxonRouterConfig()
 }
 
-func piHas9Router() bool {
-	return piHas9RouterConfig(readPiConfig())
+func piHasAxonRouter() bool {
+	return piHasAxonRouterConfig(readPiConfig())
 }

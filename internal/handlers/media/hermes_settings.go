@@ -73,7 +73,7 @@ func (h *HermesHandler) HandleGet(w http.ResponseWriter, r *http.Request) {
 		"installed":     true,
 		"profile":       home,
 		"settings":      settings,
-		"hasAxonRouter": settings.has9RouterConfig(),
+		"hasAxonRouter": settings.hasAxonRouterConfig(),
 		"configPath":    home.ConfigPath,
 	})
 }
@@ -87,13 +87,13 @@ func parseHermesSettings(yaml string) hermesSettings {
 	}
 }
 
-// has9RouterConfig reports whether any block points at a local gateway.
-func (s hermesSettings) has9RouterConfig() bool {
-	if has9RouterConfig(s.Model.provider(), s.Model.baseURL()) || has9RouterConfig(s.Delegation.provider(), s.Delegation.baseURL()) {
+// hasAxonRouterConfig reports whether any block points at a local gateway.
+func (s hermesSettings) hasAxonRouterConfig() bool {
+	if hasAxonRouterConfig(s.Model.provider(), s.Model.baseURL()) || hasAxonRouterConfig(s.Delegation.provider(), s.Delegation.baseURL()) {
 		return true
 	}
 	for _, cfg := range s.Auxiliary {
-		if has9RouterConfig(cfg.Provider, cfg.BaseURL) {
+		if hasAxonRouterConfig(cfg.Provider, cfg.BaseURL) {
 			return true
 		}
 	}

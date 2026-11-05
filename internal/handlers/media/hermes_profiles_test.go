@@ -107,8 +107,8 @@ func TestListHermesProfiles_SkipsBareDirectories(t *testing.T) {
 	if profiles[1].Command != "hermes -p work" {
 		t.Errorf("command = %q, want %q", profiles[1].Command, "hermes -p work")
 	}
-	if !profiles[1].Has9Router {
-		t.Error("a custom provider on 127.0.0.1 must report has9Router")
+	if !profiles[1].HasAxonRouter {
+		t.Error("a custom provider on 127.0.0.1 must report hasAxonRouter")
 	}
 	if profiles[1].Alias == nil || *profiles[1].Alias != "work" {
 		t.Errorf("alias = %v, want work", profiles[1].Alias)

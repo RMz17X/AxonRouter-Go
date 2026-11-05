@@ -92,15 +92,13 @@ func readPiConfig() map[string]any {
 	return nil
 }
 
-// piHas9RouterConfig backs the all-statuses card (a pre-batch-5
-// surface kept unchanged): whether any provider block points at a
-// local gateway — the named block with a baseUrl, or any block
-// carrying one of the two default gateway ports (20128 upstream's,
-// 20130 this gateway's). The settings GET itself uses Axon's
-// providers["axonrouter"]-presence rule instead.
-func piHas9RouterConfig(config map[string]any) bool {
+// piHasAxonRouterConfig backs the all-statuses card: whether any
+// provider block points at a local gateway — the named axonrouter
+// block with a baseUrl, or any block carrying the default gateway
+// port (20130).
+func piHasAxonRouterConfig(config map[string]any) bool {
 	providers, _ := config["providers"].(map[string]any)
-	if p, ok := providers["9router"].(map[string]any); ok {
+	if p, ok := providers["axonrouter"].(map[string]any); ok {
 		if b, _ := p["baseUrl"].(string); strings.TrimSpace(b) != "" {
 			return true
 		}
@@ -111,7 +109,7 @@ func piHas9RouterConfig(config map[string]any) bool {
 			continue
 		}
 		b, _ := p["baseUrl"].(string)
-		if strings.Contains(b, "20128") || strings.Contains(b, "20130") {
+		if strings.Contains(b, "20130") {
 			return true
 		}
 	}
