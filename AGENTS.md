@@ -563,6 +563,47 @@ When tasked with syncing a feature, bugfix, or provider from upstream:
      `.changes/`. Contributors do not run this per PR.
    - Format reference: [`.changes/README.md`](.changes/README.md).
 
+6b. **Owner rules — changelog discipline & versioning (Ricki, 2026-11-05 —
+    MANDATORY, overrides any conflicting habit above)**:
+   - **A change without its fragment is unfinished work.** Every commit that
+     changes behaviour lands its `.changes/<number>-<slug>.md` fragment in the
+     SAME commit. This is doubly absolute for a **big bug** — a boot blocker,
+     data loss or orphaned state, a security hole, a crash, wrong results, or
+     a silent contract/behaviour break: no fragment, no merge, no push. The
+     fragment for a big bug MUST state four things: the **symptom**, the
+     **root cause**, the **fix**, and the **verification** evidence. "Fixed
+     X" alone is not a changelog entry.
+   - **No silent side-effects.** A commit does what its message says and
+     nothing else. Deleting or reverting recorded behaviour (a compatibility
+     shim, a fallback, a default) inside an unrelated feature or fix commit
+     is forbidden — split it into its own commit, name it in the message,
+     and give it its own fragment. (Standing example: the port-3177 commit
+     also deleted the `~/.9router` data-dir fallback and orphaned
+     pre-rename installs; fragment 945 restored it.)
+   - **Version arithmetic is sequential, PATCH+1 only.** Every release moves
+     the version exactly one step: PATCH increments by 1 (e.g. 1.9.15 →
+     1.9.16); PATCH runs to 99 and only then does MINOR increment with
+     PATCH reset to 0. MAJOR bumps are forbidden without the owner's
+     explicit order. Numbers never jump and are never reused.
+   - **One version, three carriers, always in agreement at a release:**
+     the `VERSION` file, `version.json`'s `latestVersion`, and
+     `internal/updater`'s `CurrentVersion` — all set together by
+     `scripts/bump-version.sh <X.Y.Z>` — plus the git tag `vX.Y.Z` naming
+     the same number.
+   - **Release procedure (the only path that may write `CHANGELOG.md`):**
+     (1) confirm every change since the last tag has its fragment —
+     backfill any missing fragment BEFORE releasing, never after;
+     (2) `./scripts/bump-version.sh X.Y.Z` (one PATCH step up);
+     (3) `make changelog-merge TAG=vX.Y.Z` — this folds all fragments
+     into `CHANGELOG.md` under the new version and clears `.changes/`;
+     (4) build + vet green; (5) one release commit carrying the bump, the
+     merged changelog and the cleared fragments; (6) tag `vX.Y.Z` and
+     push `main` AND the tag — the tag push triggers the GHCR publish
+     workflow automatically; (7) the release is not done until the
+     workflow run is green and the registry shows the new version.
+   - **Current line:** last stable `1.9.15`; in-development `1.9.16-exp.1`.
+     The first release cut under these rules is `v1.9.16`.
+
 7. **Branch & PR Targeting (`main` ONLY — MANDATORY)**:
    - **Every pull request in this repository targets `main`.** Never open a PR
      into `dev`, and never merge into `dev`. This is the operator's standing
