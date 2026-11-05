@@ -91,6 +91,13 @@ func main() {
 				Name:  "update",
 				Usage: "Check and perform self-update to the latest version",
 				Action: func(cCtx *cli.Context) error {
+					// In a container the update is a new image, never a
+					// binary swap: say so and fail before anything is
+					// checked or touched.
+					if updater.InContainer() {
+						fmt.Println(updater.ErrSelfUpdateDisabledInContainer.Error())
+						return updater.ErrSelfUpdateDisabledInContainer
+					}
 					fmt.Printf("Checking for updates (current: %s)...\n", updater.CurrentVersion)
 					info, err := updater.CheckUpdate(cCtx.Context)
 					if err != nil {
@@ -118,8 +125,7 @@ func main() {
 
 // defaultAction is the flag-free entry point: the foreground server is the
 // binary's only run mode. (The detached daemon and host-service subcommands
-// were removed in P5 — Docker is the deployment surface now; the tray
-// companion keeps its own lifecycle through internal/daemon.)
+// were removed in P5 — Docker is the deployment surface now.)
 //
 // Any positional argument reaching here matched no command, so it is a typo
 // or a stale name — never boot the server on it. Booting on unknown input is
@@ -173,9 +179,9 @@ func runServer(cCtx *cli.Context) error {
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
 
-	// A process spawned as a daemon (by the tray companion, through
-	// internal/daemon) records its PID so the spawner can find it after the
-	// launching terminal is long gone. A plain foreground run is not marked.
+	// A process spawned as a background daemon (through internal/daemon)
+	// records its PID so the spawner can find it after the launching
+	// terminal is long gone. A plain foreground run is not marked.
 	if daemon.IsBackgroundProcess() {
 		daemon.RegisterPID()
 		defer daemon.UnregisterPID()

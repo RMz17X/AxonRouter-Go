@@ -286,7 +286,6 @@ jobs:
             axonrouter-go-darwin-amd64
             axonrouter-go-darwin-arm64
             axonrouter-go-windows-amd64.exe
-            axonrouter-go-tray-windows-amd64.exe
             SHA256SUMS.txt
           body_path: /tmp/notes.md
           generate_release_notes: false

@@ -44,6 +44,11 @@ Tailscale in a container needs the `NET_ADMIN` capability and a TUN device — s
 
 ## Self-update
 
+In a container deployment — the supported shape — self-update is
+disabled (`AXONROUTER_IN_CONTAINER=1` is set by the image and the
+compose stacks): update by pulling the new image and recreating the
+stack. The commands below apply to bare-binary (unsupported DIY) runs.
+
 ```bash
 axonrouter-go update        # check and install
 axonrouter-go version       # current version plus an update check

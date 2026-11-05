@@ -55,7 +55,7 @@ The Go binary owns proxy routing, dashboard APIs, auth, persistence, OAuth, medi
 | `internal/foreigndb/` | Read-only reader for *other applications'* legacy-format files (browser/Cursor/Zed imports); never opens this gateway's data |
 | `web/` | Svelte 5 + Vite + Tailwind dashboard |
 | `web/embed.go` | Embeds `web/dist` and serves the SPA with index fallback |
-| `internal/daemon/`, `internal/service/` | Process primitives kept for the tray companion (`cmd/axonrouter-tray`) and the updater; this binary exposes no daemon/service operator surface anymore |
+| `internal/daemon/`, `internal/service/` | Process primitives kept for the background-spawn path and the updater; this binary exposes no daemon/service operator surface anymore |
 | `internal/proc/` | Portable process primitives (liveness, terminate, detach) shared by the daemon and headroom |
 
 ## Fx lifecycle
@@ -66,9 +66,9 @@ The binary's only run mode is the **foreground server** — the daemon and
 service subcommands were removed with the Docker delivery (P5), and process
 supervision belongs to the container runtime or the host init system. The
 remaining commands are `version`, `update`, and `help`; on a TTY the default
-action first shows a short menu (start in this terminal / tray companion /
-exit). `internal/daemon` and `internal/service` survive as libraries for the
-tray companion and the updater, not as an operator surface of this binary.
+action first shows a short menu (start in this terminal / exit).
+`internal/daemon` and `internal/service` survive as libraries for the
+background-spawn path and the updater, not as an operator surface of this binary.
 
 ```mermaid
 flowchart TD

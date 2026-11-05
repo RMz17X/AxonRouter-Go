@@ -40,10 +40,3 @@ func TestReadChoiceEOFIsNotABlankLine(t *testing.T) {
 		t.Errorf("readChoice(\"3\" at EOF) = (%q, %v), want (3, true)", line, ok)
 	}
 }
-
-func TestTrayBinaryName(t *testing.T) {
-	name := trayBinaryName()
-	if !strings.HasSuffix(name, "-tray") {
-		t.Errorf("expected tray binary name to end with -tray, got %q", name)
-	}
-}

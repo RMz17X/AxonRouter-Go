@@ -32,20 +32,7 @@ Running `axonrouter-go` with no arguments in a terminal opens a menu:
 
 ```text
 1) Start in this terminal (foreground)
-2) Run in background with tray icon (frees the terminal)
 0) Exit
-```
-
-**Option 2 — tray.** The tray icon lives in a companion binary
-(`cmd/axonrouter-tray`), not the main one: a GUI toolkit cannot be linked into the
-gateway without breaking the `CGO_ENABLED=0` cross-build for every target. Only
-the *sibling* binary is tried, so a PATH lookup cannot pick up another install's
-tray talking to a different gateway. Right-click the icon to open the dashboard
-or quit.
-
-```bash
-# the tray ships as its own package
-axonrouter-tray --port 20130
 ```
 
 ## Flags

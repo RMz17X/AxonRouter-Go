@@ -163,6 +163,12 @@ var githubReleasesAPI = lo.CoalesceOrEmpty(os.Getenv("UPSTREAM_API_BASE"), "http
 // update` outright. A manifest without a digest therefore falls through to the
 // GitHub Releases API, and its version metadata is used only if that fails too.
 func CheckUpdate(ctx context.Context) (*UpdateInfo, error) {
+	// A container deployment never self-updates (see container.go): the
+	// check itself refuses, so every caller — CLI, dashboard handlers,
+	// background cycle — answers with the same explanation.
+	if InContainer() {
+		return nil, ErrSelfUpdateDisabledInContainer
+	}
 	updateURL := lo.CoalesceOrEmpty(os.Getenv("UPDATE_URL"), DefaultUpdateURL)
 	repo := lo.CoalesceOrEmpty(os.Getenv("UPDATE_REPO"), DefaultGitHubRepo)
 	// An unconfigured channel is a fork that links both defaults empty, not a
@@ -410,6 +416,11 @@ var selfExecutable = os.Executable
 // The downloaded asset (after archive extraction) is verified against expectedSHA256 before the binary is written
 // to disk, and a mismatch aborts the update and keeps the running binary intact.
 func PerformSelfUpdate(downloadURL, expectedSHA256 string) error {
+	// Defence in depth behind CheckUpdate's refusal: no caller may reach
+	// the binary swap in a container, whatever path it took to get here.
+	if InContainer() {
+		return ErrSelfUpdateDisabledInContainer
+	}
 	if downloadURL == "" {
 		return fmt.Errorf("missing download URL for platform %s_%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -692,6 +703,13 @@ func ComputeSHA256(data []byte) string {
 
 // StartBackgroundCheck initiates recurring background update check and executes auto-update when enabled.
 func StartBackgroundCheck(ctx context.Context, initialAutoUpdate bool) {
+	// Container deployments get their updates as new images, so the
+	// background cycle never starts there — one boot line says why, and
+	// the status surface keeps reporting auto-update as off.
+	if InContainer() {
+		log.Info("updater", "self-update disabled: container deployment ("+ContainerMarkerEnv+" set) — updates are delivered as new container images")
+		return
+	}
 	SetAutoUpdate(initialAutoUpdate)
 
 	// Check custom interval from env

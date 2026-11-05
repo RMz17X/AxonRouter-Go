@@ -131,6 +131,18 @@ Claude Code / Codex / OpenClaw / Cursor / Cline Settings:
 
 📦 [All release binaries](https://github.com/RMz17X/AxonRouter-Go/releases/latest) • 🐳 Image: `luqmenul/axonrouter-go` • 🔨 [Build from source](#-development)
 
+### Running outside Docker (unsupported)
+
+Docker Compose is the only supported way to run AxonRouter-Go. The
+gateway binary will still start on a bare host, but that is unsupported
+DIY: you provide your own **PostgreSQL 17** (a reachable `DATABASE_URL`
+is mandatory — everything is stored there) and, for cluster mode, your
+own **Valkey** (`VALKEY_URL`). There is no installer script and no
+supported host-install path; supervision and backups on a bare host are
+yours to arrange. One behavioural difference: the self-updater stays
+available to bare runs, while inside a container it is disabled —
+container updates are new images, never an in-place binary swap.
+
 ---
 
 ## 💡 Key Features
@@ -141,7 +153,7 @@ Claude Code / Codex / OpenClaw / Cursor / Cline Settings:
 - 🔁 Combos with fallback, round-robin, sticky routing, fusion, capability-aware reordering
 - 👥 Per-provider executors, OAuth refresh, reactive 401 retry
 - 📡 Live usage + console-log SSE streams, stall detection
-- 🐘 PostgreSQL persistence (partitioned usage ledgers), Valkey speed layer with PostgreSQL degradation, self-update, Docker delivery, cross-compilation
+- 🐘 PostgreSQL persistence (partitioned usage ledgers), Valkey speed layer with PostgreSQL degradation, Docker delivery, cross-compilation, self-update for bare-binary installs (disabled in containers — updates there are new images)
 
 For sequential combo routing, set **Model response timeout** in seconds (decimals
 such as `5.3` are fine) in the combo's Edit dialog, or from the compact field on the

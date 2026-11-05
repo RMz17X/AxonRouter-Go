@@ -346,14 +346,6 @@ jobs:
       - name: Test service package
         run: go test -count=1 ./internal/service/
 
-      # gui.go carries `//go:build windows || tray`, so no Linux job compiles
-      # it — that constraint is the only reason `go vet ./...` passes on a
-      # runner without libayatana-appindicator3-dev. Windows is the one
-      # platform where systray needs no cgo or pkg-config, so the build that
-      # proves the file still compiles is free here and exists nowhere else.
-      - name: Build tray binary
-        run: go build -o /dev/null ./cmd/axonrouter-tray/
-
   # The `test` job above runs `go test ./...` without -race, so a data race
   # could merge green and only surface on a user's machine under load. The
   # gateway's shared state is exactly the kind that races: the in-memory usage
@@ -588,7 +580,6 @@ jobs:
           check axonrouter-go-darwin-amd64       darwin/amd64  "Mach-O 64-bit x86_64"
           check axonrouter-go-darwin-arm64       darwin/arm64  "Mach-O 64-bit arm64"
           check axonrouter-go-windows-amd64.exe  windows/amd64 "PE32+"
-          check axonrouter-go-tray-windows-amd64.exe windows/amd64 "PE32+"
           exit "$fail"
 
       # The updater verifies a download against SHA256SUMS.txt before it renames
@@ -600,7 +591,7 @@ jobs:
           set -euo pipefail
           for f in axonrouter-go-linux-amd64 axonrouter-go-linux-arm64 \
                    axonrouter-go-darwin-amd64 axonrouter-go-darwin-arm64 \
-                   axonrouter-go-windows-amd64.exe axonrouter-go-tray-windows-amd64.exe; do
+                   axonrouter-go-windows-amd64.exe; do
             grep -q "  $f\$" SHA256SUMS.txt || {
               echo "::error::SHA256SUMS.txt has no entry for $f"
               exit 1

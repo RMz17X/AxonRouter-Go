@@ -45,7 +45,8 @@ COPY --from=builder /app/axonrouter-go /usr/local/bin/axonrouter-go
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 ENV PORT=20130 \
-    DATA_DIR=/data
+    DATA_DIR=/data \
+    AXONROUTER_IN_CONTAINER=1
 EXPOSE 20130
 # The entrypoint hands the state volume to the app user, then drops
 # privileges — the server process itself always runs as uid 10001.

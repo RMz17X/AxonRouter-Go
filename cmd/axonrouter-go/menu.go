@@ -2,12 +2,9 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -16,7 +13,6 @@ import (
 
 	"axonrouter/proxy/internal/config"
 	"axonrouter/proxy/internal/daemon"
-	"axonrouter/proxy/internal/proc"
 	"axonrouter/proxy/internal/updater"
 )
 
@@ -34,8 +30,7 @@ func stdinIsTerminal() bool {
 // runMenu is the bare-`axonrouter-go` entry point on a terminal: the same
 // interface picker the Node CLI shows instead of silently booting a server.
 // Since P5 the foreground server is the binary's only run mode, so the
-// picker offers exactly that, plus the tray companion (which manages its
-// own gateway through internal/daemon, outside this binary's surface).
+// picker offers exactly that, plus Exit.
 func runMenu(cCtx *cli.Context) error {
 	in := bufio.NewReader(os.Stdin)
 	first := true
@@ -60,8 +55,6 @@ func runMenu(cCtx *cli.Context) error {
 		switch choice {
 		case "1", "3":
 			return foregroundStart(cCtx)
-		case "2", "6":
-			return startTray(cCtx)
 		default:
 			return nil
 		}
@@ -69,7 +62,7 @@ func runMenu(cCtx *cli.Context) error {
 }
 
 // menuText renders the header plus the numbered items, with the live state
-// of any tray-managed gateway in front of the choice so the pick is informed.
+// of any background gateway in front of the choice so the pick is informed.
 func menuText() string {
 	state := "stopped"
 	if pid := daemon.RunningPID(); pid != 0 {
@@ -79,7 +72,6 @@ func menuText() string {
 	fmt.Fprintf(&b, "\n  %s v%s (%s/%s)\n", binaryName(), updater.CurrentVersion, runtime.GOOS, runtime.GOARCH)
 	fmt.Fprintf(&b, "  Server: %s  [%s]\n\n", serverURL(), state)
 	b.WriteString("  1) Start in this terminal (foreground)\n")
-	b.WriteString("  2) Run in background with tray icon (frees the terminal)\n")
 	b.WriteString("  0) Exit\n\n")
 	b.WriteString("  Choose [1]: ")
 	return b.String()
@@ -157,48 +149,4 @@ func parseChoice(line string) string {
 		return "0"
 	}
 	return "0"
-}
-
-// startTray hands the tray to its own binary and returns, so the terminal is
-// free while the icon stays.
-//
-// The tray lives in cmd/axonrouter-tray because a GUI toolkit cannot be linked
-// into this binary without breaking the CGO_ENABLED=0 cross-build for all five
-// targets (docs/specs/tray-companion-architecture.md §X2). Spawning keeps the
-// menu entry the Node CLI has ("Hide to Tray") without importing it here.
-//
-// Only the sibling binary is tried: a PATH lookup could pick up a different
-// install's tray, which would then talk to a gateway that is not this one.
-func startTray(cCtx *cli.Context) error {
-	self, err := proc.SelfExecutable()
-	if err != nil {
-		return fmt.Errorf("tray: locate this binary: %w", err)
-	}
-	exe := filepath.Join(filepath.Dir(self), trayBinaryName())
-	if runtime.GOOS == "windows" {
-		exe += ".exe"
-	}
-	if _, err := os.Stat(exe); err != nil {
-		fmt.Printf("tray companion %s not found next to %s; starting in this terminal instead...\n", filepath.Base(exe), filepath.Base(self))
-		return foregroundStart(cCtx)
-	}
-	// CommandContext with a context that is never cancelled, not a deadline:
-	// this process is released immediately below and is meant to outlive the
-	// terminal, so a deadline here would kill the tray it just started.
-	cmd := exec.CommandContext(context.Background(), exe, "--port", strconv.Itoa(config.LoadConfig().Port))
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = nil, os.Stdout, os.Stderr
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("tray: start %s: %w", filepath.Base(exe), err)
-	}
-	// Releasing lets the tray outlive this terminal, the same reason the
-	// background daemon is released rather than waited on.
-	_ = cmd.Process.Release()
-	fmt.Printf("Tray started. Right-click the icon to open the dashboard or quit.\n")
-	return nil
-}
-
-// trayBinaryName follows the same rename rule as binaryName, so an
-// `opencode-go` install looks for `opencode-go-tray`.
-func trayBinaryName() string {
-	return binaryName() + "-tray"
 }
