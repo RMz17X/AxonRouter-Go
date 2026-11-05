@@ -12,8 +12,7 @@
 
   const NONE_PROXY_POOL_VALUE = '__none__'
 
-  let proxyGroups = $state<Array<{ id: string; name: string; key?: string; activeCount?: number; poolCount?: number }>>([])
-  let proxyPools = $state<Array<{ type?: string; isActive?: boolean }>>([])
+  let proxyPools = $state<Array<{ type?: string; group?: string; isActive?: boolean }>>([])
   let proxyPoolId = $state(NONE_PROXY_POOL_VALUE)
   let saving = $state(false)
   let savedFlash = $state(false)
@@ -21,12 +20,10 @@
   onMount(() => {
     let cancelled = false
     Promise.all([
-      fetch('/api/proxy-groups').then((r) => r.ok ? r.json() : { groups: [] }),
       api.getProxyPools().catch(() => []),
       api.getSettings(),
-    ]).then(([groupData, poolsData, settingsData]) => {
+    ]).then(([poolsData, settingsData]) => {
       if (cancelled) return
-      proxyGroups = (groupData as any)?.groups || []
       proxyPools = (poolsData as any) || []
       const override = (settingsData?.providerStrategies || {})[providerId] || {}
       proxyPoolId = override.proxyPoolId || (override.proxyGroup ? `group:${override.proxyGroup}` : NONE_PROXY_POOL_VALUE)
@@ -81,20 +78,26 @@
     save(newPoolId)
   }
 
+  // Group chips are derived from the pools' own group field — the only
+  // thing the resolver's "group:<name>" selector matches. The
+  // /api/proxy-groups list is NOT used here: its default groups are
+  // type-backed (key = the type name, counts by type) and its custom
+  // groups are membership-backed (pool ID lists), so encoding either as
+  // "group:<key>" produced chips whose counts promised pools the
+  // selector could not resolve. Type-backed selection lives on the
+  // Type chips below, which is also how the rest of the dashboard
+  // derives group options.
   let allProxyGroups = $derived.by(() => {
-    const list: Array<{ id: string; label: string; activeCount: number }> = []
-    const seen = new Set<string>()
-    for (const g of proxyGroups) {
-      const gid = g.key || g.id || g.name
-      if (!gid || seen.has(gid)) continue
-      seen.add(gid)
-      list.push({
-        id: `group:${gid}`,
-        label: g.name || gid,
-        activeCount: g.activeCount ?? 0,
-      })
+    const counts = new Map<string, number>()
+    for (const p of proxyPools) {
+      const g = (p.group || '').trim()
+      if (!g) continue
+      if (!counts.has(g)) counts.set(g, 0)
+      if (p.isActive) counts.set(g, (counts.get(g) ?? 0) + 1)
     }
-    return list
+    return Array.from(counts.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, activeCount]) => ({ id: `group:${name}`, label: name, activeCount }))
   })
 
   let allProxyTypes = $derived.by(() => {
