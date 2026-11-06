@@ -189,6 +189,31 @@ func usagePost(ctx context.Context, rawURL string, payload map[string]any, heade
 // the sender instead of one provider at a time.
 var usageHTTPClient = &http.Client{Transport: proxy.NewFallbackTransport(http.DefaultTransport)}
 
+// usageClientCtxKey carries one connection's own HTTP client — resolved from
+// that connection's proxy assignment — through the usage fetchers and the
+// credential refresher. Upstream's usage route resolves the connection proxy
+// before reading quota (src/app/api/usage/[connectionId]/route.js), so a
+// proxied account's Google reads leave from the account's egress, never the
+// host's. Without it, every dashboard read for every account shared the
+// host IP — the clustering that made one flag sweep whole pools.
+type usageClientCtxKey struct{}
+
+func withUsageHTTPClient(ctx context.Context, client *http.Client) context.Context {
+	if client == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, usageClientCtxKey{}, client)
+}
+
+// usageHTTPClientFor returns the per-connection client when the handler
+// resolved one, and the shared environment client otherwise.
+func usageHTTPClientFor(ctx context.Context) *http.Client {
+	if client, ok := ctx.Value(usageClientCtxKey{}).(*http.Client); ok && client != nil {
+		return client
+	}
+	return usageHTTPClient
+}
+
 // usageUserAgent is sent when a fetcher does not set its own, so a request does
 // not announce Go's default "Go-http-client/1.1" to WAF-fronted hosts. Fetchers
 // that already set one (grok-cli, antigravity) keep theirs.
@@ -211,7 +236,7 @@ func usageDo(ctx context.Context, method, rawURL string, headers map[string]stri
 	if req.Header.Get("User-Agent") == "" {
 		req.Header.Set("User-Agent", usageUserAgent)
 	}
-	resp, err := usageHTTPClient.Do(req)
+	resp, err := usageHTTPClientFor(ctx).Do(req)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -1690,8 +1715,6 @@ var antigravityDashboardBaseURL = "https://cloudcode-pa.googleapis.com"
 // intentionally stays on PROD and is untouched.
 var antigravityDailyBaseURL = "https://daily-cloudcode-pa.googleapis.com"
 
-const antigravityDashboardUA = providers.AntigravityCLIUserAgent
-
 var antigravityImportantModels = map[string]bool{
 	"gemini-4-argon-high": true, "gemini-4-argon-medium": true, "gemini-4-argon-low": true,
 	"gemini-4-argon":        true,
@@ -1707,13 +1730,35 @@ var antigravityImportantModels = map[string]bool{
 	"gemini-3.1-flash-image": true,
 }
 
-func antigravityDashboardHeaders(accessToken string) map[string]string {
+// antigravityDashboardHeaders is the dashboard usage-RPC header set. There
+// is no X-Client-* pair: the real CLI does not send one, and the pair was an
+// IDE artifact that made dashboard reads present a different client than
+// the account's chat traffic.
+func antigravityDashboardHeaders(accessToken, userAgent string) map[string]string {
+	if userAgent == "" {
+		userAgent = providers.AntigravityUserAgent()
+	}
+	return map[string]string{
+		"Authorization": "Bearer " + accessToken,
+		"User-Agent":    userAgent,
+		"Content-Type":  "application/json",
+	}
+}
+
+// antigravitySubInfoHeaders is the loadCodeAssist header set, mirroring
+// upstream getAntigravitySubscriptionInfo: no X-Client-* pair on this RPC
+// (the real client does not send them on loadCodeAssist, and the onboarding
+// path in internal/handlers/chat deliberately omits them for the same
+// reason), plus upstream's x-request-source marker.
+func antigravitySubInfoHeaders(accessToken, userAgent string) map[string]string {
+	if userAgent == "" {
+		userAgent = providers.AntigravityUserAgent()
+	}
 	return map[string]string{
 		"Authorization":    "Bearer " + accessToken,
-		"User-Agent":       antigravityDashboardUA,
+		"User-Agent":       userAgent,
 		"Content-Type":     "application/json",
-		"X-Client-Name":    "antigravity",
-		"X-Client-Version": providers.AntigravityIDEVersion,
+		"x-request-source": "local",
 	}
 }
 
@@ -1741,12 +1786,12 @@ func extractGoogleErrorMessage(body map[string]any) string {
 
 // fetchAntigravitySubInfo mirrors getAntigravitySubscriptionInfo: one loadCodeAssist
 // call reused for projectID + plan + tier detection.
-func fetchAntigravitySubInfo(ctx context.Context, accessToken string) antigravitySubInfo {
+func fetchAntigravitySubInfo(ctx context.Context, accessToken, userAgent string) antigravitySubInfo {
 	var sub antigravitySubInfo
 	status, data, err := usagePost(ctx, antigravityDashboardBaseURL+"/v1internal:loadCodeAssist", map[string]any{
-		"metadata": map[string]any{"ideType": 9, "platform": 2, "pluginType": 2},
+		"metadata": providers.AntigravityLoadCodeAssistMetadata(),
 		"mode":     1,
-	}, antigravityDashboardHeaders(accessToken))
+	}, antigravitySubInfoHeaders(accessToken, userAgent))
 	if err != nil || status != http.StatusOK || data == nil {
 		if status == http.StatusForbidden {
 			sub.errMsg = extractGoogleErrorMessage(data)
@@ -1763,8 +1808,8 @@ func fetchAntigravitySubInfo(ctx context.Context, accessToken string) antigravit
 	return sub
 }
 
-func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID string) usageResult {
-	sub := fetchAntigravitySubInfo(ctx, accessToken)
+func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID, userAgent string) usageResult {
+	sub := fetchAntigravitySubInfo(ctx, accessToken, userAgent)
 	pid := projectID
 	if pid == "" {
 		pid = sub.projectID
@@ -1773,7 +1818,7 @@ func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID 
 	if plan == "" {
 		plan = "Unknown"
 	}
-	headers := antigravityDashboardHeaders(accessToken)
+	headers := antigravityDashboardHeaders(accessToken, userAgent)
 	reqBody := map[string]any{}
 	if pid != "" {
 		reqBody["project"] = pid
@@ -1844,7 +1889,7 @@ func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID 
 	// Hits DAILY retrieveUserQuotaSummary like upstream (PROD returns a
 	// different weekly view) and parses weekly-only buckets like upstream
 	// (no session rows — upstream shows 19 rows, not 21).
-	if weekly := fetchAntigravityDashboardWeekly(ctx, accessToken, pid); len(weekly) > 0 {
+	if weekly := fetchAntigravityDashboardWeekly(ctx, accessToken, pid, userAgent); len(weekly) > 0 {
 		for key, wq := range weekly {
 			if key == "gemini_weekly" {
 				antigravityReconcileFamily(quotas, "gemini-", "image", wq)
@@ -1890,12 +1935,12 @@ func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID 
 
 // fetchAntigravityDashboardWeekly mirrors antigravity-weekly.js: DAILY
 // retrieveUserQuotaSummary, weekly-only buckets, first match per family wins.
-func fetchAntigravityDashboardWeekly(ctx context.Context, accessToken, projectID string) map[string]any {
+func fetchAntigravityDashboardWeekly(ctx context.Context, accessToken, projectID, userAgent string) map[string]any {
 	reqBody := map[string]any{}
 	if projectID != "" {
 		reqBody["project"] = projectID
 	}
-	status, data, err := usagePost(ctx, antigravityDailyBaseURL+"/v1internal:retrieveUserQuotaSummary", reqBody, antigravityDashboardHeaders(accessToken))
+	status, data, err := usagePost(ctx, antigravityDailyBaseURL+"/v1internal:retrieveUserQuotaSummary", reqBody, antigravityDashboardHeaders(accessToken, userAgent))
 	if err != nil || status < 200 || status >= 300 || data == nil {
 		return nil
 	}

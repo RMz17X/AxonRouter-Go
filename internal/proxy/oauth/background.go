@@ -4,7 +4,9 @@ import (
 	"context"
 	json "encoding/json/v2"
 	"log"
+	rand "math/rand/v2"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"axonrouter/proxy/internal/db"
 	"axonrouter/proxy/internal/models"
 	"axonrouter/proxy/internal/providers"
+	internalproxy "axonrouter/proxy/internal/proxy"
 )
 
 // Refresh when expiry is within 30 minutes (upstream BACKGROUND_REFRESH_LEAD_MS parity).
@@ -47,6 +50,11 @@ type ConnectionNeedingRefresh struct {
 	RefreshToken         string
 	AccessToken          string
 	ProviderSpecificData map[string]string
+	// Proxy assignment, carried so the refresh leaves from the connection's
+	// own egress (see backgroundRefreshClient).
+	ProxyPoolID            string
+	ConnectionProxyEnabled bool
+	ConnectionProxyURL     string
 }
 
 // SelectConnectionsNeedingRefresh is the pure selection step, exported for tests.
@@ -57,13 +65,15 @@ func SelectConnectionsNeedingRefresh(conns []*models.ProviderConnection, now tim
 			continue
 		}
 		var data struct {
-			AccessToken  string         `json:"accessToken"`
-			RefreshToken string         `json:"refreshToken"`
-			ExpiresAt    string         `json:"expiresAt"`
-			Status       string         `json:"status"`
-			TestStatus   string         `json:"testStatus"`
-			DisabledAt   any            `json:"disabledAt"`
-			PSD          map[string]any `json:"providerSpecificData"`
+			AccessToken            string         `json:"accessToken"`
+			RefreshToken           string         `json:"refreshToken"`
+			ExpiresAt              string         `json:"expiresAt"`
+			Status                 string         `json:"status"`
+			TestStatus             string         `json:"testStatus"`
+			DisabledAt             any            `json:"disabledAt"`
+			ConnectionProxyEnabled bool           `json:"connectionProxyEnabled"`
+			ConnectionProxyURL     string         `json:"connectionProxyUrl"`
+			PSD                    map[string]any `json:"providerSpecificData"`
 		}
 		if c.Data != "" {
 			_ = json.Unmarshal([]byte(c.Data), &data)
@@ -96,12 +106,16 @@ func SelectConnectionsNeedingRefresh(conns []*models.ProviderConnection, now tim
 			continue
 		}
 		if exp.Sub(now) < backgroundRefreshLead {
+			psd := StringMap(data.PSD)
 			out = append(out, ConnectionNeedingRefresh{
-				ID:                   c.ID,
-				Provider:             c.Provider,
-				RefreshToken:         data.RefreshToken,
-				AccessToken:          data.AccessToken,
-				ProviderSpecificData: StringMap(data.PSD),
+				ID:                     c.ID,
+				Provider:               c.Provider,
+				RefreshToken:           data.RefreshToken,
+				AccessToken:            data.AccessToken,
+				ProviderSpecificData:   psd,
+				ProxyPoolID:            psd["proxyPoolId"],
+				ConnectionProxyEnabled: data.ConnectionProxyEnabled,
+				ConnectionProxyURL:     data.ConnectionProxyURL,
 			})
 		}
 	}
@@ -155,6 +169,10 @@ func runBackgroundRefreshTick(ctx context.Context, repo *db.Repo) {
 	}
 
 	due := SelectConnectionsNeedingRefresh(conns, time.Now())
+	// Randomize the order per tick: a stable DB order would refresh the
+	// fleet in the same sequence every cycle, a cadence no set of
+	// independent real clients produces.
+	rand.Shuffle(len(due), func(i, j int) { due[i], due[j] = due[j], due[i] })
 	for i, c := range due {
 		refreshBackgroundConnection(ctx, repo, c)
 		if i < len(due)-1 {
@@ -162,6 +180,9 @@ func runBackgroundRefreshTick(ctx context.Context, repo *db.Repo) {
 			if sensitiveProviders[c.Provider] {
 				delay = backgroundSensitiveDelay
 			}
+			// Jitter the gap by +0–50%: fixed spacing marches the whole
+			// fleet in lockstep, which is itself a detectable pattern.
+			delay += time.Duration(rand.Int64N(int64(delay / 2)))
 			select {
 			case <-ctx.Done():
 				return
@@ -169,6 +190,90 @@ func runBackgroundRefreshTick(ctx context.Context, repo *db.Repo) {
 			}
 		}
 	}
+}
+
+// bgProxyClients caches one client per resolved proxy URL. The set of URLs
+// is operator-configured and small, so the cache needs no eviction.
+var bgProxyClients sync.Map // string -> *http.Client
+
+func backgroundProxyClient(proxyURLStr string) (*http.Client, bool) {
+	if cached, ok := bgProxyClients.Load(proxyURLStr); ok {
+		return cached.(*http.Client), true
+	}
+	parsed, err := url.Parse(proxyURLStr)
+	if err != nil || parsed.Host == "" {
+		return nil, false
+	}
+	client := &http.Client{
+		Transport: internalproxy.NewSafeTransportForProxy(parsed.String()),
+		Timeout:   15 * time.Second,
+	}
+	actual, _ := bgProxyClients.LoadOrStore(proxyURLStr, client)
+	return actual.(*http.Client), true
+}
+
+// backgroundPoolClient resolves a pool binding to a proxied client. A plain
+// pool id reads the pool directly; a group:/type: target takes the first
+// active candidate. Relay pools cannot dial a token endpoint as an HTTP
+// proxy, so they decline and the caller falls back.
+func backgroundPoolClient(repo *db.Repo, poolID string) (*http.Client, bool) {
+	var pool *db.ProxyPool
+	if strings.HasPrefix(poolID, "group:") || strings.HasPrefix(poolID, "type:") {
+		if candidates := repo.ActivePoolsByTarget(poolID); len(candidates) > 0 {
+			pool = candidates[0]
+		}
+	} else if p, err := repo.GetProxyPool(poolID); err == nil {
+		pool = p
+	}
+	if pool == nil || !pool.IsActive || pool.IsEdgeRelay() {
+		return nil, false
+	}
+	proxyURLStr := pool.NextURL()
+	if proxyURLStr == "" {
+		return nil, false
+	}
+	return backgroundProxyClient(proxyURLStr)
+}
+
+// backgroundRefreshClient resolves the egress one connection's background
+// refresh must use: the connection's own proxy assignment — per-connection
+// pool, then the provider-level strategy binding (the one the chat
+// pipeline's ResolveProviderProxyPoolID reads), then the legacy
+// per-connection proxy fields — and only then the host's direct egress.
+//
+// The refresh used to dial with a bare client, so every account on an
+// instance refreshed from the server's own IP on the same five-minute
+// cadence: accounts an operator had deliberately separated by proxy
+// collapsed back into one egress cluster for all background traffic, and
+// one flag swept the cluster. Upstream wraps the same calls in the
+// connection's proxy context (tokenRefresh.js).
+func backgroundRefreshClient(repo *db.Repo, c ConnectionNeedingRefresh) *http.Client {
+	direct := &http.Client{Timeout: 15 * time.Second}
+	if repo == nil {
+		return direct
+	}
+	poolID := c.ProxyPoolID
+	if poolID == "" {
+		if settings, err := repo.GetSettings(); err == nil && settings != nil && settings.ProviderStrategies != nil {
+			for _, key := range []string{c.Provider, providers.ResolveAlias(c.Provider)} {
+				if strat, ok := settings.ProviderStrategies[key]; ok && strat.ProxyPoolID != "" && strat.ProxyPoolID != "__none__" {
+					poolID = strat.ProxyPoolID
+					break
+				}
+			}
+		}
+	}
+	if poolID != "" {
+		if client, ok := backgroundPoolClient(repo, poolID); ok {
+			return client
+		}
+	}
+	if c.ConnectionProxyEnabled && c.ConnectionProxyURL != "" {
+		if client, ok := backgroundProxyClient(c.ConnectionProxyURL); ok {
+			return client
+		}
+	}
+	return direct
 }
 
 // refreshBackgroundConnection refreshes one due connection and persists the
@@ -180,7 +285,7 @@ func refreshBackgroundConnection(ctx context.Context, repo *db.Repo, c Connectio
 		}
 	}
 	result, err := Refresh(ctx, &Params{
-		Client:               &http.Client{Timeout: 15 * time.Second},
+		Client:               backgroundRefreshClient(repo, c),
 		Provider:             c.Provider,
 		RefreshToken:         c.RefreshToken,
 		AccessToken:          c.AccessToken,

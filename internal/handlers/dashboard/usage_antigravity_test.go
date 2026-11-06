@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"axonrouter/proxy/internal/providers"
 )
 
 func TestFetchAntigravityDashboardWeekly_HundredScaleAndWindow(t *testing.T) {
@@ -77,7 +79,7 @@ func TestFetchAntigravityDashboardWeekly_HundredScaleAndWindow(t *testing.T) {
 	antigravityDailyBaseURL = srv.URL
 	defer func() { antigravityDailyBaseURL = origDaily }()
 
-	weekly := fetchAntigravityDashboardWeekly(context.Background(), "mock-token", "mock-project")
+	weekly := fetchAntigravityDashboardWeekly(context.Background(), "mock-token", "mock-project", providers.AntigravityUserAgent())
 	if len(weekly) != 5 {
 		t.Fatalf("expected 5 weekly quota buckets, got %d: %v", len(weekly), weekly)
 	}

@@ -33,28 +33,21 @@ var onboardUserURL = "https://cloudcode-pa.googleapis.com/v1internal:onboardUser
 // healthy login. Verified live on one token: the generic UA yields no project,
 // while the Antigravity identity returns the real project id.
 //
-// The profile comes from the connection, so an account signed in as the CLI is
-// discovered as the CLI rather than as the IDE. A caller with no connection
-// data (the media lanes, which only carry a token) falls back to the CLI shape,
-// which is the identity that keeps working for the Gemini 4 Argon tiers.
-func antigravityProjectUserAgent(connData *shared.ConnectionData) string {
-	profile := providers.AntigravityProfileCLI
-	if connData != nil && connData.ProviderSpecificData != nil {
-		// Only an explicitly recognised value changes the profile. The
-		// normaliser defaults unknown values to "ide", which is the wrong
-		// fallback here: an unrecognised or absent setting must keep sending
-		// the CLI identity, because that is the shape the Argon lanes answer.
-		if providers.IsAntigravityClientProfile(connData.ProviderSpecificData["clientProfile"]) {
-			profile = providers.NormalizeAntigravityClientProfile(connData.ProviderSpecificData["clientProfile"])
-		}
-	}
-	return providers.AntigravityUserAgentFor(profile)
+// There is exactly one identity now: the standalone CLI (`agy`) shape from
+// providers.AntigravityUserAgent. The connection argument is kept so callers
+// do not change shape, but it no longer influences the value — a
+// clientProfile stored on an old connection is inert legacy data and is
+// never read, so every account presents the same client on every surface.
+func antigravityProjectUserAgent(_ *shared.ConnectionData) string {
+	return providers.AntigravityUserAgent()
 }
 
-var lcaMetadata = map[string]any{
-	"ideType":    9, // ANTIGRAVITY
-	"platform":   2, // DARWIN_ARM64
-	"pluginType": 2, // GEMINI
+// AntigravityConnectionUserAgent is antigravityProjectUserAgent for callers
+// outside the chat package (the media lanes), so every Antigravity surface —
+// chat, onboarding, image, search, speech — presents the one CLI identity
+// instead of each lane hardcoding its own.
+func AntigravityConnectionUserAgent(connData *shared.ConnectionData) string {
+	return antigravityProjectUserAgent(connData)
 }
 
 // projectNoCache short-circuits re-probing the onboarding RPCs for a token whose
@@ -149,7 +142,7 @@ func FetchAntigravityProjectID(ctx context.Context, client *http.Client, accessT
 
 func fetchAntigravityProjectID(ctx context.Context, client *http.Client, accessToken string, connData *shared.ConnectionData) (pid string, authFailed, noProject bool) {
 	userAgent := antigravityProjectUserAgent(connData)
-	payload, err := json.Marshal(map[string]any{"metadata": lcaMetadata})
+	payload, err := json.Marshal(map[string]any{"metadata": providers.AntigravityLoadCodeAssistMetadata()})
 	if err != nil {
 		log.Error("antigravity", "loadCodeAssist marshal failed", "error", err)
 		return "", false, false
@@ -222,7 +215,7 @@ func onboardAntigravityUser(ctx context.Context, client *http.Client, accessToke
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		payload, err := json.Marshal(map[string]any{
 			"tierId":   tierID,
-			"metadata": lcaMetadata,
+			"metadata": providers.AntigravityLoadCodeAssistMetadata(),
 		})
 		if err != nil {
 			log.Error("antigravity", "onboardUser marshal failed", "error", err)

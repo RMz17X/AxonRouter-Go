@@ -135,6 +135,8 @@
   }
 
   let accountFilter = $state('all')
+  let searchQuery = $state('')
+  let appliedSearch = $state('')
   let quotaSortMode = $state('default')
   let expiringFirst = $state(false)
 
@@ -286,9 +288,13 @@
         quotaLoading = { ...quotaLoading, [target.id]: false }
         setQuotaCache(target.id, quotaEntry)
         if (isFatalDisableMessage(data?.message)) {
+          const cur = connections.find((c) => c.id === target.id)
+          if (cur && (cur.isActive === 1 || cur.isActive === true)) {
+            void api.updateConnection(target.id, { isActive: 0 }).catch(() => {})
+          }
           connections = connections.map((c) =>
             c.id === target.id
-              ? { ...c, isActive: 0, lastError: data?.message || c.lastError }
+              ? { ...c, isActive: 0, testStatus: 'disabled', lastError: data?.message || c.lastError }
               : c,
           )
         }
@@ -301,8 +307,12 @@
         if (message.toLowerCase().includes('not found')) return
         quotaErrors = { ...quotaErrors, [target.id]: message || 'Failed to fetch quota' }
         if (isFatalDisableMessage(message)) {
+          const cur = connections.find((c) => c.id === target.id)
+          if (cur && (cur.isActive === 1 || cur.isActive === true)) {
+            void api.updateConnection(target.id, { isActive: 0 }).catch(() => {})
+          }
           connections = connections.map((c) =>
-            c.id === target.id ? { ...c, isActive: 0, lastError: message } : c,
+            c.id === target.id ? { ...c, isActive: 0, testStatus: 'disabled', lastError: message } : c,
           )
         }
       },
@@ -666,6 +676,15 @@
   }
 
   function isActiveConn(conn: ProviderConnection): boolean {
+    const errStr = typeof conn.lastError === 'string' ? conn.lastError : ''
+    if (
+      conn.testStatus === 'disabled' ||
+      isFatalDisableMessage(errStr) ||
+      isFatalDisableMessage(quotaData[conn.id]?.message) ||
+      isFatalDisableMessage(quotaErrors[conn.id])
+    ) {
+      return false
+    }
     return conn.isActive === 1 || conn.isActive === true
   }
 
@@ -683,6 +702,9 @@
       })
       if (providerFilter !== 'all') {
         params.set('provider', providerFilter)
+      }
+      if (appliedSearch) {
+        params.set('search', appliedSearch)
       }
       const data = await api.getProvidersClientPage(params.toString())
       const connectionList = data.connections || []
@@ -732,9 +754,13 @@
         quotaLoading = { ...quotaLoading, [target.id]: false }
         setQuotaCache(target.id, quotaEntry)
         if (isFatalDisableMessage(data?.message)) {
+          const cur = connections.find((c) => c.id === target.id)
+          if (cur && (cur.isActive === 1 || cur.isActive === true)) {
+            void api.updateConnection(target.id, { isActive: 0 }).catch(() => {})
+          }
           connections = connections.map((c) =>
             c.id === target.id
-              ? { ...c, isActive: 0, lastError: data?.message || c.lastError }
+              ? { ...c, isActive: 0, testStatus: 'disabled', lastError: data?.message || c.lastError }
               : c,
           )
         }
@@ -747,8 +773,12 @@
         if (message.toLowerCase().includes('not found')) return
         quotaErrors = { ...quotaErrors, [target.id]: message || 'Failed to fetch quota' }
         if (isFatalDisableMessage(message)) {
+          const cur = connections.find((c) => c.id === target.id)
+          if (cur && (cur.isActive === 1 || cur.isActive === true)) {
+            void api.updateConnection(target.id, { isActive: 0 }).catch(() => {})
+          }
           connections = connections.map((c) =>
-            c.id === target.id ? { ...c, isActive: 0, lastError: message } : c,
+            c.id === target.id ? { ...c, isActive: 0, testStatus: 'disabled', lastError: message } : c,
           )
         }
       },
@@ -850,6 +880,62 @@
       .filter((c) => !isActiveConn(c) && !isConnectionDepleted(c))
       .map((c) => c.id)
     void bulkSetActive(ids, true)
+  }
+
+  function handleSearch(): void {
+    appliedSearch = searchQuery.trim()
+    page = 1
+    void fetchConnections(1)
+  }
+
+  function handleClearSearch(): void {
+    searchQuery = ''
+    if (appliedSearch) {
+      appliedSearch = ''
+      page = 1
+      void fetchConnections(1)
+    }
+  }
+
+  // Cooldown reset (operator request): clears rate-limit parks, OAuth
+  // parks and model locks through the bulk reset's cooldown action.
+  // Disabled accounts are never touched — a ToS disable is a separate
+  // state with its own appeal path, not a cooldown.
+  let resettingCooldowns = $state(false)
+
+  async function resetCooldownFor(conn: ProviderConnection): Promise<void> {
+    try {
+      await api.bulkResetStatus({ ids: [conn.id], action: 'cooldown' })
+      await fetchQuota(conn.id, conn.provider, { force: true })
+    } catch (error) {
+      console.error('Error resetting cooldown:', error)
+    }
+  }
+
+  async function handleResetAllCooldowns(): Promise<void> {
+    if (resettingCooldowns) return
+    if (
+      !window.confirm(
+        'Reset cooldowns and model locks for all active connections? Disabled accounts are not touched.',
+      )
+    )
+      return
+    resettingCooldowns = true
+    try {
+      if (providerFilter !== 'all') {
+        await api.bulkResetStatus({ provider: providerFilter, action: 'cooldown' })
+      } else {
+        for (const provider of providerOptions) {
+          await api.bulkResetStatus({ provider, action: 'cooldown' })
+        }
+      }
+      await fetchConnections(page)
+      await refreshAll(true)
+    } catch (error) {
+      console.error('Error resetting all cooldowns:', error)
+    } finally {
+      resettingCooldowns = false
+    }
   }
 
   // ─── Quota visibility ──────────────────────────────────────────────────────
@@ -1219,6 +1305,42 @@
         {/if}
       </div>
 
+      <!-- Search -->
+      <form
+        onsubmit={(e) => {
+          e.preventDefault()
+          handleSearch()
+        }}
+        class="flex items-center gap-1"
+      >
+        <input
+          bind:value={searchQuery}
+          type="search"
+          placeholder="Search name or email"
+          aria-label="Search connections by name or email"
+          class="h-8 w-44 rounded-lg border border-border-subtle bg-surface-2 px-2 text-xs text-text-main outline-none transition-colors placeholder:text-text-muted"
+        />
+        <button
+          type="submit"
+          aria-label="Search"
+          title="Search"
+          class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-border-subtle bg-surface-2 text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main"
+        >
+          <span class="material-symbols-outlined text-[18px]">search</span>
+        </button>
+        {#if appliedSearch}
+          <button
+            type="button"
+            onclick={handleClearSearch}
+            aria-label="Clear search"
+            title="Clear search"
+            class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main"
+          >
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+        {/if}
+      </form>
+
       <!-- Account status filter -->
       <select
         bind:value={accountFilter}
@@ -1271,6 +1393,15 @@
           icon="check_circle"
           disabled={bulkToggling}
           onSelect={handleEnableAvailable}
+        />
+
+        <div class="my-1 border-t border-border-subtle" role="separator"></div>
+
+        <MenuItem
+          label="Reset all cooldowns"
+          icon="lock_reset"
+          disabled={resettingCooldowns}
+          onSelect={handleResetAllCooldowns}
         />
 
         <div class="my-1 border-t border-border-subtle" role="separator"></div>
@@ -1488,6 +1619,20 @@
                       : ''}">refresh</span
                   >
                 </button>
+
+                <!-- Reset cooldown -->
+                {#if isActiveConn(conn)}
+                  <button
+                    type="button"
+                    onclick={() => resetCooldownFor(conn)}
+                    disabled={rowBusy}
+                    aria-label="Reset cooldown"
+                    title="Reset cooldown & model locks"
+                    class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main disabled:opacity-50"
+                  >
+                    <span class="material-symbols-outlined text-[18px]">lock_reset</span>
+                  </button>
+                {/if}
 
                 <!-- Edit connection -->
                 <button

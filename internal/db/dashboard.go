@@ -70,15 +70,38 @@ func (r *Repo) DeleteProviderConnection(id string) error {
 
 // SetConnectionStatus updates the isActive status and updatedAt of a provider connection.
 func (r *Repo) SetConnectionStatus(id string, isActive bool) error {
-	activeInt := 0
-	if isActive {
-		activeInt = 1
-	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := r.Exec(
-		`UPDATE providerConnections SET isActive = ?, updatedAt = ? WHERE id = ?`,
-		activeInt, now, id,
-	)
+	var err error
+	if isActive {
+		_, err = r.Exec(
+			`UPDATE providerConnections
+			 SET isActive = 1,
+			     data = `+jsonSetExpr("data",
+				jsonSetPairAt(jsonStringLiteral("active"), "status"),
+				jsonSetPairAt(jsonStringLiteral("active"), "testStatus"),
+				jsonSetPairAt(jsonNullSQLValue(), "lastError"),
+				jsonSetPairAt(jsonNullSQLValue(), "disabledReason"),
+				jsonSetPairAt(jsonNullSQLValue(), "disabledAt"),
+				jsonSetPairAt(jsonNullSQLValue(), "oauthLockedUntil"),
+				jsonSetPairAt(jsonIntLiteral(0), "oauthFailureCount"),
+			)+`,
+			     updatedAt = ?
+			 WHERE id = ?`,
+			now, id,
+		)
+	} else {
+		_, err = r.Exec(
+			`UPDATE providerConnections
+			 SET isActive = 0,
+			     data = `+jsonSetExpr("data",
+				jsonSetPairAt(jsonStringLiteral("disabled"), "status"),
+				jsonSetPairAt(jsonStringLiteral("disabled"), "testStatus"),
+			)+`,
+			     updatedAt = ?
+			 WHERE id = ?`,
+			now, id,
+		)
+	}
 	if err != nil {
 		return fmt.Errorf("set connection status %s: %w", id, err)
 	}

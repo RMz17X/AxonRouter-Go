@@ -882,14 +882,21 @@ func classifyOAuthProbe(status int, cfg oauthProbeConfig) oauthProbeAttempt {
 // probeCloudCodeAssist ports probeCloudCodeAssistAccess.
 func probeCloudCodeAssist(ctx context.Context, client *http.Client, provider, accessToken string) oauthProbeAttempt {
 	userAgent := "google-api-nodejs-client/9.15.1 gemini-cli/0.34.0"
+	probeBody := []byte(cloudCodeAssistProbeBody)
 	if provider == "antigravity" {
-		userAgent = "google-api-nodejs-client/9.15.1 vscode-antigravity/1.107.0"
+		// The antigravity probe presents the one CLI identity, with the
+		// numeric ClientMetadata body the real client sends — agy parity
+		// supersedes the JS string-enum body here (fragment 969).
+		userAgent = providers.AntigravityUserAgent()
+		if b, err := json.Marshal(map[string]any{"metadata": providers.AntigravityLoadCodeAssistMetadata()}); err == nil {
+			probeBody = b
+		}
 	}
 	status, body, err := connectionProbeDo(ctx, client, http.MethodPost, cloudCodeAssistProbeURL, map[string]string{
 		"Authorization": "Bearer " + accessToken,
 		"Content-Type":  "application/json",
 		"User-Agent":    userAgent,
-	}, []byte(cloudCodeAssistProbeBody))
+	}, probeBody)
 	if err != nil {
 		return oauthProbeAttempt{message: err.Error()}
 	}
@@ -1022,15 +1029,21 @@ func (h *DashboardHandler) persistProbeResult(conn *models.ProviderConnection, r
 			strings.Contains(lower, "account banned")
 		if isToSDisabled {
 			raw["status"] = "disabled"
+			raw["testStatus"] = "disabled"
+			conn.IsActive = 0
 			_ = h.Repo.SetConnectionStatus(conn.ID, false)
 		} else if isValidationReq {
 			raw["status"] = "validation_required"
+			raw["testStatus"] = "disabled"
 			if v, _ := raw["verificationUrl"].(string); v == "" {
 				raw["verificationUrl"] = "https://antigravity.google"
 			}
+			conn.IsActive = 0
 			_ = h.Repo.SetConnectionStatus(conn.ID, false)
 		} else if isDeadAuth {
 			raw["status"] = "disabled"
+			raw["testStatus"] = "disabled"
+			conn.IsActive = 0
 			_ = h.Repo.SetConnectionStatus(conn.ID, false)
 		}
 	}

@@ -37,10 +37,16 @@ const (
 	// GrokCLIPagerIdentifier is the identifier the probe and OAuth paths send.
 	GrokCLIPagerIdentifier = "grok-pager"
 
-	// Antigravity client identifiers. Google Cloud Code upstream requires the 'cli'
-	// flavor for Gemini 4 Argon tiered models (the 'ide' flavor receives HTTP 404).
-	AntigravityCLIVersion   = "1.4.0"
-	AntigravityIDEVersion   = "2.23.0"
-	AntigravityCLIUserAgent = "antigravity/cli/" + AntigravityCLIVersion + " (aidev_client; os_type=windows; arch=amd64; cl=1000494485; auth_method=consumer)"
-	AntigravityIDEUserAgent = AntigravityCLIUserAgent
+	// AntigravityCLIVersion is the version of the official Antigravity CLI
+	// (`agy`) this router mirrors. The identity built on it — User-Agent,
+	// loadCodeAssist metadata, OAuth client — lives in
+	// antigravity_identity.go; these two constants are its only inputs.
+	AntigravityCLIVersion = "1.5.1"
+	// AntigravityCLIChangelist is the changelist the mirrored agy build
+	// carries in its own build metadata (go1.28-20261102-RC00
+	// cl/1012564305); it is the User-Agent's cl= part. The previous
+	// template's cl=1000494485 belonged to the frozen 1.4.0-era Windows
+	// capture the old AntigravityCLIUserAgent string was taken from, and
+	// died with that string.
+	AntigravityCLIChangelist = 1012564305
 )

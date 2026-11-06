@@ -3,6 +3,7 @@ package chat
 import (
 	json "axonrouter/proxy/internal/fastjson"
 	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/providers"
 	"axonrouter/proxy/internal/translator"
 	"bytes"
 	"context"
@@ -277,8 +278,7 @@ func RefreshAntigravityQuota(ctx context.Context, client *http.Client, connectio
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "antigravity/1.0.0")
-	req.Header.Set("X-Client-Name", "antigravity")
+	req.Header.Set("User-Agent", providers.AntigravityUserAgent())
 
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
@@ -671,9 +671,7 @@ func FetchAntigravityWeeklyQuota(ctx context.Context, client *http.Client, acces
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "antigravity/1.0.0")
-	req.Header.Set("X-Client-Name", "antigravity")
-	req.Header.Set("X-Client-Version", "0.1.0")
+	req.Header.Set("User-Agent", providers.AntigravityUserAgent())
 
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}

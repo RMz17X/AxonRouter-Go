@@ -212,7 +212,7 @@ func (h *MediaHandler) tryAntigravitySTTConn(w http.ResponseWriter, r *http.Requ
 	wrapper := map[string]any{
 		"project":   projectID,
 		"model":     model,
-		"userAgent": "antigravity",
+		"userAgent": providers.AntigravityUserAgent(),
 		"requestId": fmt.Sprintf("stt-%d", time.Now().UnixNano()),
 		"request":   reqPayload,
 	}
@@ -233,9 +233,7 @@ func (h *MediaHandler) tryAntigravitySTTConn(w http.ResponseWriter, r *http.Requ
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	httpReq.Header.Set("User-Agent", providers.AntigravityCLIUserAgent)
-	httpReq.Header.Set("X-Client-Name", "antigravity")
-	httpReq.Header.Set("X-Client-Version", providers.AntigravityIDEVersion)
+	httpReq.Header.Set("User-Agent", chat.AntigravityConnectionUserAgent(connData))
 
 	resp, err := client.Do(httpReq)
 	if err != nil {

@@ -23,11 +23,11 @@ import (
 
 // antigravityConnData resolves a connection's data blob for the Antigravity
 // onboarding path. The chat lane knows only the connection id, but the
-// discovery RPCs must be sent as the client that connection signed in as — see
+// discovery RPCs must be sent with the one CLI identity — see
 // antigravityProjectUserAgent for why the identity changes the answer.
 //
-// A nil result is safe: the caller falls back to the CLI profile, which is the
-// identity that keeps working for the Gemini 4 Argon tiers.
+// A nil result is safe: the identity no longer depends on the connection,
+// so callers still get the single CLI shape.
 func (h *ChatHandler) antigravityConnData(connectionID string) *shared.ConnectionData {
 	if connectionID == "" || h.Repo == nil {
 		return nil
@@ -129,7 +129,14 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 	}
 
 	upstreamStarted := time.Now()
-	resp, err := proxy.ForwardGemini(ctx, httpClient, cfg, apiKey, string(body), isStream, projectID, modelName)
+	// Chat presents the one CLI identity, matching the onboarding RPCs
+	// (antigravityProjectUserAgent). Other Gemini-native providers keep
+	// ForwardGemini's default.
+	userAgent := ""
+	if provider == "antigravity" {
+		userAgent = antigravityProjectUserAgent(h.antigravityConnData(connectionID))
+	}
+	resp, err := proxy.ForwardGemini(ctx, httpClient, cfg, apiKey, string(body), isStream, projectID, modelName, userAgent)
 	// The one number that separates "the model was thinking" from "the
 	// gateway was slow": everything this handler does before dialing is
 	// milliseconds, so a large value here is the upstream's first-token

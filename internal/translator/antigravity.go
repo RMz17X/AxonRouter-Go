@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/providers"
 )
 
 // maxAntigravityOutputTokens caps generationConfig.maxOutputTokens; Google's
@@ -856,7 +857,7 @@ func WrapForAntigravity(geminiBody []byte, projectID, modelName string) ([]byte,
 	wrapper := AntigravityRequest{
 		Project:   projectID,
 		Model:     modelName,
-		UserAgent: "antigravity",
+		UserAgent: providers.AntigravityUserAgent(),
 		// Omit RequestType (was "agent"): parity with decolua/9router#3986.
 		// Google rejects agent-bucketed requests with false 429s; requestId
 		// keeps its existing agent/<...>/<...>/<...>/<step> shape.
@@ -972,7 +973,7 @@ func WrapAntigravityImageRequest(prompt, base64Input, projectID, cleanModel, asp
 	wrapper := AntigravityRequest{
 		Project:     projectID,
 		Model:       cleanModel,
-		UserAgent:   "antigravity",
+		UserAgent:   providers.AntigravityUserAgent(),
 		RequestType: "image_gen",
 		RequestID:   antigravityBuildRequestID(projectID, cleanModel, "image_gen", 1),
 		Request:     reqJSON,

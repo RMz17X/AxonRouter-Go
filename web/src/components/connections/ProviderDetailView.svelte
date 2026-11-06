@@ -238,9 +238,14 @@
     }
   }
 
-  $effect(() => {
-    loadPageUsage(paginatedConnections)
-  })
+  // Quotas are NOT auto-fetched when the page opens (operator report:
+  // opening a provider with many connections burst-fired one live usage
+  // read per connection and made the page crawl). The operator loads
+  // them explicitly with the button above the list; /api/usage responses
+  // are also cached server-side for 55s, so repeat loads stay cheap.
+  let pageQuotasPending = $derived(
+    paginatedConnections.filter((c) => !connectionQuotas[c.id]).length,
+  )
 
   let isProviderAllDisabled = $derived(
     providerConnections.length > 0 && providerConnections.every((c) => c.isActive === 0)
@@ -3827,6 +3832,18 @@
         </div>
       </div>
     {:else}
+      {#if pageQuotasPending > 0}
+        <div class="flex items-center justify-end px-1 py-2">
+          <button
+            type="button"
+            onclick={() => loadPageUsage(paginatedConnections)}
+            class="inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-[8px] border border-border bg-surface-2 px-3 text-xs font-medium text-text-main transition-colors hover:bg-surface-3"
+          >
+            <span class="material-symbols-outlined text-[18px]">cloud_download</span>
+            Load quotas ({pageQuotasPending})
+          </button>
+        </div>
+      {/if}
       <!-- relative z-50: the open row proxy dropdown paints a fixed inset-0
            click-away backdrop over the whole viewport, which otherwise swallows
            the first click on any priority chevron. -->
@@ -3841,8 +3858,17 @@
           {@const assignedPoolId = (typeof specificData?.proxyPoolId === 'string' ? specificData.proxyPoolId : null)}
           {@const proxyBadge = proxyBadgeFor(conn)}
           {@const lastErr = normalizeLastError(conn.lastError || status?.error) || ''}
+          {@const isFatalDisabledErr =
+            lastErr.toLowerCase().includes('disabled in this account') ||
+            lastErr.toLowerCase().includes('terms of service') ||
+            lastErr.toLowerCase().includes('tos_violation') ||
+            lastErr.toLowerCase().includes('account disabled') ||
+            lastErr.toLowerCase().includes('validation_required') ||
+            lastErr.toLowerCase().includes('verify your account') ||
+            lastErr.toLowerCase().includes('invalid_grant') ||
+            lastErr.toLowerCase().includes('token refresh rejected')}
           {@const priorityNum = conn.priority ?? globalIdx + 1}
-          {@const isConnActive = conn.isActive === 1}
+          {@const isConnActive = (conn.isActive === 1 || conn.isActive === true) && conn.testStatus !== 'disabled' && !isFatalDisabledErr}
           {@const cooldownInfo = getCooldownInfo(conn)}
           <!-- badgeFor owns the precedence between the live probe and the
                connection's persisted testStatus; the markup below only renders
@@ -3905,7 +3931,15 @@
                       <p class="truncate text-xs text-text-muted">{formatEmailLabel(secondaryConnLabel(conn), $emailPrivacy)}</p>
                     {/if}
                     <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-                      {#if connBadge === 'queued'}
+                      {#if !isConnActive || conn.testStatus === 'disabled' || isFatalDisabledErr}
+                        <span
+                          class="inline-flex items-center gap-1.5 rounded-full font-semibold bg-surface-3 text-text-muted px-2 py-0.5 text-[10px]"
+                          title={lastErr ? `disabled: ${lastErr}` : 'Connection is disabled'}
+                        >
+                          <span class="size-1.5 rounded-full bg-text-muted/60"></span>
+                          disabled
+                        </span>
+                      {:else if connBadge === 'queued'}
                         <span
                           class="inline-flex items-center gap-1.5 rounded-full font-semibold bg-surface-2 text-text-muted px-2 py-0.5 text-[10px]"
                           title="Waiting for its turn"

@@ -57,6 +57,7 @@ func (r *Repo) DisableConnectionWithReason(id string, status int, reason string)
 		     data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonDocParam(), "lastError"),
 			jsonSetPairAt(jsonStringLiteral("disabled"), "status"),
+			jsonSetPairAt(jsonStringLiteral("disabled"), "testStatus"),
 		)+`,
 		     updatedAt = ?
 		 WHERE id = ?`,
@@ -89,6 +90,7 @@ func (r *Repo) SetConnectionVerificationRequired(connID, verificationURL, errTex
 			jsonSetPairAt(jsonStringParam(), "verificationUrl"),
 			jsonSetPairAt(jsonDocParam(), "lastError"),
 			jsonSetPairAt(jsonStringLiteral("validation_required"), "status"),
+			jsonSetPairAt(jsonStringLiteral("disabled"), "testStatus"),
 		)+`,
 		     updatedAt = ?
 		 WHERE id = ?`,

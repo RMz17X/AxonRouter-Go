@@ -15,6 +15,7 @@ import (
 
 	"axonrouter/proxy/internal/config"
 	"axonrouter/proxy/internal/db"
+	applog "axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/handlers/chat"
 	"axonrouter/proxy/internal/middleware"
 	"axonrouter/proxy/internal/providers"
@@ -129,6 +130,22 @@ func ProvideServer(p ServerParams) *http.Server {
 					autoUpdate = settings.AutoUpdate
 				}
 			}
+			// Durable routing log (operator request, 2026-11-06): mirror
+			// log output into a rotating file under the data dir so a
+			// routing incident can be analysed from disk afterwards
+			// instead of relying on the in-memory console ring.
+			// AXONROUTER_LOG_FILE overrides the path; "off" disables.
+			if logFile := os.Getenv("AXONROUTER_LOG_FILE"); logFile != "off" {
+				if logFile == "" {
+					logFile = filepath.Join(config.ResolveDataDir(), "logs", "routing.log")
+				}
+				if err := applog.EnableFileLog(logFile); err != nil {
+					log.Printf("[log] file logging disabled: %v", err)
+				} else {
+					log.Printf("[log] routing log file: %s", logFile)
+				}
+			}
+
 			updater.StartBackgroundCheck(shutdown.Context(), autoUpdate)
 			log.Printf("[config] auto-update enabled=%v", autoUpdate)
 

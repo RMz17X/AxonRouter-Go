@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -24,33 +23,26 @@ const defaultAntigravityProjectID = "aicode-consumers"
 
 var defaultAntigravityScopes = []string{
 	"https://www.googleapis.com/auth/cloud-platform",
+	"https://www.googleapis.com/auth/aicode",
 	"https://www.googleapis.com/auth/userinfo.email",
 	"https://www.googleapis.com/auth/userinfo.profile",
 	"https://www.googleapis.com/auth/cclog",
 	"https://www.googleapis.com/auth/experimentsandconfigs",
 }
 
+// getAntigravityOAuthConfig seeds the sign-in client from the one home for
+// OAuth client credentials, providers.KnownOAuthConfigs — the literals and
+// the ANTIGRAVITY_OAUTH_CLIENT_ID / ANTIGRAVITY_OAUTH_CLIENT_SECRET env
+// overrides live there (envOr), not duplicated in this handler.
 func getAntigravityOAuthConfig() (clientID, clientSecret, tokenURL string) {
-	clientID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
-	clientSecret = "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"
 	tokenURL = googleOAuthTokenURL
 
 	if cfg, ok := providers.KnownOAuthConfigs["antigravity"]; ok {
-		if cfg.ClientID != "" {
-			clientID = cfg.ClientID
-		}
-		if cfg.ClientSecret != "" {
-			clientSecret = cfg.ClientSecret
-		}
+		clientID = cfg.ClientID
+		clientSecret = cfg.ClientSecret
 		if cfg.TokenURL != "" && googleOAuthTokenURL == "https://oauth2.googleapis.com/token" {
 			tokenURL = cfg.TokenURL
 		}
-	}
-	if v := os.Getenv("ANTIGRAVITY_OAUTH_CLIENT_ID"); v != "" {
-		clientID = v
-	}
-	if v := os.Getenv("ANTIGRAVITY_OAUTH_CLIENT_SECRET"); v != "" {
-		clientSecret = v
 	}
 	return
 }

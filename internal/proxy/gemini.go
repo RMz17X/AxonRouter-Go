@@ -19,7 +19,13 @@ import (
 
 // ForwardGemini sends an OpenAI-format request to a Gemini-native endpoint.
 // projectID is non-empty for antigravity (cloudcode-pa.googleapis.com).
-func ForwardGemini(ctx context.Context, client *http.Client, cfg *providers.ProviderConfig, apiKey, bodyStr string, isStream bool, projectID, modelName string) (*http.Response, error) {
+// userAgent is the client identity the upstream sees; empty keeps the
+// Antigravity CLI shape. The antigravity handler passes the one CLI
+// identity (chat.AntigravityConnectionUserAgent) so chat presents the
+// same client as onboarding, media and usage — a token whose client
+// story changes between calls is the fingerprint drift Google's abuse
+// systems flag.
+func ForwardGemini(ctx context.Context, client *http.Client, cfg *providers.ProviderConfig, apiKey, bodyStr string, isStream bool, projectID, modelName, userAgent string) (*http.Response, error) {
 	body := []byte(bodyStr)
 	if projectID != "" {
 		// Body-inspecting tier resolution (upstream getModelUpstreamId): an
@@ -100,10 +106,13 @@ func ForwardGemini(ctx context.Context, client *http.Client, cfg *providers.Prov
 		requestURL = fmt.Sprintf("%s/v1beta/models/%s:%s", baseURL, modelName, action)
 	}
 
+	if userAgent == "" {
+		userAgent = providers.AntigravityUserAgent()
+	}
 	headers := map[string]string{
 		"Content-Type":  "application/json",
 		"Authorization": "Bearer " + apiKey,
-		"User-Agent":    providers.AntigravityCLIUserAgent,
+		"User-Agent":    userAgent,
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", requestURL, bytes.NewReader(sendBody))

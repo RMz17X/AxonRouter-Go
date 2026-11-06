@@ -244,7 +244,14 @@ func (h *DashboardHandler) runUsageRefresh(ctx context.Context, conn *models.Pro
 // returns nothing but an access token remains.
 func (h *DashboardHandler) refreshUsageCredentials(ctx context.Context, conn *models.ProviderConnection, creds usageCredentials, client *http.Client) (*oauth.TokenResult, error) {
 	if client == nil {
-		client = &http.Client{Timeout: usageHTTPTimeout}
+		// The usage handler threads the connection's own proxy client through
+		// the context; a refresh must leave from the same egress as the read
+		// that triggered it, not from the host's IP.
+		if ctxClient, ok := ctx.Value(usageClientCtxKey{}).(*http.Client); ok && ctxClient != nil {
+			client = ctxClient
+		} else {
+			client = &http.Client{Timeout: usageHTTPTimeout}
+		}
 	}
 	psd, _ := creds.raw["providerSpecificData"].(map[string]any)
 	result, err := oauth.Refresh(ctx, &oauth.Params{

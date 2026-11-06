@@ -43,6 +43,7 @@ func (h *DashboardHandler) HandleGetConnections(w http.ResponseWriter, r *http.R
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	h.autoDisableFatalConnections(conns)
 	sanitized := make([]map[string]any, 0, len(conns))
 	for _, c := range conns {
 		if c == nil {
@@ -51,6 +52,18 @@ func (h *DashboardHandler) HandleGetConnections(w http.ResponseWriter, r *http.R
 		sanitized = append(sanitized, sanitizeProviderConnection(c))
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, sanitized)
+}
+
+// connectionMatchesSearch reports whether a connection's name, email or
+// provider contains the (already lowercased) search text. It backs the
+// quota tracker's search box (operator request, 2026-11-06).
+func connectionMatchesSearch(c *models.ProviderConnection, query string) bool {
+	for _, field := range []*string{c.Name, c.Email} {
+		if field != nil && strings.Contains(strings.ToLower(*field), query) {
+			return true
+		}
+	}
+	return strings.Contains(strings.ToLower(c.Provider), query)
 }
 
 // HandleGetProvidersClient handles GET /api/providers and GET /api/providers/client.
@@ -91,6 +104,7 @@ func (h *DashboardHandler) HandleGetProvidersClient(w http.ResponseWriter, r *ht
 		writePlainError(w, http.StatusInternalServerError, "Failed to fetch providers")
 		return
 	}
+	h.autoDisableFatalConnections(conns)
 	eligible := make([]*models.ProviderConnection, 0, len(conns))
 	for _, c := range conns {
 		if c != nil && isUsageEligibleConnection(c) {
@@ -120,6 +134,15 @@ func (h *DashboardHandler) HandleGetProvidersClient(w http.ResponseWriter, r *ht
 			continue
 		}
 		accountFiltered = append(accountFiltered, c)
+	}
+	if searchQuery := strings.ToLower(strings.TrimSpace(q.Get("search"))); searchQuery != "" {
+		searched := make([]*models.ProviderConnection, 0, len(accountFiltered))
+		for _, c := range accountFiltered {
+			if connectionMatchesSearch(c, searchQuery) {
+				searched = append(searched, c)
+			}
+		}
+		accountFiltered = searched
 	}
 	sortProviderConnections(accountFiltered, sortMode)
 
@@ -396,6 +419,8 @@ func sanitizeProviderConnection(c *models.ProviderConnection) map[string]any {
 		"displayName", "defaultModel", "testStatus", "lastError", "lastErrorAt",
 		"errorCode", "expiresAt", "lastUsedAt", "consecutiveUseCount",
 		"globalPriority", "plan", "message",
+		"disabledReason", "disabledAt", "verificationUrl", "status",
+		"oauthLockedUntil", "oauthFailureCount",
 		// Operational (non-secret) state the dashboard renders: cooldown
 		// badges (⏱), quota/rate-limit panels, model assignment. Secret
 		// keys (apiKey/accessToken/refreshToken/authToken/...) stay dropped.
@@ -419,6 +444,9 @@ func sanitizeProviderConnection(c *models.ProviderConnection) map[string]any {
 					}
 					if src, ok := m["source"].(string); ok && src != "" {
 						safe["lastErrorSource"] = src
+					}
+					if vurl, ok := m["verificationUrl"].(string); ok && vurl != "" && safe["verificationUrl"] == nil {
+						safe["verificationUrl"] = vurl
 					}
 				} else if s, isStr := v.(string); isStr {
 					safe[f] = s
@@ -458,11 +486,68 @@ func sanitizeProviderConnection(c *models.ProviderConnection) map[string]any {
 	// the same vocabulary the request path uses, so the dashboard stops
 	// counting a credit-exhausted account as connected.
 	lastError, _ := safe["lastError"].(string)
+	if lastError != "" {
+		lastError = enrichAppealMessage(lastError)
+		safe["lastError"] = lastError
+	}
+	if isFatalAccountDisableError(lastError) {
+		c.IsActive = 0
+		safe["isActive"] = 0
+		safe["testStatus"] = "disabled"
+		safe["status"] = "disabled"
+	} else if c.IsActive == 0 {
+		safe["testStatus"] = "disabled"
+	}
 	effective := providers.EffectiveStatusWithError(c.IsActive, fmt.Sprintf("%v", safe["testStatus"]), providers.HasActiveCooldown(c.Data), lastError)
 	safe["effectiveStatus"] = effective
 	safe["isEffectivelyActive"] = providers.IsEffectivelyActiveWithError(c.IsActive, fmt.Sprintf("%v", safe["testStatus"]), providers.HasActiveCooldown(c.Data), lastError)
 	safe["statusVariant"] = providers.StatusVariant(c.IsActive, effective)
 	return safe
+}
+
+func isFatalAccountDisableError(msg string) bool {
+	if msg == "" {
+		return false
+	}
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "disabled in this account") ||
+		strings.Contains(lower, "terms of service") ||
+		strings.Contains(lower, "tos_violation") ||
+		strings.Contains(lower, "account disabled") ||
+		strings.Contains(lower, "validation_required") ||
+		strings.Contains(lower, "verify your account") ||
+		strings.Contains(lower, "invalid_grant") ||
+		strings.Contains(lower, "token refresh rejected")
+}
+
+func (h *DashboardHandler) autoDisableFatalConnections(conns []*models.ProviderConnection) {
+	if h == nil || h.Repo == nil {
+		return
+	}
+	for _, c := range conns {
+		if c == nil || c.IsActive == 0 || strings.TrimSpace(c.Data) == "" {
+			continue
+		}
+		var data map[string]any
+		if err := json.Unmarshal([]byte(c.Data), &data); err != nil || data == nil {
+			continue
+		}
+		errMsg := lastErrorText(data)
+		if !isFatalAccountDisableError(errMsg) {
+			continue
+		}
+		c.IsActive = 0
+		lower := strings.ToLower(errMsg)
+		if strings.Contains(lower, "validation_required") || strings.Contains(lower, "verify your account") {
+			verifyURL, _ := data["verificationUrl"].(string)
+			if verifyURL == "" {
+				verifyURL = "https://antigravity.google"
+			}
+			_ = h.Repo.SetConnectionVerificationRequired(c.ID, verifyURL, errMsg)
+		} else {
+			_ = h.Repo.DisableConnectionWithReason(c.ID, http.StatusForbidden, enrichAppealMessage(errMsg))
+		}
+	}
 }
 
 // createConnectionRequest is the POST /api/connections body. Beyond the legacy
@@ -788,7 +873,22 @@ func (h *DashboardHandler) HandleUpdateConnection(w http.ResponseWriter, r *http
 		newAPIKey = strings.TrimSpace(s)
 	}
 	hasAPIKey := newAPIKey != ""
-	a, hasIsActive := rawBody["isActive"].(bool)
+	a, hasIsActive := false, false
+	if rawActive, exists := rawBody["isActive"]; exists && rawActive != nil {
+		switch v := rawActive.(type) {
+		case bool:
+			a, hasIsActive = v, true
+		case float64:
+			a, hasIsActive = v != 0, true
+		case int:
+			a, hasIsActive = v != 0, true
+		case int64:
+			a, hasIsActive = v != 0, true
+		case string:
+			trimmed := strings.ToLower(strings.TrimSpace(v))
+			a, hasIsActive = trimmed == "1" || trimmed == "true", true
+		}
+	}
 
 	// Upstream normalizeProxyPoolUpdate: null/""/"__none__" unbinds, anything
 	// else must reference an existing pool.
@@ -1161,7 +1261,7 @@ func (h *DashboardHandler) writeConnectionModels(w http.ResponseWriter, r *http.
 		headers := map[string]string{
 			"Content-Type":  "application/json",
 			"Authorization": "Bearer " + token,
-			"User-Agent":    providers.AntigravityCLIUserAgent,
+			"User-Agent":    providers.AntigravityUserAgent(),
 		}
 		status, body, err := validateProbeDo(r.Context(), http.MethodPost, "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels", headers, reqPayload)
 		if err != nil {

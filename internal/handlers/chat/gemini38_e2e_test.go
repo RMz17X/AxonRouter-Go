@@ -48,8 +48,8 @@ func TestE2E_Gemini38_FlashHigh_NonStream_ToolCall(t *testing.T) {
 			t.Errorf("expected generateContent path, got %s", r.URL.Path)
 		}
 		// Check User-Agent matches Antigravity CLI/IDE user agent
-		if ua := r.Header.Get("User-Agent"); ua != providers.AntigravityCLIUserAgent {
-			t.Errorf("expected User-Agent %q, got %q", providers.AntigravityCLIUserAgent, ua)
+		if ua := r.Header.Get("User-Agent"); ua != providers.AntigravityUserAgent() {
+			t.Errorf("expected User-Agent %q, got %q", providers.AntigravityUserAgent(), ua)
 		}
 		// Read actual body
 		buf := new(bytes.Buffer)
