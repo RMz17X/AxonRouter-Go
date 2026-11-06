@@ -239,7 +239,7 @@ func TestAntigravityQuota_StrikeReassert(t *testing.T) {
 		t.Logf("agStrikeBlocks[%q] = %v", k, v)
 	}
 	// Also check quota cache
-	if quotas, err := RefreshAntigravityQuota(context.Background(), srv.Client(), connID, "token", "proj"); err == nil {
+	if quotas, err := RefreshAntigravityQuota(context.Background(), srv.Client(), connID, "token", "proj", ""); err == nil {
 		t.Logf("quotas after refresh: %v", quotas)
 		for mk, q := range quotas {
 			t.Logf("quota %q: %+v", mk, q)
@@ -250,7 +250,7 @@ func TestAntigravityQuota_StrikeReassert(t *testing.T) {
 	}
 
 	// Refresh should re-assert the block even though upstream says 90%
-	_, err := RefreshAntigravityQuota(nil, srv.Client(), connID, "token", "proj")
+	_, err := RefreshAntigravityQuota(nil, srv.Client(), connID, "token", "proj", "")
 	if err != nil {
 		t.Fatalf("refresh: %v", err)
 	}

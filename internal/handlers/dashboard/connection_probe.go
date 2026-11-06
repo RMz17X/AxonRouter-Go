@@ -640,7 +640,11 @@ func (h *DashboardHandler) probeOAuthConnection(ctx context.Context, conn *model
 
 	switch provider {
 	case "gemini-cli", "antigravity":
-		attempt := probeCloudCodeAssist(ctx, client, provider, accessToken)
+		var identity providers.AntigravityIdentity
+		if provider == "antigravity" {
+			identity = h.resolveAntigravityIdentity(conn)
+		}
+		attempt := probeCloudCodeAssist(ctx, client, provider, accessToken, identity)
 		if attempt.valid {
 			return probeOutcome{valid: true, refreshed: refreshed, tokens: tokens}
 		}
@@ -649,7 +653,7 @@ func (h *DashboardHandler) probeOAuthConnection(ctx context.Context, conn *model
 			if retryTokens == nil || retryTokens.AccessToken == "" {
 				return probeOutcome{message: "Token invalid or revoked"}
 			}
-			retry := probeCloudCodeAssist(ctx, client, provider, retryTokens.AccessToken)
+			retry := probeCloudCodeAssist(ctx, client, provider, retryTokens.AccessToken, identity)
 			if retry.valid {
 				return probeOutcome{valid: true, refreshed: true, tokens: retryTokens}
 			}
@@ -879,16 +883,24 @@ func classifyOAuthProbe(status int, cfg oauthProbeConfig) oauthProbeAttempt {
 	return oauthProbeAttempt{valid: true, status: status}
 }
 
-// probeCloudCodeAssist ports probeCloudCodeAssistAccess.
-func probeCloudCodeAssist(ctx context.Context, client *http.Client, provider, accessToken string) oauthProbeAttempt {
+// probeCloudCodeAssist ports probeCloudCodeAssistAccess. identity is
+// the probed connection's resolved identity (fragment 972) and is only
+// read on the antigravity branch; the gemini-cli branch keeps its own
+// client shape.
+func probeCloudCodeAssist(ctx context.Context, client *http.Client, provider, accessToken string, identity providers.AntigravityIdentity) oauthProbeAttempt {
 	userAgent := "google-api-nodejs-client/9.15.1 gemini-cli/0.34.0"
 	probeBody := []byte(cloudCodeAssistProbeBody)
 	if provider == "antigravity" {
-		// The antigravity probe presents the one CLI identity, with the
-		// numeric ClientMetadata body the real client sends — agy parity
-		// supersedes the JS string-enum body here (fragment 969).
-		userAgent = providers.AntigravityUserAgent()
-		if b, err := json.Marshal(map[string]any{"metadata": providers.AntigravityLoadCodeAssistMetadata()}); err == nil {
+		// The antigravity probe presents the connection's pinned CLI
+		// identity, with the numeric ClientMetadata body the real client
+		// sends — agy parity supersedes the JS string-enum body here
+		// (fragment 969).
+		userAgent = identity.UserAgent
+		if userAgent == "" {
+			identity = providers.AntigravityRuntimeIdentity()
+			userAgent = identity.UserAgent
+		}
+		if b, err := json.Marshal(map[string]any{"metadata": identity.LoadCodeAssistMetadata()}); err == nil {
 			probeBody = b
 		}
 	}

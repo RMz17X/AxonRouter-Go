@@ -138,6 +138,11 @@ func (h *MediaHandler) tryAntigravitySTTConn(w http.ResponseWriter, r *http.Requ
 		return fmt.Errorf("no API key found for antigravity connection %s", conn.ID)
 	}
 
+	// The connection's resolved identity (fragment 972: pinned snapshot,
+	// runtime derivation before the first pin) — one resolution feeding
+	// the discovery probe below, the envelope and the header alike.
+	identity := h.ChatH.AntigravityIdentityFor(conn.ID, connData)
+
 	client, clientErr := h.ChatH.GetClientForConnection(connData)
 	if clientErr != nil {
 		return clientErr
@@ -212,7 +217,7 @@ func (h *MediaHandler) tryAntigravitySTTConn(w http.ResponseWriter, r *http.Requ
 	wrapper := map[string]any{
 		"project":   projectID,
 		"model":     model,
-		"userAgent": providers.AntigravityUserAgent(),
+		"userAgent": identity.UserAgent,
 		"requestId": fmt.Sprintf("stt-%d", time.Now().UnixNano()),
 		"request":   reqPayload,
 	}
@@ -233,7 +238,7 @@ func (h *MediaHandler) tryAntigravitySTTConn(w http.ResponseWriter, r *http.Requ
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	httpReq.Header.Set("User-Agent", chat.AntigravityConnectionUserAgent(connData))
+	httpReq.Header.Set("User-Agent", identity.UserAgent)
 
 	resp, err := client.Do(httpReq)
 	if err != nil {

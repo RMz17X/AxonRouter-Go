@@ -1785,13 +1785,15 @@ func extractGoogleErrorMessage(body map[string]any) string {
 }
 
 // fetchAntigravitySubInfo mirrors getAntigravitySubscriptionInfo: one loadCodeAssist
-// call reused for projectID + plan + tier detection.
-func fetchAntigravitySubInfo(ctx context.Context, accessToken, userAgent string) antigravitySubInfo {
+// call reused for projectID + plan + tier detection. It takes the
+// connection's resolved identity (fragment 972) so the header and the
+// metadata body present the same client.
+func fetchAntigravitySubInfo(ctx context.Context, accessToken string, identity providers.AntigravityIdentity) antigravitySubInfo {
 	var sub antigravitySubInfo
 	status, data, err := usagePost(ctx, antigravityDashboardBaseURL+"/v1internal:loadCodeAssist", map[string]any{
-		"metadata": providers.AntigravityLoadCodeAssistMetadata(),
+		"metadata": identity.LoadCodeAssistMetadata(),
 		"mode":     1,
-	}, antigravitySubInfoHeaders(accessToken, userAgent))
+	}, antigravitySubInfoHeaders(accessToken, identity.UserAgent))
 	if err != nil || status != http.StatusOK || data == nil {
 		if status == http.StatusForbidden {
 			sub.errMsg = extractGoogleErrorMessage(data)
@@ -1808,8 +1810,8 @@ func fetchAntigravitySubInfo(ctx context.Context, accessToken, userAgent string)
 	return sub
 }
 
-func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID, userAgent string) usageResult {
-	sub := fetchAntigravitySubInfo(ctx, accessToken, userAgent)
+func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID string, identity providers.AntigravityIdentity) usageResult {
+	sub := fetchAntigravitySubInfo(ctx, accessToken, identity)
 	pid := projectID
 	if pid == "" {
 		pid = sub.projectID
@@ -1818,7 +1820,7 @@ func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID,
 	if plan == "" {
 		plan = "Unknown"
 	}
-	headers := antigravityDashboardHeaders(accessToken, userAgent)
+	headers := antigravityDashboardHeaders(accessToken, identity.UserAgent)
 	reqBody := map[string]any{}
 	if pid != "" {
 		reqBody["project"] = pid
@@ -1889,7 +1891,7 @@ func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID,
 	// Hits DAILY retrieveUserQuotaSummary like upstream (PROD returns a
 	// different weekly view) and parses weekly-only buckets like upstream
 	// (no session rows — upstream shows 19 rows, not 21).
-	if weekly := fetchAntigravityDashboardWeekly(ctx, accessToken, pid, userAgent); len(weekly) > 0 {
+	if weekly := fetchAntigravityDashboardWeekly(ctx, accessToken, pid, identity.UserAgent); len(weekly) > 0 {
 		for key, wq := range weekly {
 			if key == "gemini_weekly" {
 				antigravityReconcileFamily(quotas, "gemini-", "image", wq)

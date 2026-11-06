@@ -21,13 +21,19 @@ var (
 
 const defaultAntigravityProjectID = "aicode-consumers"
 
+// defaultAntigravityScopes is agy's own sign-in scope list, in agy's
+// order — proven by runtime capture of the preserved v1.5.1 binary's
+// printed authorization URL (teardown §7, CERTAIN; fragments 971/972).
+// The delta from the router's historical list is exactly `openid` plus
+// this ordering; the set is otherwise the same.
 var defaultAntigravityScopes = []string{
 	"https://www.googleapis.com/auth/cloud-platform",
-	"https://www.googleapis.com/auth/aicode",
 	"https://www.googleapis.com/auth/userinfo.email",
 	"https://www.googleapis.com/auth/userinfo.profile",
 	"https://www.googleapis.com/auth/cclog",
 	"https://www.googleapis.com/auth/experimentsandconfigs",
+	"https://www.googleapis.com/auth/aicode",
+	"openid",
 }
 
 // getAntigravityOAuthConfig seeds the sign-in client from the one home for
@@ -256,6 +262,19 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 						dataMap["projectId"] = strings.TrimSpace(pid)
 					}
 				}
+				// Fragment 972: the identity pin survives re-exchange. An
+				// existing pin is carried verbatim — no path may move an
+				// established identity — while a connection that predates
+				// pinning gets its pin from this OAuth completion, the
+				// same moment a fresh connection gets its own.
+				psd := map[string]any{}
+				if existingPSD, ok := existingData["providerSpecificData"].(map[string]any); ok && providers.AntigravityIdentityPinned(existingPSD) {
+					psd[providers.AntigravityIdentityPSDKey] = existingPSD[providers.AntigravityIdentityPSDKey]
+				}
+				if _, ok := psd[providers.AntigravityIdentityPSDKey]; !ok {
+					psd[providers.AntigravityIdentityPSDKey] = providers.AntigravityIdentitySnapshot()
+				}
+				dataMap["providerSpecificData"] = psd
 			}
 			dataBytes, _ = json.Marshal(dataMap)
 			_, err = h.Repo.Exec(
@@ -267,6 +286,13 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 			if h.Repo != nil {
 				priority = h.Repo.ResolveDefaultPriority("antigravity")
 			}
+			// Fragment 972: the identity is pinned once, here at OAuth
+			// completion — the snapshot of the current runtime derivation
+			// is stored with the connection and never recomputed.
+			dataMap["providerSpecificData"] = map[string]any{
+				providers.AntigravityIdentityPSDKey: providers.AntigravityIdentitySnapshot(),
+			}
+			dataBytes, _ = json.Marshal(dataMap)
 			_, err = h.Repo.Exec(
 				"INSERT INTO providerConnections (id, provider, authType, name, priority, isActive, data, createdAt, updatedAt) VALUES (?, 'antigravity', 'oauth', ?, ?, 1, ?, ?, ?)",
 				connID, connName, priority, string(dataBytes), now, now,

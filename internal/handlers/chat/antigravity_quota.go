@@ -214,7 +214,13 @@ func quotaEntryExhausted(q AntigravityModelQuota, now time.Time) bool {
 }
 
 // RefreshAntigravityQuota fetches live quota for a connection from v1internal:fetchAvailableModels.
-func RefreshAntigravityQuota(ctx context.Context, client *http.Client, connectionID, accessToken, projectID string) (map[string]AntigravityModelQuota, error) {
+// userAgent is the connection's resolved identity (fragment 972);
+// empty selects the runtime derivation, which is also what test and
+// connection-less callers get.
+func RefreshAntigravityQuota(ctx context.Context, client *http.Client, connectionID, accessToken, projectID, userAgent string) (map[string]AntigravityModelQuota, error) {
+	if userAgent == "" {
+		userAgent = providers.AntigravityUserAgent()
+	}
 	if connectionID == "" || accessToken == "" {
 		return nil, fmt.Errorf("missing connectionID or accessToken")
 	}
@@ -278,7 +284,7 @@ func RefreshAntigravityQuota(ctx context.Context, client *http.Client, connectio
 
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", providers.AntigravityUserAgent())
+	req.Header.Set("User-Agent", userAgent)
 
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}
@@ -336,7 +342,7 @@ func RefreshAntigravityQuota(ctx context.Context, client *http.Client, connectio
 	// If no model quotas found (e.g. Free-tier accounts have weekly quotas only),
 	// best-effort fetch weekly quota summary (parity with Next.js open-sse/services/usage/google.js #3892)
 	if len(quotas) == 0 {
-		if weekly, err := FetchAntigravityWeeklyQuota(ctx, client, accessToken, projectID); err == nil && len(weekly) > 0 {
+		if weekly, err := FetchAntigravityWeeklyQuota(ctx, client, accessToken, projectID, userAgent); err == nil && len(weekly) > 0 {
 			for k, wq := range weekly {
 				quotas[k] = AntigravityModelQuota{
 					RemainingPercentage: wq.RemainingPercentage,
@@ -378,6 +384,10 @@ type AntigravityQuotaError struct {
 	// explicit quota marker in it; generic/content-triggered 429s return nil
 	// without striking (#4197 parity).
 	ErrorMessage string
+	// UserAgent is the connection's resolved identity (fragment 972:
+	// pinned snapshot, runtime derivation when the caller has none) for
+	// the quota RPCs this handler fires. Empty selects the derivation.
+	UserAgent string
 }
 
 // isExplicitQuotaError reports whether an upstream error message explicitly
@@ -403,7 +413,7 @@ func HandleAntigravityQuotaError(p AntigravityQuotaError) *time.Time {
 	shortConn := shortConnID(p.ConnectionID)
 	log.Info("ag_quota", "refreshing quota on error", "connection", shortConn, "status", p.Status, "model", p.Model)
 
-	quotas, err := RefreshAntigravityQuota(p.Ctx, p.Client, p.ConnectionID, p.AccessToken, p.ProjectID)
+	quotas, err := RefreshAntigravityQuota(p.Ctx, p.Client, p.ConnectionID, p.AccessToken, p.ProjectID, p.UserAgent)
 	if err != nil || len(quotas) == 0 {
 		now := time.Now().UTC()
 		if strings.Contains(p.ErrorMessage, quotaMarkerQuotaExhausted) || strings.Contains(p.ErrorMessage, quotaMarkerIndividualQuota) {
@@ -636,7 +646,10 @@ func ParseWeeklyQuotaSummary(raw []byte) map[string]AntigravityWeeklyQuota {
 }
 
 // FetchAntigravityWeeklyQuota fetches the weekly quota summary from Google's retrieveUserQuotaSummary endpoint.
-func FetchAntigravityWeeklyQuota(ctx context.Context, client *http.Client, accessToken, projectID string) (map[string]AntigravityWeeklyQuota, error) {
+func FetchAntigravityWeeklyQuota(ctx context.Context, client *http.Client, accessToken, projectID, userAgent string) (map[string]AntigravityWeeklyQuota, error) {
+	if userAgent == "" {
+		userAgent = providers.AntigravityUserAgent()
+	}
 	cacheKey := accessToken + "::" + projectID
 	now := time.Now().UTC()
 
@@ -671,7 +684,7 @@ func FetchAntigravityWeeklyQuota(ctx context.Context, client *http.Client, acces
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", providers.AntigravityUserAgent())
+	req.Header.Set("User-Agent", userAgent)
 
 	if client == nil {
 		client = &http.Client{Timeout: 10 * time.Second}

@@ -201,7 +201,7 @@ func TestWrapForAntigravity_OmitsAgentRequestType(t *testing.T) {
 	// Port of decolua/9router#3986: requestType="agent" triggers a false
 	// upstream 429 bucket on OMP harness payloads, so it must be omitted.
 	geminiBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`)
-	wrapped, err := translator.WrapForAntigravity(geminiBody, "proj-1", "gemini-3.8-flash-medium")
+	wrapped, err := translator.WrapForAntigravity(geminiBody, "proj-1", "gemini-3.8-flash-medium", "")
 	if err != nil {
 		t.Fatalf("WrapForAntigravity failed: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestWrapForAntigravity_OmitsAgentRequestType(t *testing.T) {
 }
 
 func TestWrapAntigravityImageRequest(t *testing.T) {
-	reqBytes, err := translator.WrapAntigravityImageRequest("A cute cat", "", "proj-123", "gemini-3.1-flash-image", "16:9")
+	reqBytes, err := translator.WrapAntigravityImageRequest("A cute cat", "", "proj-123", "gemini-3.1-flash-image", "16:9", "")
 	if err != nil {
 		t.Fatalf("WrapAntigravityImageRequest failed: %v", err)
 	}
@@ -548,7 +548,7 @@ func TestStripCompetitivePrompts_HermesIdentityVariants(t *testing.T) {
 
 func TestWrapForAntigravity_NormalizesTriggerSystemPrompt(t *testing.T) {
 	geminiBody := []byte(`{"system_instruction":{"role":"user","parts":[{"text":"<system-conventions>\nRFC 2119: MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL."}]},"contents":[{"role":"user","parts":[{"text":"hello"}]}]}`)
-	wrapped, err := translator.WrapForAntigravity(geminiBody, "proj-1", "gemini-3.8-flash-high")
+	wrapped, err := translator.WrapForAntigravity(geminiBody, "proj-1", "gemini-3.8-flash-high", "")
 	if err != nil {
 		t.Fatalf("WrapForAntigravity failed: %v", err)
 	}
@@ -701,7 +701,7 @@ var antigravityRequestIDRe = regexp.MustCompile(`^agent/[0-9a-f]{8}-[0-9a-f]{4}-
 
 func TestWrapForAntigravity_CapAndRequestID(t *testing.T) {
 	geminiBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":100000}}`)
-	wrapped, err := translator.WrapForAntigravity(geminiBody, "proj-1", "gemini-3.7-flash-high")
+	wrapped, err := translator.WrapForAntigravity(geminiBody, "proj-1", "gemini-3.7-flash-high", "")
 	if err != nil {
 		t.Fatalf("WrapForAntigravity failed: %v", err)
 	}
@@ -737,7 +737,7 @@ func TestWrapForAntigravity_CapAndRequestID(t *testing.T) {
 
 func TestWrapForAntigravity_StripsThinkingFields(t *testing.T) {
 	geminiBody := []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"thinking":{"type":"enabled"},"reasoning_effort":"high","output_config":{},"enable_thinking":true}`)
-	wrapped, err := translator.WrapForAntigravity(geminiBody, "proj-1", "gemini-3-flash")
+	wrapped, err := translator.WrapForAntigravity(geminiBody, "proj-1", "gemini-3-flash", "")
 	if err != nil {
 		t.Fatalf("WrapForAntigravity failed: %v", err)
 	}

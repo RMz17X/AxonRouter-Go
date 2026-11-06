@@ -20,12 +20,17 @@ import (
 // ForwardGemini sends an OpenAI-format request to a Gemini-native endpoint.
 // projectID is non-empty for antigravity (cloudcode-pa.googleapis.com).
 // userAgent is the client identity the upstream sees; empty keeps the
-// Antigravity CLI shape. The antigravity handler passes the one CLI
-// identity (chat.AntigravityConnectionUserAgent) so chat presents the
-// same client as onboarding, media and usage — a token whose client
-// story changes between calls is the fingerprint drift Google's abuse
-// systems flag.
+// Antigravity CLI shape. The antigravity handler passes the connection's
+// resolved identity (fragment 972: pinned snapshot, runtime derivation
+// when the account has none yet) so chat presents the same client as
+// onboarding, media and usage — a token whose client story changes
+// between calls is the fingerprint drift Google's abuse systems flag.
+// The value is resolved once, up front, because the request envelope's
+// userAgent field and the User-Agent header must carry the same string.
 func ForwardGemini(ctx context.Context, client *http.Client, cfg *providers.ProviderConfig, apiKey, bodyStr string, isStream bool, projectID, modelName, userAgent string) (*http.Response, error) {
+	if userAgent == "" {
+		userAgent = providers.AntigravityUserAgent()
+	}
 	body := []byte(bodyStr)
 	if projectID != "" {
 		// Body-inspecting tier resolution (upstream getModelUpstreamId): an
@@ -58,7 +63,7 @@ func ForwardGemini(ctx context.Context, client *http.Client, cfg *providers.Prov
 			}
 		}
 
-		wrapped, err := translator.WrapAntigravityImageRequest(prompt, "", projectID, cleanModel, aspectRatio)
+		wrapped, err := translator.WrapAntigravityImageRequest(prompt, "", projectID, cleanModel, aspectRatio, userAgent)
 		if err != nil {
 			return nil, fmt.Errorf("wrap antigravity image: %w", err)
 		}
@@ -79,7 +84,7 @@ func ForwardGemini(ctx context.Context, client *http.Client, cfg *providers.Prov
 		// Wrap for antigravity if needed
 		sendBody = geminiBody
 		if projectID != "" {
-			wrapped, err := translator.WrapForAntigravity(geminiBody, projectID, modelName)
+			wrapped, err := translator.WrapForAntigravity(geminiBody, projectID, modelName, userAgent)
 			if err != nil {
 				return nil, fmt.Errorf("wrap for antigravity: %w", err)
 			}
@@ -106,9 +111,6 @@ func ForwardGemini(ctx context.Context, client *http.Client, cfg *providers.Prov
 		requestURL = fmt.Sprintf("%s/v1beta/models/%s:%s", baseURL, modelName, action)
 	}
 
-	if userAgent == "" {
-		userAgent = providers.AntigravityUserAgent()
-	}
 	headers := map[string]string{
 		"Content-Type":  "application/json",
 		"Authorization": "Bearer " + apiKey,

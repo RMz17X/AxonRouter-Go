@@ -23,11 +23,14 @@ import (
 
 // antigravityConnData resolves a connection's data blob for the Antigravity
 // onboarding path. The chat lane knows only the connection id, but the
-// discovery RPCs must be sent with the one CLI identity — see
+// discovery RPCs must be sent with the connection's identity — see
 // antigravityProjectUserAgent for why the identity changes the answer.
 //
-// A nil result is safe: the identity no longer depends on the connection,
-// so callers still get the single CLI shape.
+// A nil result is safe: identity resolution falls back to the runtime
+// derivation. A loaded Antigravity connection gets its lazy identity
+// backfill here (fragment 972), so every caller of this loader —
+// discovery, the chat UA, the quota lanes — serves the pin from the
+// same first touch.
 func (h *ChatHandler) antigravityConnData(connectionID string) *shared.ConnectionData {
 	if connectionID == "" || h.Repo == nil {
 		return nil
@@ -40,7 +43,46 @@ func (h *ChatHandler) antigravityConnData(connectionID string) *shared.Connectio
 	if err := json.Unmarshal([]byte(conn.Data), &cd); err != nil {
 		return nil
 	}
+	if conn.Provider == "antigravity" {
+		h.backfillAntigravityIdentity(connectionID, &cd)
+	}
 	return &cd
+}
+
+// backfillAntigravityIdentity performs the lazy half of fragment 972's
+// pin rule: a connection loaded without a pin gets one computed from
+// the current runtime derivation, persisted (first-writer-wins in the
+// store, so a race between first touches settles on one value), and
+// injected into the in-memory copy so this request already serves the
+// pinned values. A failed write only defers the pin to the next touch —
+// resolution proceeds with the runtime derivation, whose values are
+// the snapshot's by construction, so nothing observable diverges.
+func (h *ChatHandler) backfillAntigravityIdentity(connectionID string, cd *shared.ConnectionData) {
+	if cd == nil || connectionID == "" || h.Repo == nil || providers.AntigravityIdentityPinned(cd.ProviderSpecificData) {
+		return
+	}
+	snapshotJSON, err := providers.AntigravityIdentitySnapshotJSON()
+	if err != nil {
+		return
+	}
+	if err := h.Repo.SetConnectionAntigravityIdentity(connectionID, snapshotJSON); err != nil {
+		log.Warn("gemini", "pin antigravity identity failed", "conn", connectionID, "error", err)
+		return
+	}
+	if cd.ProviderSpecificData == nil {
+		cd.ProviderSpecificData = map[string]any{}
+	}
+	cd.ProviderSpecificData[providers.AntigravityIdentityPSDKey] = providers.AntigravityIdentitySnapshot()
+}
+
+// AntigravityIdentityFor resolves the identity a media lane presents
+// for a connection it already holds: the pinned snapshot when stored,
+// the runtime derivation otherwise, with the same lazy backfill as the
+// chat lane (a media lane's first touch is a persisting one — it holds
+// both the connection and, through this handler, the store).
+func (h *ChatHandler) AntigravityIdentityFor(connectionID string, connData *shared.ConnectionData) providers.AntigravityIdentity {
+	h.backfillAntigravityIdentity(connectionID, connData)
+	return antigravityConnectionIdentity(connData)
 }
 
 // forwardGeminiNativeRequest handles forwarding for gemini-native providers (antigravity).
@@ -153,6 +195,7 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 					Ctx: ctx, Client: httpClient, ConnectionID: connectionID,
 					Status: uErr.StatusCode, Model: modelName, AccessToken: apiKey,
 					ProjectID: projectID, ErrorMessage: string(uErr.Body),
+					UserAgent: h.AntigravityIdentityFor(connectionID, h.antigravityConnData(connectionID)).UserAgent,
 				})
 			} else if uErr.StatusCode == http.StatusForbidden || uErr.StatusCode == http.StatusUnauthorized {
 				errText := string(uErr.Body)

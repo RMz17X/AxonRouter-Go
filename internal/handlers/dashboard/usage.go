@@ -287,7 +287,7 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 			ctx, cancel := context.WithTimeout(fetchCtx, 30*time.Second)
 			defer cancel()
 
-			res := fetchAntigravityDashboardUsage(ctx, accessToken, projectID, providers.AntigravityUserAgent())
+			res := fetchAntigravityDashboardUsage(ctx, accessToken, projectID, h.resolveAntigravityIdentity(conn))
 			if res.message != "" {
 				lowerMsg := strings.ToLower(res.message)
 				if strings.Contains(lowerMsg, "disabled in this account") ||

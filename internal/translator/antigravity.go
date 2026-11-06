@@ -830,7 +830,17 @@ func fixAntigravityContents(req *GeminiRequest, model string) bool {
 }
 
 // WrapForAntigravity wraps a standard Gemini request in Antigravity API envelope.
-func WrapForAntigravity(geminiBody []byte, projectID, modelName string) ([]byte, error) {
+//
+// userAgent is the resolved identity of the connection the request rides
+// on (fragment 972: the pinned snapshot, or the runtime derivation when
+// no connection is in scope — an empty value selects that derivation
+// here). The envelope's userAgent field must equal the User-Agent header
+// the same request carries, so callers pass the one value they resolved
+// for both.
+func WrapForAntigravity(geminiBody []byte, projectID, modelName, userAgent string) ([]byte, error) {
+	if userAgent == "" {
+		userAgent = providers.AntigravityUserAgent()
+	}
 	// The wire id is the registry's upstreamModelId with AxonRouter-Go's own effort
 	// notation stripped, not the bare synonym the lock and quota paths share.
 	// proxy.ForwardGemini normalises the model before calling this, so the
@@ -857,7 +867,7 @@ func WrapForAntigravity(geminiBody []byte, projectID, modelName string) ([]byte,
 	wrapper := AntigravityRequest{
 		Project:   projectID,
 		Model:     modelName,
-		UserAgent: providers.AntigravityUserAgent(),
+		UserAgent: userAgent,
 		// Omit RequestType (was "agent"): parity with decolua/9router#3986.
 		// Google rejects agent-bucketed requests with false 429s; requestId
 		// keeps its existing agent/<...>/<...>/<...>/<step> shape.
@@ -925,7 +935,12 @@ func ParseImageConfig(model string) (cleanModel, aspectRatio string) {
 }
 
 // WrapAntigravityImageRequest builds an Antigravity request envelope for image generation.
-func WrapAntigravityImageRequest(prompt, base64Input, projectID, cleanModel, aspectRatio string) ([]byte, error) {
+// userAgent follows the same rule as WrapForAntigravity: the caller's
+// resolved per-connection identity, runtime derivation when empty.
+func WrapAntigravityImageRequest(prompt, base64Input, projectID, cleanModel, aspectRatio, userAgent string) ([]byte, error) {
+	if userAgent == "" {
+		userAgent = providers.AntigravityUserAgent()
+	}
 	parts := []GeminiPart{}
 	if base64Input != "" {
 		parts = append(parts, GeminiPart{
@@ -973,7 +988,7 @@ func WrapAntigravityImageRequest(prompt, base64Input, projectID, cleanModel, asp
 	wrapper := AntigravityRequest{
 		Project:     projectID,
 		Model:       cleanModel,
-		UserAgent:   providers.AntigravityUserAgent(),
+		UserAgent:   userAgent,
 		RequestType: "image_gen",
 		RequestID:   antigravityBuildRequestID(projectID, cleanModel, "image_gen", 1),
 		Request:     reqJSON,

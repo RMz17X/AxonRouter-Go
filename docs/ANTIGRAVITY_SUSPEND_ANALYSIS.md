@@ -343,3 +343,20 @@ This section supersedes the IDE-parity parts of the §11 resolution:
   selection rule (daily vs prod per surface — current hosts are
   unchanged by this rebase), the exact sign-in scope list, the token
   file format, and the updater TTL.
+
+### §13 addendum — the dual-config refresher lands (2026-11-06, fragment 970)
+
+The "design ready" above is now built. `AntigravityLegacyOAuthConfig`
+gives the pre-swap 1071 client a named, fenced home (refresh rescue
+only — sign-in and code exchange still seed from `KnownOAuthConfigs`
+alone), and `internal/proxy/oauth/antigravity.go` registers the
+dual-config refresher the design described: primary first, exactly one
+legacy attempt on a client-mismatch rejection (401, or 400
+`invalid_client` / `invalid_grant`), the primary error surfaced when
+the rescue also fails, and the rescue skipped outright while both
+slots name the same client — so until the flip, wire behavior is
+identical to the standard refresh it replaces. The OAuth residual is
+therefore no longer a code change: when the 8843 pair lands (env
+override or literal), the primary slot flips and the architecture is
+complete. See `.changes/970-antigravity-dual-config-refresher.md` for
+the full record.

@@ -94,6 +94,11 @@ func (h *MediaHandler) tryAntigravityImageConn(w http.ResponseWriter, r *http.Re
 		return clientErr
 	}
 
+	// The connection's resolved identity (fragment 972: pinned snapshot,
+	// runtime derivation before the first pin) — one resolution feeding
+	// the discovery probe below, the envelope and the header alike.
+	identity := h.ChatH.AntigravityIdentityFor(conn.ID, connData)
+
 	// Refresh token if expired
 	refreshedKey, pid, err := h.ChatH.RefreshOAuthTokenIfExpired(conn.ID, apiKey)
 	if err == nil && refreshedKey != "" {
@@ -151,7 +156,7 @@ func (h *MediaHandler) tryAntigravityImageConn(w http.ResponseWriter, r *http.Re
 		base64Input = imageReq.Images[0]
 	}
 
-	wrappedReq, err := translator.WrapAntigravityImageRequest(prompt, base64Input, projectID, cleanModel, aspectRatio)
+	wrappedReq, err := translator.WrapAntigravityImageRequest(prompt, base64Input, projectID, cleanModel, aspectRatio, identity.UserAgent)
 	if err != nil {
 		return fmt.Errorf("wrap antigravity image request: %w", err)
 	}
@@ -169,7 +174,7 @@ func (h *MediaHandler) tryAntigravityImageConn(w http.ResponseWriter, r *http.Re
 
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-	httpReq.Header.Set("User-Agent", chat.AntigravityConnectionUserAgent(connData))
+	httpReq.Header.Set("User-Agent", identity.UserAgent)
 
 	resp, err := client.Do(httpReq)
 	if err != nil {

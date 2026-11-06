@@ -24,6 +24,12 @@ import (
 // a hardcoded foreign OS. The values below follow the same rule from this
 // process's runtime: a Linux build presents linux, a Windows build
 // windows, on the architecture it was compiled for.
+//
+// These functions are the RUNTIME DERIVATION: the default for surfaces
+// with no connection in scope, and the source a connection's pinned
+// snapshot is taken from. Since fragment 972 a surface that has a
+// connection resolves the identity per connection — pin first, this
+// derivation as the fallback — through antigravity_pin.go.
 
 // AntigravityUserAgent returns the User-Agent every Antigravity request
 // carries, in the real CLI's grammar. auth_method=consumer is the OAuth
@@ -66,11 +72,5 @@ func AntigravityPlatform() int {
 // there, and an omitted field is honest where an invented value would
 // itself be a fingerprint.
 func AntigravityLoadCodeAssistMetadata() map[string]any {
-	return map[string]any{
-		"ideType":    9, // ANTIGRAVITY
-		"ideVersion": AntigravityCLIVersion,
-		"platform":   AntigravityPlatform(),
-		"pluginType": 2, // GEMINI
-		"ideName":    "antigravity",
-	}
+	return AntigravityRuntimeIdentity().LoadCodeAssistMetadata()
 }

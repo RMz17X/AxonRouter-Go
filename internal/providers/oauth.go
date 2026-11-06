@@ -105,6 +105,27 @@ var KnownOAuthConfigs = map[string]OAuthClientConfig{
 	},
 }
 
+// AntigravityLegacyOAuthConfig is the OAuth client Antigravity accounts
+// were signed in with before the agy identity rebase (fragment 969): the
+// client the real `agy` CLI itself carries as the secondary config in its
+// RunLogin. It is fenced to exactly ONE role — the refresh rescue inside
+// the dual-config Antigravity refresher
+// (internal/proxy/oauth/antigravity.go) — and is never used for sign-in
+// or code exchange: the sign-in handler seeds from KnownOAuthConfigs
+// only.
+//
+// Refresh tokens are bound to the client that minted them, so an account
+// created before the primary slot flips to agy's sign-in client can only
+// refresh through the client on this slot. It intentionally holds the
+// same pair as the primary slot today: the day the primary slot flips,
+// this slot already holds the pre-swap client and the rescue goes live
+// with no code change.
+var AntigravityLegacyOAuthConfig = OAuthClientConfig{
+	ClientID:     "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
+	ClientSecret: "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",
+	TokenURL:     "https://oauth2.googleapis.com/token",
+}
+
 // TokenRefreshLead mirrors upstream TOKEN_EXPIRY_BUFFER_MS
 // (open-sse/services/tokenRefresh.js): the lead a provider with no explicit
 // window falls back to.

@@ -372,7 +372,7 @@ func TestTranslator_Gemini38_ToolSchema_PrefixItems(t *testing.T) {
 	}
 
 	// Wrap for antigravity and verify model
-	wrapped, err := translator.WrapForAntigravity(geminiJSON, "proj-1", "gemini-3.8-flash-high")
+	wrapped, err := translator.WrapForAntigravity(geminiJSON, "proj-1", "gemini-3.8-flash-high", "")
 	if err != nil {
 		t.Fatalf("WrapForAntigravity: %v", err)
 	}

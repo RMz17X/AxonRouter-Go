@@ -23,6 +23,23 @@ import (
 var loadCodeAssistURL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
 var onboardUserURL = "https://cloudcode-pa.googleapis.com/v1internal:onboardUser"
 
+// connDataPSD returns a connection's providerSpecificData map, nil-safe:
+// a nil connection (lookup failed, or the no-auth virtual connection)
+// has no PSD and resolves to the runtime identity everywhere.
+func connDataPSD(connData *shared.ConnectionData) map[string]any {
+	if connData == nil {
+		return nil
+	}
+	return connData.ProviderSpecificData
+}
+
+// antigravityConnectionIdentity resolves the identity a connection
+// presents: its pinned snapshot when one is stored (fragment 972), the
+// runtime derivation otherwise.
+func antigravityConnectionIdentity(connData *shared.ConnectionData) providers.AntigravityIdentity {
+	return providers.AntigravityIdentityForPSD(connDataPSD(connData))
+}
+
 // antigravityProjectUserAgent returns the User-Agent the Antigravity onboarding
 // RPCs must be sent as.
 //
@@ -33,13 +50,12 @@ var onboardUserURL = "https://cloudcode-pa.googleapis.com/v1internal:onboardUser
 // healthy login. Verified live on one token: the generic UA yields no project,
 // while the Antigravity identity returns the real project id.
 //
-// There is exactly one identity now: the standalone CLI (`agy`) shape from
-// providers.AntigravityUserAgent. The connection argument is kept so callers
-// do not change shape, but it no longer influences the value — a
-// clientProfile stored on an old connection is inert legacy data and is
-// never read, so every account presents the same client on every surface.
-func antigravityProjectUserAgent(_ *shared.ConnectionData) string {
-	return providers.AntigravityUserAgent()
+// The identity is the connection's own (fragment 972): the pinned agy
+// CLI snapshot stored on the connection, or the runtime derivation for
+// a connection that has no pin yet. A clientProfile stored on an old
+// connection stays inert legacy data and is never read.
+func antigravityProjectUserAgent(connData *shared.ConnectionData) string {
+	return antigravityConnectionIdentity(connData).UserAgent
 }
 
 // AntigravityConnectionUserAgent is antigravityProjectUserAgent for callers
@@ -141,8 +157,9 @@ func FetchAntigravityProjectID(ctx context.Context, client *http.Client, accessT
 }
 
 func fetchAntigravityProjectID(ctx context.Context, client *http.Client, accessToken string, connData *shared.ConnectionData) (pid string, authFailed, noProject bool) {
-	userAgent := antigravityProjectUserAgent(connData)
-	payload, err := json.Marshal(map[string]any{"metadata": providers.AntigravityLoadCodeAssistMetadata()})
+	identity := antigravityConnectionIdentity(connData)
+	userAgent := identity.UserAgent
+	payload, err := json.Marshal(map[string]any{"metadata": identity.LoadCodeAssistMetadata()})
 	if err != nil {
 		log.Error("antigravity", "loadCodeAssist marshal failed", "error", err)
 		return "", false, false
@@ -206,16 +223,16 @@ func fetchAntigravityProjectID(ctx context.Context, client *http.Client, accessT
 		}
 	}
 
-	pid, authFailed, onboardNoProject := onboardAntigravityUser(ctx, client, accessToken, tierID, userAgent)
+	pid, authFailed, onboardNoProject := onboardAntigravityUser(ctx, client, accessToken, tierID, userAgent, identity.LoadCodeAssistMetadata())
 	return pid, authFailed, noProject || onboardNoProject
 }
 
-func onboardAntigravityUser(ctx context.Context, client *http.Client, accessToken, tierID, userAgent string) (pid string, authFailed, noProject bool) {
+func onboardAntigravityUser(ctx context.Context, client *http.Client, accessToken, tierID, userAgent string, metadata map[string]any) (pid string, authFailed, noProject bool) {
 	maxAttempts := getOnboardMaxAttempts()
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		payload, err := json.Marshal(map[string]any{
 			"tierId":   tierID,
-			"metadata": providers.AntigravityLoadCodeAssistMetadata(),
+			"metadata": metadata,
 		})
 		if err != nil {
 			log.Error("antigravity", "onboardUser marshal failed", "error", err)

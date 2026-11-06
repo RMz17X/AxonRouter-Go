@@ -50,7 +50,7 @@ func TestAntigravityQuota_RefreshAndBlock(t *testing.T) {
 	connectionID := "test-ag-conn-1"
 
 	// 1. Initial refresh
-	quotas, err := RefreshAntigravityQuota(context.Background(), client, connectionID, "test-ag-token", "test-project")
+	quotas, err := RefreshAntigravityQuota(context.Background(), client, connectionID, "test-ag-token", "test-project", "")
 	if err != nil {
 		t.Fatalf("RefreshAntigravityQuota failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestAntigravityQuota_CoalescingAndThrottle(t *testing.T) {
 	done := make(chan bool)
 	for i := 0; i < 5; i++ {
 		go func() {
-			_, _ = RefreshAntigravityQuota(context.Background(), client, connID, "tok", "proj")
+			_, _ = RefreshAntigravityQuota(context.Background(), client, connID, "tok", "proj", "")
 			done <- true
 		}()
 	}
@@ -126,7 +126,7 @@ func TestAntigravityQuota_CoalescingAndThrottle(t *testing.T) {
 	}
 
 	// Immediate next refresh should hit 30s throttle and not call upstream
-	_, _ = RefreshAntigravityQuota(context.Background(), client, connID, "tok", "proj")
+	_, _ = RefreshAntigravityQuota(context.Background(), client, connID, "tok", "proj", "")
 	if callCount != 1 {
 		t.Errorf("expected callCount to stay 1 due to 30s throttle, got %d", callCount)
 	}
@@ -199,7 +199,7 @@ func TestAntigravityWeeklyQuota_ParseAndFetch(t *testing.T) {
 	defer func() { antigravityQuotaBaseURL = oldBase }()
 
 	ClearAntigravityQuotaCache()
-	res, err := FetchAntigravityWeeklyQuota(context.Background(), mockServer.Client(), "test-weekly-token", "proj-1")
+	res, err := FetchAntigravityWeeklyQuota(context.Background(), mockServer.Client(), "test-weekly-token", "proj-1", "")
 	if err != nil {
 		t.Fatalf("FetchAntigravityWeeklyQuota failed: %v", err)
 	}

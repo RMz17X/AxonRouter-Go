@@ -218,11 +218,15 @@ func (h *MediaHandler) tryAntigravitySearchConn(w http.ResponseWriter, r *http.R
 		return searchError(http.StatusInternalServerError, fmt.Sprintf("get antigravity config: %v", err))
 	}
 
+	// The connection's resolved identity (fragment 972), shared by the
+	// envelope below and the request header.
+	identity := h.ChatH.AntigravityIdentityFor(conn.ID, connData)
+
 	// Build Antigravity search request body matching Next.js reference
 	searchReq := map[string]any{
 		"project":     projectID,
 		"model":       model,
-		"userAgent":   providers.AntigravityUserAgent(),
+		"userAgent":   identity.UserAgent,
 		"requestType": "search",
 		"request": map[string]any{
 			"contents": []map[string]any{
@@ -258,7 +262,7 @@ func (h *MediaHandler) tryAntigravitySearchConn(w http.ResponseWriter, r *http.R
 
 	httpReq.Header.Set(constants.HeaderContentType, constants.ContentTypeJSON)
 	httpReq.Header.Set(constants.HeaderAuthorization, "Bearer "+apiKey)
-	httpReq.Header.Set("User-Agent", chat.AntigravityConnectionUserAgent(connData))
+	httpReq.Header.Set("User-Agent", identity.UserAgent)
 
 	client, clientErr := h.ChatH.GetClientForConnection(connData)
 	if clientErr != nil {

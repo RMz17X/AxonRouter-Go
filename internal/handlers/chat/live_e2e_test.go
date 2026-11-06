@@ -110,7 +110,7 @@ func TestLiveE2E_Antigravity_RealWeeklyQuota(t *testing.T) {
 	defer cancel()
 
 	client := &http.Client{Timeout: 15 * time.Second}
-	weekly, err := FetchAntigravityWeeklyQuota(ctx, client, token, projectID)
+	weekly, err := FetchAntigravityWeeklyQuota(ctx, client, token, projectID, "")
 	if err != nil {
 		t.Logf("FetchAntigravityWeeklyQuota real upstream returned error: %v (token may need refresh)", err)
 		return

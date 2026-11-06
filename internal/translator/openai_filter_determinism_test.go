@@ -219,7 +219,7 @@ func TestWrapForAntigravityIsDeterministic(t *testing.T) {
 			}]
 		}]
 	}`)
-	first, err := WrapForAntigravity(geminiBody, "proj-1", "gemini-2.5-pro")
+	first, err := WrapForAntigravity(geminiBody, "proj-1", "gemini-2.5-pro", "")
 	if err != nil {
 		t.Fatalf("WrapForAntigravity: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestWrapForAntigravityIsDeterministic(t *testing.T) {
 		t.Fatalf("unmarshal first: %v", err)
 	}
 	for i := 0; i < 50; i++ {
-		got, err := WrapForAntigravity(geminiBody, "proj-1", "gemini-2.5-pro")
+		got, err := WrapForAntigravity(geminiBody, "proj-1", "gemini-2.5-pro", "")
 		if err != nil {
 			t.Fatalf("WrapForAntigravity: %v", err)
 		}

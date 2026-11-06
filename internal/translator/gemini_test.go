@@ -509,7 +509,7 @@ func TestTranslateGeminiResponseToOpenAI_PropagatesThoughtSig(t *testing.T) {
 
 func TestWrapForAntigravityPreservesThoughtSignature(t *testing.T) {
 	geminiBody := []byte(`{"contents":[{"role":"model","parts":[{"thoughtSignature":"SIG123","functionCall":{"name":"get_weather","args":{}}}]}],"tools":[{"functionDeclarations":[{"name":"get_weather"}]}]}`)
-	wrapped, err := WrapForAntigravity(geminiBody, "proj-1", "gemini-3.7-flash")
+	wrapped, err := WrapForAntigravity(geminiBody, "proj-1", "gemini-3.7-flash", "")
 	if err != nil {
 		t.Fatalf("failed: %v", err)
 	}

@@ -30,6 +30,31 @@ func (r *Repo) SetConnectionProjectID(connID, projectID string) error {
 	return nil
 }
 
+// SetConnectionAntigravityIdentity persists a connection's pinned agy
+// identity snapshot (providers.AntigravityIdentitySnapshotJSON) under
+// data.providerSpecificData.antigravityIdentity — the lazy-backfill
+// write of fragment 972. First writer wins for the account's lifetime:
+// the WHERE guard turns the update into a no-op when a pin is already
+// stored, so two first touches racing (or a touch on a connection the
+// OAuth flow already pinned) can never move an established identity.
+// The first pair re-stores providerSpecificData as itself-or-an-empty
+// object because jsonb_set cannot create the intermediate object of a
+// nested path on a row that has no PSD yet.
+func (r *Repo) SetConnectionAntigravityIdentity(connID, identityJSON string) error {
+	_, err := r.Exec(
+		`UPDATE providerConnections SET data = `+jsonSetExpr("data",
+			jsonSetPairAt(jsonSetValue(`COALESCE(data->'providerSpecificData', '{}'::jsonb)`), "providerSpecificData"),
+			jsonSetPairAt(jsonDocParam(), "providerSpecificData", "antigravityIdentity"),
+		)+` WHERE id = ? AND (data #> '{providerSpecificData,antigravityIdentity}') IS NULL`,
+		identityJSON, connID,
+	)
+	if err != nil {
+		return fmt.Errorf("set connection antigravity identity %s: %w", connID, err)
+	}
+	r.invalidateProviderConnections()
+	return nil
+}
+
 // DisableConnectionWithReason marks a connection as inactive (isActive = 0) and
 // records the fatal error message in data.lastError so the dashboard reflects it
 // and routing stops picking this connection entirely.
