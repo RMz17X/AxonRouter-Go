@@ -153,6 +153,19 @@ func (h *DashboardHandler) bulkTargetConnections(provider string, ids []string) 
 	return h.Repo.GetProviderConnections(provider, false)
 }
 
+// storedConnectionDisabled reports whether the decoded data blob carries
+// the disabled state (status / testStatus). The blob and the isActive
+// flag are written by different paths, and either one is a verdict a
+// cooldown reset must not clear.
+func storedConnectionDisabled(data map[string]any) bool {
+	if data == nil {
+		return false
+	}
+	status, _ := data["status"].(string)
+	testStatus, _ := data["testStatus"].(string)
+	return strings.EqualFold(status, "disabled") || strings.EqualFold(testStatus, "disabled")
+}
+
 // bulkResetConnectionData applies the bulk reset field set. Unlike the
 // single reset, AxonRouter's bulk SQL DELETES the disabled*/validation keys
 // from the data blob instead of nulling them.
@@ -239,16 +252,22 @@ func (h *DashboardHandler) HandleBulkResetStatus(w http.ResponseWriter, r *http.
 		if conn == nil {
 			continue
 		}
-		if onlyCooldown && len(body.IDs) == 0 && conn.IsActive == 0 {
+		data := connDataMap(conn)
+		if onlyCooldown && (conn.IsActive == 0 || storedConnectionDisabled(data)) {
+			// A cooldown reset must never revive an inactive or disabled
+			// account, however it was targeted — provider sweep or
+			// explicit id list alike (fragment 973; the id-list form
+			// previously reactivated a ToS-disabled account and wiped
+			// its verdict). Reactivation stays the full reset's
+			// deliberate job.
 			continue
 		}
-		data := connDataMap(conn)
 		bulkResetConnectionData(data)
 		if err := h.persistConnectionData(conn, data); err != nil {
 			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to reset connection status"})
 			return
 		}
-		if !onlyCooldown || len(body.IDs) > 0 || conn.IsActive != 0 {
+		if !onlyCooldown || conn.IsActive != 0 {
 			if err := h.Repo.SetConnectionStatus(conn.ID, true); err != nil {
 				handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to reset connection status"})
 				return

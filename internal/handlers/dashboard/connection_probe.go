@@ -308,6 +308,19 @@ func (h *DashboardHandler) HandleTestConnection(w http.ResponseWriter, r *http.R
 	}
 	data := parseConnectionProbeData(raw)
 
+	// A disabled connection is never probed: the probe would dial Google
+	// (token refresh + loadCodeAssist) for an account Google already
+	// killed, and persisting its outcome could overwrite the stored
+	// verdict. Surface the stored state instead (fragment 973).
+	if msg, disabled := storedDisabledMessage(raw); disabled {
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
+			"valid":     false,
+			"error":     msg,
+			"refreshed": false,
+		})
+		return
+	}
+
 	out := h.testSingleConnection(r.Context(), conn, data, raw)
 	h.persistProbeResult(conn, raw, out)
 
@@ -337,9 +350,34 @@ func parseConnectionProbeData(raw map[string]any) connectionProbeData {
 	return data
 }
 
+// storedDisabledMessage returns the connection's stored disabled verdict
+// (data.status / data.testStatus — written by DisableConnectionWithReason
+// and the probe persister) with its operator-facing message, or false
+// when the stored state is not disabled. The isActive flag alone does not
+// count: an operator-toggled-off or OAuth-parked account is inactive
+// without being disabled, and probing it stays a legitimate manual check.
+func storedDisabledMessage(raw map[string]any) (string, bool) {
+	if raw == nil {
+		return "", false
+	}
+	status, _ := raw["status"].(string)
+	testStatus, _ := raw["testStatus"].(string)
+	if !strings.EqualFold(status, "disabled") && !strings.EqualFold(testStatus, "disabled") {
+		return "", false
+	}
+	msg := lastErrorText(raw)
+	if msg == "" {
+		msg = "Account is disabled."
+	}
+	return enrichAppealMessage(msg), true
+}
+
 // testSingleConnection mirrors testSingleConnection(id): resolve the proxy,
 // pre-check it, then run the api-key or OAuth probe.
 func (h *DashboardHandler) testSingleConnection(ctx context.Context, conn *models.ProviderConnection, data connectionProbeData, raw map[string]any) probeOutcome {
+	if msg, disabled := storedDisabledMessage(raw); disabled {
+		return probeOutcome{message: msg}
+	}
 	if conn != nil && providers.IsLocalByDesign(conn.Provider) {
 		ctx = proxy.WithAllowLoopback(ctx)
 	}
@@ -1004,6 +1042,13 @@ func connectionTokenExpired(provider string, data connectionProbeData) bool {
 // persistProbeResult writes the probe outcome back to the connection row:
 // testStatus, lastError/lastErrorAt and any refreshed credentials.
 func (h *DashboardHandler) persistProbeResult(conn *models.ProviderConnection, raw map[string]any, out probeOutcome) {
+	// Never overwrite a stored disabled verdict with a probe outcome:
+	// the verdict is terminal until an operator deliberately resets it
+	// (fragment 973). The check reads the incoming blob, so a probe that
+	// NEWLY detects a disable below is unaffected.
+	if _, disabled := storedDisabledMessage(raw); disabled {
+		return
+	}
 	if out.valid {
 		raw["testStatus"] = "active"
 		if out.message != "" {

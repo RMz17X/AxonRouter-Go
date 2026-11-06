@@ -307,6 +307,12 @@ func (h *MediaHandler) tryAntigravitySearchConn(w http.ResponseWriter, r *http.R
 			backoff = h.Repo.GetConnectionBackoffLevel(conn.ID)
 		}
 		classification := providers.ClassifyError(resp.StatusCode, errText, backoff)
+		// A generation-path ToS verdict is a disable, not a cooldown:
+		// park the account permanently (fragment 973). The failover below
+		// still moves the caller's request to the next account.
+		if h.Repo != nil && !handlerutil.IsProbeContext(r.Context()) && providers.LooksLikeToSDisabled(resp.StatusCode, errText) {
+			_ = h.Repo.DisableConnectionWithReason(conn.ID, http.StatusForbidden, "Account disabled: "+providers.GoogleErrorText(respBody))
+		}
 		if classification.ShouldFallback && h.Repo != nil && !handlerutil.IsProbeContext(r.Context()) {
 			lockModel := translator.NormalizeAntigravityModel(model)
 			cooldownSec := max(classification.CooldownMs/1000, 1)

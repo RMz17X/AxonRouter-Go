@@ -80,6 +80,15 @@ type ProviderStrategy struct {
 	StrictModelAssignment bool   `json:"strictModelAssignment,omitempty"`
 	ProxyRotateStrategy   string `json:"proxyRotateStrategy,omitempty"`
 	ConnRotateStrategy    string `json:"connRotateStrategy,omitempty"`
+	// CooldownJitterSec governs fragment 974's jittered re-eligibility for
+	// this provider's account-scoped cooldowns. Unset (nil) selects the
+	// derived default: the account becomes selectable at the announced
+	// expiry plus one roll of 10% of the cooldown it served, capped at
+	// 5 minutes. An explicit 0 turns jitter off — selectable at the
+	// announced expiry, the pre-974 behavior. A positive value is a fixed
+	// window in seconds to roll within instead of the derived one. Only
+	// antigravity consumes the field today (see accounts_pacing.go).
+	CooldownJitterSec *int `json:"cooldownJitterSec,omitempty"`
 }
 
 // CapacityAdapterEntry defines settings for an input-modality capability adapter pool.
@@ -335,6 +344,10 @@ func cloneProviderStrategies(m map[string]ProviderStrategy) map[string]ProviderS
 	}
 	out := make(map[string]ProviderStrategy, len(m))
 	for k, v := range m {
+		if v.CooldownJitterSec != nil {
+			sec := *v.CooldownJitterSec
+			v.CooldownJitterSec = &sec
+		}
 		out[k] = v
 	}
 	return out

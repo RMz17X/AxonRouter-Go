@@ -256,6 +256,11 @@ func (h *MediaHandler) tryAntigravitySTTConn(w http.ResponseWriter, r *http.Requ
 		if h.Repo != nil {
 			backoff := h.Repo.GetConnectionBackoffLevel(conn.ID)
 			if !handlerutil.IsProbeContext(r.Context()) {
+				// A generation-path ToS verdict is a disable, not a
+				// cooldown: park the account permanently (fragment 973).
+				if providers.LooksLikeToSDisabled(resp.StatusCode, string(respBody)) {
+					_ = h.Repo.DisableConnectionWithReason(conn.ID, http.StatusForbidden, "Account disabled: "+providers.GoogleErrorText(respBody))
+				}
 				if classification := providers.ClassifyError(resp.StatusCode, errText, backoff); classification.ShouldFallback {
 					cooldownSec := max(classification.CooldownMs/1000, 1)
 					_ = h.Repo.LockConnectionModel(conn.ID, model, cooldownSec, classification.NewBackoffLevel)

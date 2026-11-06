@@ -208,9 +208,17 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 					if connectionID != "" && h.Repo != nil {
 						_ = h.Repo.SetConnectionVerificationRequired(connectionID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
 					}
-				} else if strings.Contains(lower, "terms of service") || strings.Contains(lower, "tos_violation") || strings.Contains(lower, "disabled in this account") {
+				} else if providers.LooksLikeToSDisabled(uErr.StatusCode, errText) || strings.Contains(lower, "terms of service") || strings.Contains(lower, "tos_violation") || strings.Contains(lower, "disabled in this account") {
 					if connectionID != "" && h.Repo != nil {
-						_ = h.Repo.DisableConnectionWithReason(connectionID, http.StatusForbidden, "Account disabled for ToS violation")
+						// Store the verbatim upstream verdict (message +
+						// status + reason tokens), not a paraphrase: the
+						// dashboard and the appeal flow quote it as-is
+						// (fragment 973).
+						reason := extractErrorText(uErr.Body)
+						if reason == "" {
+							reason = errText
+						}
+						_ = h.Repo.DisableConnectionWithReason(connectionID, http.StatusForbidden, "Account disabled: "+reason)
 					}
 				}
 			}

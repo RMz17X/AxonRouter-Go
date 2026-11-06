@@ -227,7 +227,8 @@ func (r *Repo) RecordConnectionScopedError(connID, model, source string, status 
 // wrote it, so that field was always empty and the selector had no
 // account-scoped signal to skip on.
 func (r *Repo) LockConnectionRateLimit(connID string, until time.Time, backoffLevel, status int, errText string) error {
-	now := time.Now().UTC().Format(time.RFC3339)
+	nowT := time.Now().UTC()
+	now := nowT.Format(time.RFC3339)
 	lastError := map[string]any{
 		"status":    status,
 		"message":   errText,
@@ -237,17 +238,31 @@ func (r *Repo) LockConnectionRateLimit(connID string, until time.Time, backoffLe
 	if err != nil {
 		return fmt.Errorf("marshal last error for %s: %w", connID, err)
 	}
+	// Fragment 974: roll this episode's re-eligibility jitter in the same
+	// statement that stores the cooldown (see accounts_pacing.go), so the
+	// announced rateLimitedUntil stays truthful while selection honors
+	// the jittered companion. A write with no jitter stores a null
+	// companion, retiring any roll an older episode left behind.
+	eligiblePair := jsonSetPairAt(jsonNullSQLValue(), keyRateLimitEligibleAt)
+	pairs := []jsonSetPair{
+		jsonSetPairAt(jsonStringParam(), "rateLimitedUntil"),
+		jsonSetPairAt(jsonIntParam(), "backoffLevel"),
+		jsonSetPairAt(jsonDocParam(), "lastError"),
+		jsonSetPairAt(jsonStringLiteral("error"), "status"),
+	}
+	args := []any{until.UTC().Format(time.RFC3339), backoffLevel, string(payload)}
+	if eligibleAt, ok := r.reentryEligibleAt(connID, nowT, until); ok {
+		eligiblePair = jsonSetPairAt(jsonStringParam(), keyRateLimitEligibleAt)
+		args = append(args, eligibleAt.UTC().Format(time.RFC3339))
+	}
+	pairs = append(pairs, eligiblePair)
+	args = append(args, now, connID)
 	_, err = r.Exec(
 		`UPDATE providerConnections
-		 SET data = `+jsonSetExpr("data",
-			jsonSetPairAt(jsonStringParam(), "rateLimitedUntil"),
-			jsonSetPairAt(jsonIntParam(), "backoffLevel"),
-			jsonSetPairAt(jsonDocParam(), "lastError"),
-			jsonSetPairAt(jsonStringLiteral("error"), "status"),
-		)+`,
+		 SET data = `+jsonSetExpr("data", pairs...)+`,
 		     updatedAt = ?
 		 WHERE id = ?`,
-		until.UTC().Format(time.RFC3339), backoffLevel, string(payload), now, connID,
+		args...,
 	)
 	if err != nil {
 		return fmt.Errorf("lock connection rate limit %s: %w", connID, err)
@@ -268,6 +283,7 @@ func (r *Repo) ClearConnectionRateLimit(connID string) error {
 		`UPDATE providerConnections
 		 SET data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonNullSQLValue(), "rateLimitedUntil"),
+			jsonSetPairAt(jsonNullSQLValue(), keyRateLimitEligibleAt),
 			jsonSetPairAt(jsonNullSQLValue(), "lastError"),
 			jsonSetPairAt(jsonStringLiteral("active"), "status"),
 			jsonSetPairAt(jsonIntLiteral(0), "backoffLevel"),
@@ -342,6 +358,7 @@ func (r *Repo) ClearConnectionSuccessState(connID, lockKey, model string) error 
 		` ELSE COALESCE(data #> '{status}', 'null'::jsonb) END)`)
 	pairs = append(pairs,
 		jsonSetPairAt(jsonNullSQLValue(), "rateLimitedUntil"),
+		jsonSetPairAt(jsonNullSQLValue(), keyRateLimitEligibleAt),
 		jsonSetPairAt(jsonNullSQLValue(), "lastError"),
 		jsonSetPairAt(statusValue, "status"),
 		jsonSetPairAt(jsonIntLiteral(0), "backoffLevel"),
@@ -491,7 +508,9 @@ func (r *Repo) ResetConnectionHealthState(connID string) error {
 
 	dataMap["errorCode"] = nil
 	dataMap["rateLimitedUntil"] = nil
+	dataMap[keyRateLimitEligibleAt] = nil
 	dataMap["oauthLockedUntil"] = nil
+	dataMap[keyOAuthLockEligibleAt] = nil
 	dataMap["oauthFailureCount"] = 0
 	dataMap["backoffLevel"] = 0
 

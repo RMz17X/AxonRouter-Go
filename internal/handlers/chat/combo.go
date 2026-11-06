@@ -1628,7 +1628,7 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 		*excludeIDs = append(*excludeIDs, connID)
 		return
 	}
-	if strings.Contains(errLower, "terms of service") || strings.Contains(errLower, "tos_violation") || strings.Contains(errLower, "account has been deleted") || strings.Contains(errLower, "account has been banned") {
+	if providers.LooksLikeToSDisabled(ue.StatusCode, string(ue.Body)) || strings.Contains(errLower, "terms of service") || strings.Contains(errLower, "tos_violation") || strings.Contains(errLower, "account has been deleted") || strings.Contains(errLower, "account has been banned") {
 		if h.Repo != nil {
 			_ = h.Repo.DisableConnectionWithReason(connID, http.StatusForbidden, "Account disabled: "+errText)
 		}

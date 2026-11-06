@@ -83,6 +83,7 @@ func (r *Repo) SetConnectionStatus(id string, isActive bool) error {
 				jsonSetPairAt(jsonNullSQLValue(), "disabledReason"),
 				jsonSetPairAt(jsonNullSQLValue(), "disabledAt"),
 				jsonSetPairAt(jsonNullSQLValue(), "oauthLockedUntil"),
+				jsonSetPairAt(jsonNullSQLValue(), keyOAuthLockEligibleAt),
 				jsonSetPairAt(jsonIntLiteral(0), "oauthFailureCount"),
 			)+`,
 			     updatedAt = ?

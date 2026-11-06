@@ -82,16 +82,41 @@ func ConnectionOAuthLockUntil(rawData string) (time.Time, bool) {
 // ConnectionBlockedUntil returns the earliest instant the account becomes
 // selectable again across the account-scoped cooldowns, so the selector can
 // ask one question instead of one per park.
+//
+// The instant is the JITTERED one (fragment 974, mechanism C): each park's
+// re-eligibility companion — rolled once when the lock was written, see
+// accounts_pacing.go — stands in for the announced expiry whenever it is
+// later. The announced fields themselves are never rewritten, so the
+// dashboard keeps rendering the truthful upstream reset, and a park
+// written before jitter existed (or with jitter off) carries no companion
+// and reads exactly as it used to.
 func ConnectionBlockedUntil(rawData string) (time.Time, bool) {
 	raw, ok := parseConnData(rawData)
 	if !ok {
 		return time.Time{}, false
 	}
-	earliest, found := readTimestampField(raw, "rateLimitedUntil")
-	if until, ok := readTimestampField(raw, "oauthLockedUntil"); ok && (!found || until.Before(earliest)) {
+	earliest, found := parkEffectiveUntil(raw, "rateLimitedUntil", keyRateLimitEligibleAt)
+	if until, ok := parkEffectiveUntil(raw, "oauthLockedUntil", keyOAuthLockEligibleAt); ok && (!found || until.Before(earliest)) {
 		return until, true
 	}
 	return earliest, found
+}
+
+// parkEffectiveUntil reads one account-scoped park's effective end: the
+// announced expiry, or its jittered re-eligibility companion when the
+// companion is later. A companion that is not later than its own park —
+// stale from an older, longer episode, or left behind by a reset that
+// cleared the park — is inert, which is what makes the pairing safe
+// without a cleanup sweep.
+func parkEffectiveUntil(raw map[string]any, untilKey, eligibleKey string) (time.Time, bool) {
+	until, ok := readTimestampField(raw, untilKey)
+	if !ok {
+		return time.Time{}, false
+	}
+	if eligible, ok := readTimestampField(raw, eligibleKey); ok && eligible.After(until) {
+		return eligible, true
+	}
+	return until, true
 }
 
 // connectionOAuthState reads the park and the consecutive-rejection count in
@@ -153,16 +178,30 @@ func (r *Repo) RecordConnectionOAuthFailure(connID string, status int, errText s
 	if err != nil {
 		return time.Time{}, 0, fmt.Errorf("marshal last error for %s: %w", connID, err)
 	}
+	// Fragment 974: roll this park's re-eligibility jitter in the same
+	// statement (see accounts_pacing.go). The strike guard above keeps
+	// keying on the raw park — jitter governs generation selection, not
+	// the strike counter — and a write with no jitter stores a null
+	// companion, retiring any roll an older episode left behind.
+	eligiblePair := jsonSetPairAt(jsonNullSQLValue(), keyOAuthLockEligibleAt)
+	pairs := []jsonSetPair{
+		jsonSetPairAt(jsonStringParam(), "oauthLockedUntil"),
+		jsonSetPairAt(jsonIntParam(), "oauthFailureCount"),
+		jsonSetPairAt(jsonDocParam(), "lastError"),
+	}
+	args := []any{until.UTC().Format(time.RFC3339), failures, string(lastError)}
+	if eligibleAt, ok := r.reentryEligibleAt(connID, now, until); ok {
+		eligiblePair = jsonSetPairAt(jsonStringParam(), keyOAuthLockEligibleAt)
+		args = append(args, eligibleAt.UTC().Format(time.RFC3339))
+	}
+	pairs = append(pairs, eligiblePair)
+	args = append(args, stamp, connID)
 	_, err = r.Exec(
 		`UPDATE providerConnections
-		 SET data = `+jsonSetExpr("data",
-			jsonSetPairAt(jsonStringParam(), "oauthLockedUntil"),
-			jsonSetPairAt(jsonIntParam(), "oauthFailureCount"),
-			jsonSetPairAt(jsonDocParam(), "lastError"),
-		)+`,
+		 SET data = `+jsonSetExpr("data", pairs...)+`,
 		     updatedAt = ?
 		 WHERE id = ?`,
-		until.UTC().Format(time.RFC3339), failures, string(lastError), stamp, connID,
+		args...,
 	)
 	if err != nil {
 		return time.Time{}, 0, fmt.Errorf("lock connection oauth %s: %w", connID, err)
@@ -185,6 +224,7 @@ func (r *Repo) ClearConnectionOAuthLock(connID string) error {
 		`UPDATE providerConnections
 		 SET data = `+jsonSetExpr("data",
 			jsonSetPairAt(jsonNullSQLValue(), "oauthLockedUntil"),
+			jsonSetPairAt(jsonNullSQLValue(), keyOAuthLockEligibleAt),
 			jsonSetPairAt(jsonIntLiteral(0), "oauthFailureCount"),
 		)+`,
 		     updatedAt = ?
