@@ -1,5 +1,239 @@
 # Changelog
 
+## [v1.9.19] - 2026-11-06
+
+# 972 — Antigravity: identity pinned per account (hybrid) + agy scope parity
+
+Ricki's decision (2026-11-06): the router keeps the fragment-969 agy CLI
+identity SHAPE, but the identity is PINNED PER ACCOUNT at OAuth time and
+never changes for the life of the connection — the JS model's
+one-account-one-fixed-identity principle, applied to the CLI identity
+instead of the IDE profile. 969's pure runtime derivation (every account
+presenting the serving host's live GOOS/GOARCH) is superseded: permanence
+per account is the load-bearing property. This fragment also applies the
+one CERTAIN delta from fragment 971 (the `openid` scope).
+
+## The pin
+
+- **Storage**: ONE JSON value in the connection's
+  `providerSpecificData` under the new key **`antigravityIdentity`**.
+  The legacy `clientProfile` value is NOT reused (its ide/cli enum is
+  retired); it stays inert as before.
+- **Snapshot shape** (`providers.AntigravityIdentity`):
+  `{"userAgent": string, "platform": int, "ideVersion": string}` —
+  everything that varies by runtime: the full UA string, the
+  `loadCodeAssist` platform enum, and the CLI version the UA was built
+  from. `LoadCodeAssistMetadata()` derives the numeric metadata
+  (`ideType` 9, `pluginType` 2) from the pinned platform.
+- **Parsing**: a pin counts only when it parses with a non-empty
+  `userAgent` and a non-zero `platform`; anything else reads as
+  unpinned.
+
+## Write rules
+
+- **OAuth creation** (`handlers/oauth/antigravity.go`, both the INSERT
+  and the re-exchange UPDATE branch): a fresh snapshot of the current
+  runtime derivation is stored with the new connection data. On
+  re-exchange, an existing VALID pin in the stored data is carried into
+  the rewritten data verbatim — re-login never re-pins. Exactly once
+  per account lifetime; no other code path mutates an existing pin, and
+  there is no UI for it.
+- **Lazy backfill**: a connection without a pin is pinned on the first
+  identity resolution that has store access:
+  - chat: when the handler resolves the connection's data
+    (`antigravityConnData`, antigravity connections only);
+  - dashboard: `resolveAntigravityIdentity` (usage, models fetch,
+    probe).
+  The write is `db.Repo.SetConnectionAntigravityIdentity`: a single
+  UPDATE whose WHERE clause requires the pin to still be absent
+  (first writer wins; verified live against the staging PG, including
+  the no-`providerSpecificData` case, where a COALESCE pair creates the
+  object). The in-memory copy is updated with the same snapshot, so the
+  resolving call itself already serves the pinned identity. A failed
+  write is logged and ignored — the next persisting touch retries, and
+  every surface derives from the same runtime in the meantime, so there
+  is no observable divergence.
+
+## Read rules
+
+- ONE resolver family in the providers package:
+  `AntigravityIdentityPinned(psd)` (pin or zero),
+  `AntigravityIdentityForPSD(psd)` (pin or runtime),
+  `AntigravityRuntimeIdentity()`. Surfaces resolve PER CONNECTION:
+  chat forwarding + `ForwardGemini` fallback (the connection's identity
+  is resolved once per request and threaded into the translator
+  wrappers, so body `userAgent` == header UA), project discovery
+  (loadCodeAssist/onboard metadata + UA), quota lanes (refresh/fetch
+  carry the UA), media image/search/STT (identity resolved via the
+  chat handler's exported accessor), dashboard usage + subscription
+  info (metadata from the pin), dashboard models fetch, and the
+  connection probe (identity resolved once, reused across its 401
+  refresh retry).
+- Surfaces with NO connection in scope keep the runtime derivation by
+  design: the translator wrappers' default when handed an empty UA,
+  and the providers-level helpers themselves
+  (`AntigravityLoadCodeAssistMetadata()` now delegates to the runtime
+  identity).
+
+## §7 application (fragment 971 verdicts)
+
+- **Scopes — APPLIED (CERTAIN, runtime capture).** The OAuth handler's
+  scope list is now agy's captured order: cloud-platform,
+  userinfo.email, userinfo.profile, cclog, experimentsandconfigs,
+  aicode, `openid`. The only delta vs before is the added `openid` and
+  the ordering.
+- **Hosts — NO CHANGE.** The endpoint verdict is LIKELY-grade (daily),
+  and JS parity keeps discovery/probe on prod; nothing moves on a
+  LIKELY.
+- **OAuth client — NO CHANGE.** The 971 runtime capture proved agy's
+  interactive sign-in uses the router's current 1071 primary client.
+  The previously planned flip to the 884354919052 client is
+  RECLASSIFIED from a deferred parity step to an open question: its
+  serving flow is unknown, and no flip happens unless new evidence
+  names that flow. The fragment-970 dual-config rescue slot stays as
+  the landing place if a second client is ever proven.
+
+## Residual unknowns (carried from 971, unchanged)
+
+- Whether the `RunLogin` configs carry the identical scope list is
+  UNKNOWN (the capture covers the interactive sign-in flow only).
+- The endpoint rule stays LIKELY, not CERTAIN (gated behind a completed
+  Google sign-in capture).
+- `pluginVersion`, `updateChannel`, and `duetProject` remain omitted
+  from the loadCodeAssist metadata — unproven, never invented.
+- agy's token fallback filename stays uncorroborated; the router stores
+  tokens in the DB, so no surface depends on it.
+
+## Verification
+
+- `go build ./...` clean; `go vet` clean on providers, db, translator,
+  proxy, and handlers (chat, oauth, dashboard, media). Mechanical
+  call-site updates in existing tests for the two widened signatures
+  (translator wrappers, quota functions); no test suites run.
+- Boot smoke vs staging PG (`router9_staging`): `GET /api/version`
+  200.
+- The backfill UPDATE's SQL chain exercised directly against the
+  staging PG in a rolled-back transaction: writes into a row with no
+  pre-existing `providerSpecificData`, reads back verbatim, and a
+  second write is a no-op (first writer wins).
+
+# 971 — Antigravity: agy teardown §7 completion (analysis record, no code changes)
+
+Completes the remaining open items of the official `agy` v1.5.1 teardown
+(`~/workspace/agy-analysis/AGY-IDENTITY-SPEC.md` §7, resolved in place
+2026-11-06) and records what each verdict means for this router.
+**This fragment intentionally ships no code changes**: the application
+target (full-agy parity vs the pinned-per-account hybrid) is awaiting
+confirmation, so the deltas below are recorded, not applied. The
+fragment-970 dual-config refresher work is untouched.
+
+## Verdicts
+
+- **Endpoint rule — LIKELY `daily-cloudcode-pa.googleapis.com`.**
+  `main.main` lazy-defaults a package-main endpoint string global to the
+  daily literal at three sites (the only default-value use of either host
+  literal in the binary); all prod-literal references are
+  compare/conversion sites on the business/AICode surface. Not CERTAIN:
+  the global cannot be proven to be the provider's endpoint field, and
+  runtime proof is gated behind a completed Google sign-in.
+- **Sign-in scope list — CERTAIN (runtime capture).** The preserved
+  v1.5.1 binary's own printed authorization URL (acpauth consumerOAuth
+  flow) uses client `1071006060591-…`, redirect
+  `https://antigravity.google/oauth-callback`, PKCE S256,
+  `access_type=offline`, `prompt=consent`, and scopes in order:
+  cloud-platform, userinfo.email, userinfo.profile, cclog,
+  experimentsandconfigs, aicode, `openid`. This corrects the teardown
+  spec §4.1 grading of the 884354919052 client as "the CLI sign-in
+  client": the interactive standalone sign-in does not use it. Whether
+  the `RunLogin` configs carry the identical scope list is UNKNOWN.
+- **Token file format — informational only.** agy persists via
+  `cliFileTokenStorage` (CLI) / `fileTokenStorage` + composite (LS),
+  keyring primary, with oauth2.Token JSON field names. The previously
+  assumed fallback filename (`oauth_tokens.json`) is NOT corroborated
+  by any literal in the binary (only `mcp_oauth_tokens.json` exists).
+  No router surface is affected (tokens are stored in the DB).
+- **Updater TTL — informational only.** 900 s (15 min), read from the
+  freshness helper's immediate `0xd18c2e2800` ns compared against
+  `time.Since(mtime)` of `last_check.timestamp`. No self-updater parity
+  is needed in the router.
+
+## Recorded deltas (NOT applied — pending application-target confirmation)
+
+- **Scopes:** `internal/handlers/oauth/antigravity.go` currently requests
+  cloud-platform, aicode, userinfo.email, userinfo.profile, cclog,
+  experimentsandconfigs. Exact agy parity would add **`openid`** (and
+  match agy's ordering, with aicode moved after
+  experimentsandconfigs). One-scope delta; the set is otherwise equal.
+- **Endpoints:** chat / usage / media already use the daily host
+  (consistent with the LIKELY verdict — no change). Discovery / probe
+  (loadCodeAssist, onboardUser, connection test) currently use the prod
+  host; under a full-agy application they would move to daily. Note the
+  verdict grade is LIKELY, not CERTAIN.
+- **OAuth client:** unchanged by this fragment. The runtime capture
+  strengthens the current arrangement: the router's primary client
+  (1071006060591) is the one agy's interactive sign-in actually uses.
+
+## Antigravity OAuth: dual-config refresher — the client swap is now a config flip
+
+Fragment 969 rebased every Antigravity surface onto the real `agy` CLI
+identity and left exactly one residual: the OAuth client. `agy` signs in
+with its own client (the 884354919052 pair), while this router's
+`KnownOAuthConfigs["antigravity"]` still holds the pre-rebase
+1071006060591 pair — the pair `agy` itself carries as the secondary
+config in its RunLogin. This change builds the full dual-config
+architecture that mirrors that RunLogin, so the swap itself is no
+longer a code change: it is a one-step flip of the primary slot's
+values, whenever the 8843 pair lands.
+
+- `internal/providers/oauth.go` gains `AntigravityLegacyOAuthConfig`,
+  a named home for the pre-swap client. It is fenced to one role —
+  refresh rescue — and is never used for sign-in or code exchange: the
+  sign-in handler continues to seed from `KnownOAuthConfigs` only.
+  Today it intentionally holds the same pair as the primary slot: the
+  day the primary flips, this slot already holds the client every
+  existing account's refresh token was minted under.
+- New `internal/proxy/oauth/antigravity.go` registers a custom
+  Antigravity refresher (so `RegisterAll` no longer substitutes the
+  plain standard one). Selection rules:
+  - Refresh is attempted with the PRIMARY config first, exactly as
+    before.
+  - Exactly ONE rescue attempt under the legacy config runs when —
+    and only when — the primary attempt is rejected as a client
+    mismatch: HTTP 401, or HTTP 400 whose error body names
+    `invalid_client` or `invalid_grant` (Google's answer when a
+    refresh token is redeemed under a different client than the one
+    that minted it). The classifier is deliberately narrower than
+    `providers.IsRefreshGrantDead`: `invalid_request` and friends are
+    terminal for the grant itself, not evidence about client
+    ownership, and never trigger a rescue.
+  - If the rescue also fails, the PRIMARY attempt's error is
+    returned, so grant-dead parking and every other caller behavior
+    see exactly the error they would have seen with no rescue
+    configured.
+  - Non-mismatch failures (transport, 5xx, quota) never trigger the
+    rescue: they say nothing about which client owns the grant.
+  - Skip-when-same-ID: while both slots name the same client (the
+    state until the flip), the rescue is skipped rather than resending
+    the identical grant under the identical client — so today's wire
+    behavior is unchanged.
+- Coverage is the `oauth.Refresh` registry, which every Antigravity
+  refresh path already funnels through: the background refresher
+  (`internal/proxy/oauth/background.go`), the dashboard usage
+  credentials refresh (`internal/handlers/dashboard/usage_credentials.go`),
+  the connection probe, and the chat force-refresh's first attempt.
+  The chat handler's generic fallback after a registry failure (a
+  primary-config-only `providers.RefreshToken`, shared by all OAuth
+  providers) is unchanged and never touches the legacy config.
+- The remaining flip, when the 8843 secret is available: replace the
+  primary slot's values with the 884354919052 pair — via the
+  `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`
+  env overrides or the literals in `KnownOAuthConfigs`. Nothing else
+  moves: sign-in and code exchange pick the new primary up from the
+  same seed, and the rescue slot is already correct for pre-flip
+  accounts. If a refresh ever fails under BOTH clients (a revoked
+  grant, not a mismatch), the account is parked as grant-dead and
+  needs a fresh sign-in — the same consequence as before this change.
+
 ## [v1.9.18] - 2026-11-06
 
 ## Antigravity identity: rebased from the IDE profile to the real `agy` CLI
