@@ -168,6 +168,7 @@ func ProvideServer(p ServerParams) *http.Server {
 			// credential has to be pasted again every few minutes.
 			executor.StartGeminiWebRotation(shutdown.Context(), p.Repo)
 			startAutoPingScheduler(shutdown.Context(), p.Repo, p.ChatHandler)
+			startIdleProbe(shutdown.Context(), p.Repo, p.ChatHandler)
 			startModelHealthScheduler(shutdown.Context(), p.Repo, p.ChatHandler)
 			startUptimeHeartbeat(shutdown.Context(), p.Repo)
 			if p.Repo != nil {
@@ -253,6 +254,24 @@ func startAutoPingScheduler(ctx context.Context, repo *db.Repo, chatH *chat.Chat
 
 	go sched.Run(ctx)
 	log.Println("[autoping] scheduler started")
+}
+
+// startIdleProbe starts fragment 979's idle-account generation prober.
+//
+// Fragment 973's ToS-disable detection classifies generation responses,
+// so an Antigravity account disabled while idle stays invisible until
+// its next real request. The prober sweeps accounts that have been
+// quiet past the configured threshold and sends one tiny generation
+// request through the chat lane, so the verdict lands on a background
+// tick. Its settings live in providerStrategies (one home, resolved per
+// sweep inside the prober), and it is a no-op without a repo or a chat
+// handler.
+func startIdleProbe(ctx context.Context, repo *db.Repo, chatH *chat.ChatHandler) {
+	if repo == nil || chatH == nil {
+		return
+	}
+	go schedule.NewIdleProber(repo, chatH).Run(ctx)
+	log.Println("[idleprobe] prober started")
 }
 
 // startUptimeHeartbeat starts the Uptime Kuma push loop.

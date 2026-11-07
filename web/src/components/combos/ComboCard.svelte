@@ -40,6 +40,7 @@
     onSetStrategy: (combo: Combo, strategy: string) => void
     onSetResponseTimeout: (combo: Combo, timeoutMs: number) => void
     onToggleStoredOrder: (combo: Combo, respect: boolean) => void
+    onToggleCostAware: (combo: Combo, costAware: boolean) => void
     onOpenJudgePicker: (combo: Combo) => void
     onClearJudge: (comboName: string) => void
     onOpenRouterPicker: (combo: Combo) => void
@@ -66,6 +67,7 @@
     onSetStrategy,
     onSetResponseTimeout,
     onToggleStoredOrder,
+    onToggleCostAware,
     onOpenJudgePicker,
     onClearJudge,
     onOpenRouterPicker,
@@ -285,6 +287,25 @@
               class="size-3 shrink-0 cursor-pointer accent-brand-500"
             />
             <span>Respect stored order</span>
+          </label>
+          <!-- Cost-aware ordering: the base order the rotation walks is
+               cheapest-first (free, then low-credit, then pricey) instead
+               of the stored list order. Same visibility rule as stored
+               order above — the smart strategy orders members itself.
+               The checkbox reads !== false because an absent flag
+               inherits the global setting, whose default is on (the JS
+               combo modal's exact semantics). -->
+          <label
+            class="mt-1.5 flex cursor-pointer items-center gap-1.5 text-[10px] text-text-muted hover:text-text-main select-none"
+            title="Cheapest first — tries free (x0.00) then low-credit members before pricey ones"
+          >
+            <input
+              type="checkbox"
+              checked={strategyInfo.costAware !== false}
+              onchange={(e) => onToggleCostAware(combo, e.currentTarget.checked)}
+              class="size-3 shrink-0 cursor-pointer accent-brand-500"
+            />
+            <span>Cheapest first</span>
           </label>
         {/if}
         <!-- Model response timeout: kept minimal here; the edit modal is the

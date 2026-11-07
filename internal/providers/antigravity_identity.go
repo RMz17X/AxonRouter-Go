@@ -7,8 +7,9 @@ import (
 
 // This file is the one definition of the Antigravity client identity
 // AxonRouter-Go presents: the standalone Antigravity CLI (`agy`), mirrored
-// from the official v1.5.1 build (teardown evidence graded in
-// docs/ANTIGRAVITY_SUSPEND_ANALYSIS.md §13). The IDE-derived profile is
+// from the official v1.5.2 build (v1.5.1 teardown evidence graded in
+// docs/ANTIGRAVITY_SUSPEND_ANALYSIS.md §13; the 1.5.2 lift is fragment
+// 978). The IDE-derived profile is
 // gone — every Antigravity surface (chat, media, dashboard, discovery,
 // OAuth) presents this CLI identity, because presenting several client
 // shapes for one account is the fingerprint drift that got accounts

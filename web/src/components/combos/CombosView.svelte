@@ -263,6 +263,22 @@
     }
   }
 
+  // Cost-aware ordering, the toggle beside "Respect stored order" on the
+  // card: the stored bool is explicit in both directions (the JS combo
+  // modal writes the value, never an absence), and the router resolves
+  // per-combo → global comboCostAware → on.
+  async function handleToggleCostAware(combo: Combo, costAware: boolean) {
+    const updated = { ...comboStrategies }
+    updated[combo.name] = { ...(updated[combo.name] || {}), costAware }
+    comboStrategies = updated
+    try {
+      await api.patchSettings({ comboStrategies: updated })
+      onRefresh()
+    } catch (e) {
+      console.error('Failed to update cost-aware flag:', e)
+    }
+  }
+
   async function handleSetResponseTimeout(combo: Combo, timeoutMs: number) {
     const previous = comboStrategies
     const updated = updateFirstTokenTimeout(comboStrategies, combo.name, timeoutMs)
@@ -661,6 +677,7 @@
             onSetStrategy={handleSetStrategy}
             onSetResponseTimeout={handleSetResponseTimeout}
             onToggleStoredOrder={handleToggleStoredOrder}
+            onToggleCostAware={handleToggleCostAware}
             onOpenJudgePicker={(c) => { editingCombo = c; openModelPicker('judge') }}
             onClearJudge={clearJudge}
             onOpenRouterPicker={(c) => { editingCombo = c; openModelPicker('router') }}

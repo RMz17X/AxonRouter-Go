@@ -29,6 +29,14 @@ export interface ComboStrategyInfo {
    * which orders the models itself.
    */
   respectStoredOrder?: boolean
+  /**
+   * Cost-aware member ordering (fragment 976's backend, toggle added by
+   * fragment 981): when on, the fallback chain tries free (x0.00) then
+   * low-credit members before pricey ones. Absent inherits the global
+   * comboCostAware setting, which itself defaults to on — so the toggle
+   * reads `!== false`, exactly like the JS dashboard's combo modal.
+   */
+  costAware?: boolean
 }
 
 /**

@@ -116,6 +116,28 @@ func applyProviderStrategies(s *SettingsData, raw map[string]any) {
 		if sma, ok := vm["strictModelAssignment"].(bool); ok {
 			strat.StrictModelAssignment = sma
 		}
+		// Pointer knobs are carried verbatim — for these, an explicit
+		// zero/false is a decision, not an absence (fragment 974's
+		// jitter: 0 = off; fragment 979's probe: false = off), so the
+		// check is presence, never positivity. (This block is also what
+		// carries cooldownJitterSec: the hand-built entry above silently
+		// dropped it, which left 974's explicit setting dead on the
+		// parse path — its derived default still applied.)
+		if cj, ok := vm["cooldownJitterSec"].(float64); ok {
+			sec := int(cj)
+			strat.CooldownJitterSec = &sec
+		}
+		if en, ok := vm["idleProbeEnabled"].(bool); ok {
+			strat.IdleProbeEnabled = &en
+		}
+		if th, ok := vm["idleProbeThresholdSec"].(float64); ok {
+			sec := int(th)
+			strat.IdleProbeThresholdSec = &sec
+		}
+		if iv, ok := vm["idleProbeIntervalSec"].(float64); ok {
+			sec := int(iv)
+			strat.IdleProbeIntervalSec = &sec
+		}
 		s.ProviderStrategies[k] = strat
 	}
 }

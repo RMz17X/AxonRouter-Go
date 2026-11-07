@@ -17,9 +17,25 @@
      *  model the gateway saw refuse with a 410, so the operator knows before
      *  putting it in a combo. */
     deprecated?: boolean
+    /** Per-request credit price (CodeBuddy family), resolved server-side
+     *  and fetched with the picker extras — never from the static bundle. */
+    credit?: number
+    /** Server-resolved free flag; wins over the price pill, mirroring the
+     *  provider detail grid's FREE badge. */
+    free?: boolean
   }
 
-  let { label, value, isAdded, vision = false, reasoning = false, onToggle, deprecated = false }: Props = $props()
+  let {
+    label,
+    value,
+    isAdded,
+    vision = false,
+    reasoning = false,
+    onToggle,
+    deprecated = false,
+    credit,
+    free = false,
+  }: Props = $props()
 
   function handleClick() {
     onToggle(value)
@@ -40,6 +56,25 @@
     <Check class="w-3 h-3 shrink-0" />
   {/if}
   <span class="truncate">{label}</span>
+  {#if free}
+    <span
+      class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 {isAdded
+        ? 'bg-white/20 text-white'
+        : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'}"
+      title="Free — no credits charged per request"
+    >
+      FREE
+    </span>
+  {:else if typeof credit === 'number'}
+    <span
+      class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 {isAdded
+        ? 'bg-white/20 text-white'
+        : 'bg-surface-3 text-text-muted border border-border'}"
+      title="Credits per request"
+    >
+      x{credit.toFixed(2)}
+    </span>
+  {/if}
   {#if vision}
     <Eye class={isAdded ? 'w-3 h-3 text-white/90 shrink-0' : 'w-3 h-3 text-blue-500 shrink-0'} title="Vision — Supports image input" />
   {/if}

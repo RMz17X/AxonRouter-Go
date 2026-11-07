@@ -41,7 +41,11 @@ const (
 	// (`agy`) this router mirrors. The identity built on it — User-Agent,
 	// loadCodeAssist metadata, OAuth client — lives in
 	// antigravity_identity.go; these two constants are its only inputs.
-	AntigravityCLIVersion = "1.5.1"
+	// Mirrored build history: v1.5.1 (fragment 969 teardown) → v1.5.2
+	// (fragment 978: the live binary self-updated to the build with
+	// sha256 da1751e7658469fa8…, whose embedded toolchain string is
+	// unchanged, so the changelist below did NOT move with the version).
+	AntigravityCLIVersion = "1.5.2"
 	// AntigravityCLIChangelist is the changelist the mirrored agy build
 	// carries in its own build metadata (go1.28-20261102-RC00
 	// cl/1012564305); it is the User-Agent's cl= part. The previous

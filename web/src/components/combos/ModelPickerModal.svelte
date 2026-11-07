@@ -85,6 +85,7 @@
       customModels: customModels ?? fetchedExtras.customModels,
       disabledModels: disabledModels ?? fetchedExtras.disabledModels,
       deprecations: deprecations ?? fetchedExtras.deprecations,
+      modelCaps: fetchedExtras.modelCaps,
     })
   )
   let filteredCombos = $derived(
@@ -227,6 +228,8 @@
                   vision={model.caps.vision}
                   reasoning={model.caps.reasoning}
                   deprecated={model.deprecated}
+                  credit={model.credit}
+                  free={model.free}
                   onToggle={handleToggle}
                 />
               {/each}

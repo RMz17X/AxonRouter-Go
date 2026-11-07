@@ -93,6 +93,22 @@ type ProviderStrategy struct {
 	// window in seconds to roll within instead of the derived one. Only
 	// antigravity consumes the field today (see accounts_pacing.go).
 	CooldownJitterSec *int `json:"cooldownJitterSec,omitempty"`
+	// IdleProbeEnabled governs fragment 979's idle-account generation
+	// probe. Unset (nil) selects the derived default: enabled for
+	// antigravity, off for every other provider. An explicit false turns
+	// the prober off for this provider.
+	IdleProbeEnabled *bool `json:"idleProbeEnabled,omitempty"`
+	// IdleProbeThresholdSec is how long an account may go without
+	// generation traffic before the idle prober verifies it (fragment
+	// 979). Unset selects the derived default of 6 hours. Non-positive
+	// values fall back to the default: a zero threshold would probe
+	// constantly and burn the quota the probe exists to protect.
+	IdleProbeThresholdSec *int `json:"idleProbeThresholdSec,omitempty"`
+	// IdleProbeIntervalSec is the minimum interval between two probes of
+	// the SAME account (fragment 979), independent of traffic. Unset
+	// selects the derived default of 1 hour; non-positive values fall
+	// back to the default.
+	IdleProbeIntervalSec *int `json:"idleProbeIntervalSec,omitempty"`
 }
 
 // CapacityAdapterEntry defines settings for an input-modality capability adapter pool.
@@ -355,6 +371,18 @@ func cloneProviderStrategies(m map[string]ProviderStrategy) map[string]ProviderS
 		if v.CooldownJitterSec != nil {
 			sec := *v.CooldownJitterSec
 			v.CooldownJitterSec = &sec
+		}
+		if v.IdleProbeEnabled != nil {
+			b := *v.IdleProbeEnabled
+			v.IdleProbeEnabled = &b
+		}
+		if v.IdleProbeThresholdSec != nil {
+			sec := *v.IdleProbeThresholdSec
+			v.IdleProbeThresholdSec = &sec
+		}
+		if v.IdleProbeIntervalSec != nil {
+			sec := *v.IdleProbeIntervalSec
+			v.IdleProbeIntervalSec = &sec
 		}
 		out[k] = v
 	}

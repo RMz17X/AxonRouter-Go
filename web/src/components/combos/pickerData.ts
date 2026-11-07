@@ -1,4 +1,4 @@
-import type { Combo, ProviderConnection, ProviderNode } from '../../api/client'
+import type { Combo, ModelCaps, ProviderConnection, ProviderNode } from '../../api/client'
 import { getModelCaps, getModelKind, getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from '../../lib/models'
 import { PROVIDER_CATALOG, isChatProvider } from '../../lib/providers'
 import { parseSearchQuery, matchesSearch } from '../../lib/modelSearchFilter'
@@ -27,6 +27,11 @@ export interface PickerModel {
   caps: { vision: boolean; audioInput: boolean; reasoning: boolean }
   /** True when the gateway confirmed this model is gone upstream. */
   deprecated?: boolean
+  /** Per-request credit price from the server caps (CodeBuddy family);
+   *  flattened like the caps booleans so pill props compare by value. */
+  credit?: number
+  /** Server-resolved free flag from the same caps entry. */
+  free?: boolean
 }
 
 export interface PickerGroup {
@@ -42,6 +47,22 @@ export interface PickerExtras {
   disabledModels?: Record<string, string[]>
   /** Deprecations keyed "<provider>/<model>", from /api/models/deprecations. */
   deprecations?: Record<string, unknown>
+  /** Server caps for credit-priced providers, keyed "<provider>/<model>". */
+  modelCaps?: Record<string, ModelCaps>
+}
+
+/** Credit price / free flag for one picker row, from the server caps map. */
+function creditFields(
+  extras: PickerExtras,
+  providerId: string,
+  modelId: string
+): { credit?: number; free?: boolean } {
+  const caps = extras.modelCaps?.[`${providerId}/${modelId}`]
+  if (!caps) return {}
+  return {
+    credit: typeof caps.credit === 'number' ? caps.credit : undefined,
+    free: caps.free === true ? true : undefined,
+  }
 }
 
 export function resolveModelPickerGroups(
@@ -127,6 +148,7 @@ export function resolveModelPickerGroups(
         value: `${alias}/${m.id}`,
         caps: getModelCaps(m.id, m),
         deprecated: isDeprecated(m.id),
+        ...creditFields(extras, catItem.id, m.id),
       })
     }
 
@@ -139,6 +161,7 @@ export function resolveModelPickerGroups(
         value: `${alias}/${m.id}`,
         caps: getModelCaps(m.id),
         deprecated: isDeprecated(m.id),
+        ...creditFields(extras, catItem.id, m.id),
       })
     }
 
@@ -152,6 +175,7 @@ export function resolveModelPickerGroups(
         value: fullModel as string,
         caps: getModelCaps(modelId),
         deprecated: isDeprecated(modelId),
+        ...creditFields(extras, catItem.id, modelId),
       })
     }
 

@@ -72,6 +72,18 @@ type UsageLogInfo struct {
 	// or block list is tied to an IP.
 	Egress string
 
+	// EgressIP is the last-known egress address of the path above
+	// (fragment 980): the IP an echo lookup through the connection's own
+	// transport most recently observed. Empty until the first lookup for
+	// the path lands — the request path never waits for one.
+	EgressIP string
+
+	// EgressChanged is "old->new" when this connection's path IP differs
+	// from the one its previous log entry carried (fragment 980), empty
+	// otherwise. In-memory comparison only: after a restart the first
+	// entry per connection has nothing to compare against.
+	EgressChanged string
+
 	// RTK token compression metrics
 	OriginalInputTokens   int
 	SavedTokens           int
@@ -110,6 +122,12 @@ func (u *UsageLogInfo) ConnIdentityKV() []any {
 	}
 	if u.Egress != "" {
 		kv = append(kv, "egress", u.Egress)
+	}
+	if u.EgressIP != "" {
+		kv = append(kv, "egress_ip", u.EgressIP)
+	}
+	if u.EgressChanged != "" {
+		kv = append(kv, "egress_changed", u.EgressChanged)
 	}
 	if len(kv) == 0 {
 		kv = append(kv, "account", "Public / Direct")

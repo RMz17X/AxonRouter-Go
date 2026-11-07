@@ -1018,21 +1018,23 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		// makes the deferred TrackPending above report isError=true, which is
 		// how the topology card learns this provider failed.
 		connName, connEmail := identityNames(h.connIdentityKVOr(f, connectionID))
+		proxyFailInfo := &UsageLogInfo{
+			Provider:              provider,
+			Model:                 model,
+			ConnectionID:          connectionID,
+			ConnName:              connName,
+			ConnEmail:             connEmail,
+			Endpoint:              endpoint,
+			Egress:                resolveEgress(connData, providerCfg).LogValue(),
+			OriginalInputTokens:   origTokens,
+			SavedTokens:           savedTokens,
+			SavedPercent:          savedPct,
+			CompressionDurationMs: compressDurMs,
+		}
+		h.fillEgressIP(proxyFailInfo, connData, providerCfg)
 		h.LogFailure(
 			ctx,
-			&UsageLogInfo{
-				Provider:              provider,
-				Model:                 model,
-				ConnectionID:          connectionID,
-				ConnName:              connName,
-				ConnEmail:             connEmail,
-				Endpoint:              endpoint,
-				Egress:                resolveEgress(connData, providerCfg).LogValue(),
-				OriginalInputTokens:   origTokens,
-				SavedTokens:           savedTokens,
-				SavedPercent:          savedPct,
-				CompressionDurationMs: compressDurMs,
-			},
+			proxyFailInfo,
 			nil,
 			fwdErr,
 			time.Since(start).Milliseconds(),
@@ -1322,6 +1324,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			SavedPercent:          savedPct,
 			CompressionDurationMs: compressDurMs,
 		}
+		h.fillEgressIP(logInfo, connData, providerCfg)
 		logInfo.ConnName, logInfo.ConnEmail = identityNames(h.connIdentityKVOr(f, connectionID))
 		h.logUsage(ctx, logInfo, usage, latencyMs, body, metrics)
 		metrics.ResponseBuf.Reset()
@@ -1354,6 +1357,13 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// that rate-limits by IP is only diagnosable if the log says whether the
 	// request actually left through the pool.
 	identity = append(identity, "egress", resolveEgress(connData, providerCfg).LogValue())
+	egressIP, egressChanged := h.egressIPSnapshot(connData, providerCfg, connectionID)
+	if egressIP != "" {
+		identity = append(identity, "egress_ip", egressIP)
+	}
+	if egressChanged != "" {
+		identity = append(identity, "egress_changed", egressChanged)
+	}
 	connName, connEmail := identityNames(identity)
 	reqModel := f.RequestedModel
 	if reqModel == "" {
@@ -1386,6 +1396,8 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			APIKey:                apiKey,
 			Endpoint:              endpoint,
 			Egress:                resolveEgress(connData, providerCfg).LogValue(),
+			EgressIP:              egressIP,
+			EgressChanged:         egressChanged,
 			OriginalInputTokens:   origTokens,
 			SavedTokens:           savedTokens,
 			SavedPercent:          savedPct,
