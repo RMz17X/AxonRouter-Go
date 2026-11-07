@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -50,7 +51,7 @@ var (
 // logProxyOnce records proxy usage once per pool at debug level, e.g.
 // proxy routing requests via proxy pool pool=abc123 url=http://... type=http
 // Run with LOG_LEVEL=debug and grep for "proxy" to confirm traffic uses the pool.
-func logProxyOnce(poolID, proxyURLStr, proxyType string) {
+func logProxyOnce(ctx context.Context, poolID, proxyURLStr, proxyType string) {
 	if poolID == "" {
 		return
 	}
@@ -60,7 +61,7 @@ func logProxyOnce(poolID, proxyURLStr, proxyType string) {
 	if proxyType == "" {
 		proxyType = "http"
 	}
-	log.Debug("proxy", "routing requests via proxy pool", "pool", poolID, "url", proxyURLStr, "type", proxyType)
+	log.DebugCtx(ctx, "proxy", "routing requests via proxy pool", "pool", poolID, "url", proxyURLStr, "type", proxyType)
 }
 
 // GetClientForConnection returns an http.Client configured with ProxyPool transport if set.
@@ -72,6 +73,15 @@ func (h *ChatHandler) GetClientForConnection(connData *ConnectionData) (*http.Cl
 }
 
 func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Client, error) {
+	return h.getClientForConnectionCtx(context.Background(), connData)
+}
+
+// getClientForConnectionCtx is getClientForConnection with the serving
+// request's context, so the proxy pick / fallback / refusal lines land on
+// the request's log axis (req_id + account) instead of floating free of it.
+// Callers without a request (probes, admin paths) use the wrapper above and
+// log unadorned, exactly as before.
+func (h *ChatHandler) getClientForConnectionCtx(ctx context.Context, connData *ConnectionData) (*http.Client, error) {
 	if connData == nil {
 		return h.Client, nil
 	}
@@ -114,11 +124,11 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 			}
 			if pool == nil {
 				if strictProxy {
-					log.Warn("proxy", "assigned proxy group/type has no fit pool in strict mode", "target", connData.ProxyPoolID)
+					log.WarnCtx(ctx, "proxy", "assigned proxy group/type has no fit pool in strict mode", "target", connData.ProxyPoolID)
 					return nil, fmt.Errorf("proxy target %q has no fit proxy pools in strict mode", connData.ProxyPoolID)
 				}
 				// Non-strict: fallback to direct connection
-				log.Warn("proxy", "assigned proxy group/type has no fit pool, falling back to direct", "target", connData.ProxyPoolID)
+				log.WarnCtx(ctx, "proxy", "assigned proxy group/type has no fit pool, falling back to direct", "target", connData.ProxyPoolID)
 				connData.ProxyPoolID = ""
 				connData.ResolvedProxyPool = "direct"
 				return h.Client, nil
@@ -128,17 +138,17 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 			pool, err = h.Repo.GetProxyPool(connData.ProxyPoolID)
 			switch {
 			case err != nil || pool == nil:
-				log.Warn("proxy", "assigned pool not found", "pool", connData.ProxyPoolID)
+				log.WarnCtx(ctx, "proxy", "assigned pool not found", "pool", connData.ProxyPoolID)
 				return nil, fmt.Errorf("proxy pool %q is assigned but does not exist", connData.ProxyPoolID)
 			case !pool.IsActive:
-				log.Warn("proxy", "assigned pool is inactive", "pool", connData.ProxyPoolID)
+				log.WarnCtx(ctx, "proxy", "assigned pool is inactive", "pool", connData.ProxyPoolID)
 				return nil, fmt.Errorf("proxy pool %q is assigned but inactive", connData.ProxyPoolID)
 			case !smart.DefaultTracker.IsPoolUsable(connData.Provider, pool.ID):
 				if strictProxy {
-					log.Warn("proxy", "assigned pool is currently unfit/in cooldown in strict mode", "pool", pool.ID)
+					log.WarnCtx(ctx, "proxy", "assigned pool is currently unfit/in cooldown in strict mode", "pool", pool.ID)
 					return nil, fmt.Errorf("proxy pool %q is currently unfit or cooling down in strict mode", pool.ID)
 				}
-				log.Warn("proxy", "assigned pool is currently unfit/in cooldown, falling back to direct", "pool", pool.ID)
+				log.WarnCtx(ctx, "proxy", "assigned pool is currently unfit/in cooldown, falling back to direct", "pool", pool.ID)
 				connData.ProxyPoolID = ""
 				connData.ResolvedProxyPool = "direct"
 				return h.Client, nil
@@ -147,7 +157,7 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 
 		proxyURLStr = pool.NextURL()
 		if proxyURLStr == "" {
-			log.Warn("proxy", "assigned pool has no url", "pool", connData.ProxyPoolID)
+			log.WarnCtx(ctx, "proxy", "assigned pool has no url", "pool", connData.ProxyPoolID)
 			return nil, fmt.Errorf("proxy pool %q is assigned but carries no url", connData.ProxyPoolID)
 		}
 		proxyType = pool.Type
@@ -158,7 +168,7 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 		connData.ResolvedProxyPoolID = pool.ID
 
 		if pool.IsEdgeRelay() {
-			logProxyOnce(pool.ID, proxyURLStr, proxyType)
+			logProxyOnce(ctx, pool.ID, proxyURLStr, proxyType)
 			return h.relayClient(proxyURLStr), nil
 		}
 	}
@@ -197,19 +207,19 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 			// resolves no usable URL, is exactly that case: an empty or
 			// discarded URL would otherwise go straight out from the real
 			// address while the dashboard shows it proxied (#4333).
-			log.Error("proxy", "strict proxy enabled but none resolved", "pool", connData.ProxyPoolID, "proxyUrl", connData.ConnectionProxyURL)
+			log.ErrorCtx(ctx, "proxy", "strict proxy enabled but none resolved", "pool", connData.ProxyPoolID, "proxyUrl", connData.ConnectionProxyURL)
 			return nil, fmt.Errorf("%w: the connection enables a proxy but resolves none", internalproxy.ErrStrictProxyRequired)
 		}
 		return h.Client, nil
 	}
-	logProxyOnce(connData.ProxyPoolID, proxyURLStr, proxyType)
+	logProxyOnce(ctx, connData.ProxyPoolID, proxyURLStr, proxyType)
 
 	parsedURL, err := url.Parse(proxyURLStr)
 	if err == nil && (parsedURL.Scheme == "" || parsedURL.Host == "") {
 		err = fmt.Errorf("no scheme or host in %q", proxyURLStr)
 	}
 	if err != nil {
-		log.Warn("proxy", "invalid proxy pool url", "pool", connData.ProxyPoolID, "url", proxyURLStr, "error", err)
+		log.WarnCtx(ctx, "proxy", "invalid proxy pool url", "pool", connData.ProxyPoolID, "url", proxyURLStr, "error", err)
 		// The operator named a proxy and the transport cannot dial it. Under a
 		// strict connection that is a refusal, not a reason to leave directly.
 		if connData.ProxyPoolID != "" {
@@ -218,7 +228,7 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 			return nil, fmt.Errorf("proxy pool %q has an unparseable url", connData.ProxyPoolID)
 		}
 		if strictProxy {
-			log.Error("proxy", "strict proxy enabled but proxy url invalid", "url", proxyURLStr)
+			log.ErrorCtx(ctx, "proxy", "strict proxy enabled but proxy url invalid", "url", proxyURLStr)
 			return nil, fmt.Errorf("%w: unparseable proxy url %q", internalproxy.ErrStrictProxyRequired, proxyURLStr)
 		}
 		return h.Client, nil

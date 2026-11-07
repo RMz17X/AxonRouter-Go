@@ -100,6 +100,18 @@ func callerDetailFields(ctx context.Context) map[string]any {
 	return fields
 }
 
+// requestIDDetailField returns the detail-payload field carrying the
+// middleware request ID (req_<hex12>) — the same value every console log
+// line of this request is stamped with, so a stored request detail and its
+// log trail join on one exact string. Absent when the context carries no
+// ID, never zero-filled, like callerDetailFields above.
+func requestIDDetailField(ctx context.Context) map[string]any {
+	if rid := middleware.GetRequestIDFromContext(ctx); rid != "" {
+		return map[string]any{"reqId": rid}
+	}
+	return nil
+}
+
 func (h *ChatHandler) LogFailure(
 	ctx context.Context,
 	info *UsageLogInfo,
@@ -216,6 +228,9 @@ func (h *ChatHandler) LogFailure(
 		}
 	}
 	for k, v := range callerDetailFields(ctx) {
+		failurePayload[k] = v
+	}
+	for k, v := range requestIDDetailField(ctx) {
 		failurePayload[k] = v
 	}
 	reqData, marshalErr := json.Marshal(failurePayload)
@@ -387,7 +402,7 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	if info.SavedTokens > 0 {
 		usageKVs = append(usageKVs, "compressed", fmt.Sprintf("%d->%d (%d%% saved)", info.OriginalInputTokens, info.OriginalInputTokens-info.SavedTokens, info.SavedPercent))
 	}
-	log.Info("usage", "logged", append(usageKVs, info.ConnIdentityKV()...)...)
+	log.InfoCtx(ctx, "usage", "logged", append(usageKVs, info.ConnIdentityKV()...)...)
 
 	// Reconcile the limiter's TPM reservation against what the turn actually
 	// cost. Without this the bucket is charged an estimate forever: a key whose
@@ -540,9 +555,12 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	for k, v := range callerDetailFields(ctx) {
 		detailPayload[k] = v
 	}
+	for k, v := range requestIDDetailField(ctx) {
+		detailPayload[k] = v
+	}
 	reqData, err := json.Marshal(detailPayload)
 	if err != nil {
-		log.Error("usage", "marshal request detail failed", "error", err)
+		log.ErrorCtx(ctx, "usage", "marshal request detail failed", "error", err)
 		return
 	}
 	// The settings read decides the row's fate now; only the write leaves.

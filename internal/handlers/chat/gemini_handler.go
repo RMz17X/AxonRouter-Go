@@ -105,7 +105,7 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 		Model string `json:"model"`
 	}
 	if err := json.Unmarshal(body, &reqMeta); err != nil {
-		log.Warn("gemini", "parse model failed", "error", err)
+		log.WarnCtx(ctx, "gemini", "parse model failed", "error", err)
 	}
 	modelName := reqMeta.Model
 	if modelName == "" {
@@ -116,7 +116,7 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 	var projectID string
 	refreshedKey, pid, err := h.refreshOAuthTokenIfExpired(connectionID, apiKey)
 	if err != nil {
-		log.Warn("gemini", "token refresh error", "conn", connectionID, "error", err)
+		log.WarnCtx(ctx, "gemini", "token refresh error", "conn", connectionID, "error", err)
 	} else {
 		apiKey = refreshedKey
 		projectID = pid
@@ -132,7 +132,7 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 			// Upstream rejected the token (401/403) — refresh once and retry.
 			// A missing/empty project is NOT an auth failure; refreshing there
 			// only hammers the onboarding RPCs (the 429 source) without helping.
-			log.Info("gemini", "force refresh OAuth token", "conn", connectionID)
+			log.InfoCtx(ctx, "gemini", "force refresh OAuth token", "conn", connectionID)
 			refreshedKey, pid2, err2 := h.forceRefreshOAuthToken(connectionID)
 			if err2 == nil && refreshedKey != "" {
 				apiKey = refreshedKey
@@ -166,7 +166,7 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 			}
 		}
 		// gemini-cli keeps its OpenAI-style fallback.
-		log.Info("gemini", "no projectID, fallback to OpenAI", "provider", provider)
+		log.InfoCtx(ctx, "gemini", "no projectID, fallback to OpenAI", "provider", provider)
 		return h.forwardRequest(ctx, w, cfg, apiKey, body, isStream, translateResponse, metrics, httpClient, provider, false, false)
 	}
 
@@ -183,7 +183,7 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 	// gateway was slow": everything this handler does before dialing is
 	// milliseconds, so a large value here is the upstream's first-token
 	// wait, not the router's.
-	log.Info("gemini", "upstream response headers",
+	log.InfoCtx(ctx, "gemini", "upstream response headers",
 		"ms", time.Since(upstreamStarted).Milliseconds(), "provider", provider, "model", modelName)
 	if err != nil {
 		if uErr, ok := err.(*proxy.UpstreamError); ok {
@@ -238,7 +238,7 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 	if projectID != "" && !isStream {
 		raw, err := io.ReadAll(io.LimitReader(resp.Body, constants.MaxUpstreamBodyBytes))
 		if err != nil {
-			log.Error("gemini", "read response body failed", "error", err)
+			log.ErrorCtx(ctx, "gemini", "read response body failed", "error", err)
 			return fmt.Errorf("read gemini response body: %w", err)
 		}
 		unwrapped := translator.UnwrapAntigravityResponse(raw)
@@ -688,7 +688,7 @@ func (h *ChatHandler) handleGeminiStream(ctx context.Context, w http.ResponseWri
 		// Translate each Gemini SSE chunk to OpenAI SSE chunk
 		openaiChunk, err := translator.TranslateGeminiChunkToOpenAI(unwrapped, geminiState)
 		if err != nil {
-			log.Error("gemini", "chunk translate error", "error", err)
+			log.ErrorCtx(ctx, "gemini", "chunk translate error", "error", err)
 			return
 		}
 		if openaiChunk == nil {
@@ -716,7 +716,7 @@ func (h *ChatHandler) handleGeminiStream(ctx context.Context, w http.ResponseWri
 				}
 				claudeChunk, tErr := translator.TranslateOpenAIToClaudeStreamSession(sessionKey, []byte(strings.TrimPrefix(sse, "data: ")))
 				if tErr != nil {
-					log.Error("gemini", "claude translate error", "error", tErr)
+					log.ErrorCtx(ctx, "gemini", "claude translate error", "error", tErr)
 					continue
 				}
 				if claudeChunk == nil {
@@ -746,7 +746,7 @@ func (h *ChatHandler) handleGeminiStream(ctx context.Context, w http.ResponseWri
 			flusher.Flush()
 		}
 	}
-	log.Info("gemini", "stream ended", "chunks", totalChunks, "bytesWritten", totalBytesWritten, "duration_ms", time.Since(start).Milliseconds(), "err", err)
+	log.InfoCtx(ctx, "gemini", "stream ended", "chunks", totalChunks, "bytesWritten", totalBytesWritten, "duration_ms", time.Since(start).Milliseconds(), "err", err)
 	// Pull actual accumulated usage (incl. cached tokens) out of the session so
 	// the log sees real numbers instead of the fallback estimate.
 	if translateResponse {

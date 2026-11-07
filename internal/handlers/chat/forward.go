@@ -71,7 +71,7 @@ func (h *ChatHandler) forwardRequest(
 		if tools, ok := bodyMap["tools"].([]any); ok && len(tools) > 0 {
 			if normalized, removed := translator.NormalizeToolSchemasForProvider(provider, tools); removed > 0 {
 				bodyMap["tools"] = normalized
-				log.Debug("tool_schema", "stripped invalid patterns", "provider", provider, "removed", removed)
+				log.DebugCtx(ctx, "tool_schema", "stripped invalid patterns", "provider", provider, "removed", removed)
 				if newBody, err := json.Marshal(bodyMap); err == nil {
 					body = newBody
 				}
@@ -136,7 +136,7 @@ func (h *ChatHandler) forwardRequest(
 		contentType := resp.Header.Get("Content-Type")
 		if !strings.HasPrefix(strings.ToLower(contentType), "text/event-stream") {
 			// Upstream returned non-streaming response (e.g. JSON error with 200 OK)
-			log.Warn("stream", "non-stream response", "contentType", contentType)
+			log.WarnCtx(ctx, "stream", "non-stream response", "contentType", contentType)
 			if upstreamClaude && !clientClaude {
 				return h.handleClaudeUpstreamJSON(ctx, w, resp.Body, metrics)
 			}
@@ -194,7 +194,7 @@ func (h *ChatHandler) handleClaudeUpstreamJSON(ctx context.Context, w http.Respo
 		if next, terr := translator.TranslateClaudeResponseToOpenAI(body); terr == nil {
 			converted = next
 		} else {
-			log.Warn("json", "claude response relayed untranslated", "error", terr)
+			log.WarnCtx(ctx, "json", "claude response relayed untranslated", "error", terr)
 		}
 	}
 	return h.handleJSONResponse(ctx, w, bytes.NewReader(converted), false, metrics)
@@ -220,7 +220,7 @@ func (h *ChatHandler) handleClaudeUpstreamStream(ctx context.Context, w http.Res
 		}
 		out, terr := translator.TranslateClaudeChunkToOpenAI(payload, state)
 		if terr != nil {
-			log.Error("stream", "claude chunk translate error", "error", terr)
+			log.ErrorCtx(ctx, "stream", "claude chunk translate error", "error", terr)
 			return
 		}
 		if len(out) == 0 {
@@ -342,7 +342,7 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 	err := internalproxy.ScanStream(upstream, func(chunk []byte) {
 		translated, err := translator.TranslateOpenAIToClaudeStreamSession(sessionKey, chunk)
 		if err != nil {
-			log.Error("stream", "translate error", "error", err)
+			log.ErrorCtx(ctx, "stream", "translate error", "error", err)
 			return
 		}
 		if translated == nil {
@@ -615,7 +615,7 @@ func (h *ChatHandler) handleJSONResponse(ctx context.Context, w http.ResponseWri
 		if err != nil {
 			errMsg = errMsg + ": " + err.Error()
 		}
-		log.Error("json", "translate error", "msg", errMsg)
+		log.ErrorCtx(ctx, "json", "translate error", "msg", errMsg)
 		handlerutil.WriteJSONError(w, http.StatusBadGateway, errMsg)
 		return errors.New(errMsg)
 	}
@@ -651,7 +651,7 @@ func (h *ChatHandler) respondAsResponses(ctx context.Context, w http.ResponseWri
 		}
 		body = converted
 	} else {
-		log.Error("chat", "responses json translate error", "error", err)
+		log.ErrorCtx(ctx, "chat", "responses json translate error", "error", err)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

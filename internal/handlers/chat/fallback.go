@@ -80,7 +80,7 @@ func (h *ChatHandler) handleAccountFallback(
 		if err != nil {
 			return fmt.Errorf("pinned connection %s: %w", pinnedConnectionID, err)
 		}
-		log.Debug("fallback", "pinned", "pinnedConn", pinnedConnectionID, "connObj", connObj.ID)
+		log.DebugCtx(ctx, "fallback", "pinned", "pinnedConn", pinnedConnectionID, "connObj", connObj.ID)
 		return h.tryForwardWithConnection(forwardRequestParams{
 			Ctx: ctx, W: w, Provider: provider, Model: model,
 			ConnectionID: connObj.ID, ConnName: connObjName(connObj), ConnEmail: connObjEmail(connObj),
@@ -90,7 +90,7 @@ func (h *ChatHandler) handleAccountFallback(
 	}
 
 	if !handlerutil.IsProbeContext(ctx) && !h.Repo.IsProviderAvailable(provider, model) {
-		log.Warn("fallback", "skip unhealthy", "provider", provider, "model", model)
+		log.WarnCtx(ctx, "fallback", "skip unhealthy", "provider", provider, "model", model)
 		return fmt.Errorf("provider %s/%s is unhealthy", provider, model)
 	}
 
@@ -104,7 +104,7 @@ func (h *ChatHandler) handleAccountFallback(
 		// Operator-requested; the borrow is logged so it stays visible.
 		if provider == "opencode-go" {
 			if connID, connName, connEmail, apiKey, bErr := h.borrowZenKeyForGo(ctx, model); bErr == nil {
-				log.Warn("fallback", "opencode-go has no connection, borrowing opencode-zen key", "conn", connID)
+				log.WarnCtx(ctx, "fallback", "opencode-go has no connection, borrowing opencode-zen key", "conn", connID)
 				return h.tryForwardWithConnection(forwardRequestParams{
 					Ctx: ctx, W: w, Provider: provider, Model: model,
 					ConnectionID: connID, ConnName: connName, ConnEmail: connEmail,
@@ -112,7 +112,7 @@ func (h *ChatHandler) handleAccountFallback(
 					IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
 				})
 			} else {
-				log.Debug("fallback", "no zen key to borrow for opencode-go", "error", bErr)
+				log.DebugCtx(ctx, "fallback", "no zen key to borrow for opencode-go", "error", bErr)
 			}
 		}
 		if cfg, ok := providers.KnownProviders[provider]; ok && (cfg.NoAuth || cfg.DefaultAPIKey != "") {
@@ -224,7 +224,11 @@ func (h *ChatHandler) handleAccountFallback(
 		// connObj, not the loop candidate: a candidate in cooldown can resolve
 		// to a different account (force fallback), and the usage row, the logs
 		// and the exclusion below must all name the account that was dialled.
-		log.Debug("fallback", "connection", "conn", connObj.ID, "candidate", c.ID)
+		// attemptCtx carries that account on the log axis for this attempt's
+		// post-mortem lines below; tryForwardWithConnection stamps its own
+		// context the same way for the lines inside the attempt.
+		attemptCtx := withConnAccount(ctx, connObjName(connObj), connObjEmail(connObj))
+		log.DebugCtx(attemptCtx, "fallback", "connection", "conn", connObj.ID, "candidate", c.ID)
 		attemptStart := time.Now()
 		if err := h.tryForwardWithConnection(forwardRequestParams{
 			Ctx: ctx, W: w, Provider: provider, Model: model,
@@ -257,7 +261,7 @@ func (h *ChatHandler) handleAccountFallback(
 		// already intercept it before their writers; the single-provider path arrives
 		// here, through a pinned connection that skipped the selection-time check.
 		if _, refused := providerLimitRefusal(lastErr); refused {
-			log.Info("fallback", "provider node state, not locking the account",
+			log.InfoCtx(attemptCtx, "fallback", "provider node state, not locking the account",
 				"provider", provider, "model", model, "conn", connObj.ID)
 			excludeIDs = append(excludeIDs, connObj.ID)
 			continue
@@ -279,7 +283,7 @@ func (h *ChatHandler) handleAccountFallback(
 			if poolID != "" && poolID != "__none__" && poolID != "direct" {
 				smart.DefaultTracker.RecordFailureWithCooldown(provider, poolID, 24*time.Hour, "FAILED_PRECONDITION: user location not supported")
 				poolstate.MarkUnfit(poolID, provider+"::*", time.Now().Add(24*time.Hour).UnixMilli(), "FAILED_PRECONDITION: user location not supported")
-				log.Warn("fallback", "proxy pool rejected by location policy, locked for 24h via smartfit",
+				log.WarnCtx(attemptCtx, "fallback", "proxy pool rejected by location policy, locked for 24h via smartfit",
 					"conn", connObj.ID, "provider", provider, "model", model, "pool", poolID)
 				excludedPools[poolID] = true
 				continue
@@ -297,7 +301,7 @@ func (h *ChatHandler) handleAccountFallback(
 			}
 			if poolID != "" && poolID != "__none__" && poolID != "direct" {
 				smart.DefaultTracker.RecordFailure(provider, poolID, lastErr)
-				log.Warn("fallback", "proxy transport failed, penalizing proxy fitness",
+				log.WarnCtx(attemptCtx, "fallback", "proxy transport failed, penalizing proxy fitness",
 					"conn", connObj.ID, "provider", provider, "model", model, "pool", poolID, "status", statusCode, "error", lastErr)
 				excludedPools[poolID] = true
 				continue
@@ -329,12 +333,12 @@ func (h *ChatHandler) handleAccountFallback(
 			// verdict, so the cooldown stays untouched.
 			if isOpencodeFreeTierRefusal(provider, ue) {
 				if poolID := connData.ProxyPoolID; poolID != "" {
-					log.Warn("fallback", "opencode free-tier refusal, rotating proxy pool",
+					log.WarnCtx(attemptCtx, "fallback", "opencode free-tier refusal, rotating proxy pool",
 						"conn", connObj.ID, "provider", provider, "model", model, "pool", poolID)
 					excludedPools[poolID] = true
 					continue
 				}
-				log.Warn("fallback", "opencode free-tier refusal, not locking the account",
+				log.WarnCtx(attemptCtx, "fallback", "opencode free-tier refusal, not locking the account",
 					"conn", connObj.ID, "provider", provider, "model", model)
 				excludeIDs = append(excludeIDs, connObj.ID)
 				continue
@@ -377,16 +381,16 @@ func (h *ChatHandler) handleAccountFallback(
 			// and parking the account for them was the bug they fix.
 			if classification.ModelScoped || isModelScopedError(ue.StatusCode, errorText, model, ue.Body) {
 				if recErr := h.Repo.RecordConnectionScopedError(connObj.ID, model, "chat", ue.StatusCode, errorText, classification.NewBackoffLevel); recErr != nil {
-					log.Warn("fallback", "record connection error failed", "conn", connObj.ID, "error", recErr)
+					log.WarnCtx(attemptCtx, "fallback", "record connection error failed", "conn", connObj.ID, "error", recErr)
 				}
 			} else {
 				until := time.Now().UTC().Add(time.Duration(cooldownSec) * time.Second)
 				if lockErr := h.Repo.LockConnectionRateLimit(connObj.ID, until, classification.NewBackoffLevel, ue.StatusCode, errorText); lockErr != nil {
-					log.Warn("fallback", "rate limit lock failed", "conn", connObj.ID, "error", lockErr)
+					log.WarnCtx(attemptCtx, "fallback", "rate limit lock failed", "conn", connObj.ID, "error", lockErr)
 				}
 				h.getSessionAffinity().EvictConnection(connObj.ID)
 			}
-			log.Warn("fallback", "connection locked", append([]any{
+			log.WarnCtx(attemptCtx, "fallback", "connection locked", append([]any{
 				"conn", connObj.ID, "provider", provider, "model", model,
 				"lockKey", lockKey, "status", ue.StatusCode, "cooldown_s", cooldownSec,
 			}, connIdentityKV(connObj)...)...)
@@ -430,7 +434,7 @@ func (h *ChatHandler) handleAccountFallback(
 		// Non-retryable error, transport error, or client failure: exclude this connection
 		// and auto-rotate to the next available account if one exists!
 		excludeIDs = append(excludeIDs, connObj.ID)
-		log.Warn("fallback", "account failed, auto-rotating to next connection",
+		log.WarnCtx(attemptCtx, "fallback", "account failed, auto-rotating to next connection",
 			"conn", connObj.ID, "provider", provider, "model", model, "error", lastErr)
 		continue
 	}
@@ -642,6 +646,11 @@ type forwardRequestParams struct {
 
 func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	ctx, w := f.Ctx, f.W
+	// The attempt's account goes on the context before anything else derives
+	// from it, so the whole serving trail below — proxy pick, upstream
+	// forward, stream end, usage, failures — logs under this attempt's
+	// account (withConnAccount), never under a sibling attempt's.
+	ctx = withConnAccount(ctx, f.ConnName, f.ConnEmail)
 	provider, model := f.Provider, f.Model
 	connectionID, connData := f.ConnectionID, f.ConnData
 	body, isStream := f.Body, f.IsStream
@@ -702,7 +711,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		if err == nil {
 			apiKey = rekey
 		} else {
-			log.Warn("fallback", "OAuth token refresh error", "conn", connectionID, "error", err)
+			log.WarnCtx(ctx, "fallback", "OAuth token refresh error", "conn", connectionID, "error", err)
 			errLower := strings.ToLower(err.Error())
 			if strings.Contains(errLower, "invalid_grant") || strings.Contains(errLower, "token revoked") || strings.Contains(errLower, "refresh_token_reused") {
 				if h.Repo != nil {
@@ -997,7 +1006,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// A connection bound to a pool that cannot serve traffic must fail before
 	// anything is sent: the first request is the one that would otherwise
 	// escape from the real IP while the error only shows on the next attempt.
-	httpClient, clientErr := h.getClientForConnection(connData)
+	httpClient, clientErr := h.getClientForConnectionCtx(ctx, connData)
 	if clientErr != nil {
 		// Marshalled, not concatenated: the pool name is user-supplied and a
 		// quote in it produced a body that no longer parsed as JSON, so both
@@ -1042,7 +1051,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			body,
 			metrics,
 		)
-		log.Warn("fallback", "upstream blocked by proxy egress", "provider", provider, "model", model, "error", clientErr)
+		log.WarnCtx(ctx, "fallback", "upstream blocked by proxy egress", "provider", provider, "model", model, "error", clientErr)
 		return fwdErr
 	}
 	// The client carries the strict-proxy marker itself, but the executors'
@@ -1168,7 +1177,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	if errors.As(fwdErr, &ue) && ue.StatusCode == http.StatusUnauthorized && connectionID != "" {
 		refreshedKey, _, rErr := h.forceRefreshOAuthToken(connectionID)
 		if rErr == nil && refreshedKey != "" && refreshedKey != apiKey {
-			log.Info("fallback", "reactive 401 token refresh success, retrying request", "conn", connectionID)
+			log.InfoCtx(ctx, "fallback", "reactive 401 token refresh success, retrying request", "conn", connectionID)
 			apiKey = NormalizeProviderToken(provider, refreshedKey)
 			if exec := executor.Get(provider); exec != nil {
 				retryReq := &executor.Request{
@@ -1219,9 +1228,9 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// otherwise healthy account caches a healthy reading and blocks nothing.
 	if errors.As(fwdErr, &ue) && provider == "codex" && connectionID != "" && ue.StatusCode == http.StatusTooManyRequests {
 		if resetAt := NoteCodexQuotaError(connectionID, ue.StatusCode, ue.Body); resetAt != nil {
-			log.Info("fallback", "codex quota exhausted, cached until reset", "conn", shortConnID(connectionID), "resetAt", resetAt.Format(time.RFC3339))
+			log.InfoCtx(ctx, "fallback", "codex quota exhausted, cached until reset", "conn", shortConnID(connectionID), "resetAt", resetAt.Format(time.RFC3339))
 		} else if _, qErr := RefreshCodexQuota(ctx, httpClient, connectionID, apiKey); qErr != nil {
-			log.Debug("fallback", "codex quota refresh failed", "conn", shortConnID(connectionID), "error", qErr)
+			log.DebugCtx(ctx, "fallback", "codex quota refresh failed", "conn", shortConnID(connectionID), "error", qErr)
 		}
 	}
 
@@ -1279,7 +1288,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		// ClearConnectionSuccessState).
 		lockKey := canonicalLockModel(provider, model)
 		if clearErr := h.Repo.ClearConnectionSuccessState(connectionID, lockKey, model); clearErr != nil {
-			log.Warn("fallback", "success state clear failed", "provider", provider, "model", lockKey, "conn", connectionID, "error", clearErr)
+			log.WarnCtx(ctx, "fallback", "success state clear failed", "provider", provider, "model", lockKey, "conn", connectionID, "error", clearErr)
 		}
 		// A served request proves the account is usable again, so drop any
 		// cached quota block rather than leaving it to expire on its own.
@@ -1414,20 +1423,20 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	)
 	metrics.ResponseBuf.Reset()
 	if isClientCanceled(ctx, fwdErr) {
-		log.Info("fallback", "client canceled request", append([]any{
+		log.InfoCtx(ctx, "fallback", "client canceled request", append([]any{
 			"provider", provider, "model", model,
 		}, identity...)...)
 	} else if projectProbeCached(connectionID) {
-		log.Debug("fallback", "upstream skipped (cached no-project)", append([]any{
+		log.DebugCtx(ctx, "fallback", "upstream skipped (cached no-project)", append([]any{
 			"provider", provider, "model", model, "error", fwdErr,
 		}, identity...)...)
 	} else if errors.As(fwdErr, &zc) {
-		log.Warn("fallback", "upstream returned zero usable content", append([]any{
+		log.WarnCtx(ctx, "fallback", "upstream returned zero usable content", append([]any{
 			"provider", provider, "model", model,
 			"status", statusCode,
 		}, identity...)...)
 	} else {
-		log.Warn("fallback", "upstream failed", append([]any{
+		log.WarnCtx(ctx, "fallback", "upstream failed", append([]any{
 			"provider", provider, "model", model,
 			"status", statusCode, "error", fwdErr,
 		}, identity...)...)
@@ -1478,7 +1487,7 @@ func (h *ChatHandler) applyTokenSavers(ctx context.Context, body []byte, claudeN
 	// Toggle via settings.injectionGuardEnabled (off bypasses the scan).
 	if h.TokenSaver.InjectionGuardEnabled() {
 		if inj := tokensaver.DetectInjection(body); inj.Flagged {
-			log.Warn("guard", "prompt injection flagged", "reasons", inj.Reasons, "messageId", inj.MessageID)
+			log.WarnCtx(ctx, "guard", "prompt injection flagged", "reasons", inj.Reasons, "messageId", inj.MessageID)
 		}
 	}
 	out := body
@@ -1493,8 +1502,8 @@ func (h *ChatHandler) applyTokenSavers(ctx context.Context, body []byte, claudeN
 			if origTokens > 0 {
 				savedPct = (savedTokens * 100) / origTokens
 			}
-			log.Info(
-				"token_saver", "RTK compressed tool output",
+			log.InfoCtx(
+				ctx, "token_saver", "RTK compressed tool output",
 				"orig_est", origTokens,
 				"compressed_est", compressedTokens,
 				"saved_est", savedTokens,

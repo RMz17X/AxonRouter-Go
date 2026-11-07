@@ -146,6 +146,7 @@ type UsageDaily struct {
 // RequestDetail represents the cached payload/response logs of requests.
 type RequestDetail struct {
 	ID           string  `json:"id"`
+	ReqID        string  `json:"reqId,omitempty"` // middleware request ID (req_<hex12>): the log axis joining this row to the console trail; absent on rows stored before it was recorded
 	Timestamp    string  `json:"timestamp"`
 	Provider     *string `json:"provider,omitempty"`
 	Model        *string `json:"model,omitempty"`

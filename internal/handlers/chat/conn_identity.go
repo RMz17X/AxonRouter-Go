@@ -1,12 +1,28 @@
 package chat
 
 import (
+	"context"
 	"fmt"
 
 	json "encoding/json/v2"
 
+	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/models"
 )
+
+// withConnAccount stamps the account axis onto an attempt's context: the
+// connection's display name (connObjName — for antigravity the account
+// email), falling back to the stored email when the connection carries no
+// name. Every log line emitted under the returned context names the account
+// that served the attempt (see log.WithAccount), so a combo or fallback
+// trail shows each hop's account instead of one blurred request.
+func withConnAccount(ctx context.Context, name, email string) context.Context {
+	label := name
+	if label == "" {
+		label = email
+	}
+	return log.WithAccount(ctx, label)
+}
 
 // connProjectRef mirrors the two shapes a project ID takes inside the
 // providerConnections.data blob: top-level `projectId` (written by

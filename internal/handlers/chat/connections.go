@@ -846,7 +846,7 @@ func (h *ChatHandler) resolveEdgeRelay(connData *ConnectionData) (relayURL, noPr
 		if pool != nil && pool.IsActive && pool.IsEdgeRelay() {
 			relayURL = pool.NextURL()
 			noProxy = pool.NoProxy
-			logProxyOnce(connData.ProxyPoolID, relayURL, pool.Type)
+			logProxyOnce(context.Background(), connData.ProxyPoolID, relayURL, pool.Type)
 		}
 	}
 	if relayURL == "" && connData.ProviderSpecificData != nil {

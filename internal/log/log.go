@@ -168,6 +168,36 @@ type RequestIDContextKey string
 // RequestIDKey is the context key used to store request IDs.
 const RequestIDKey RequestIDContextKey = "requestID"
 
+// AccountContextKey is the typed context key for the serving account name,
+// mirroring RequestIDContextKey so middleware-style lookups cannot collide.
+type AccountContextKey string
+
+// AccountKey is the context key used to store the serving account's display
+// name (for OAuth providers, the account email the connection carries).
+const AccountKey AccountContextKey = "accountName"
+
+// WithAccount returns a context carrying the name of the account serving the
+// request, so every log line emitted under it names the account alongside the
+// request ID — the two fields an analyst joins a request's trail on. An empty
+// name (or nil context) returns the context unchanged: no account is a fact
+// worth showing as absent, not as a blank field.
+func WithAccount(ctx context.Context, name string) context.Context {
+	if ctx == nil || name == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, AccountKey, name)
+}
+
+// AccountFromContext returns the serving account name stored by WithAccount,
+// or "" when the context carries none.
+func AccountFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	name, _ := ctx.Value(AccountKey).(string)
+	return name
+}
+
 // Level represents a log level.
 type Level int
 
@@ -318,7 +348,8 @@ func Error(tag, msg string, kv ...any) {
 	output(LevelError, tag, msg, kv...)
 }
 
-// DebugCtx logs a debug-level message with request ID from context if present.
+// DebugCtx logs a debug-level message with the request ID and serving
+// account from context prepended when present (see WithAccount).
 func DebugCtx(ctx context.Context, tag, msg string, kv ...any) {
 	if !shouldLog(LevelDebug) {
 		return
@@ -326,7 +357,7 @@ func DebugCtx(ctx context.Context, tag, msg string, kv ...any) {
 	outputCtx(ctx, LevelDebug, tag, msg, kv...)
 }
 
-// InfoCtx logs an info-level message with request ID from context if present.
+// InfoCtx logs an info-level message with the context axis prepended.
 func InfoCtx(ctx context.Context, tag, msg string, kv ...any) {
 	if !shouldLog(LevelInfo) {
 		return
@@ -334,7 +365,7 @@ func InfoCtx(ctx context.Context, tag, msg string, kv ...any) {
 	outputCtx(ctx, LevelInfo, tag, msg, kv...)
 }
 
-// WarnCtx logs a warning-level message with request ID from context if present.
+// WarnCtx logs a warning-level message with the context axis prepended.
 func WarnCtx(ctx context.Context, tag, msg string, kv ...any) {
 	if !shouldLog(LevelWarn) {
 		return
@@ -342,7 +373,7 @@ func WarnCtx(ctx context.Context, tag, msg string, kv ...any) {
 	outputCtx(ctx, LevelWarn, tag, msg, kv...)
 }
 
-// ErrorCtx logs an error-level message with request ID from context if present.
+// ErrorCtx logs an error-level message with the context axis prepended.
 func ErrorCtx(ctx context.Context, tag, msg string, kv ...any) {
 	if !shouldLog(LevelError) {
 		return
@@ -352,8 +383,18 @@ func ErrorCtx(ctx context.Context, tag, msg string, kv ...any) {
 
 func outputCtx(ctx context.Context, l Level, tag, msg string, kv ...any) {
 	if ctx != nil {
+		// The single log axis: req_id first, then the serving account, ahead
+		// of the caller's own fields, so one grep on either value walks the
+		// whole trail of a request (access, proxy, upstream, usage).
+		var axis []any
 		if reqID, ok := ctx.Value(RequestIDKey).(string); ok && reqID != "" {
-			kv = append([]any{"req_id", reqID}, kv...)
+			axis = append(axis, "req_id", reqID)
+		}
+		if account := AccountFromContext(ctx); account != "" {
+			axis = append(axis, "account", account)
+		}
+		if len(axis) > 0 {
+			kv = append(axis, kv...)
 		}
 	}
 	output(l, tag, msg, kv...)

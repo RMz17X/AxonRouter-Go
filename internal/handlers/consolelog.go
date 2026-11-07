@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"axonrouter/proxy/internal/handlerutil"
@@ -17,15 +18,43 @@ import (
 // that idle-out connections keep the SSE stream alive.
 const consolePingInterval = 25 * time.Second
 
+// filterConsoleEntries narrows entries to one request's trail: only lines
+// containing the request ID survive. Both renderings of the ID on a line —
+// the access line's id=req_… and the context axis's req_id=req_… — contain
+// the bare ID, so one substring match catches the whole trail.
+func filterConsoleEntries(entries []log.ConsoleEntry, requestID string) []log.ConsoleEntry {
+	if requestID == "" {
+		return entries
+	}
+	out := make([]log.ConsoleEntry, 0, len(entries))
+	for _, e := range entries {
+		if strings.Contains(e.Line, requestID) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // HandleConsoleLogsGet returns the buffered console log entries (translator
 // console-logs GET). Each entry carries the level and arrival time known at
 // emit time, so the dashboard can colour and timestamp rows without re-parsing
 // rendered text. Upstream Next returned bare strings here; the Svelte
 // dashboard is the only consumer of this endpoint.
+//
+// Optional ?requestId=req_… returns only that request's lines (see
+// filterConsoleEntries); optional ?n= caps the result to the last n entries.
+// The filter runs first and the cap second, so ?n= always means "the last n
+// lines of the (possibly filtered) trail", never "filter within the last n".
 func HandleConsoleLogsGet(w http.ResponseWriter, r *http.Request) {
+	entries := filterConsoleEntries(log.ConsoleEntries(), r.URL.Query().Get("requestId"))
+	if q := r.URL.Query().Get("n"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 && len(entries) > n {
+			entries = entries[len(entries)-n:]
+		}
+	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"success": true,
-		"logs":    log.ConsoleEntries(),
+		"logs":    entries,
 	})
 }
 
@@ -123,8 +152,12 @@ func HandleConsoleLogsStream(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 
+	// Optional ?requestId= narrows the stream to one request's trail, with
+	// the same substring rule as the GET (see filterConsoleEntries).
+	requestID := r.URL.Query().Get("requestId")
+
 	// Buffered entries first.
-	if buffered := log.ConsoleEntries(); len(buffered) > 0 {
+	if buffered := filterConsoleEntries(log.ConsoleEntries(), requestID); len(buffered) > 0 {
 		if !send(map[string]any{"type": "init", "entries": buffered}) {
 			return
 		}
@@ -156,6 +189,9 @@ func HandleConsoleLogsStream(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			default:
+				if requestID != "" && !strings.Contains(ev.Entry().Line, requestID) {
+					continue
+				}
 				if !send(map[string]any{"type": "line", "entry": ev.Entry()}) {
 					return
 				}
