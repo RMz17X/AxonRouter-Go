@@ -138,6 +138,7 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "v1m": "v1m",
   "voyage-ai": "voyage",
   "windsurf": "windsurf",
+  "workbuddy": "wb",
   "xai": "xai",
   "xiaomi-mimo": "mimo",
   "xiaomi-tokenplan": "xmtp",
@@ -950,62 +951,39 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     }
   ],
   "cbcn": [
-    {
-      "id": "glm-5.2",
-      "name": "GLM-5.2"
-    },
-    {
-      "id": "glm-5.1",
-      "name": "GLM-5.1"
-    },
-    {
-      "id": "glm-5v-turbo",
-      "name": "GLM-5v-Turbo"
-    },
-    {
-      "id": "minimax-m3",
-      "name": "MiniMax-M3"
-    },
-    {
-      "id": "kimi-k2.7",
-      "name": "Kimi-K2.7-Code"
-    },
-    {
-      "id": "kimi-k2.6",
-      "name": "Kimi-K2.6"
-    },
-    {
-      "id": "hy3",
-      "name": "Hy3"
-    },
-    {
-      "id": "hy4-preview",
-      "name": "Hy4-Preview"
-    },
-    {
-      "id": "glm-5.3",
-      "name": "GLM-5.3"
-    },
-    {
-      "id": "glm-5.3-flash",
-      "name": "GLM-5.3-Flash"
-    },
-    {
-      "id": "kimi-k3-1",
-      "name": "Kimi-K3"
-    },
-    {
-      "id": "deepseek-v4-pro",
-      "name": "DeepSeek-V4-Pro"
-    },
-    {
-      "id": "deepseek-v4.1-flash",
-      "name": "DeepSeek-V4.1-Flash"
-    },
-    {
-      "id": "kimi-k2.8-preview",
-      "name": "Kimi-K2.8-Preview"
-    }
+    { "id": "default", "name": "Default" },
+    { "id": "deepseek-v4-pro", "name": "DeepSeek-V4-Pro" },
+    { "id": "deepseek-v4-flash", "name": "DeepSeek-V4-Flash" },
+    { "id": "deepseek-v4.1-flash", "name": "DeepSeek-V4.1-Flash" },
+    { "id": "deepseek-v3-2-volc", "name": "DeepSeek-V3.2" },
+    { "id": "minimax-m2.5", "name": "MiniMax-M2.5" },
+    { "id": "minimax-m3", "name": "MiniMax-M3" },
+    { "id": "minimax-m2.7", "name": "MiniMax-M2.7" },
+    { "id": "minimax-m3.1-flash", "name": "MiniMax-M3.1-Flash" },
+    { "id": "glm-5.3", "name": "GLM-5.3" },
+    { "id": "glm-5.3-flash", "name": "GLM-5.3-Flash" },
+    { "id": "glm-5.2", "name": "GLM-5.2" },
+    { "id": "glm-5.1", "name": "GLM-5.1" },
+    { "id": "glm-5.0", "name": "GLM-5.0" },
+    { "id": "glm-5.0-turbo", "name": "GLM-5.0-Turbo" },
+    { "id": "glm-5v-turbo", "name": "GLM-5v-Turbo" },
+    { "id": "glm-4.7", "name": "GLM-4.7" },
+    { "id": "glm-4.6", "name": "GLM-4.6" },
+    { "id": "glm-4.6v", "name": "GLM-4.6V" },
+    { "id": "kimi-k3-1", "name": "Kimi-K3" },
+    { "id": "kimi-k2.8-preview", "name": "Kimi-K2.8-Preview" },
+    { "id": "kimi-k2.7", "name": "Kimi-K2.7-Code" },
+    { "id": "kimi-k2.6", "name": "Kimi-K2.6" },
+    { "id": "kimi-k2.5", "name": "Kimi-K2.5" },
+    { "id": "kimi-k2-thinking", "name": "Kimi-K2-Thinking" },
+    { "id": "hy3", "name": "Hy3" },
+    { "id": "hy3-x", "name": "Hy3" },
+    { "id": "hy4-preview", "name": "Hy4-Preview" },
+    { "id": "hy4-preview-x", "name": "Hy4-Preview" },
+    { "id": "hunyuan-chat", "name": "Hunyuan-Turbos" },
+    { "id": "space-bunny", "name": "Space-Bunny" },
+    { "id": "step-5-preview", "name": "Step-5-Preview" },
+    { "id": "mimo-v2.6-pro", "name": "Xiaomi MiMo-V2.6-Pro" }
   ],
   "cx": [
     {
@@ -5605,6 +5583,92 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "kind": "embedding"
     }
   ],
+  "wb": [
+    {
+      "id": "default-model",
+      "name": "Auto"
+    },
+    {
+      "id": "fast-model",
+      "name": "Fast"
+    },
+    {
+      "id": "balanced-model",
+      "name": "Balanced"
+    },
+    {
+      "id": "primary-model",
+      "name": "Primary"
+    },
+    {
+      "id": "deep-model",
+      "name": "Deep"
+    },
+    {
+      "id": "hy3",
+      "name": "Hy3"
+    },
+    {
+      "id": "hy4-preview",
+      "name": "Hy4 Preview"
+    },
+    {
+      "id": "deepseek-v4.1-flash",
+      "name": "DeepSeek V4.1 Flash"
+    },
+    {
+      "id": "deepseek-v4.1-flash-sg",
+      "name": "DeepSeek V4.1 Flash (SG)"
+    },
+    {
+      "id": "glm-5.3",
+      "name": "GLM-5.3"
+    },
+    {
+      "id": "glm-5.3-flash",
+      "name": "GLM-5.3 Flash"
+    },
+    {
+      "id": "glm-5.2",
+      "name": "GLM-5.2"
+    },
+    {
+      "id": "kimi-k3",
+      "name": "Kimi K3"
+    },
+    {
+      "id": "kimi-k2.8-preview",
+      "name": "Kimi K2.8 Preview"
+    },
+    {
+      "id": "kimi-k2.6",
+      "name": "Kimi K2.6"
+    },
+    {
+      "id": "minimax-m3.1-flash",
+      "name": "MiniMax M3.1 Flash"
+    },
+    {
+      "id": "gpt-5.6-terra",
+      "name": "GPT-5.6 Terra"
+    },
+    {
+      "id": "gpt-5.6-luna",
+      "name": "GPT-5.6 Luna"
+    },
+    {
+      "id": "gpt-5.5",
+      "name": "GPT-5.5"
+    },
+    {
+      "id": "gpt-5.4",
+      "name": "GPT-5.4"
+    },
+    {
+      "id": "gemini-3.5-flash",
+      "name": "Gemini 3.5 Flash"
+    }
+  ],
   "windsurf": [
     {
       "id": "swe-1.6-fast",
@@ -6066,66 +6130,29 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     }
   ],
   "cbai": [
-    {
-      "id": "glm-5.2",
-      "name": "GLM-5.2"
-    },
-    {
-      "id": "glm-5.1",
-      "name": "GLM-5.1"
-    },
-    {
-      "id": "glm-5.0",
-      "name": "GLM-5.0"
-    },
-    {
-      "id": "glm-5.0-turbo",
-      "name": "GLM-5.0-Turbo"
-    },
-    {
-      "id": "glm-5v-turbo",
-      "name": "GLM-5v-Turbo"
-    },
-    {
-      "id": "glm-4.7",
-      "name": "GLM-4.7"
-    },
-    {
-      "id": "minimax-m3",
-      "name": "MiniMax-M3"
-    },
-    {
-      "id": "minimax-m2.7",
-      "name": "MiniMax-M2.7"
-    },
-    {
-      "id": "kimi-k2.7",
-      "name": "Kimi-K2.7-Code"
-    },
-    {
-      "id": "kimi-k2.6",
-      "name": "Kimi-K2.6"
-    },
-    {
-      "id": "kimi-k2.5",
-      "name": "Kimi-K2.5"
-    },
-    {
-      "id": "hy3-preview",
-      "name": "Hy3 Preview"
-    },
-    {
-      "id": "deepseek-v4-pro",
-      "name": "DeepSeek-V4-Pro"
-    },
-    {
-      "id": "deepseek-v4.1-flash",
-      "name": "DeepSeek-V4.1-Flash"
-    },
-    {
-      "id": "deepseek-v3-2-volc",
-      "name": "DeepSeek-V3.2"
-    }
+    { "id": "default-model", "name": "Auto" },
+    { "id": "fast-model", "name": "Fast" },
+    { "id": "balanced-model", "name": "Balanced" },
+    { "id": "primary-model", "name": "Primary" },
+    { "id": "deep-model", "name": "Deep" },
+    { "id": "hy3", "name": "Hy3" },
+    { "id": "hy4-preview", "name": "Hy4 Preview" },
+    { "id": "deepseek-v4.1-flash", "name": "DeepSeek-V4.1-Flash" },
+    { "id": "deepseek-v4.1-flash-sg", "name": "DeepSeek V4.1 Flash (SG)" },
+    { "id": "glm-5.3", "name": "GLM-5.3" },
+    { "id": "glm-5.3-flash", "name": "GLM-5.3-Flash" },
+    { "id": "glm-5.2", "name": "GLM-5.2" },
+    { "id": "kimi-k3", "name": "Kimi-K3" },
+    { "id": "kimi-k2.8-preview", "name": "Kimi-K2.8-Preview" },
+    { "id": "kimi-k2.6", "name": "Kimi-K2.6" },
+    { "id": "minimax-m3.1-flash", "name": "MiniMax-M3.1-Flash" },
+    { "id": "gpt-6-astra", "name": "GPT-6-Astra" },
+    { "id": "gpt-5.6-sol", "name": "GPT-5.6-Sol" },
+    { "id": "gpt-5.6-terra", "name": "GPT-5.6-Terra" },
+    { "id": "gpt-5.6-luna", "name": "GPT-5.6-Luna" },
+    { "id": "gpt-5.5", "name": "GPT-5.5" },
+    { "id": "gpt-5.4", "name": "GPT-5.4" },
+    { "id": "gemini-3.5-flash", "name": "Gemini-3.5-Flash" }
   ],
   "zd": [],
   "atmo": [

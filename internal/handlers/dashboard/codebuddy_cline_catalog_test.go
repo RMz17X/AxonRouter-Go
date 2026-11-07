@@ -30,12 +30,12 @@ func TestWriteConnectionModels_NoModelsRouteProviders(t *testing.T) {
 		{
 			name:     "codebuddy-intl serves its own catalogue",
 			provider: "codebuddy-intl",
-			wantID:   "minimax-m3",
+			wantID:   "minimax-m3.1-flash",
 		},
 		{
 			name:     "cbai alias resolves to the intl catalogue",
 			provider: "cbai",
-			wantID:   "minimax-m3",
+			wantID:   "minimax-m3.1-flash",
 		},
 	}
 	for _, tt := range tests {

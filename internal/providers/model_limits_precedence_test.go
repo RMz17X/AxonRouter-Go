@@ -45,14 +45,19 @@ func TestCatalogLimits_MultiSegmentID(t *testing.T) {
 	}
 }
 
-// CodeBuddy's catalog declares 393216 output for deepseek-v4.1-flash, but the
-// provider-blind substring table answers 128000. codebuddy-intl has to carry
-// the provider-qualified figure, because that table cannot: raising it there
-// would over-report every other gateway serving the same model name.
+// CodeBuddy Intl's own catalog (product.json @tencent-ai/codebuddy-code
+// 2.171.0) declares 128000 output for deepseek-v4.1-flash, but the
+// provider-blind substring table answers the same 128000 only by accident
+// of the shared name, and codebuddy-cn's catalog declares 393216 for the
+// same id. codebuddy-intl has to carry its own provider-qualified figure
+// from its capability table, because the substring table cannot: raising
+// it there would over-report every other gateway serving the same model
+// name. (Before fragment 976 the intl row borrowed CN's 393216 through
+// providerTokenLimits; the Intl capability table supersedes that.)
 func TestProviderTokenLimits_CodebuddyIntl(t *testing.T) {
 	d := GetCapabilitiesDetailForModel("codebuddy-intl", "deepseek-v4.1-flash")
-	if d.ContextWindow != 1000000 || d.MaxOutput != 393216 {
-		t.Errorf("codebuddy-intl deepseek-v4.1-flash = (%d, %d), want (1000000, 393216)", d.ContextWindow, d.MaxOutput)
+	if d.ContextWindow != 1000000 || d.MaxOutput != 128000 {
+		t.Errorf("codebuddy-intl deepseek-v4.1-flash = (%d, %d), want (1000000, 128000)", d.ContextWindow, d.MaxOutput)
 	}
 }
 

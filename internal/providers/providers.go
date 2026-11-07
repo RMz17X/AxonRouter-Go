@@ -759,6 +759,30 @@ var KnownProviders = map[string]ProviderConfig{
 			"x-codebuddy-request": "1",
 		},
 	},
+	// WorkBuddy — same Tencent gateway family as CodeBuddy Intl, own
+	// host/brand (open-sse/providers/registry/workbuddy.js transport).
+	// StaticHeaders carry the registry's static identity block; the
+	// executor (ForwardWorkbuddy) rebuilds the full verified header set
+	// per request, including fresh channel ids and X-User-Id.
+	"workbuddy": {
+		BaseURL:        "https://www.workbuddy.ai/v2/chat/completions",
+		AuthHeader:     "Authorization",
+		AuthScheme:     "bearer",
+		ThinkingFormat: "openai",
+		UsageURL:       "https://www.workbuddy.ai/v2/billing/meter/get-user-resource",
+		StaticHeaders: map[string]string{
+			"User-Agent":       "WorkBuddy/5.5.6",
+			"X-Product":        "SaaS",
+			"X-IDE-Type":       "WorkBuddy",
+			"X-IDE-Name":       "WorkBuddy",
+			"X-IDE-Version":    "5.5.6",
+			"X-Requested-With": "XMLHttpRequest",
+			"X-Agent-Intent":   "craft",
+			"X-Agent-Purpose":  "conversation",
+			"X-Agent-Type":     "main",
+			"X-Domain":         "www.workbuddy.ai",
+		},
+	},
 	"gitlab": {
 		BaseURL:    "https://gitlab.com/api/v4/chat/completions",
 		AuthHeader: "Authorization",

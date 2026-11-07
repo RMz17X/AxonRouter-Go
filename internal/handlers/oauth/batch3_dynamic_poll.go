@@ -246,6 +246,17 @@ func workbuddyPoll(ctx context.Context, state string) (deviceTokens, error) {
 	if code == 0 && strVal(inner, "accessToken") != "" {
 		t.access = strVal(inner, "accessToken")
 		t.refresh = strVal(inner, "refreshToken")
+		// Carry the token lifetime and JWT identity into the save, like
+		// codebuddyPoll: expiresIn feeds expiresAt, and upstream's
+		// WorkBuddy mapTokens sets email from the token claims with
+		// displayName = email.
+		if v, ok := inner["expiresIn"].(float64); ok && v > 0 {
+			t.expiresIn = int(v)
+		}
+		if claims := codebuddyJWTClaims(t.access); claims != nil {
+			t.email = codebuddyEmailFromClaims(claims)
+			t.name = t.email
+		}
 		return t, nil
 	}
 	if code == 11217 {

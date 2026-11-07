@@ -35,8 +35,17 @@ func TestClassifyError_CreditExhaustionParksForAnHour(t *testing.T) {
 	// instead of the 2-second backoff floor. Retrying a zero balance every
 	// two seconds burns a guaranteed-failed upstream call and makes the
 	// dashboard show a false recovery.
+	//
+	// Fragment 977 split the family of texts in two: the upstream
+	// ERROR_RULES credit texts ("insufficient credits", ...) now park
+	// for the 30-day monthly-exhausted sentence and are marked
+	// exhausted; the spellings ERROR_RULES does not carry ("credit
+	// balance is too low") keep the one-hour quota park below.
+	cls := ClassifyError(http.StatusBadRequest, "Insufficient credits to complete this request", 0)
+	if !cls.ShouldFallback || cls.NewBackoffLevel != 0 || cls.CooldownMs != cooldownMonthlyExhausted || !cls.Exhausted {
+		t.Errorf("ERROR_RULES credit text classified %+v, want 30d exhausted park", cls)
+	}
 	for _, text := range []string{
-		"Insufficient credits to complete this request",
 		"Your credit balance is too low to access the API",
 	} {
 		cls := ClassifyError(http.StatusBadRequest, text, 0)
@@ -51,7 +60,7 @@ func TestClassifyError_CreditExhaustionParksForAnHour(t *testing.T) {
 		}
 	}
 	// A 400 that carries no account fault still says nothing about the credential.
-	cls := ClassifyError(http.StatusBadRequest, "invalid request body", 0)
+	cls = ClassifyError(http.StatusBadRequest, "invalid request body", 0)
 	if cls.ShouldFallback {
 		t.Errorf("expected no fallback for a plain 400, got %+v", cls)
 	}

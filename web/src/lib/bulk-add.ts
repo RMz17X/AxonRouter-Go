@@ -82,3 +82,78 @@ export function planBulkAdd(
   }
   return out
 }
+
+// --- CodeBuddy-family bulk JWT payload detection (bulkAdd.js) ---
+//
+// The add-connection bulk tab auto-routes JSON-shaped pastes to the
+// bulk-jwt endpoint for the family providers: an account export is not
+// a list of API keys, and feeding it to planBulkAdd would store raw
+// JSON as a key. Detection follows upstream exactly: a payload is a
+// bulk-jwt account payload when its JSON carries token fields, a
+// token-field key appears anywhere in the text (concatenated pretty
+// JSON), or every non-empty line is a JSON object/array with tokens.
+
+export const JWT_BULK_PROVIDERS: readonly string[] = ['codebuddy-cn', 'codebuddy-intl', 'workbuddy']
+
+export function supportsJwtBulkImport(providerId: string): boolean {
+  return JWT_BULK_PROVIDERS.includes(providerId)
+}
+
+const TOKEN_FIELDS = ['accessToken', 'access_token', 'refreshToken', 'refresh_token', 'token', 'apiKey']
+
+function objHasTokenField(obj: Record<string, unknown>): boolean {
+  return TOKEN_FIELDS.some((k) => typeof obj[k] === 'string' && (obj[k] as string).trim() !== '')
+}
+
+function jsonHasTokenAccounts(parsed: unknown): boolean {
+  if (Array.isArray(parsed)) {
+    return parsed.some(
+      (item) => item !== null && typeof item === 'object' && objHasTokenField(item as Record<string, unknown>)
+    )
+  }
+  if (parsed !== null && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>
+    for (const key of ['accounts', 'tokens', 'data']) {
+      if (Array.isArray(obj[key])) return jsonHasTokenAccounts(obj[key])
+    }
+    return objHasTokenField(obj)
+  }
+  return false
+}
+
+export function isJsonAccountPayload(text: string): boolean {
+  const raw = typeof text === 'string' ? text.trim() : ''
+  if (!raw) return false
+  try {
+    return jsonHasTokenAccounts(JSON.parse(raw))
+  } catch {
+    // Not whole-text JSON — fall through to the shape checks below.
+  }
+  if (/"(accessToken|access_token|refreshToken|refresh_token|token|apiKey)"\s*:/.test(raw)) return true
+  const lines = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  if (!lines.length) return false
+  return lines.every((line) => {
+    try {
+      const parsed: unknown = JSON.parse(line)
+      if (parsed === null || typeof parsed !== 'object') return false
+      if (Array.isArray(parsed)) return jsonHasTokenAccounts(parsed)
+      return objHasTokenField(parsed as Record<string, unknown>)
+    } catch {
+      return false
+    }
+  })
+}
+
+export function looksLikeJsonPayload(text: string): boolean {
+  const raw = typeof text === 'string' ? text.trim() : ''
+  if (!raw) return false
+  if (raw.startsWith('{') || raw.startsWith('[')) return true
+  const lines = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  return lines.length > 0 && lines.every((l) => l.startsWith('{') || l.startsWith('['))
+}

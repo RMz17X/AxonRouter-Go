@@ -83,6 +83,8 @@
   } from './connectionProbe'
   import EditConnectionModal, { type ConnectionUpdate } from './EditConnectionModal.svelte'
   import AddConnectionModal from './AddConnectionModal.svelte'
+  import BulkImportJwtModal from './BulkImportJwtModal.svelte'
+  import { supportsJwtBulkImport } from '../../lib/bulk-add'
   import AddCustomModelModal from './AddCustomModelModal.svelte'
   import { nodeLimitsDraftOf, nodeLimitsSummary, nodeLimitsUsageSummary } from '../../lib/node-limits'
   import type { ProviderNodeLimitsPatch } from '../../api/client'
@@ -167,6 +169,7 @@
     providerId === 'qoder' || providerId === 'kilocode' || providerId === 'grok-cli' ||
     providerId === 'github' || providerId === 'kiro' || providerId === 'kimi' ||
     providerId === 'kimi-coding' || providerId === 'codebuddy-cn' || providerId === 'codebuddy-intl' ||
+    providerId === 'workbuddy' ||
     providerId === 'minimax-code' || providerId === 'minimax-code-global' || providerId === 'muse' ||
     providerId === 'nous' || providerId === 'glm' ||
     providerId === 'zcode'
@@ -531,6 +534,72 @@
   // ProbeStatus keeps those two writers from drifting apart.
   let oneByOneStatuses = $state<Record<string, ProbeStatus>>({})
 
+  // Credits (upstream ConnectionRow isCreditAware): CodeBuddy CN/Intl and
+  // WorkBuddy expose a Tencent billing endpoint with a per-package
+  // remaining-credit balance, surfaced on demand per connection so the
+  // operator can see account-level headroom before deciding rotation order.
+  interface CreditInfo {
+    remaining: number
+    total: number
+    resetAtMs: number | null
+    plan?: string
+    message?: string
+  }
+  let creditInfoByConn = $state<Record<string, CreditInfo>>({})
+  let creditLoadingByConn = $state<Record<string, boolean>>({})
+  const CREDIT_AWARE_PROVIDERS = new Set(['codebuddy-cn', 'codebuddy-intl', 'workbuddy'])
+  function isCreditAwareConn(conn: ProviderConnection): boolean {
+    return CREDIT_AWARE_PROVIDERS.has(conn.provider)
+  }
+  async function fetchConnectionCredits(conn: ProviderConnection) {
+    if (creditLoadingByConn[conn.id]) return
+    creditLoadingByConn = { ...creditLoadingByConn, [conn.id]: true }
+    try {
+      const data = (await api.getConnectionUsage(conn.id, true)) as ConnectionUsageResponse & {
+        message?: string
+      }
+      if (data?.quotas && typeof data.quotas === 'object' && !Array.isArray(data.quotas)) {
+        let remaining = 0
+        let total = 0
+        let resetAtMs: number | null = null
+        for (const q of Object.values(data.quotas)) {
+          if (q.unlimited) continue
+          const t = Number(q.total)
+          const u = Number(q.used)
+          if (Number.isFinite(t) && Number.isFinite(u)) {
+            remaining += Math.max(0, t - u)
+            total += t
+          }
+          const r = q.resetAt ? new Date(q.resetAt).getTime() : NaN
+          if (Number.isFinite(r) && (resetAtMs === null || r < resetAtMs)) resetAtMs = r
+        }
+        creditInfoByConn = {
+          ...creditInfoByConn,
+          [conn.id]: { remaining, total, resetAtMs, plan: data.plan },
+        }
+      } else if (data?.message) {
+        creditInfoByConn = { ...creditInfoByConn, [conn.id]: { remaining: 0, total: 0, resetAtMs: null, message: data.message } }
+      } else {
+        creditInfoByConn = {
+          ...creditInfoByConn,
+          [conn.id]: { remaining: 0, total: 0, resetAtMs: null, message: data?.error || 'No quota data' },
+        }
+      }
+    } catch (e) {
+      creditInfoByConn = {
+        ...creditInfoByConn,
+        [conn.id]: {
+          remaining: 0,
+          total: 0,
+          resetAtMs: null,
+          message: e instanceof Error ? e.message : 'Failed to load quota',
+        },
+      }
+    } finally {
+      creditLoadingByConn = { ...creditLoadingByConn, [conn.id]: false }
+    }
+  }
+
   // Row UI state
   let activeProxyDropdownId = $state<string | null>(null)
   let proxySearch = $state('')
@@ -769,6 +838,10 @@
   let editingConnection = $state<ProviderConnection | null>(null)
 
   let showAddKeyModal = $state(false)
+  let showBulkJwtModal = $state(false)
+  // CodeBuddy-family providers take a Bulk Add (JWT) entry in the
+  // connections toolbar (upstream ConnectionsSection gating).
+  let isJwtBulkProvider = $derived(supportsJwtBulkImport(providerId))
   let addConnectionError = $state('')
   let showAddCustomModelModal = $state(false)
   let showEditNodeModal = $state(false)
@@ -3586,6 +3659,18 @@
           </button>
         {/if}
 
+        {#if isJwtBulkProvider}
+          <button
+            type="button"
+            onclick={() => (showBulkJwtModal = true)}
+            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] bg-surface-2 hover:bg-surface-3 text-text-main border border-border h-7 px-3 text-xs rounded-[8px]"
+            title="Bulk import JWT / token accounts"
+          >
+            <span class="material-symbols-outlined text-[18px]">playlist_add</span>
+            Bulk Add
+          </button>
+        {/if}
+
         <button
           type="button"
           onclick={runOneByOneTest}
@@ -4059,6 +4144,19 @@
 
                       <!-- Priority tag -->
                       <span class="text-xs text-text-muted">#{priorityNum}</span>
+                      <!-- Credits left, fetched on demand via the Actions
+                           menu (upstream ConnectionRow isCreditAware). -->
+                      {#if isCreditAwareConn(conn) && creditInfoByConn[conn.id]}
+                        {@const creditInfo = creditInfoByConn[conn.id]}
+                        <span
+                          class="max-w-full truncate text-xs text-text-muted"
+                          title={creditInfo.message ? creditInfo.message : `Plan: ${creditInfo.plan || '?'}`}
+                        >
+                          {creditInfo.message
+                            ? `Credits: ${creditInfo.message}`
+                            : `Credits left: ${creditInfo.remaining.toFixed(2)} / ${creditInfo.total.toFixed(2)}${creditInfo.resetAtMs ? ` (resets ${new Date(creditInfo.resetAtMs).toLocaleDateString()})` : ''}`}
+                        </span>
+                      {/if}
                     </div>
                     <!-- Error message block -->
                     {#if lastErr && lastErr !== 'Provider test not supported' && (status?.state === 'failed' || conn.testStatus === 'failed' || conn.testStatus === 'error' || conn.testStatus === 'unavailable' || !isConnActive || connBadge === 'error' || lastErr.toLowerCase().includes('terms of service') || lastErr.toLowerCase().includes('disabled in this account') || lastErr.toLowerCase().includes('account disabled') || lastErr.toLowerCase().includes('tos_violation') || lastErr.toLowerCase().includes('validation_required') || lastErr.toLowerCase().includes('verify your account') || Boolean(conn.verificationUrl))}
@@ -4371,6 +4469,18 @@
                         disabled={isTestingOneByOne || status?.state === 'testing'}
                         onSelect={() => refreshOneConnection(conn)}
                       />
+                      {#if isCreditAwareConn(conn)}
+                        <MenuItem
+                          label={creditLoadingByConn[conn.id]
+                            ? 'Loading credits...'
+                            : creditInfoByConn[conn.id]
+                              ? 'Refresh credits'
+                              : 'Show credits'}
+                          icon="credit_card"
+                          disabled={!!creditLoadingByConn[conn.id]}
+                          onSelect={() => fetchConnectionCredits(conn)}
+                        />
+                      {/if}
                       <MenuItem
                         label="Reset Cooldown / Status"
                         icon="restart_alt"
@@ -4937,6 +5047,13 @@
                 {#if rowCaps?.free}
                   <span class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                     FREE
+                  </span>
+                {:else if typeof rowCaps?.credit === 'number'}
+                  <span
+                    class="inline-flex items-center text-[10px] font-semibold px-1.5 py-0.5 rounded bg-surface-3 text-text-muted border border-border"
+                    title="Credits per request"
+                  >
+                    x{rowCaps.credit.toFixed(2)}
                   </span>
                 {/if}
                 {#if isSessionActive}
@@ -5801,6 +5918,13 @@
   onBulkDone={onRefresh}
 />
 
+<BulkImportJwtModal
+  isOpen={showBulkJwtModal}
+  providerId={providerId}
+  providerName={providerName}
+  onClose={() => (showBulkJwtModal = false)}
+  onImported={onRefresh}
+/>
 <ExportKeysModal
   isOpen={showExportKeysModal}
   providerId={providerId}

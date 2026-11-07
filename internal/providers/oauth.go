@@ -83,6 +83,13 @@ var KnownOAuthConfigs = map[string]OAuthClientConfig{
 		ClientSecret: envOr("QODER_CN_OAUTH_CLIENT_SECRET", ""),
 		TokenURL:     "https://gateway.qoder.com.cn/algo/api/v3/user/refresh_token",
 	},
+	// CodeBuddy family: these entries document the endpoints only. The
+	// family refresh is NOT the standard form-POST grant — the token
+	// rides in the X-Refresh-Token header — so all three providers have
+	// dedicated refreshers registered from init() in
+	// internal/proxy/oauth/codebuddy.go, and RegisterAll skips a
+	// provider that already has one. The TokenURLs below are the correct
+	// per-brand hosts (intl previously pointed at the CN host).
 	"codebuddy-cn": {
 		ClientID:     envOr("CODEBUDDY_CN_OAUTH_CLIENT_ID", ""),
 		ClientSecret: envOr("CODEBUDDY_CN_OAUTH_CLIENT_SECRET", ""),
@@ -91,7 +98,12 @@ var KnownOAuthConfigs = map[string]OAuthClientConfig{
 	"codebuddy-intl": {
 		ClientID:     envOr("CODEBUDDY_INTL_OAUTH_CLIENT_ID", ""),
 		ClientSecret: envOr("CODEBUDDY_INTL_OAUTH_CLIENT_SECRET", ""),
-		TokenURL:     "https://copilot.tencent.com/v2/plugin/auth/token/refresh",
+		TokenURL:     "https://www.codebuddy.ai/v2/plugin/auth/token/refresh",
+	},
+	"workbuddy": {
+		ClientID:     envOr("WORKBUDDY_OAUTH_CLIENT_ID", ""),
+		ClientSecret: envOr("WORKBUDDY_OAUTH_CLIENT_SECRET", ""),
+		TokenURL:     "https://www.workbuddy.ai/v2/plugin/auth/token/refresh",
 	},
 	"cline": {
 		ClientID:     envOr("CLINE_OAUTH_CLIENT_ID", ""),

@@ -43,6 +43,10 @@ type ComboStrategy struct {
 	// on every failure path, so this flag is a no-op there.
 	RespectStoredOrder bool     `json:"respectStoredOrder,omitempty"`
 	FallbackCombos     []string `json:"fallbackCombos,omitempty"`
+	// CostAware opts this combo out of credit-first base ordering when set
+	// to false (upstream comboStrategies[name].costAware). Nil inherits the
+	// global ComboCostAware setting, which itself defaults to on.
+	CostAware *bool `json:"costAware,omitempty"`
 }
 
 // DefaultFirstTokenGraceMs is the grace period applied after a model response
@@ -129,28 +133,32 @@ type SettingsData struct {
 	// in, so "a URL exists" cannot stand in for "the operator turned this on".
 	// Off by default: an unconfigured proxy must not be a slow path on every
 	// request.
-	HeadroomEnabled            bool                            `json:"headroomEnabled"`
-	HeadroomCodeAware          bool                            `json:"headroomCodeAware"`
-	HeadroomKompress           bool                            `json:"headroomKompress"`
-	HeadroomTimeoutMs          int                             `json:"headroomTimeoutMs"`
-	SemanticCacheEnabled       bool                            `json:"semanticCacheEnabled"`
-	SemanticCacheTTL           int                             `json:"semanticCacheTTL,omitempty"`
-	SemanticCacheMaxEntries    int                             `json:"semanticCacheMaxEntries,omitempty"`
-	AutoUpdate                 bool                            `json:"autoUpdate"`
-	FallbackStrategy           string                          `json:"fallbackStrategy,omitempty"`
-	StickyRoundRobinLimit      int                             `json:"stickyRoundRobinLimit,omitempty"`
-	ForceFallback              bool                            `json:"forceFallback,omitempty"`
-	ComboStrategy              string                          `json:"comboStrategy,omitempty"`
-	ComboStickyRoundRobinLimit int                             `json:"comboStickyRoundRobinLimit,omitempty"`
-	SeatAttemptBudgetMs        int                             `json:"seatAttemptBudgetMs,omitempty"`
-	ComboStrategies            map[string]ComboStrategy        `json:"comboStrategies,omitempty"`
-	ProviderStrategies         map[string]ProviderStrategy     `json:"providerStrategies,omitempty"`
-	CapacityAdapter            map[string]CapacityAdapterEntry `json:"capacityAdapter,omitempty"`
-	ProviderOverrides          map[string]ProviderOverrides    `json:"providerOverrides,omitempty"`
-	EnableObservability        bool                            `json:"enableObservability"`
-	ObservabilityMode          string                          `json:"observabilityMode,omitempty"`
-	RetentionDays              int                             `json:"retentionDays,omitempty"`
-	MaxRequestRecords          int                             `json:"maxRequestRecords,omitempty"`
+	HeadroomEnabled            bool                     `json:"headroomEnabled"`
+	HeadroomCodeAware          bool                     `json:"headroomCodeAware"`
+	HeadroomKompress           bool                     `json:"headroomKompress"`
+	HeadroomTimeoutMs          int                      `json:"headroomTimeoutMs"`
+	SemanticCacheEnabled       bool                     `json:"semanticCacheEnabled"`
+	SemanticCacheTTL           int                      `json:"semanticCacheTTL,omitempty"`
+	SemanticCacheMaxEntries    int                      `json:"semanticCacheMaxEntries,omitempty"`
+	AutoUpdate                 bool                     `json:"autoUpdate"`
+	FallbackStrategy           string                   `json:"fallbackStrategy,omitempty"`
+	StickyRoundRobinLimit      int                      `json:"stickyRoundRobinLimit,omitempty"`
+	ForceFallback              bool                     `json:"forceFallback,omitempty"`
+	ComboStrategy              string                   `json:"comboStrategy,omitempty"`
+	ComboStickyRoundRobinLimit int                      `json:"comboStickyRoundRobinLimit,omitempty"`
+	SeatAttemptBudgetMs        int                      `json:"seatAttemptBudgetMs,omitempty"`
+	ComboStrategies            map[string]ComboStrategy `json:"comboStrategies,omitempty"`
+	// ComboCostAware is the global default for credit-first combo ordering
+	// (upstream settings.comboCostAware, default true); a combo's own
+	// costAware flag wins over it. Nil means on.
+	ComboCostAware      *bool                           `json:"comboCostAware,omitempty"`
+	ProviderStrategies  map[string]ProviderStrategy     `json:"providerStrategies,omitempty"`
+	CapacityAdapter     map[string]CapacityAdapterEntry `json:"capacityAdapter,omitempty"`
+	ProviderOverrides   map[string]ProviderOverrides    `json:"providerOverrides,omitempty"`
+	EnableObservability bool                            `json:"enableObservability"`
+	ObservabilityMode   string                          `json:"observabilityMode,omitempty"`
+	RetentionDays       int                             `json:"retentionDays,omitempty"`
+	MaxRequestRecords   int                             `json:"maxRequestRecords,omitempty"`
 	// UsageHistoryRetentionDays bounds how far back the usage ledger is kept.
 	// It is a separate knob from RetentionDays on purpose: that one governs
 	// requestDetails, which is diagnostics nothing bills from, while this one

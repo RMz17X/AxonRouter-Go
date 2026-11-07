@@ -6,11 +6,14 @@
     getRemainingPercentage,
     getStatusColor,
     getStatusEmoji,
+    getTotalCredit,
+    isCreditPoolProvider,
     type NormalizedQuota,
   } from './types'
 
   interface Props {
     quotas?: NormalizedQuota[]
+    provider?: string
     compact?: boolean
     sortMode?: 'default' | 'remaining-asc' | 'remaining-desc'
     showSortLabel?: boolean
@@ -19,6 +22,7 @@
 
   let {
     quotas = [],
+    provider = '',
     compact = false,
     sortMode = 'default',
     showSortLabel = false,
@@ -112,6 +116,11 @@
   }
 
   const cellPad = $derived(compact ? 'py-1 px-1.5' : 'py-2 px-3')
+
+  // Credit-pool providers (CodeBuddy CN/Intl, WorkBuddy) bill per credit
+  // pack: the rows stay per-pack, but the operator needs one number for
+  // the whole balance (upstream QuotaTable.js total-credit card).
+  let totalCredit = $derived(isCreditPoolProvider(provider) ? getTotalCredit(sortedQuotas) : null)
   const nameText = $derived(compact ? 'text-[11px]' : 'text-sm')
   const resetPrimary = $derived(compact ? 'text-[11px]' : 'text-sm')
   const resetSecondary = $derived(compact ? 'text-[10px] leading-tight' : 'text-xs')
@@ -123,6 +132,39 @@
 
 {#if quotas && quotas.length > 0}
   <div class="space-y-2">
+    <!-- Total Credit card for credit-pool providers, above the per-pack rows. -->
+    {#if totalCredit}
+      {@const tcColors = colorClassesFor(totalCredit.remainingPercentage)}
+      <div class="rounded-md border border-border-subtle bg-surface-2/40 px-2.5 py-2">
+        <div class="flex items-baseline justify-between gap-2">
+          <span class="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
+            Total Credit
+          </span>
+          <span class="text-[10px] text-text-muted">
+            {totalCredit.packs} pack{totalCredit.packs > 1 ? 's' : ''}
+          </span>
+        </div>
+        <div
+          class="{compact ? 'h-1' : 'h-1.5'} mt-1.5 rounded-full overflow-hidden border border-transparent {tcColors.bgLight}"
+        >
+          <div
+            class="h-full {tcColors.bg}"
+            style:width="{Math.min(totalCredit.remainingPercentage, 100)}%"
+          ></div>
+        </div>
+        <div class="mt-1 flex items-center justify-between gap-2 text-xs">
+          <span
+            class="text-text-main font-medium truncate"
+            title="{totalCredit.used.toLocaleString()} used of {totalCredit.total.toLocaleString()} credits"
+          >
+            {totalCredit.remaining.toLocaleString()} left
+            <span class="text-text-muted font-normal">/ {totalCredit.total.toLocaleString()}</span>
+          </span>
+          <span class="{tcColors.text} font-medium shrink-0">{totalCredit.remainingPercentage}%</span>
+        </div>
+      </div>
+    {/if}
+
     <div class="flex items-center justify-between gap-2">
       <div class="text-[10px] text-text-muted">
         {sortedQuotas.length} quota{sortedQuotas.length > 1 ? 's' : ''}

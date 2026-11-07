@@ -220,6 +220,25 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Website:      "https://copilot.tencent.com",
 		Notice:       &Notice{SignupURL: "https://copilot.tencent.com"},
 	},
+	// WorkBuddy (workbuddy.ai) — Tencent's "Buddy AI" office agent, same
+	// gateway family as CodeBuddy Intl behind its own brand/host
+	// (open-sse/providers/registry/workbuddy.js). Hand-added with the
+	// Phase-1 CodeBuddy-family port (fragment 975): the generated
+	// registry predates the provider's registration.
+	"workbuddy": {
+		ID:                "workbuddy",
+		Name:              "WorkBuddy",
+		Alias:             "wb",
+		Category:          CategoryOAuth,
+		Color:             "#006EFF",
+		Icon:              "smart_toy",
+		Priority:          90,
+		AuthModes:         []string{"oauth", "apikey"},
+		PassthroughModels: true,
+		ServiceKinds:      []string{"llm"},
+		Website:           "https://www.workbuddy.ai",
+		Notice:            &Notice{SignupURL: "https://workbuddy.ai/invite?code=FUACYYR4"},
+	},
 	"cursor": {
 		ID:           "cursor",
 		Name:         "Cursor IDE",

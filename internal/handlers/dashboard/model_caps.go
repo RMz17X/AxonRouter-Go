@@ -14,6 +14,10 @@ import (
 // isModelFree evaluates whether a model is free by combining suffix heuristic
 // (IsFreeTierModel) and zero-cost pricing entries.
 //
+// A registry credit of exactly 0 (the CodeBuddy family's credit table) is
+// the strongest signal: the provider itself prices the model at zero
+// credits, so it is consulted before the generic heuristics below.
+//
 // Suffix precedence: a model explicitly identified with :free, /free, or -free
 // in the catalog or registry is treated as free, even if the generic vendor table
 // lists a fallback rate for the unadorned model name (e.g. deepseek-v4-flash-free).
@@ -22,6 +26,9 @@ func isModelFree(provider, modelID string) bool {
 	cleanID := modelID
 	if parenIdx := strings.IndexByte(cleanID, '('); parenIdx != -1 {
 		cleanID = strings.TrimSpace(cleanID[:parenIdx])
+	}
+	if credit, priced := providers.GetModelCredit(provider, cleanID); priced && credit == 0 {
+		return true
 	}
 	if providers.IsFreeTierModel(cleanID) {
 		return true
@@ -48,6 +55,10 @@ type modelCaps struct {
 	MaxOutput      int      `json:"maxOutput"`
 	ThinkingLevels []string `json:"thinkingLevels"`
 	Free           bool     `json:"free"`
+	// Credit is the provider's per-request credit price (CodeBuddy family),
+	// nil when the model is unpriced. The detail page renders it as the
+	// price pill; credit 0 pairs with Free above for the FREE badge.
+	Credit *float64 `json:"credit,omitempty"`
 }
 
 // HandleGetModelCaps handles GET /api/models/caps?provider=<id>.
@@ -78,6 +89,9 @@ func (h *DashboardHandler) HandleGetModelCaps(w http.ResponseWriter, r *http.Req
 			ContextWindow: detail.ContextWindow,
 			MaxOutput:     detail.MaxOutput,
 			Free:          isModelFree(resolved, model),
+		}
+		if credit, priced := providers.GetModelCredit(resolved, model); priced {
+			entry.Credit = &credit
 		}
 		if levels := providers.GetThinkingLevels(resolved, model); levels != nil {
 			entry.ThinkingLevels = levels

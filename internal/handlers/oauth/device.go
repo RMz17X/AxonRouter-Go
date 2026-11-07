@@ -22,7 +22,7 @@ import (
 // kimi-coding aliases to kimi (dual-auth merge, like upstream).
 var deviceProviders = []string{
 	"qoder", "qoder-cn", "kilocode", "grok-cli", "github", "kiro", "kimi", "kimi-coding",
-	"codebuddy-cn", "codebuddy-intl", "muse", "minimax-code", "minimax-code-global", "nous",
+	"codebuddy-cn", "codebuddy-intl", "workbuddy", "muse", "minimax-code", "minimax-code-global", "nous",
 	"glm", "zcode",
 }
 
@@ -200,6 +200,8 @@ func deviceStart(ctx context.Context, provider, region, startURL, authMethod str
 		return kimiStart(ctx)
 	case "codebuddy-cn", "codebuddy-intl":
 		return codebuddyStart(ctx, provider)
+	case "workbuddy":
+		return workbuddyStart(ctx)
 	case "muse":
 		return museStart(ctx)
 	case "minimax-code", "minimax-code-global":
@@ -481,6 +483,8 @@ func devicePoll(ctx context.Context, provider, code string, session map[string]a
 		t, err = kimiPoll(ctx, session, code)
 	case "codebuddy-cn", "codebuddy-intl":
 		t, err = codebuddyPoll(ctx, provider, code)
+	case "workbuddy":
+		t, err = workbuddyPoll(ctx, code)
 	case "muse":
 		t, err = musePoll(ctx, code)
 	case "minimax-code", "minimax-code-global":
@@ -520,7 +524,7 @@ func (h *OAuthHandler) saveDeviceConnection(provider string, t deviceTokens) sav
 	name := connectionDisplayName(provider, t.name, email, map[string]string{
 		"qoder": "Qoder", "qoder-cn": "Qoder CN", "kilocode": "KiloCode", "grok-cli": "Grok CLI",
 		"github": "GitHub", "kiro": "Kiro", "kimi": "Kimi", "muse": "Muse",
-		"codebuddy-cn": "CodeBuddy", "codebuddy-intl": "CodeBuddy",
+		"codebuddy-cn": "CodeBuddy", "codebuddy-intl": "CodeBuddy", "workbuddy": "WorkBuddy",
 		"zcode": "ZCode",
 		"minimax-code": "MiniMax Code", "minimax-code-global": "MiniMax Code Global",
 		"nous":  "Nous Research", "glm": "Zai GLM Coding",
@@ -532,6 +536,13 @@ func (h *OAuthHandler) saveDeviceConnection(provider string, t deviceTokens) sav
 	}
 	if email != "" {
 		dataMap["email"] = email
+	}
+	// CodeBuddy family: upstream's mapTokens captures a displayName from
+	// the JWT (intl: name claims; workbuddy: the account email). Persist
+	// it alongside the email; the name column above keeps this package's
+	// email-first convention.
+	if isCodebuddyFamilyProvider(provider) && strings.TrimSpace(t.name) != "" {
+		dataMap["displayName"] = t.name
 	}
 	psd := map[string]any{"authMethod": "device"}
 	for k, v := range t.extra {
@@ -557,7 +568,22 @@ func (h *OAuthHandler) saveDeviceConnection(provider string, t deviceTokens) sav
 			}
 		}
 	}
+	// CodeBuddy family: upstream merges a re-login by provider + email,
+	// so a rotated token updates the account's existing row instead of
+	// creating a credential-hash duplicate (codebuddy_save.go). The
+	// hash identity remains the fallback when no email can be known.
+	if isCodebuddyFamilyProvider(provider) && email != "" && h.Repo != nil && h.Repo.RawDB() != nil {
+		if prevID := codebuddyExistingIdentity(context.Background(), h.Repo, provider, email); prevID != "" {
+			id = prevID
+		}
+	}
 	dataMap["providerSpecificData"] = psd
+	// CodeBuddy family: upstream stores expires_in || 86400 for all
+	// three providers, so a poll that omits the lifetime still produces
+	// an expiresAt instead of the null "unknown" shape.
+	if isCodebuddyFamilyProvider(provider) && t.expiresIn <= 0 {
+		t.expiresIn = codebuddyDefaultExpiresIn
+	}
 	if t.expiresIn > 0 {
 		dataMap["expiresAt"] = time.Now().Add(time.Duration(t.expiresIn) * time.Second).UTC().Format(time.RFC3339)
 	} else {
@@ -912,6 +938,19 @@ func codebuddyPoll(ctx context.Context, provider, state string) (deviceTokens, e
 	if code == 0 && strVal(inner, "accessToken") != "" {
 		t.access = strVal(inner, "accessToken")
 		t.refresh = strVal(inner, "refreshToken")
+		// Carry the token lifetime and JWT identity into the save:
+		// expiresIn feeds expiresAt, and email/displayName drive the
+		// family's provider+email merge (upstream mapTokens does the
+		// same extraction — CN email-only, intl with displayName).
+		if v, ok := inner["expiresIn"].(float64); ok && v > 0 {
+			t.expiresIn = int(v)
+		}
+		if claims := codebuddyJWTClaims(t.access); claims != nil {
+			t.email = codebuddyEmailFromClaims(claims)
+			if provider == "codebuddy-intl" {
+				t.name = codebuddyDisplayNameFromClaims(claims, t.email)
+			}
+		}
 		return t, nil
 	}
 	if code == 11217 {

@@ -338,6 +338,12 @@ func (h *DashboardHandler) aggregateProviderModels() map[string][]map[string]any
 			if kind := providers.GetProviderModelKind(providerID, modelID); kind != "" {
 				entry["kind"] = kind
 			}
+			// Credit price from the one credit table (providers.GetModelCredit);
+			// unpriced models omit the key entirely, mirroring the JS registry
+			// where only priced rows carry `credit`.
+			if credit, priced := providers.GetModelCredit(providerID, modelID); priced {
+				entry["credit"] = credit
+			}
 			systemModels = append(systemModels, entry)
 		}
 

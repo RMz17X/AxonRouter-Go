@@ -113,6 +113,42 @@ var patternThinking = []thinkingPattern{
 	// deepseek-v4.1-flash (upstream decolua/9router#4614).
 	{Provider: "codebuddy-cn", Pattern: "deepseek-v4-pro", Levels: []string{"low", "high", "xhigh"}},
 	{Provider: "codebuddy-cn", Pattern: "deepseek-v4.1-flash", Levels: []string{"low", "high", "max"}},
+	// codebuddy-intl per-model effort sets — the published CodeBuddy.ai
+	// catalog (product.json @tencent-ai/codebuddy-code 2.171.0, 2026-10-20)
+	// declares reasoning.supportedEfforts per model (upstream
+	// thinkingLevels.js; fragment 976, audit CB #6). Same first-match-wins
+	// trap as codebuddy-cn above: these MUST stay above the unqualified
+	// *deepseek-v4.* glob, otherwise the glob swallows them and the
+	// per-model set never fires. Virtual routing presets pin their own
+	// effort (fast/balanced = medium, primary = high) and the gateway
+	// clamps anything else, so the picker offers exactly the declared
+	// level. default-model / deep-model declare no reasoning. NOTE: intl's
+	// deepseek set ends in "max" where CN/WB use "xhigh" — each provider's
+	// JS values are mirrored exactly, never normalized across providers.
+	{Provider: "codebuddy-intl", Pattern: "fast-model", Levels: []string{"medium"}},
+	{Provider: "codebuddy-intl", Pattern: "balanced-model", Levels: []string{"medium"}},
+	{Provider: "codebuddy-intl", Pattern: "primary-model", Levels: []string{"high"}},
+	{Provider: "codebuddy-intl", Pattern: "deepseek-v4*", Levels: []string{"low", "high", "max"}},
+	{Provider: "codebuddy-intl", Pattern: "glm-5.3*", Levels: []string{"low", "high", "max"}},
+	{Provider: "codebuddy-intl", Pattern: "glm-5.2", Levels: []string{"high", "xhigh"}},
+	{Provider: "codebuddy-intl", Pattern: "kimi-k2.8-preview", Levels: []string{"low", "high", "max"}},
+	{Provider: "codebuddy-intl", Pattern: "hy3", Levels: []string{"low", "high"}},
+	{Provider: "codebuddy-intl", Pattern: "hy4-preview", Levels: []string{"high"}},
+	{Provider: "codebuddy-intl", Pattern: "gpt-6-astra", Levels: []string{"none", "low", "medium", "high", "xhigh", "max"}},
+	{Provider: "codebuddy-intl", Pattern: "gpt-5.6-*", Levels: []string{"none", "low", "medium", "high", "xhigh", "max"}},
+	{Provider: "codebuddy-intl", Pattern: "gpt-5.5", Levels: []string{"low", "medium", "high", "xhigh"}},
+	{Provider: "codebuddy-intl", Pattern: "gpt-5.4", Levels: []string{"low", "medium", "high", "xhigh"}},
+	// WorkBuddy presets resolve to effort by name (upstream
+	// thinkingLevels.js): the preset routes internally to a backend
+	// model whose identity is opaque, and the product declares the
+	// preset's own reasoning depth, so the level rides the name. The
+	// deepseek entry keeps the JS glob shape and sits above the
+	// unqualified glob for the same first-match reason as the
+	// codebuddy-cn entries.
+	{Provider: "workbuddy", Pattern: "fast-model", Levels: []string{"medium"}},
+	{Provider: "workbuddy", Pattern: "balanced-model", Levels: []string{"medium"}},
+	{Provider: "workbuddy", Pattern: "primary-model", Levels: []string{"high"}},
+	{Provider: "workbuddy", Pattern: "deepseek-v4*", Levels: []string{"low", "high", "xhigh"}},
 	// OpenCode Zen free tier (oc / ocz) — the free id of the same v4.1-flash
 	// model publishes low|high|max, and unlike DeepSeek's own API the upstream
 	// forwards the level verbatim (no low→high collapse). The generic
@@ -133,8 +169,11 @@ var patternThinking = []thinkingPattern{
 	{Provider: "codebuddy-cn", Pattern: "kimi-k2.8-preview", Levels: []string{"low", "medium", "high"}},
 	{Provider: "codebuddy-cn", Pattern: "hy3", Levels: []string{"low", "high"}},
 	{Provider: "codebuddy-cn", Pattern: "hy4-preview", Levels: []string{"high"}},
-	// codebuddy-intl rides the same gateway catalog, so its deepseek levels match.
-	{Provider: "codebuddy-intl", Pattern: "deepseek-v4*", Levels: []string{"low", "high", "xhigh"}},
+	// WorkBuddy per-model effort sets, from the same product-config
+	// source as the codebuddy-cn block above (upstream thinkingLevels.js).
+	{Provider: "workbuddy", Pattern: "glm-5.3*", Levels: []string{"low", "high", "max"}},
+	{Provider: "workbuddy", Pattern: "glm-5.2", Levels: []string{"high", "xhigh"}},
+	{Provider: "workbuddy", Pattern: "hy3*", Levels: []string{"low", "high"}},
 	// MiniMax Code (mcode) — adaptive effort via output_config.effort. M3.1
 	// always thinks (no none) and offers the five efforts; M3 is switchable
 	// with none/high only. The M2.7 pair takes no pattern and falls through to

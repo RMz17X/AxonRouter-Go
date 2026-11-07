@@ -97,6 +97,8 @@ export interface ModelCaps {
   /** Selectable thinking levels, or empty for a model without reasoning. */
   thinkingLevels: string[]
   free?: boolean
+  /** Per-request credit price (CodeBuddy family); absent when unpriced. */
+  credit?: number
 }
 
 /**
@@ -493,6 +495,28 @@ export interface CreateConnectionPayload {
   proxyPoolId?: string | null
   defaultModel?: string
   providerSpecificData?: Record<string, unknown>
+}
+
+/** One entry of a bulk JWT import result: created (id/name), skipped as a
+ * duplicate, or failed with the server's per-entry error. */
+export interface BulkJwtImportEntry {
+  index: number
+  ok: boolean
+  id?: string
+  name?: string
+  type?: string
+  skipped?: boolean
+  reason?: string
+  error?: string
+}
+
+/** Result of POST /api/oauth/{provider}/bulk-jwt. The counts are numbers,
+ * not booleans: success/failed/skipped tally the entries list. */
+export interface BulkJwtImportResult {
+  success: number
+  failed: number
+  skipped: number
+  results: BulkJwtImportEntry[]
 }
 
 /** Result of POST /api/providers/validate. supported=false means this backend
@@ -1416,6 +1440,15 @@ export const api = {
         body: JSON.stringify(payload),
       }
     ),
+  // CodeBuddy-family bulk JWT import (codebuddy-cn / codebuddy-intl /
+  // workbuddy): the pasted text is parsed server-side (account JSON,
+  // JSON lines, or name|token lines) and answered with counts plus a
+  // per-entry result list.
+  bulkImportJwt: (providerId: string, text: string) =>
+    request<BulkJwtImportResult>(`/api/oauth/${encodeURIComponent(providerId)}/bulk-jwt`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
 
   // Provider Nodes (Custom Endpoints)
   getProviderNodes: async () => {

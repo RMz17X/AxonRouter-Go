@@ -36,6 +36,25 @@ type ErrorRule struct {
 	// spent. These do NOT clear on a short timer, so they get a long cooldown
 	// and are surfaced as a distinct status instead of a transient blip.
 	Quota bool
+	// Exhausted marks the JS isExhausted verdict: the account's budget is
+	// spent, so alongside the (long) cooldown the account must read as
+	// quota_exhausted once parked — the status derivation in
+	// connection_status.go does that from the stored error text, and
+	// cooldownSecForClassification carries the cooldown unclamped, the
+	// same treatment the banned-account class gets.
+	Exhausted bool
+	// ModelScoped marks a verdict that names the model, not the account:
+	// the consumer locks only the model and never writes an account lock
+	// (upstream lockAll: false). The classifier cannot express lock scope
+	// in CooldownMs alone, and the chat layer's text-based scope guess
+	// (isModelScopedError) misreads these — a CodeBuddy "model busy" 429
+	// carries no quota wording, so it used to park the whole account.
+	ModelScoped bool
+	// RequestLevel marks a refusal that is the request's fault (a safety
+	// review, a content filter): no fallback, no lock, no cooldown — the
+	// account and the model are both healthy and the next account would
+	// answer the same prompt the same way.
+	RequestLevel bool
 }
 
 // BackoffConfig controls exponential backoff scaling.
@@ -78,56 +97,82 @@ const (
 	// call and keeps the dashboard showing a false recovery.
 	QuotaExhaustedCooldownMs = 60 * 60 * 1000 // 1 hour
 
-	// cooldownSevenDays is the cooldown for Tencent/CodeBuddy account restriction
-	// ("Your account has been restricted due to unusual activity"). Operator standard:
-	// unusual activity restriction lasts up to 7 days.
+	// cooldownSevenDays is the CodeBuddy-family credit-exhaustion sentence
+	// (upstream 14018 "Credits exhausted" on the direct path): the spending
+	// pool is empty for every model on the account, so the account parks
+	// exhausted for a week. It used to also carry the family's "unusual
+	// activity" restriction texts at any status — that reading was wrong
+	// (fragment 977): a restriction is a gated 403 + code-11140 verdict
+	// with its own 2h sentence in errorclassify_codebuddy.go.
 	cooldownSevenDays = 7 * 24 * 60 * 60 * 1000 // 7 days
+
+	// cooldownMonthlyExhausted is upstream's ERROR_RULES sentence for the
+	// generic credit/balance exhaustion texts (COOLDOWN.monthlyExhausted):
+	// account-wide lock, marked exhausted, 30 days.
+	cooldownMonthlyExhausted = 30 * 24 * 60 * 60 * 1000 // 30 days
 )
 
 // ErrorRules is the ordered list of error classification rules, matching Next.js ERROR_RULES.
 // Checked top-to-bottom: text rules first (by order), then status rules.
 var ErrorRules = []ErrorRule{
-	// CodeBuddy/WorkBuddy account restriction (unusual activity): 7 days cooldown
-	{Provider: "codebuddy-intl", Text: "unusual activity", CooldownMs: cooldownSevenDays},
-	{Provider: "codebuddy-cn", Text: "unusual activity", CooldownMs: cooldownSevenDays},
-	{Provider: "workbuddy", Text: "unusual activity", CooldownMs: cooldownSevenDays},
-	{Provider: "codebuddy-intl", Text: "restricted", CooldownMs: cooldownSevenDays},
-	{Provider: "codebuddy-cn", Text: "restricted", CooldownMs: cooldownSevenDays},
-	{Provider: "workbuddy", Text: "restricted", CooldownMs: cooldownSevenDays},
-	{Provider: "codebuddy-cn", Text: "账号存在异常行为", CooldownMs: cooldownSevenDays},
-	{Provider: "codebuddy-intl", Text: "账号存在异常行为", CooldownMs: cooldownSevenDays},
-	// Safety review / content filter (request-level prompt refusal, no cooldown):
-	{Provider: "codebuddy-intl", Text: "safety review", CooldownMs: 0},
-	{Provider: "codebuddy-cn", Text: "safety review", CooldownMs: 0},
-	{Provider: "codebuddy-intl", Text: "content filter", CooldownMs: 0},
-	{Provider: "codebuddy-cn", Text: "content filter", CooldownMs: 0},
+	// Content filter / safety review (upstream ERROR_RULES, global and
+	// unscoped): the prompt was refused, not the account — request-level,
+	// no fallback, no lock, no cooldown. "request illegal" is Tencent's
+	// generic refusal msg and reads the same way UNLESS the body carries
+	// code 11140, which the gated verdict in errorclassify_codebuddy.go
+	// claims before this list is consulted (and which a safety wording
+	// vetoes there, so a genuine safety refusal lands here). The
+	// "conversation id missing" sibling travels with it: upstream's
+	// current ERROR_RULES carries no entry for it, and the old intl-only
+	// backoff reading parked accounts over a request fault (fragment 977).
+	{Text: "did not pass the safety review", RequestLevel: true},
+	{Text: "safety review", RequestLevel: true},
+	{Text: "request illegal", RequestLevel: true},
+	{Text: "content filter", RequestLevel: true},
+	{Text: "conversation id missing", RequestLevel: true},
 
-	// CodeBuddy / WorkBuddy transient 11140 throttle / insufficient quota: 5 minutes cooldown
-	{Provider: "codebuddy-intl", Text: "11140", CooldownMs: 5 * 60 * 1000},
-	{Provider: "codebuddy-cn", Text: "11140", CooldownMs: 5 * 60 * 1000},
-	{Provider: "workbuddy", Text: "11140", CooldownMs: 5 * 60 * 1000},
-
-	{Text: "11158", CooldownMs: cooldownLong},
+	// Tencent plan gate: 11158 "model [x] is not allowed for user type" —
+	// the account is healthy, the model is simply not in its plan. Skip
+	// with no lock and no cooldown (upstream checkFallbackError guard,
+	// status 400 only). The code-gated guard is a text rule here because
+	// the extracted error text always carries the "(code 11158)" suffix.
+	{Text: "11158", CooldownMs: 0, ModelScoped: true, RequireStatus: http.StatusBadRequest},
 	{Text: "model_not_in_plan", CooldownMs: cooldownLong},
 	{Text: "当前账号类型暂不支持该模型", CooldownMs: cooldownLong},
-	{Text: "14018", CooldownMs: cooldownLong},
 	{Text: "额度已用尽", CooldownMs: cooldownLong},
-	{Text: "account has been restricted due to unusual activity", CooldownMs: cooldownSevenDays},
-	{Text: "账号存在异常行为", CooldownMs: cooldownSevenDays},
-	{Text: "unusual activity", CooldownMs: cooldownSevenDays},
-	{Text: "11140", CooldownMs: cooldownAddressRefused},
+
+	// --- Generic credit / balance exhaustion (upstream ERROR_RULES,
+	// COOLDOWN.monthlyExhausted): account-wide lock, marked exhausted,
+	// 30 days. These precede the older 1-hour quota spellings below,
+	// whose texts overlap ("insufficient balance", "credits exhausted",
+	// "insufficient quota", "monthly quota exceeded"): the ERROR_RULES
+	// reading is the request path's verdict, so it wins. ---
+	{Text: "insufficient_user_quota", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "预扣费额度失败", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "用户剩余额度", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "用户额度不足", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "user's credit limit is insufficient", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "quota is running low", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "credits exhausted", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "insufficient credits", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "insufficient balance", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "out of credits", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "quota reached", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "quota exhausted", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "insufficient_quota", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "insufficient quota", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "exceeded your current quota", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+	{Text: "monthly quota exceeded", CooldownMs: cooldownMonthlyExhausted, Quota: true, Exhausted: true},
+
 	// --- Quota / credit exhaustion (checked before generic rules) ---
 	// A spent budget is not a transient throttle: give it the long cooldown
 	// instead of the 30s transient default. Without this, "insufficient
 	// balance" heals itself every 30 seconds and the dashboard keeps
 	// claiming a guaranteed-failing account is connected.
-	{Text: "insufficient balance", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
 	{Text: "insufficient credit", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
-	{Text: "credits exhausted", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
 	{Text: "credit exhausted", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
 	{Text: "no remaining credits", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
 	{Text: "quota exceeded", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
-	{Text: "insufficient quota", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
 	{Text: "monthly limit", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
 	{Text: "frequency limit", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
 	{Text: "payment required", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
@@ -139,12 +184,6 @@ var ErrorRules = []ErrorRule{
 	{Text: "free allowance", CooldownMs: QuotaExhaustedCooldownMs, Quota: true},
 
 	// --- Text-based rules (checked first, order = priority) ---
-	// Intl gateway blocks affect the account/IP, so let the connection back
-	// off (upstream 3b137aa6): without a provider-scoped rule the messages
-	// fall through to the request-scoped 4xx path and the connection gets
-	// zero cooldown while its backoff level never moves.
-	{Provider: "codebuddy-intl", Text: "request illegal", Backoff: true},
-	{Provider: "codebuddy-intl", Text: "conversation id missing", Backoff: true},
 	// DeepSeek web account-level refusals both arrive as 403, and they are
 	// not the same verdict. A ban ("refused this account") is the account
 	// itself; an address refusal ("refused this address") is the egress, and
@@ -186,15 +225,6 @@ var ErrorRules = []ErrorRule{
 	{Text: "not found", CooldownMs: cooldownBannedAccount},
 	{Text: "requested entity was not found", CooldownMs: cooldownBannedAccount},
 	{Text: "not_found", CooldownMs: cooldownBannedAccount},
-
-	{Text: "11158", CooldownMs: cooldownLong},
-	{Text: "model_not_in_plan", CooldownMs: cooldownLong},
-	{Text: "当前账号类型暂不支持该模型", CooldownMs: cooldownLong},
-	{Text: "14018", CooldownMs: cooldownLong},
-	{Text: "额度已用尽", CooldownMs: cooldownLong},
-	{Text: "11140", CooldownMs: cooldownAddressRefused},
-	{Text: "account has been restricted due to unusual activity", CooldownMs: cooldownAddressRefused},
-	{Text: "账号存在异常行为", CooldownMs: cooldownAddressRefused},
 
 	// --- Status-based rules (fallback when text doesn't match) ---
 	{Status: 401, CooldownMs: cooldownLong},
@@ -240,6 +270,15 @@ var quotaExhaustedPatterns = []string{
 	// not a transient throttle, so it belongs with the exhausted budgets rather
 	// than the 2-second backoff floor.
 	"frequency limit",
+	// CodeBuddy-family exhausted verdicts whose stored text carries no
+	// credit wording (fragment 977): upstream marks these accounts
+	// testStatus "exhausted" outright — the 14018 credit code (its body
+	// can be a bare code + an unrelated msg) and the 11140 account
+	// restriction. The status derivation here is the Go equivalent of
+	// that stored flag, so the vocabulary has to name both markers; the
+	// strings are Tencent-only on the wire.
+	"14018",
+	"restricted due to unusual activity",
 }
 
 // LooksLikeQuotaExhausted reports whether an error body reads as a spent
@@ -466,6 +505,16 @@ type ErrorClassification struct {
 	// chat layer must carry it through unclamped — see
 	// cooldownSecForClassification in handlers/chat.
 	BannedAccount bool
+	// Exhausted marks the spent-budget class (upstream isExhausted): the
+	// account parks with its long cooldown AND reads quota_exhausted via
+	// the stored-error derivation — a lapsed timer does not refill a
+	// balance, so the cooldown is a sentence like the banned class and
+	// is likewise carried unclamped.
+	Exhausted bool
+	// ModelScoped marks a verdict against the model only (upstream
+	// lockAll: false): consumers lock the model and must not write an
+	// account lock for it.
+	ModelScoped bool
 }
 
 // ClassifyError classifies an upstream error by matching text and status against ErrorRules.
@@ -487,6 +536,16 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 		lowerError = strings.ToLower(errorText)
 	}
 
+	// CodeBuddy-family gated verdicts run before the rule list, exactly
+	// where upstream puts them: the 11140/11158 guards precede
+	// ERROR_RULES in checkFallbackError (a bare "request illegal" text
+	// rule would otherwise swallow the 11140 account fault), and the
+	// family's 429 sentences override the generic rules in
+	// markAccountUnavailable.
+	if cls, ok := classifyCodebuddyFamily(statusCode, lowerError, backoffLevel, provider); ok {
+		return cls
+	}
+
 	for _, rule := range ErrorRules {
 		// Text-based match (substring, case-insensitive)
 		if rule.Text != "" && lowerError != "" && strings.Contains(lowerError, rule.Text) {
@@ -498,6 +557,13 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 			}
 			if rule.ExcludeStatus != 0 && rule.ExcludeStatus == statusCode {
 				continue
+			}
+			if rule.RequestLevel {
+				return ErrorClassification{
+					ShouldFallback:  false,
+					CooldownMs:      0,
+					NewBackoffLevel: backoffLevel,
+				}
 			}
 			if rule.Backoff {
 				newLevel := min(backoffLevel+1, BackoffConfig.MaxLevel)
@@ -512,6 +578,8 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 				CooldownMs:      rule.CooldownMs,
 				NewBackoffLevel: backoffLevel,
 				BannedAccount:   rule.CooldownMs == cooldownBannedAccount,
+				Exhausted:       rule.Exhausted,
+				ModelScoped:     rule.ModelScoped,
 			}
 		}
 

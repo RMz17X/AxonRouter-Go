@@ -6,7 +6,12 @@
   import Button from '../../lib/ui/Button.svelte'
   import { api, type CreateConnectionPayload, type ProxyPool } from '../../api/client'
   import { PROVIDER_CATALOG } from '../../lib/providers'
-  import { planBulkAdd } from '../../lib/bulk-add'
+  import {
+    planBulkAdd,
+    isJsonAccountPayload,
+    looksLikeJsonPayload,
+    supportsJwtBulkImport,
+  } from '../../lib/bulk-add'
 
   interface Props {
     isOpen: boolean
@@ -164,7 +169,12 @@
 
   // Bulk state
   let bulkText = $state('')
-  let bulkResult = $state<{ success: number; failed: number } | null>(null)
+  let bulkResult = $state<{ success: number; failed: number; skipped?: number } | null>(null)
+  let bulkError = $state('')
+  // CodeBuddy-family providers route JSON account payloads in the bulk
+  // tab to the bulk-jwt endpoint instead of the per-key plan (upstream
+  // AddApiKeyModal): an account export is not a list of API keys.
+  let isJwtBulkProvider = $derived(supportsJwtBulkImport(providerId))
 
   let bulkPlaceholder = $derived(
     isCloudflareAi
@@ -208,6 +218,7 @@
     saving = false
     bulkText = ''
     bulkResult = null
+    bulkError = ''
   }
 
   function buildProviderSpecificData(): Record<string, unknown> | undefined {
@@ -438,10 +449,36 @@
   }
 
   async function handleBulkSubmit() {
+    if (isJwtBulkProvider) {
+      // JSON-shaped paste → the bulk-jwt endpoint (account JSON, JSON
+      // lines, name|token lines are all parsed server-side). A paste
+      // that is JSON-shaped but carries no token fields is an export in
+      // the wrong shape — say so instead of storing raw JSON as a key.
+      if (isJsonAccountPayload(bulkText)) {
+        saving = true
+        bulkResult = null
+        bulkError = ''
+        try {
+          const res = await api.bulkImportJwt(providerId, bulkText)
+          bulkResult = { success: res.success, failed: res.failed, skipped: res.skipped }
+          if (res.success > 0) onBulkDone?.()
+        } catch (err) {
+          bulkError = err instanceof Error ? err.message : 'Bulk import failed'
+        } finally {
+          saving = false
+        }
+        return
+      }
+      if (looksLikeJsonPayload(bulkText)) {
+        bulkError = 'This JSON has no accessToken/refreshToken. Check the account export shape.'
+        return
+      }
+    }
     const plan = planBulkAdd(bulkText.split('\n'), existingNames, { isCloudflareAi })
     if (!plan.length) return
     saving = true
     bulkResult = null
+    bulkError = ''
     let success = 0
     let failed = 0
     for (const entry of plan) {
@@ -506,6 +543,7 @@
             onclick={() => {
               mode = 'single'
               bulkResult = null
+              bulkError = ''
             }}>Single</Button
           >
           <Button
@@ -514,6 +552,7 @@
             onclick={() => {
               mode = 'bulk'
               bulkResult = null
+              bulkError = ''
             }}>Bulk Add</Button
           >
         </div>
@@ -525,6 +564,10 @@
                 One key per line. Format: <code>name|apiKey|accountId</code> or just <code>apiKey</code> (auto-named by index).
               {:else if providerId === 'qoder'}
                 One PAT per line. Format: <code>name|pt-...</code> or just <code>pt-...</code> (auto-named by index).
+              {:else if isJwtBulkProvider}
+                Paste account JSON (object, array, or <code>{'{"accounts": [...]}'}</code> with
+                <code>accessToken</code> / <code>refreshToken</code>) — it imports as JWT accounts. Plain
+                <code>name|token</code> lines work too.
               {:else}
                 One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).
               {/if}
@@ -534,9 +577,12 @@
               placeholder={bulkPlaceholder}
               bind:value={bulkText}
             ></textarea>
+            {#if bulkError}
+              <p class="text-sm text-red-500">{bulkError}</p>
+            {/if}
             {#if bulkResult}
               <div class="text-sm font-medium {bulkResult.failed > 0 ? 'text-yellow-400' : 'text-green-400'}">
-                ✓ {bulkResult.success} added{bulkResult.failed > 0 ? `, ✗ ${bulkResult.failed} failed` : ''}
+                ✓ {bulkResult.success} added{bulkResult.skipped ? `, ⊘ ${bulkResult.skipped} skipped (duplicate)` : ''}{bulkResult.failed > 0 ? `, ✗ ${bulkResult.failed} failed` : ''}
               </div>
             {/if}
             <div class="flex gap-2">

@@ -80,6 +80,11 @@ func (h *DashboardHandler) HandleGetProvidersClient(w http.ResponseWriter, r *ht
 	if accountStatus == "" {
 		accountStatus = "all"
 	}
+	// Upstream runs the codebuddy-intl identity backfill from this pair
+	// of list routes (fragment 977); it is run-once per process and a
+	// no-op once the family's rows carry their identity.
+	h.backfillCodebuddyIntlIdentity()
+
 	sortMode := q.Get("sort")
 	if sortMode == "" {
 		sortMode = "priority"

@@ -534,6 +534,95 @@ var providerCapabilities = map[string]map[string]Capabilities{
 		"deepseek-v4-flash":   {Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 1000000, MaxOutput: 50000},
 		"deepseek-v3-2-volc":  {Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false)},
 	},
+	// WorkBuddy AI (www.workbuddy.ai) — per-model metadata merged from
+	// upstream's two layers: the capabilities.js table (thinking
+	// can-disable flags) and the registry's own per-model declarations
+	// (open-sse/providers/registry/workbuddy.js), which upstream resolves
+	// FIRST (getCapabilitiesForModel layer 0) and which carry the
+	// presets and the newer ids the table lacks. Go has no separate
+	// registry-caps layer, so both land here; without the preset rows
+	// the caps gate in GetThinkingLevels would swallow the preset
+	// thinking patterns entirely.
+	// The GLM rows are vision:false on purpose: the product config claims
+	// image support, but the server drops images and answers "the current
+	// model does not support images" (verified upstream 2026-10-13).
+	"workbuddy": {
+		"default-model":          {Vision: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 176000, MaxOutput: 24000},
+		"fast-model":             {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 200000, MaxOutput: 32000},
+		"balanced-model":         {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 256000, MaxOutput: 32000},
+		"primary-model":          {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 272000, MaxOutput: 72000},
+		"deep-model":             {Vision: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 176000, MaxOutput: 24000},
+		"hy4-preview":            {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 64000},
+		"deepseek-v4.1-flash-sg": {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 128000},
+		"glm-5.3-flash":          {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 32000},
+		"kimi-k2.8-preview":      {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 32000},
+		"minimax-m3.1-flash":     {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 128000},
+		"gpt-5.6-terra":          {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 128000},
+		"gpt-5.6-luna":           {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 128000},
+		"hy3":                    {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 192000, MaxOutput: 64000},
+		"deepseek-v4.1-flash":    {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 128000},
+		"glm-5.3":                {Vision: false, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 48000},
+		"glm-5.2":                {Vision: false, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 48000},
+		"kimi-k3":                {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 32000},
+		"kimi-k2.6":              {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 256000, MaxOutput: 32000},
+		"minimax-m3":             {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 512000, MaxOutput: 128000},
+		"gpt-5.5":                {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 1000000, MaxOutput: 128000},
+		"gpt-5.4":                {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 272000, MaxOutput: 72000},
+		"gpt-5.3-codex":          {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 272000, MaxOutput: 72000},
+		"gemini-3.1-pro":         {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 400000, MaxOutput: 65536},
+		"gemini-3.5-flash":       {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 65536},
+	},
+	// CodeBuddy Intl — per-model metadata from the published CodeBuddy.ai
+	// catalog (product.json in @tencent-ai/codebuddy-code 2.171.0, config
+	// date 2026-10-20), ported from open-sse/providers/capabilities.js
+	// (fragment 976, audit CB #5). ContextWindow = maxInputTokens,
+	// MaxOutput = maxOutputTokens, Vision = supportsImages, Tools =
+	// supportsToolCall. Every model on this gateway reasons through
+	// OpenAI-style reasoning_effort, so each entry pins ThinkingFormat:
+	// without the override the generic patterns would pick the vendor wire
+	// format and the reasoning knob would be sent in a shape the gateway
+	// does not read. ThinkingCanDisable maps to the catalog's
+	// reasoning.canDisableThinking — it is NOT the inverse of onlyReasoning.
+	//
+	// The five virtual presets are merged in from the registry layer (the
+	// JS registry entries carry their flags; Go has no separate registry
+	// caps layer — the same merge the workbuddy block above performs). The
+	// preset rows are what let GetThinkingLevels surface the preset effort
+	// patterns at all: its caps gate swallows a pattern whose model does
+	// not resolve Reasoning. default-model / deep-model declare no
+	// reasoning in the registry, so their rows omit it on purpose.
+	"codebuddy-intl": {
+		"default-model":          {Vision: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 176000, MaxOutput: 24000},
+		"fast-model":             {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 200000, MaxOutput: 32000},
+		"balanced-model":         {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 256000, MaxOutput: 32000},
+		"primary-model":          {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 272000, MaxOutput: 72000},
+		"deep-model":             {Vision: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 176000, MaxOutput: 24000},
+		"hy3":                    {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 192000, MaxOutput: 64000},
+		"hy4-preview":            {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 1000000, MaxOutput: 64000},
+		"deepseek-v4.1-flash":    {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 128000},
+		"deepseek-v4.1-flash-sg": {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 128000},
+		"glm-5.3":                {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 48000},
+		"glm-5.3-flash":          {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 32000},
+		"glm-5.2":                {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 48000},
+		// Kimi publishes no canDisableThinking flag; leave the default unchanged.
+		"kimi-k3":           {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 32000},
+		"kimi-k2.8-preview": {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 32000},
+		"kimi-k2.6":         {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 256000, MaxOutput: 32000},
+		"gpt-6-astra":       {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 128000},
+		"gpt-5.6-sol":       {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 128000},
+		"gpt-5.6-terra":     {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 128000},
+		"gpt-5.6-luna":      {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(true), ContextWindow: 1000000, MaxOutput: 128000},
+		"gpt-5.5":           {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 1000000, MaxOutput: 128000},
+		"gpt-5.4":           {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ThinkingCanDisable: new(false), ContextWindow: 272000, MaxOutput: 72000},
+		"gemini-3.5-flash":  {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai", ContextWindow: 1000000, MaxOutput: 65536},
+		// Not in the published catalog any more, but a client may still send
+		// the id by hand. The guard rows keep the global *claude* patterns
+		// from pulling in native Anthropic search / modalities / thinking
+		// wire format: an explicit all-false row resolves here and blocks
+		// the pattern layer.
+		"claude-opus-5":     {ThinkingFormat: "openai"},
+		"claude-sonnet-4.6": {ThinkingFormat: "openai"},
+	},
 	"hcnsec": {
 		"auto":                     {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai"},
 		"DeepSeek-V4-Flash":        {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "openai"},
@@ -972,8 +1061,8 @@ func GetModelTokenLimits(model string) (contextWindow int, maxOutput int) {
 //
 // The substring table answers from the model name alone, so it has to pick one
 // number for every gateway serving that name. Where a gateway publishes its own
-// catalog — CodeBuddy declares 393216 output for deepseek-v4.1-flash — the
-// provider-qualified figure belongs here instead of in the shared table.
+// figure for a model the shared table gets wrong, the provider-qualified
+// number belongs here instead of in the shared table.
 //
 // Entries here are consulted by GetCapabilitiesDetailForModel before the
 // models.dev catalog and the substring table, and they carry limits only: the
@@ -981,19 +1070,10 @@ func GetModelTokenLimits(model string) (contextWindow int, maxOutput int) {
 // which is why this is not expressed as a providerCapabilities row (those win
 // over patterns and would drag their thinking format along).
 var providerTokenLimits = map[string]map[string][2]int{
-	// CodeBuddy's product-config catalog, the same figures codebuddy-cn
-	// declares in providerCapabilities. codebuddy-intl serves the same ids
-	// but resolves its own thinking levels, so only the limits are shared.
-	"codebuddy-intl": {
-		"glm-5.2":             {1000000, 131072},
-		"glm-5.1":             {200000, 48000},
-		"glm-5.3":             {1000000, 131072},
-		"glm-5.3-flash":       {1000000, 131072},
-		"minimax-m3":          {512000, 524288},
-		"kimi-k2.5":           {164000, 32000},
-		"deepseek-v4-pro":     {1000000, 393216},
-		"deepseek-v4.1-flash": {1000000, 393216},
-	},
+	// codebuddy-intl used to borrow codebuddy-cn's figures here; since
+	// fragment 976 its own capability table (providerCapabilities) declares
+	// the Intl catalog's numbers, and a limits-only row here would outrank
+	// that table and republish the CN figures under the Intl id.
 }
 
 // lookupProviderTokenLimits returns the limits a provider declares for a model,

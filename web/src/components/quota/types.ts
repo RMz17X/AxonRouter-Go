@@ -383,6 +383,54 @@ export function getRemainingPercentage(quota: Partial<NormalizedQuota>): number 
   return null
 }
 
+// ─── Credit pools (CodeBuddy CN/Intl, WorkBuddy) ────────────────────────────
+// Port of ProviderLimits/utils.js (CREDIT_POOL_PROVIDERS + getTotalCredit):
+// these providers bill per credit pack — a recurring refill pack plus
+// one-shot Bonus Packs — so the quota table also shows one aggregated
+// balance above the per-pack rows.
+const CREDIT_POOL_PROVIDERS = new Set(['codebuddy-cn', 'codebuddy-intl', 'workbuddy'])
+
+export function isCreditPoolProvider(provider?: string | null): boolean {
+  return CREDIT_POOL_PROVIDERS.has(String(provider || '').toLowerCase())
+}
+
+export interface TotalCredit {
+  used: number
+  total: number
+  remaining: number
+  remainingPercentage: number
+  packs: number
+}
+
+/**
+ * Sum every credit pack into one balance. Only rows with a finite positive
+ * `total` participate: error rows and unlimited packs would otherwise skew
+ * the percentage or divide by zero. Null when there is nothing to sum.
+ */
+export function getTotalCredit(quotas: NormalizedQuota[]): TotalCredit | null {
+  if (!Array.isArray(quotas) || quotas.length === 0) return null
+  let used = 0
+  let total = 0
+  let packs = 0
+  for (const q of quotas) {
+    if (!q || q.unlimited === true) continue
+    const t = Number(q.total)
+    if (!Number.isFinite(t) || t <= 0) continue
+    const u = Number(q.used)
+    total += t
+    used += Number.isFinite(u) && u > 0 ? Math.min(u, t) : 0
+    packs += 1
+  }
+  if (packs === 0) return null
+  return {
+    used,
+    total,
+    remaining: Math.max(0, total - used),
+    remainingPercentage: total > 0 ? Math.max(0, Math.round(((total - used) / total) * 100)) : 0,
+    packs,
+  }
+}
+
 // ─── Quota visibility (hide/show rows, persisted via /api/settings) ─────────
 export function getQuotaVisibilityKey(quota: Partial<NormalizedQuota> | null | undefined): string {
   if (!quota || typeof quota !== 'object') return ''
@@ -773,6 +821,7 @@ export function parseQuotaData(provider: string, data: unknown): NormalizedQuota
 
       case 'codebuddy-cn':
       case 'codebuddy-intl':
+      case 'workbuddy':
         if (d.quotas) {
           Object.entries(d.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({

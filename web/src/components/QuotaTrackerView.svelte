@@ -1740,6 +1740,7 @@
             {:else}
               <QuotaTable
                 quotas={visibleQuotas}
+                provider={conn.provider}
                 compact
                 sortMode={conn.provider === 'codex' && quotaSortMode !== 'default'
                   ? (quotaSortMode as 'remaining-asc' | 'remaining-desc')

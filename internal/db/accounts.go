@@ -55,6 +55,53 @@ func (r *Repo) SetConnectionAntigravityIdentity(connID, identityJSON string) err
 	return nil
 }
 
+// SetConnectionCodebuddyIntlIdentity persists the identity the
+// codebuddy-intl backfill extracted from a connection's stored JWT
+// (fragment 977): the email lands in both the data blob and the email
+// column (the two places readers look), the display name in the data
+// blob, and — when renameTo is non-empty — the row's display name,
+// replacing a generic "Account N". Empty arguments leave their field
+// untouched, so the write only ever fills gaps: a row that already
+// carries identity is a no-op, which is what makes the backfill safe
+// to re-run.
+func (r *Repo) SetConnectionCodebuddyIntlIdentity(connID, email, displayName, renameTo string) error {
+	var pairs []jsonSetPair
+	var args []any
+	if email != "" {
+		pairs = append(pairs, jsonSetPairAt(jsonStringParam(), "email"))
+		args = append(args, email)
+	}
+	if displayName != "" {
+		pairs = append(pairs, jsonSetPairAt(jsonStringParam(), "displayName"))
+		args = append(args, displayName)
+	}
+	sets := make([]string, 0, 4)
+	if len(pairs) > 0 {
+		sets = append(sets, "data = "+jsonSetExpr("data", pairs...))
+	}
+	if email != "" {
+		sets = append(sets, "email = ?")
+		args = append(args, email)
+	}
+	if renameTo != "" {
+		sets = append(sets, "name = ?")
+		args = append(args, renameTo)
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+	sets = append(sets, "updatedAt = ?")
+	args = append(args, nowUTC(), connID)
+	if _, err := r.Exec(
+		`UPDATE providerConnections SET `+strings.Join(sets, ", ")+` WHERE id = ?`,
+		args...,
+	); err != nil {
+		return fmt.Errorf("set connection codebuddy-intl identity %s: %w", connID, err)
+	}
+	r.invalidateProviderConnections()
+	return nil
+}
+
 // DisableConnectionWithReason marks a connection as inactive (isActive = 0) and
 // records the fatal error message in data.lastError so the dashboard reflects it
 // and routing stops picking this connection entirely.

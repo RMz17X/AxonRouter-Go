@@ -394,6 +394,63 @@ func stringOf(m map[string]any, key string) string {
 	return s
 }
 
+// OrderByCredit stably sorts combo entries cheapest-credit-first: free
+// (credit 0) first, then ascending credit, and unpriced entries (no credit
+// in the provider's table — including every non-CodeBuddy-family provider)
+// last, keeping their stored relative order. Port of upstream orderByCredit
+// (open-sse/services/combo.js), reading the one credit table through
+// providers.GetModelCredit.
+func OrderByCredit(comboModels []string) []string {
+	if len(comboModels) <= 1 {
+		return comboModels
+	}
+	type ranked struct {
+		entry  string
+		idx    int
+		credit float64
+		priced bool
+	}
+	ranks := make([]ranked, len(comboModels))
+	for i, entry := range comboModels {
+		r := ranked{entry: entry, idx: i}
+		if provider, model, found := strings.Cut(entry, "/"); found && provider != "" {
+			r.credit, r.priced = providers.GetModelCredit(provider, model)
+		}
+		ranks[i] = r
+	}
+	sort.SliceStable(ranks, func(i, j int) bool {
+		a, b := ranks[i], ranks[j]
+		if a.priced != b.priced {
+			return a.priced
+		}
+		if a.priced && b.priced && a.credit != b.credit {
+			return a.credit < b.credit
+		}
+		return a.idx < b.idx
+	})
+	out := make([]string, len(ranks))
+	for i, r := range ranks {
+		out[i] = r.entry
+	}
+	return out
+}
+
+// comboCostAwareEnabled resolves the credit-ordering opt-out the way
+// upstream chat.js does: the combo's own costAware flag, then the global
+// settings.comboCostAware, then on.
+func comboCostAwareEnabled(settings *db.SettingsData, comboName string) bool {
+	if settings == nil {
+		return true
+	}
+	if cfg, ok := settings.ComboStrategies[comboName]; ok && cfg.CostAware != nil {
+		return *cfg.CostAware
+	}
+	if settings.ComboCostAware != nil {
+		return *settings.ComboCostAware
+	}
+	return true
+}
+
 // ReorderByCapabilities stably floats models satisfying constraints to the
 // front. Never drops a model, so the fallback chain stays intact.
 //
@@ -726,10 +783,25 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 		ctx, models = h.applySmartRouting(ctx, body, comboModels, comboName)
 	} else if strategy == "tokenmaxxing" {
 		models = h.applyTokenmaxxingRouting(ctx, comboModels)
-	} else if h.comboRespectsStoredOrder(comboName) {
-		models = slices.Clone(comboModels)
 	} else {
-		models = h.applyComboStrategy(strategy, comboModels, comboName, stickyLimit, detectNewTurn(body))
+		// Cost-aware base ordering (upstream handleComboChat): free →
+		// cheapest first, applied to the stored list BEFORE rotation so a
+		// fallback combo tries the cheap members first; the capability
+		// reorder below stays the final authority. smart / tokenmaxxing are
+		// exempt — they compute their own dynamic ranking and have no
+		// upstream counterpart in this position.
+		baseModels := comboModels
+		if comboCostAwareEnabled(settings, comboName) {
+			baseModels = OrderByCredit(comboModels)
+			if len(baseModels) > 0 && len(comboModels) > 0 && baseModels[0] != comboModels[0] {
+				log.Info("combo", "cost-aware reorder", "model", baseModels[0])
+			}
+		}
+		if h.comboRespectsStoredOrder(comboName) {
+			models = slices.Clone(baseModels)
+		} else {
+			models = h.applyComboStrategy(strategy, baseModels, comboName, stickyLimit, detectNewTurn(body))
+		}
 	}
 
 	// 2. Auto-capability-switch: float models that satisfy the request's required capabilities to the front.
@@ -818,6 +890,10 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 			// left it selectable, so without this the next connection attempt
 			// picked the same account and resent the same request.
 			var tried []string
+			// Account attempts actually sent upstream for this entry,
+			// capped per provider (comboMemberAttemptCap).
+			memberAttempts := 0
+			attemptCap := comboMemberAttemptCap(modelInfo.Provider)
 			// Try up to 10 connections for this model entry
 			for connAttempt := 0; connAttempt < 10; connAttempt++ {
 				var connID string
@@ -867,6 +943,14 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 						continue
 					}
 				}
+
+				// The member's account-attempt budget is spent before the
+				// request is built: a family member that already burned
+				// its one account hands over to the next member here.
+				if memberAttempts >= attemptCap {
+					break
+				}
+				memberAttempts++
 
 				var upstreamBody map[string]any
 				upstreamBodyJSON := adapterTrimmedBody(body, entry, adapterModels)
@@ -1200,10 +1284,22 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 		ctx, models = h.applySmartRouting(ctx, bodyJSON, comboModels, comboName)
 	} else if strategy == "tokenmaxxing" {
 		models = h.applyTokenmaxxingRouting(ctx, comboModels)
-	} else if h.comboRespectsStoredOrder(comboName) {
-		models = slices.Clone(comboModels)
 	} else {
-		models = h.applyComboStrategy(strategy, comboModels, comboName, stickyLimit, detectNewTurn(bodyJSON))
+		// Cost-aware base ordering, same contract as handleComboFallback:
+		// credit-first base order before rotation / stored order.
+		var msgSettings *db.SettingsData
+		if h.Repo != nil {
+			msgSettings, _ = h.Repo.GetSettings()
+		}
+		baseModels := comboModels
+		if comboCostAwareEnabled(msgSettings, comboName) {
+			baseModels = OrderByCredit(comboModels)
+		}
+		if h.comboRespectsStoredOrder(comboName) {
+			models = slices.Clone(baseModels)
+		} else {
+			models = h.applyComboStrategy(strategy, baseModels, comboName, stickyLimit, detectNewTurn(bodyJSON))
+		}
 	}
 	if required := DetectRequiredCapabilities(bodyJSON); len(required) > 0 {
 		reordered := ReorderByCapabilities(models, required)
@@ -1266,6 +1362,10 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 			// See the chat loop: never resend this entry to a connection it
 			// already tried.
 			var tried []string
+			// Account attempts actually sent upstream for this entry,
+			// capped per provider (comboMemberAttemptCap).
+			memberAttempts := 0
+			attemptCap := comboMemberAttemptCap(modelInfo.Provider)
 			// Try up to 10 connections for this model entry
 			for connAttempt := 0; connAttempt < 10; connAttempt++ {
 				var connID string
@@ -1309,6 +1409,13 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 						continue
 					}
 				}
+
+				// See the chat loop: the member's account-attempt budget
+				// is spent before the request is built.
+				if memberAttempts >= attemptCap {
+					break
+				}
+				memberAttempts++
 
 				entryBody, err := adapterTrimmedMap(translatedReq, entry, adapterModels)
 				if err != nil {
@@ -1578,6 +1685,22 @@ func entryExcludes(excludeIDs, tried []string) []string {
 // combo models on the same account, and Google rate-limited it forever. The
 // connection is also appended to excludeIDs so the remaining combo models in
 // this request skip it instead of re-hitting the same quota bucket.
+// comboMemberAttemptCap is the per-member account-attempt budget of a
+// combo entry (upstream COMBO_MEMBER_ACCOUNT_ATTEMPTS_BY_PROVIDER,
+// fragment 977). The CodeBuddy family's risk control reacts to request
+// velocity: a wide combo burning several accounts per member is exactly
+// the burst the vendor answers with a 11140 restriction, so a family
+// member burns ONE account before handing over to the next member.
+// Every other provider keeps the loops' standing bound of 10. Only
+// attempts that actually reach the upstream count — a connection
+// skipped because it is already locked was never dialled.
+func comboMemberAttemptCap(provider string) int {
+	if providers.IsCodebuddyFamilyProvider(providers.ResolveAlias(provider)) {
+		return 1
+	}
+	return 10
+}
+
 func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]string, connID, provider, model string, ue *upstreamError) {
 	if handlerutil.IsProbeContext(ctx) {
 		*excludeIDs = append(*excludeIDs, connID)
@@ -1656,8 +1779,9 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 	// Account-scoped cooldown alongside the per-model locks, so the selector
 	// can skip this account before spending a request (upstream applyErrorState).
 	// Only lock if error is account-scoped, not model-scoped (e.g. 401 auth issues),
-	// so unrelated models stay available.
-	if isModelScopedError(ue.StatusCode, extractErrorText(ue.Body), model, ue.Body) {
+	// so unrelated models stay available. The classifier's ModelScoped
+	// verdict wins over the text guess (see fallback.go).
+	if cls.ModelScoped || isModelScopedError(ue.StatusCode, extractErrorText(ue.Body), model, ue.Body) {
 		if recErr := h.Repo.RecordConnectionScopedError(connID, model, "chat", ue.StatusCode, extractErrorText(ue.Body), cls.NewBackoffLevel); recErr != nil {
 			log.Warn("combo", "record connection error failed", "conn", connID, "error", recErr)
 		}

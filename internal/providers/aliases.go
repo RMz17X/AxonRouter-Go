@@ -117,6 +117,7 @@ var ProviderAliasMap = map[string]string{
 	"oad":            "openadapter",
 	"bm":             "bluesminds",
 	"cbcn":           "codebuddy-cn",
+	"wb":             "workbuddy",
 	"hunyuan":        "tencent",
 	"kgw":            "kilo-gateway",
 	"ps":             "poolside",

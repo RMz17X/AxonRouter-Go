@@ -234,8 +234,25 @@ var oauthProbeConfigs = map[string]oauthProbeConfig{
 	"clinepass":      {refreshable: true},
 	"freebuff":       {},
 	"gitlab":         {url: "https://gitlab.com/api/v4/user", method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer "},
-	"codebuddy-cn":   {tokenExists: true},
-	"codebuddy-intl": {tokenExists: true},
+	"codebuddy-cn": {tokenExists: true},
+	// CodeBuddy Intl / WorkBuddy test-connection probes the Keycloak
+	// userinfo endpoint of the realm the token's `iss` claim names
+	// (fragment 977; upstream testUtils.js). CN stays tokenExists-only —
+	// upstream has no userinfo probe for it. Refreshable: a 401 with a
+	// stored refresh token refreshes once and retests, like the other
+	// Keycloak-shaped providers.
+	"codebuddy-intl": {
+		buildURL: func(token string) string {
+			return codebuddyUserinfoURL(token, "https://www.codebuddy.ai/auth/realms/copilot")
+		},
+		method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer ", refreshable: true,
+	},
+	"workbuddy": {
+		buildURL: func(token string) string {
+			return codebuddyUserinfoURL(token, "https://www.workbuddy.ai/auth/realms/copilot")
+		},
+		method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer ", refreshable: true,
+	},
 	// The stored credential only authorizes the account API; model access
 	// needs a minted LLM token, so the test walks both layers (probeZed).
 	"windsurf":  {tokenExists: true},

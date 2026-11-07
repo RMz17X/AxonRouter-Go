@@ -346,6 +346,17 @@ func (h *ChatHandler) handleAccountFallback(
 			// Classify error to get dynamic cooldown; provider-scoped rules
 			// key off the canonical provider the request routed to.
 			classification := providers.ClassifyErrorForProvider(ue.StatusCode, errorText, currentBackoffLevel, provider)
+			if !classification.ShouldFallback {
+				// Request-level refusal (upstream shouldFallback: false —
+				// a safety review, a content filter): the request is at
+				// fault, not the account, so nothing is locked and no
+				// state is written; this connection is simply done for
+				// the turn. Mirrors the combo path's guard in
+				// comboLockRetryable.
+				excludeIDs = append(excludeIDs, connObj.ID)
+				lastErr = ue
+				continue
+			}
 			cooldownSec := cooldownSecForClassification(ue.StatusCode, classification, ue, provider)
 			errMsg := errorText
 			if errMsg == "" {
@@ -360,7 +371,11 @@ func (h *ChatHandler) handleAccountFallback(
 			// selector can skip this account before spending a request
 			// (upstream applyErrorState). Only lock if error is account-scoped,
 			// not model-scoped (e.g. 401 auth issues), so unrelated models stay available.
-			if isModelScopedError(ue.StatusCode, errorText, model, ue.Body) {
+			// The classifier's own ModelScoped verdict wins over the text
+			// guess: the gated CodeBuddy sentences (model busy, throttle
+			// wording) carry no quota text for isModelScopedError to see,
+			// and parking the account for them was the bug they fix.
+			if classification.ModelScoped || isModelScopedError(ue.StatusCode, errorText, model, ue.Body) {
 				if recErr := h.Repo.RecordConnectionScopedError(connObj.ID, model, "chat", ue.StatusCode, errorText, classification.NewBackoffLevel); recErr != nil {
 					log.Warn("fallback", "record connection error failed", "conn", connObj.ID, "error", recErr)
 				}

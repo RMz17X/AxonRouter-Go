@@ -103,6 +103,16 @@ func comboPassRetryWait(earliest time.Duration, rateLimited bool) time.Duration 
 //     neither the maxCooldownFor ceiling nor a quota-reset reading in the
 //     body shortens it. Every other class keeps the clamped
 //     retryableCooldownSec behaviour below, unchanged.
+//   - The exhausted class (fragment 977) is a sentence of the same
+//     kind: a spent budget does not refill inside the 72h reset ceiling
+//     (the CodeBuddy 7-day and generic 30-day verdicts must survive
+//     whole), and a Retry-After header on the same 429 names the
+//     throttle window, not the budget's return. It rides the banned
+//     class's unclamped path.
+//   - A model-scoped verdict (fragment 977) carries its exact duration
+//     for the same reason in miniature: the classifier's flat 5s
+//     model-busy sentence must not be replaced by a Retry-After/reset
+//     reading meant for account throttles.
 //   - Scope: a plain model_not_found 404 stays model-scoped (the model is
 //     gone, the account is not). "requested entity was not found" is
 //     carved out in isModelScopedError: on Gemini/Antigravity it names
@@ -113,7 +123,10 @@ func comboPassRetryWait(earliest time.Duration, rateLimited bool) time.Duration 
 // loops (fallback.go, combo.go) use to turn a classification into parked
 // seconds, so the two cannot drift back into disagreeing halves.
 func cooldownSecForClassification(statusCode int, cls providers.ErrorClassification, ue *upstreamError, provider string) int {
-	if cls.BannedAccount || statusCode == http.StatusNotFound {
+	if cls.BannedAccount || cls.Exhausted || statusCode == http.StatusNotFound {
+		return ceilSeconds(time.Duration(cls.CooldownMs) * time.Millisecond)
+	}
+	if cls.ModelScoped {
 		return ceilSeconds(time.Duration(cls.CooldownMs) * time.Millisecond)
 	}
 	return retryableCooldownSec(statusCode, time.Duration(cls.CooldownMs)*time.Millisecond, ue, provider)

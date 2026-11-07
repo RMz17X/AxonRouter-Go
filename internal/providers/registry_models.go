@@ -43,8 +43,9 @@ var ProviderModels = map[string][]string{
 	"bpm":               {"seed-2-0-pro-260328", "seed-2-0-code-preview-260328", "seed-2-0-mini-260215", "seed-2-0-lite-260228", "kimi-k2-thinking-251104", "glm-4-7-251222", "gpt-oss-120b-250805"},
 	"byteplus":          {"seed-2-0-pro-260328", "seed-2-0-code-preview-260328", "seed-2-0-mini-260215", "seed-2-0-lite-260228", "kimi-k2-thinking-251104", "glm-4-7-251222", "gpt-oss-120b-250805"},
 	"bzl":               {"auto:free", "claude-opus-4.7", "claude-sonnet-4.6", "claude-haiku-4.5", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "grok-4.3", "grok-4.20", "gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "kimi-k2.6", "kimi-k2.5", "glm-5.1", "glm-5", "mimo-v2.5-pro", "mimo-v2.5", "minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.6-plus", "nemotron-3-super-120b-a12b"},
-	"cbai":              {"glm-5.2", "glm-5.1", "glm-5.0", "glm-5.0-turbo", "glm-5v-turbo", "glm-4.7", "minimax-m3", "minimax-m2.7", "kimi-k2.7", "kimi-k2.6", "kimi-k2.5", "hy3-preview", "deepseek-v4-pro", "deepseek-v4.1-flash", "deepseek-v3-2-volc"},
-	"cbcn":              {"glm-5.2", "glm-5.1", "glm-5v-turbo", "minimax-m3", "kimi-k2.7", "kimi-k2.6", "hy3", "hy4-preview", "glm-5.3", "glm-5.3-flash", "kimi-k3-1", "deepseek-v4-pro", "deepseek-v4.1-flash"},
+	"cbai":              codebuddyIntlModels,
+	"wb":                workbuddyModels,
+	"cbcn":              codebuddyCNModels,
 	"cc":                {"claude-opus-5-5", "claude-opus-5", "claude-fable-5-1", "claude-fable-5", "claude-sonnet-5", "claude-haiku-4-5-20251001"},
 	"cerebras":          {"gpt-oss-120b", "zai-glm-4.7", "llama-3.3-70b", "llama-4-scout-17b-16e-instruct", "qwen-3-235b-a22b-instruct-2507", "qwen-3-32b"},
 	"cf":                {"@cf/cloudflare/clef-flash", "@cf/meta/llama-3.2-1b-instruct", "@cf/meta/llama-3.2-3b-instruct", "@cf/meta/llama-3.1-8b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct-awq", "@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/meta/llama-3.1-70b-instruct-fp8-fast", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "@cf/moonshotai/kimi-k2.5", "@cf/moonshotai/kimi-k2.6", "@cf/zai-org/glm-4.7-flash", "@cf/qwen/qwq-32b", "@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/black-forest-labs/flux-2-klein-9b", "@cf/black-forest-labs/flux-2-klein-4b", "@cf/black-forest-labs/flux-2-dev", "@cf/leonardo/lucid-origin", "@cf/leonardo/phoenix-1.0", "@cf/black-forest-labs/flux-1-schnell", "@cf/bytedance/stable-diffusion-xl-lightning", "@cf/lykon/dreamshaper-8-lcm", "@cf/runwayml/stable-diffusion-v1-5-img2img", "@cf/runwayml/stable-diffusion-v1-5-inpainting", "@cf/stabilityai/stable-diffusion-xl-base-1.0"},
@@ -54,12 +55,17 @@ var ProviderModels = map[string][]string{
 	"clinepass":         {"cline-pass/glm-5.2", "cline-pass/kimi-k2.7-code", "cline-pass/kimi-k2.6", "cline-pass/deepseek-v4-pro", "cline-pass/deepseek-v4-flash", "cline-pass/mimo-v2.5", "cline-pass/mimo-v2.5-pro", "cline-pass/minimax-m3", "cline-pass/qwen3.7-max", "cline-pass/qwen3.7-plus"},
 	"cloudflare-ai":     {"@cf/cloudflare/clef-flash", "@cf/meta/llama-3.2-1b-instruct", "@cf/meta/llama-3.2-3b-instruct", "@cf/meta/llama-3.1-8b-instruct-fp8-fast", "@cf/meta/llama-3.1-8b-instruct-awq", "@cf/mistralai/mistral-small-3.1-24b-instruct", "@cf/meta/llama-3.1-70b-instruct-fp8-fast", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b", "@cf/moonshotai/kimi-k2.5", "@cf/moonshotai/kimi-k2.6", "@cf/zai-org/glm-4.7-flash", "@cf/qwen/qwq-32b", "@cf/qwen/qwen2.5-coder-32b-instruct", "@cf/black-forest-labs/flux-2-klein-9b", "@cf/black-forest-labs/flux-2-klein-4b", "@cf/black-forest-labs/flux-2-dev", "@cf/leonardo/lucid-origin", "@cf/leonardo/phoenix-1.0", "@cf/black-forest-labs/flux-1-schnell", "@cf/bytedance/stable-diffusion-xl-lightning", "@cf/lykon/dreamshaper-8-lcm", "@cf/runwayml/stable-diffusion-v1-5-img2img", "@cf/runwayml/stable-diffusion-v1-5-inpainting", "@cf/stabilityai/stable-diffusion-xl-base-1.0"},
 	"cmc":               {"deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-flash", "moonshotai/Kimi-K3.1-Pro", "moonshotai/Kimi-K2.7-Code", "moonshotai/Kimi-K2.7-Code-Highspeed", "moonshotai/Kimi-K2.6", "moonshotai/Kimi-K2.5", "zai-org/GLM-5.2", "zai-org/GLM-5.2-Fast", "zai-org/GLM-5.1", "zai-org/GLM-5", "MiniMaxAI/MiniMax-M3", "MiniMaxAI/MiniMax-M2.7", "MiniMaxAI/MiniMax-M2.5", "xiaomi/mimo-v2.5-pro", "xiaomi/mimo-v2.5", "Qwen/Qwen3.6-Max-Preview", "Qwen/Qwen3.6-Plus", "Qwen/Qwen3.7-Max", "Qwen/Qwen3.7-Plus", "stepfun/Step-3.7-Flash", "stepfun/Step-3.5-Flash", "nvidia/nemotron-3-ultra-550b-a55b"},
-	// glm-5v-turbo / kimi-k2.7 / kimi-k2.6 are absent from the 2026-09-30
-	// server snapshot (upstream #4614 drops them) but stay seeded here: an
-	// unmerged PR is no reason to make a shipped model unroutable, and the
-	// thinking-level parity fixture is captured from a tag where they exist.
-	"codebuddy-cn":   {"glm-5.2", "glm-5.1", "glm-5v-turbo", "minimax-m3", "kimi-k2.7", "kimi-k2.6", "hy3", "hy4-preview", "glm-5.3", "glm-5.3-flash", "kimi-k3-1", "kimi-k2.8-preview", "deepseek-v4-pro", "deepseek-v4.1-flash"},
-	"codebuddy-intl": {"glm-5.2", "glm-5.1", "glm-5.0", "glm-5.0-turbo", "glm-5v-turbo", "glm-4.7", "minimax-m3", "minimax-m2.7", "kimi-k2.7", "kimi-k2.6", "kimi-k2.5", "hy3-preview", "deepseek-v4-pro", "deepseek-v4.1-flash", "deepseek-v3-2-volc"},
+	// CodeBuddy CN catalogue: the JS registry's 33 models
+	// (open-sse/providers/registry/codebuddy-cn.js), held once in
+	// codebuddy_catalog.go and shared with the cbcn alias key above so the
+	// two keys can never diverge (fragment 976).
+	"codebuddy-cn":   codebuddyCNModels,
+	"codebuddy-intl": codebuddyIntlModels,
+	// WorkBuddy's published catalogue (open-sse/providers/registry/
+	// workbuddy.js, synced from the live GET /v3/config list): 21 ids,
+	// including the virtual routing presets. Its own list — WorkBuddy
+	// rejects ids only CodeBuddy serves (fragment 975).
+	"workbuddy": workbuddyModels,
 	// gpt-5.5 / gpt-5.5-review / gpt-5.4 / gpt-5.4-mini / gpt-5.3-codex-spark and image variants removed:
 	// absent from backend-api/codex/models for ChatGPT accounts, so they answer HTTP 400 (#4202, #4848).
 	// gpt-daybreak-blue-latest and gpt-reserve replaced them, confirmed live on the same endpoint. The [1m] ids

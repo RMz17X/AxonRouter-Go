@@ -31,6 +31,23 @@ var channelMarkerRegex = regexp.MustCompile(`(?i)you are claude code|claude.?cod
 
 var codebuddyRateLimitRegex = regexp.MustCompile(`(?i)超出频率限制|frequency limit|限额`)
 
+// codebuddyFlavor parameterizes the shared CodeBuddy-family forward: the
+// leading identity prompt, the header builder, and the stall-watchdog
+// label. Upstream shapes it the same way — one CodeBuddyExecutor base
+// class with per-brand subclasses overriding identity only
+// (open-sse/executors/codebuddy.js + workbuddy.js).
+type codebuddyFlavor struct {
+	prompt     string
+	headers    func(req *Request, cfg *providers.ProviderConfig, body []byte) map[string]string
+	stallLabel string
+}
+
+var codebuddyFlavorCN = codebuddyFlavor{
+	prompt:     codebuddySystemPrompt,
+	headers:    codebuddyHeaders,
+	stallLabel: "codebuddy-cn",
+}
+
 // ForwardCodebuddyCN forwards to Tencent CodeBuddy with force-stream
 // and reasoning_summary injection.
 //
@@ -44,7 +61,22 @@ var codebuddyRateLimitRegex = regexp.MustCompile(`(?i)超出频率限制|frequen
 //   - any other value → injects reasoning_summary="auto" so CodeBuddy
 //     surfaces the model's reasoning output.
 func ForwardCodebuddyCN(w http.ResponseWriter, req *Request) error {
-	body, err := transformCodebuddyBody(req.Body)
+	return forwardCodebuddy(w, req, codebuddyFlavorCN)
+}
+
+// forwardCodebuddy is the shared family forward used by codebuddy-cn,
+// codebuddy-intl, and workbuddy; the flavor supplies the brand identity.
+func forwardCodebuddy(w http.ResponseWriter, req *Request, flavor codebuddyFlavor) error {
+	// Family-wide request pacing (120/min leaky bucket, fail-open) —
+	// upstream applies it in the shared executor base, so every brand
+	// on the gateway is paced (codebuddy_pacing.go).
+	paceProvider := req.Provider
+	if paceProvider == "" {
+		paceProvider = flavor.stallLabel
+	}
+	acquireCodebuddySlot(req.Ctx, paceProvider)
+
+	body, err := transformCodebuddyBodyWithPrompt(req.Body, flavor.prompt)
 	if err != nil {
 		return fmt.Errorf("transform codebuddy body: %w", err)
 	}
@@ -59,7 +91,7 @@ func ForwardCodebuddyCN(w http.ResponseWriter, req *Request) error {
 		delete(merged, "x-requested-with")
 		delete(merged, "x-codebuddy-request")
 
-		for k, v := range codebuddyHeaders(req, cfg, body) {
+		for k, v := range flavor.headers(req, cfg, body) {
 			merged[k] = v
 		}
 		cfgCopy := *cfg
@@ -103,9 +135,13 @@ func ForwardCodebuddyCN(w http.ResponseWriter, req *Request) error {
 				return jsonResponse(req.Ctx, w, bytes.NewReader(data), req.TranslateResp, req.ResponseBuf)
 			}
 		}
-		stallReader := proxy.NewStallReaderWithContext(req.Ctx, resp.Body, req.Config.ResolveStallTimeout(proxy.ResolveDefaultStallTimeout()), "codebuddy-cn")
+		stallReader := proxy.NewStallReaderWithContext(req.Ctx, resp.Body, req.Config.ResolveStallTimeout(proxy.ResolveDefaultStallTimeout()), flavor.stallLabel)
 		defer func() { _ = stallReader.Close() }() // stops the shutdown watcher + stall timer
-		return execSSEStream(w, stallReader, req)
+		// Family-only stream repair (finish_reason ""→null, duplicate
+		// [DONE] collapse) — codebuddy_sse.go. Wrapped here, at the one
+		// call site all three brands share, so the shared execSSEStream
+		// and every other provider's stream stay untouched.
+		return execSSEStream(w, newCodebuddySSENormalizer(stallReader), req)
 	}
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, constants.MaxUpstreamBodyBytes))
@@ -190,6 +226,14 @@ func isCodebuddyRateLimit(body []byte) bool {
 // transformCodebuddyBody forces stream=true, normalizes system prompt and caller
 // instructions, sanitizes external client markers, and handles reasoning params.
 func transformCodebuddyBody(body []byte) ([]byte, error) {
+	return transformCodebuddyBodyWithPrompt(body, codebuddySystemPrompt)
+}
+
+// transformCodebuddyBodyWithPrompt is transformCodebuddyBody with a
+// caller-supplied leading identity prompt — WorkBuddy's executor
+// inherits the whole transform and swaps only the identity line
+// ("You are WorkBuddy.", upstream CHANNEL_IDENTITY).
+func transformCodebuddyBodyWithPrompt(body []byte, identityPrompt string) ([]byte, error) {
 	var reqMap map[string]any
 	if err := json.Unmarshal(body, &reqMap); err != nil {
 		return nil, fmt.Errorf("parse body: %w", err)
@@ -213,7 +257,7 @@ func transformCodebuddyBody(body []byte) ([]byte, error) {
 		inputMessages = arr
 	}
 
-	systemParts := []string{codebuddySystemPrompt}
+	systemParts := []string{identityPrompt}
 	var otherMessages []any
 
 	for _, raw := range inputMessages {
@@ -225,7 +269,7 @@ func transformCodebuddyBody(body []byte) ([]byte, error) {
 		if role == "system" || role == "developer" {
 			rawText := extractMessageText(m["content"])
 			cleaned := strings.TrimSpace(sanitizeChannelMarkers(rawText))
-			if cleaned != "" && cleaned != codebuddySystemPrompt {
+			if cleaned != "" && cleaned != identityPrompt {
 				systemParts = append(systemParts, cleaned)
 			}
 			continue

@@ -19,10 +19,10 @@ import (
 // same list the chat router resolves against. Import therefore offers exactly
 // what a request can reach, with no second list to drift from the router's.
 //
-// WorkBuddy is deliberately NOT handled here. It is a separate service that this
-// build does not register at all — no KnownProviders entry, no ProviderModels
-// entry, no executor — so it cannot be connected to and a branch for it would
-// only ever return an empty list. It joins the branch when it is registered.
+// WorkBuddy joins this branch since its registration (fragment 975): it
+// has its own KnownProviders / ProviderModels entries and executor, and
+// codebuddyCatalogModels resolves through the canonical id, so it serves
+// the WorkBuddy list — never the CodeBuddy one.
 // codebuddyNonChatTokens are the non-chat surfaces a chat-completions client can
 // never call. Matched on segment boundaries only, so a legitimate id that merely
 // contains the letters is never rejected — the same rule
@@ -35,7 +35,7 @@ var codebuddyNonChatTokens = []string{
 // any CodeBuddy variant or WorkBuddy.
 func isCodebuddyFamily(providerID string) bool {
 	switch strings.ToLower(strings.TrimSpace(providerID)) {
-	case "codebuddy-cn", "codebuddy-intl", "cbcn", "cbai":
+	case "codebuddy-cn", "codebuddy-intl", "cbcn", "cbai", "workbuddy", "wb":
 		return true
 	default:
 		return false

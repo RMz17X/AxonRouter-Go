@@ -27,6 +27,7 @@ var RegistryAliases = map[string]string{
 	"cloudflare-ai":     "cf",
 	"codebuddy-cn":      "cbcn",
 	"codebuddy-intl":    "cbai",
+	"workbuddy":         "wb",
 	"codex":             "cx",
 	"commandcode":       "cmc",
 	"cursor":            "cu",

@@ -82,8 +82,12 @@ func fetchProviderUsage(ctx context.Context, provider string, data map[string]an
 		return fetchQoderUsage(ctx, firstNonEmptyStr(accessToken, apiKey)), true
 	case "qoder-cn":
 		return fetchQoderUsageAt(ctx, firstNonEmptyStr(accessToken, apiKey), "https://openapi.qoder.com.cn/api/v2/quota/usage"), true
+	case "codebuddy-cn":
+		return fetchCodeBuddyCnUsage(ctx, accessToken, apiKey), true
 	case "codebuddy-intl":
 		return fetchCodeBuddyIntlUsage(ctx, accessToken, apiKey), true
+	case "workbuddy":
+		return fetchWorkBuddyUsage(ctx, accessToken, apiKey), true
 	case "kiro":
 		return fetchKiroUsage(ctx, kiroUsageToken(accessToken, apiKey, psd), psd), true
 	case "grok-cli":
@@ -1049,7 +1053,16 @@ func fetchQoderUsageAt(ctx context.Context, accessToken, usageURL string) usageR
 	return usageResult{quotas: quotas, extra: extra}
 }
 
-// ---------- codebuddy-intl: POST billing meter ----------
+// ---------- codebuddy family: POST billing meter ----------
+//
+// One billing handler shared by codebuddy-cn, codebuddy-intl and workbuddy
+// (port of open-sse/services/usage/codebuddy-cn.js; fragment 976, audit
+// CB #15 / WB #11). Per-provider hosts and static identity headers come
+// from each JS registry's transport block; the payload shape
+// (data.Response.Data.Accounts[]), the refill-vs-bonus split and the
+// message strings are the shared handler's, including its quirk of naming
+// "CodeBuddy CN" literally in the HTTP-status and payload-error branches
+// for every provider.
 
 var codebuddyIntlHeaders = map[string]string{
 	"User-Agent":          "IDE/2.108.1 CodeBuddy/2.108.1",
@@ -1060,6 +1073,38 @@ var codebuddyIntlHeaders = map[string]string{
 	"X-Codebuddy-Request": "1",
 	"Content-Type":        "application/json",
 	"Accept":              "application/json",
+}
+
+// codebuddyCnHeaders mirrors the CN registry's static identity
+// (registry/codebuddy-cn.js transport.headers — the CLI shape, where the
+// intl port above historically sends the IDE shape; that divergence is
+// pre-existing and left untouched).
+var codebuddyCnHeaders = map[string]string{
+	"User-Agent":          "CLI/2.108.1 CodeBuddy/2.108.1",
+	"X-Product":           "SaaS",
+	"X-IDE-Type":          "CLI",
+	"X-IDE-Name":          "CLI",
+	"X-Requested-With":    "XMLHttpRequest",
+	"X-Codebuddy-Request": "1",
+	"Content-Type":        "application/json",
+	"Accept":              "application/json",
+}
+
+// workbuddyUsageHeaders mirrors the WorkBuddy registry's static identity
+// (registry/workbuddy.js transport.headers).
+var workbuddyUsageHeaders = map[string]string{
+	"User-Agent":       "WorkBuddy/5.5.6",
+	"X-Product":        "SaaS",
+	"X-IDE-Type":       "WorkBuddy",
+	"X-IDE-Name":       "WorkBuddy",
+	"X-IDE-Version":    "5.5.6",
+	"X-Requested-With": "XMLHttpRequest",
+	"X-Agent-Intent":   "craft",
+	"X-Agent-Purpose":  "conversation",
+	"X-Agent-Type":     "main",
+	"X-Domain":         "www.workbuddy.ai",
+	"Content-Type":     "application/json",
+	"Accept":           "application/json",
 }
 
 func codebuddyNum(precise, plain any) float64 {
@@ -1109,18 +1154,30 @@ func codebuddyCadence(acc map[string]any) string {
 	return "Monthly"
 }
 
+func fetchCodeBuddyCnUsage(ctx context.Context, accessToken, apiKey string) usageResult {
+	return fetchCodeBuddyUsage(ctx, "codebuddy-cn", "https://copilot.tencent.com/v2/billing/meter/get-user-resource", codebuddyCnHeaders, accessToken, apiKey)
+}
+
 func fetchCodeBuddyIntlUsage(ctx context.Context, accessToken, apiKey string) usageResult {
+	return fetchCodeBuddyUsage(ctx, "codebuddy-intl", "https://www.codebuddy.ai/v2/billing/meter/get-user-resource", codebuddyIntlHeaders, accessToken, apiKey)
+}
+
+func fetchWorkBuddyUsage(ctx context.Context, accessToken, apiKey string) usageResult {
+	return fetchCodeBuddyUsage(ctx, "workbuddy", "https://www.workbuddy.ai/v2/billing/meter/get-user-resource", workbuddyUsageHeaders, accessToken, apiKey)
+}
+
+func fetchCodeBuddyUsage(ctx context.Context, providerID, url string, providerHeaders map[string]string, accessToken, apiKey string) usageResult {
 	token := firstNonEmptyStr(accessToken, apiKey)
 	if token == "" {
-		return usageResult{message: "CodeBuddy (codebuddy-intl) credential not available."}
+		return usageResult{message: fmt.Sprintf("CodeBuddy (%s) credential not available.", providerID)}
 	}
 	headers := map[string]string{"Authorization": "Bearer " + token}
-	for k, v := range codebuddyIntlHeaders {
+	for k, v := range providerHeaders {
 		headers[k] = v
 	}
-	status, _, out, err := usageDo(ctx, http.MethodPost, "https://www.codebuddy.ai/v2/billing/meter/get-user-resource", headers, []byte("{}"))
+	status, _, out, err := usageDo(ctx, http.MethodPost, url, headers, []byte("{}"))
 	if err != nil {
-		return usageResult{message: fmt.Sprintf("CodeBuddy (codebuddy-intl) error: %v", err)}
+		return usageResult{message: fmt.Sprintf("CodeBuddy (%s) error: %v", providerID, err)}
 	}
 	if status == 401 || status == 403 {
 		return usageResult{message: "CodeBuddy CN credential invalid or expired."}
@@ -1130,7 +1187,7 @@ func fetchCodeBuddyIntlUsage(ctx context.Context, accessToken, apiKey string) us
 	}
 	body := usageJSON(out)
 	if body == nil {
-		return usageResult{message: "CodeBuddy (codebuddy-intl) error: invalid JSON"}
+		return usageResult{message: fmt.Sprintf("CodeBuddy (%s) error: invalid JSON", providerID)}
 	}
 	if code := usageNum(body["code"], -1); code != 0 {
 		msg, _ := body["msg"].(string)
