@@ -31,6 +31,21 @@ export interface ProviderConnection {
   /** Masked hint of the stored credential; the raw secret is never listed. */
   apiKeyMasked?: string
   testStatus?: string | null
+  /** Server-computed status from the canonical status engine
+   * (internal/providers/connection_status.go): active, unavailable,
+   * quota_exhausted, rate_limited, error, expired, or disabled. */
+  effectiveStatus?: string | null
+  /** True only when the connection is enabled AND effectively healthy. */
+  isEffectivelyActive?: boolean
+  /** Display bucket for effectiveStatus: success | warn | error | default. */
+  statusVariant?: string | null
+  /** Why the connection was disabled, when the backend recorded one. */
+  disabledReason?: string | null
+  disabledAt?: string | null
+  /** Account-wide rate-limit park expiry (ISO), when one is live. */
+  rateLimitedUntil?: string | null
+  /** Escalating cooldown depth recorded by the lock writer. */
+  backoffLevel?: number | null
   lastError?: string | null
   lastErrorModel?: string | null
   lastErrorSource?: 'chat' | null
@@ -38,6 +53,20 @@ export interface ProviderConnection {
   displayName?: string | null
   assignedModel?: string | null
   providerSpecificData?: { assignedModel?: string | null; [key: string]: unknown }
+}
+
+/** One row of the locks census (GET /api/models/availability). */
+export interface ModelAvailabilityEntry {
+  provider: string
+  /** Locked model id, or "__all" for an account-wide lock. */
+  model: string
+  /** "cooldown" for a live lock (carries `until`); "unavailable" for a
+   * connection marked unavailable with no live lock left. */
+  status: string
+  until?: string | null
+  connectionId: string
+  connectionName: string
+  lastError?: string | null
 }
 
 export interface Combo {
@@ -1326,6 +1355,13 @@ export const api = {
   getProviderStats: async () => {
     const res = await request<{ stats?: Record<string, Record<string, { total: number; connected: number; error: number; allDisabled: boolean; lastError?: string }>> }>('/api/providers/stats')
     return res.stats || {}
+  },
+  /** Locks census (GET /api/models/availability): one row per live lock on a
+   * locked-or-unavailable connection. Model "__all" is the account-wide lock;
+   * status "cooldown" rows carry an `until`, bare "unavailable" rows do not. */
+  getModelAvailability: async () => {
+    const res = await request<{ models?: ModelAvailabilityEntry[]; unavailableCount?: number }>('/api/models/availability')
+    return { models: res.models || [], unavailableCount: res.unavailableCount ?? (res.models || []).length }
   },
   createConnection: (payload: CreateConnectionPayload) =>
     request<{ success: boolean; id: string }>('/api/connections', {

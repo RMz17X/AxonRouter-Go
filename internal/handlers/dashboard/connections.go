@@ -405,10 +405,12 @@ func sanitizeProviderConnection(c *models.ProviderConnection) map[string]any {
 		safe["priority"] = *c.Priority
 	}
 	if strings.TrimSpace(c.Data) == "" {
+		decorateEffectiveStatus(safe, c, "")
 		return safe
 	}
 	var data map[string]any
 	if err := json.Unmarshal([]byte(c.Data), &data); err != nil || data == nil {
+		decorateEffectiveStatus(safe, c, "")
 		return safe
 	}
 
@@ -503,11 +505,26 @@ func sanitizeProviderConnection(c *models.ProviderConnection) map[string]any {
 	} else if c.IsActive == 0 {
 		safe["testStatus"] = "disabled"
 	}
-	effective := providers.EffectiveStatusWithError(c.IsActive, fmt.Sprintf("%v", safe["testStatus"]), providers.HasActiveCooldown(c.Data), lastError)
-	safe["effectiveStatus"] = effective
-	safe["isEffectivelyActive"] = providers.IsEffectivelyActiveWithError(c.IsActive, fmt.Sprintf("%v", safe["testStatus"]), providers.HasActiveCooldown(c.Data), lastError)
-	safe["statusVariant"] = providers.StatusVariant(c.IsActive, effective)
+	decorateEffectiveStatus(safe, c, lastError)
 	return safe
+}
+
+// decorateEffectiveStatus stores the connection's computed status fields on
+// its sanitized payload: effectiveStatus, isEffectivelyActive, statusVariant.
+//
+// testStatus must be read as a string. The sanitized map only carries the key
+// when the stored blob recorded a verdict (or the fatal-disable path above
+// forced one), so formatting a missing key with %v produced the literal
+// status "<nil>" for never-probed connections — an active API key then
+// reported effectiveStatus "<nil>" and isEffectivelyActive false, because
+// "<nil>" is not one of the healthy statuses. A missing verdict is the
+// never-probed case and must reach the status engine as "".
+func decorateEffectiveStatus(safe map[string]any, c *models.ProviderConnection, lastError string) {
+	testStatus, _ := safe["testStatus"].(string)
+	effective := providers.EffectiveStatusWithError(c.IsActive, testStatus, providers.HasActiveCooldown(c.Data), lastError)
+	safe["effectiveStatus"] = effective
+	safe["isEffectivelyActive"] = providers.IsEffectivelyActiveWithError(c.IsActive, testStatus, providers.HasActiveCooldown(c.Data), lastError)
+	safe["statusVariant"] = providers.StatusVariant(c.IsActive, effective)
 }
 
 func isFatalAccountDisableError(msg string) bool {

@@ -9,6 +9,7 @@
     type ProviderConnection,
     type ProviderNode,
     type ModelCaps,
+    type ModelAvailabilityEntry,
     type ProxyPool,
     type Settings
   } from '../../api/client'
@@ -51,6 +52,14 @@
     type SuggestedModel
   } from './types'
   import { proxyBadgeInfo } from './proxyBadge'
+  import {
+    formatRemaining,
+    groupAvailabilityByConnection,
+    healthByConnection as buildHealthByConnection,
+    statusLabel,
+    type ConnectionHealth
+  } from './connectionHealth'
+  import ProviderAccountStatusStrip from './ProviderAccountStatusStrip.svelte'
   import NoAuthProxyCard from '../media/NoAuthProxyCard.svelte'
   import ProxyResolutionNote from '../media/ProxyResolutionNote.svelte'
   import {
@@ -184,6 +193,38 @@
   // Quota & Cooldown tracking state
   let connectionQuotas = $state<Record<string, ConnectionUsageResponse>>({})
   let currentTime = $state(Date.now())
+
+  // Account health: the locks census (GET /api/models/availability) joined
+  // with each connection's server-computed effectiveStatus. The census is
+  // refetched whenever the parent hands this view a fresh connections list
+  // — the same cycle the connections themselves refresh on (provider open
+  // and every post-mutation reload) — and the 1s currentTime tick keeps
+  // lock remaining times live between fetches. No separate polling.
+  let availabilityEntries = $state<ModelAvailabilityEntry[]>([])
+
+  async function loadAvailability() {
+    try {
+      const res = await api.getModelAvailability()
+      availabilityEntries = res.models
+    } catch {
+      availabilityEntries = []
+    }
+  }
+
+  $effect(() => {
+    void connections
+    untrack(() => {
+      void loadAvailability()
+    })
+  })
+
+  let availabilityByConnection = $derived(groupAvailabilityByConnection(availabilityEntries))
+  let connectionHealthById = $derived.by((): Map<string, ConnectionHealth> => {
+    // Reading currentTime re-derives health as locks lapse, so a lock that
+    // expires while the page is open drops out of the counts and badges.
+    void currentTime
+    return buildHealthByConnection(providerConnections, availabilityByConnection, currentTime)
+  })
 
   onMount(() => {
     const timer = setInterval(() => {
@@ -3924,6 +3965,9 @@
     {/if}
 
     <!-- Connections List -->
+    {#if providerConnections.length > 0}
+      <ProviderAccountStatusStrip connections={providerConnections} healthById={connectionHealthById} />
+    {/if}
       {#if providerConnections.length === 0}
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-3">
@@ -4036,6 +4080,7 @@
           {@const priorityNum = conn.priority ?? globalIdx + 1}
           {@const isConnActive = (conn.isActive === 1 || conn.isActive === true) && conn.testStatus !== 'disabled' && !isFatalDisabledErr}
           {@const cooldownInfo = getCooldownInfo(conn)}
+          {@const health = connectionHealthById.get(conn.id)}
           <!-- badgeFor owns the precedence between the live probe and the
                connection's persisted testStatus; the markup below only renders
                the verdict it returns. -->
@@ -4100,10 +4145,10 @@
                       {#if !isConnActive || conn.testStatus === 'disabled' || isFatalDisabledErr}
                         <span
                           class="inline-flex items-center gap-1.5 rounded-full font-semibold bg-surface-3 text-text-muted px-2 py-0.5 text-[10px]"
-                          title={lastErr ? `disabled: ${lastErr}` : 'Connection is disabled'}
+                          title={conn.disabledReason ? `disabled: ${conn.disabledReason}` : lastErr ? `disabled: ${lastErr}` : 'Connection is disabled'}
                         >
                           <span class="size-1.5 rounded-full bg-text-muted/60"></span>
-                          disabled
+                          {health?.tosDisabled ? 'disabled · ToS' : 'disabled'}
                         </span>
                       {:else if connBadge === 'queued'}
                         <span
@@ -4135,8 +4180,11 @@
                           active
                         </span>
                       {/if}
-                      <!-- Cooldown & Exhausted Quota badge with live timer -->
-                      {#if cooldownInfo}
+                      <!-- Cooldown & Exhausted Quota badge with live timer.
+                           The plain lock timer yields to the health lock
+                           badge below when it fires: that one names the
+                           locked model, the timer alone does not. -->
+                      {#if cooldownInfo && !(cooldownInfo.isLock && health && health.locks.length > 0)}
                         {#if cooldownInfo.isLock}
                           <span class="text-xs text-orange-500 font-mono" title={cooldownInfo.title}>
                             {cooldownInfo.label}
@@ -4152,6 +4200,46 @@
                             {cooldownInfo.label}
                           </span>
                         {/if}
+                      {/if}
+
+                      <!-- Account health badges (server effectiveStatus +
+                           locks census; see connectionHealth.ts): live
+                           locks name the model and its expiry, a bare
+                           rate-limit verdict with no recorded reset gets
+                           its cooldown pill here, and an error verdict
+                           the probe badge called "active" is surfaced
+                           instead of hidden. -->
+                      {#if health && health.locks.length > 0}
+                        {@const firstLock = health.locks[0]}
+                        <span
+                          class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] border bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/30"
+                          title={health.locks
+                            .map((l) => `${l.model === '__all' ? 'All models' : l.model} locked until ${new Date(l.until).toLocaleString()}`)
+                            .join('\n')}
+                        >
+                          <span class="material-symbols-outlined text-[12px]">lock</span>
+                          locked: {firstLock.model === '__all' ? 'all models' : firstLock.model}{health.locks.length > 1
+                            ? ` +${health.locks.length - 1}`
+                            : ''} · {formatRemaining(new Date(firstLock.until).getTime(), currentTime)}
+                        </span>
+                      {/if}
+                      {#if health?.state === 'cooldown' && !cooldownInfo}
+                        <span
+                          class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                          title="Rate limited by the upstream; no reset time recorded"
+                        >
+                          <span class="material-symbols-outlined text-[12px]">hourglass_top</span>
+                          cooldown
+                        </span>
+                      {/if}
+                      {#if health?.state === 'error' && connBadge === 'active' && isConnActive}
+                        <span
+                          class="inline-flex items-center gap-1.5 rounded-full font-semibold bg-red-500/10 text-red-600 dark:text-red-400 px-2 py-0.5 text-[10px]"
+                          title={lastErr || undefined}
+                        >
+                          <span class="size-1.5 rounded-full bg-red-500"></span>
+                          {statusLabel(health.effectiveStatus)}
+                        </span>
                       {/if}
 
                       <!-- Auth type badge -->
