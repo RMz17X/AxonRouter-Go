@@ -23,7 +23,7 @@ process at runtime. Every page below is a real sidebar entry.
 | Media Providers | Accordion: Embedding, Text to Image, Text to Speech, Speech to Text, Video, System One, Web Fetch & Search |
 | Proxy Pools | Bind a proxy to each API key connection |
 | Skills | Operator skill blocks per scope |
-| Security | Credential vault, guardrails, audit trail |
+| Guardrails | Prompt guardrails (PII & injection scanning), audit trail |
 | Persona | Agent prompt presets, per-model binding |
 | Plans | Reusable policy templates |
 | Console Log | Live log with level filters and search |

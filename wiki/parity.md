@@ -58,7 +58,6 @@ Some features exist only in axonrouter-go and do not collide with upstream:
 - Per-custom-provider limits (RPM/TPM/concurrency/quota/expiry)
 - Per-API-key rate limiting with a FIFO queue
 - USD + token budgets with hard cutoff
-- AES-GCM credential vault
 - Argon2id API key hashing
 - PII and injection guardrails
 - Semantic response cache

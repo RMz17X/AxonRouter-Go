@@ -117,31 +117,14 @@ longer answer — rather than instructing it to ignore them.
 
 ---
 
-## Security — vault, guardrails, and who may spend what
+## Guardrails — prompt scanning, and who may spend what
 
 **Since:** v1.9.11 · **Source:** [mydisha/keirouter](https://github.com/mydisha/keirouter)
 
 ### What it does
 
-Three controls that keep your credentials, your prompts, and your budget safe.
-All three live on the **Security** page in the sidebar.
-
-### Credential vault
-
-Your provider credentials are stored sealed with AES-256-GCM encryption, and only
-unsealed in memory when a request needs them. The database never holds a
-plaintext copy.
-
-**How to check it:** open **Security** and read the vault status card. It tells
-you whether the vault is active and how many credentials it holds.
-
-**Rotating the master key:** use **Rotate Master Key** on the same card, and type
-the new key when asked. There is no confirmation dialog — the rotation happens
-when you press it.
-
-> Losing the master key loses every stored credential. Write it down somewhere
-> safe before you rotate, and keep the old one until you have confirmed the new
-> one works.
+Controls that keep your prompts and your budget safe.
+They live on the **Guardrails** page in the sidebar.
 
 ### Guardrails
 
@@ -150,7 +133,7 @@ attempts to override your instructions.
 
 **How to create a policy:**
 
-1. Open **Security** and click **New Policy**.
+1. Open **Guardrails** and click **New Policy**.
 2. Pick a **scope** — how wide the rule applies:
 
 | Scope | Applies to |

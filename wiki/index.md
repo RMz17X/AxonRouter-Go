@@ -64,7 +64,7 @@ branch rather than in a release you can download.
 | Routing | Combos with fallback, round-robin, sticky, capacity, and fusion |
 | Token savers | RTK compression plus Caveman, Ponytail, and ADHD output styles |
 | Governance | Per-key rate limits, USD/token budgets, plans, model allowlists |
-| Security | AES-GCM credential vault, Argon2id key hashing, PII and injection guardrails, SSRF protection |
+| Security | Argon2id key hashing, PII and injection guardrails, SSRF protection |
 | Providers | 40+ providers, OAuth for most, custom OpenAI/Anthropic-compatible nodes |
 | Operations | Docker, tunnels, self-update, background loops, Prometheus metrics |
 

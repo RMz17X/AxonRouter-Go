@@ -11,7 +11,7 @@ no real credentials are in any of these images.
 |---|---|---|
 | API Keys list — Policy column | `api-keys-policy-column.webp` | New **Policy** column rendering the effective per-key limits, plus the per-key policy button in **Actions**. |
 | Per-key policy modal | `api-key-policy-modal.webp` | New modal: rate limits, contract expiry, resale metadata, model allowlist. |
-| Security view | `security-vault-guardrails.webp` | New view: Credential Vault status + master-key rotation, guardrail policy editor, audit log, and the global **Enforce guardrails** kill-switch. |
+| Guardrails view | `security-guardrails.webp` | Guardrail policy editor, audit log, and the global **Enforce guardrails** kill-switch. (The credential vault shown in the original capture was removed in v1.9.36; the page is Guardrails-only.) |
 
 ## Policy column
 
@@ -46,13 +46,9 @@ Four sections, each corresponding to a plan requirement:
 expiry, or metadata — otherwise opening this modal to add one model would silently
 reset a key's limits to zero.
 
-## Security view
+## Guardrails view
 
-![Security view](screenshots/security-vault-guardrails.webp)
-
-**Credential Vault** — sealed vs plaintext connection counts, and master-key
-rotation (re-wraps every data key; no secret is re-encrypted). Disabled entirely
-until `ROUTER_MASTER_KEY` is set.
+![Guardrails view](screenshots/security-guardrails.webp)
 
 **Guardrails** — offline regex detection, no external service contacted. The
 **Enforce guardrails** switch is the kill-switch: it stops both the request and

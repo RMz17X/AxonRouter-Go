@@ -65,7 +65,7 @@ found with the search box on the left.
 
 ## Security & keys
 
-![Credential vault guardrails](../docs/screenshots/security-vault-guardrails.webp)
+![Guardrails](../docs/screenshots/security-guardrails.webp)
 
 ![API key policy](../docs/screenshots/api-key-policy-modal.webp)
 

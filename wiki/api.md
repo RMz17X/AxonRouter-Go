@@ -231,11 +231,9 @@ POST /api/tunnel/tailscale-enable
 POST /api/tunnel/tailscale-disable
 ```
 
-### Security
+### Guardrails
 
 ```text
-GET    /api/vault/status
-POST   /api/vault/rotate
 GET    /api/guardrails/policies
 POST   /api/guardrails/policies
 PUT    /api/guardrails/policies/{id}

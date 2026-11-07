@@ -116,7 +116,7 @@ PUT  /api/keys/{id}              Metadata, expiry, limits
 
 Keys are stored as Argon2id verifiers with a SHA-256 lookup index, and the
 plaintext is shown exactly once at creation. See [Security](security.html) for the
-hashing and vault details.
+hashing details.
 
 ## Where the numbers come from
 

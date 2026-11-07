@@ -16,7 +16,7 @@ through it. This page covers every control that protects them.
 | Public | `/health`, dashboard HTML/assets, `/login`, OAuth callbacks |
 | Proxy routes (`/v1/*`, `/api/chat`) | Active client API key (`Authorization: Bearer` / `X-API-Key`) |
 | Dashboard APIs (`/api/*`) | Session cookie, CLI token, or API key |
-| Destructive operations (shutdown, update, DB import, vault rotation) | Session or CLI token — never a client API key |
+| Destructive operations (shutdown, update, DB import) | Session or CLI token — never a client API key |
 | Console log APIs | Full dashboard session or local CLI token; client API keys are rejected |
 
 **First login.** On localhost the initial password is `123456`; change it in
@@ -39,17 +39,6 @@ attempt its own rate-limit bucket.
 Behind an untrusted proxy, every request is bucketed by the proxy's own socket
 address, so all its users share one login bucket: five failed attempts lock them
 all out. `TRUSTED_PROXIES` separates them again.
-
-## Credential vault
-
-Provider credentials are sealed with AES-256-GCM envelope encryption
-(`internal/vault/vault.go`). The master key is the root of trust — losing it
-loses every stored credential, so the dashboard exposes status and rotation
-through `/api/vault/status` and `/api/vault/rotate` rather than leaving it to a
-file edit.
-
-Credentials are decrypted in memory only when a dispatch needs them; the database
-never holds a plaintext copy after migration.
 
 ## API key hashing
 
@@ -95,6 +84,5 @@ browser session.
 
 ## Further reading
 
-- Security panel UI: `web/src/components/security/SecurityPanel.svelte`
-- Vault internals: `internal/vault/vault.go`, `internal/db/vault.go`
+- Guardrails panel UI: `web/src/components/security/GuardrailsPanel.svelte`
 - Guardrails: `internal/guardrails/`
