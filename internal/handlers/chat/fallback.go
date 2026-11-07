@@ -9,7 +9,6 @@ import (
 	"axonrouter/proxy/internal/observ"
 	"axonrouter/proxy/internal/providers"
 	"axonrouter/proxy/internal/proxy/executor"
-	"axonrouter/proxy/internal/proxy/poolstate"
 	"axonrouter/proxy/internal/proxy/smart"
 	"axonrouter/proxy/internal/thinking"
 	"axonrouter/proxy/internal/tokensaver"
@@ -81,12 +80,22 @@ func (h *ChatHandler) handleAccountFallback(
 			return fmt.Errorf("pinned connection %s: %w", pinnedConnectionID, err)
 		}
 		log.DebugCtx(ctx, "fallback", "pinned", "pinnedConn", pinnedConnectionID, "connObj", connObj.ID)
-		return h.tryForwardWithConnection(forwardRequestParams{
+		fwdErr := h.tryForwardWithConnection(forwardRequestParams{
 			Ctx: ctx, W: w, Provider: provider, Model: model,
 			ConnectionID: connObj.ID, ConnName: connObjName(connObj), ConnEmail: connObjEmail(connObj),
 			ConnData: connData, Body: body, Attempts: 1,
 			IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
 		})
+		if fwdErr != nil {
+			// A pinned attempt skips the fallback loop below, so the loop's
+			// pool-fitness classification never sees its failures — most
+			// importantly the idle prober's, which pins every connection it
+			// checks. Classify the failure here so a stalling egress is
+			// penalized no matter which lane exposed it. There is no retry:
+			// pinned means pinned.
+			h.classifyPoolFailure(ctx, provider, model, connObj.ID, connData, fwdErr)
+		}
+		return fwdErr
 	}
 
 	if !handlerutil.IsProbeContext(ctx) && !h.Repo.IsProviderAvailable(provider, model) {
@@ -269,43 +278,9 @@ func (h *ChatHandler) handleAccountFallback(
 
 		var ue *upstreamError
 		errors.As(lastErr, &ue)
-		isLocErr := isProxyLocationError(lastErr, func() []byte {
-			if ue != nil {
-				return ue.Body
-			}
-			return nil
-		}())
-		if isLocErr {
-			poolID := connData.ResolvedProxyPoolID
-			if poolID == "" {
-				poolID = connData.ProxyPoolID
-			}
-			if poolID != "" && poolID != "__none__" && poolID != "direct" {
-				smart.DefaultTracker.RecordFailureWithCooldown(provider, poolID, 24*time.Hour, "FAILED_PRECONDITION: user location not supported")
-				poolstate.MarkUnfit(poolID, provider+"::*", time.Now().Add(24*time.Hour).UnixMilli(), "FAILED_PRECONDITION: user location not supported")
-				log.WarnCtx(attemptCtx, "fallback", "proxy pool rejected by location policy, locked for 24h via smartfit",
-					"conn", connObj.ID, "provider", provider, "model", model, "pool", poolID)
-				excludedPools[poolID] = true
-				continue
-			}
-		}
-
-		statusCode := 0
-		if ue != nil {
-			statusCode = ue.StatusCode
-		}
-		if isProxyTransportError(lastErr, statusCode) {
-			poolID := connData.ResolvedProxyPoolID
-			if poolID == "" {
-				poolID = connData.ProxyPoolID
-			}
-			if poolID != "" && poolID != "__none__" && poolID != "direct" {
-				smart.DefaultTracker.RecordFailure(provider, poolID, lastErr)
-				log.WarnCtx(attemptCtx, "fallback", "proxy transport failed, penalizing proxy fitness",
-					"conn", connObj.ID, "provider", provider, "model", model, "pool", poolID, "status", statusCode, "error", lastErr)
-				excludedPools[poolID] = true
-				continue
-			}
+		if poolID := h.classifyPoolFailure(attemptCtx, provider, model, connObj.ID, connData, lastErr); poolID != "" {
+			excludedPools[poolID] = true
+			continue
 		}
 
 		if ue != nil && providers.IsModelDeprecation(ue.StatusCode, ue.Body) {
