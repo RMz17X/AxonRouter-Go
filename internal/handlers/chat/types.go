@@ -70,6 +70,13 @@ type ChatHandler struct {
 	// SessionAffinity pins client sessions to upstream connection accounts.
 	sessionAffinityMu sync.Mutex
 	SessionAffinity   *SessionAffinityStore
+
+	// playgroundKey is the dashboard playground's caller identity: a real
+	// apiKeys row named "playground", loaded or minted once and cached, so
+	// playground traffic lands in usage with the same caller shape as any
+	// client key. See playground.go.
+	playgroundKeyMu sync.Mutex
+	playgroundKey   *models.APIKey
 }
 
 // Type aliases for shared types

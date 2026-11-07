@@ -3,6 +3,7 @@ export type ActiveTab =
   | 'endpoint'
   | 'connections'
   | 'combos'
+  | 'playground'
   | 'analytics'
   | 'quota'
   | 'token-saver'
@@ -34,6 +35,7 @@ export const TAB_ROUTES: Record<ActiveTab, string> = {
   endpoint: '/dashboard/endpoint',
   connections: '/dashboard/providers',
   combos: '/dashboard/combos',
+  playground: '/dashboard/playground',
   analytics: '/dashboard/usage',
   quota: '/dashboard/quota',
   'token-saver': '/dashboard/token-saver',
@@ -78,6 +80,10 @@ const ROUTE_TO_TAB: Record<string, ActiveTab> = {
   // combos
   '/dashboard/combos': 'combos',
   '/combos': 'combos',
+
+  // playground
+  '/dashboard/playground': 'playground',
+  '/playground': 'playground',
 
   // usage / analytics
   '/dashboard/usage': 'analytics',
@@ -238,6 +244,7 @@ export function pathToTab(pathname: string): ActiveTab {
   if (normalized.includes('quota')) return 'quota'
   if (normalized.includes('usage') || normalized.includes('analytics')) return 'analytics'
   if (normalized.includes('combos')) return 'combos'
+  if (normalized.includes('playground')) return 'playground'
   if (normalized.includes('providers') || normalized.includes('connections')) return 'connections'
   if (normalized.includes('keys')) return 'endpoint'
   if (normalized.includes('guardrails') || normalized.includes('security')) return 'guardrails'

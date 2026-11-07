@@ -40,10 +40,29 @@ func (h *ChatHandler) resolveJailbreak(ids ...string) *db.JailbreakDoc {
 // actually forwarded to, so a keyword such as "deepseek" covers a combo leg
 // like providerx/deepseek-4-pro without arming that id.
 func (h *ChatHandler) applyJailbreak(ctx context.Context, body map[string]any, requestedModel string, legIDs ...string) context.Context {
+	// A playground request carries its own prompt decision on the context
+	// (playground.go): a session prompt or a chosen preset replaces the
+	// standing per-model configuration outright, and a suppression-only
+	// override disables it. Either way the standing resolver is never
+	// consulted, so the two can never stack.
+	if ov, ok := playgroundPromptFromContext(ctx); ok {
+		if ov == nil || ov.doc == nil || !ov.doc.HasContent() {
+			return ctx
+		}
+		return h.applyJailbreakDoc(ctx, body, ov.doc, requestedModel)
+	}
 	doc := h.resolveJailbreak(append([]string{requestedModel}, legIDs...)...)
 	if doc == nil {
 		return ctx
 	}
+	return h.applyJailbreakDoc(ctx, body, doc, requestedModel)
+}
+
+// applyJailbreakDoc injects one resolved document into the outbound body and
+// returns the context carrying its Gemini-safety flag. Shared by the standing
+// resolver above and the playground override, so both ride the exact same
+// injection mechanics (placement per wire format, usage counter, safety flag).
+func (h *ChatHandler) applyJailbreakDoc(ctx context.Context, body map[string]any, doc *db.JailbreakDoc, requestedModel string) context.Context {
 	if doc.Mode == "chat" && len(doc.Turns) > 0 {
 		injectChatTurns(body, doc.Turns)
 		log.Info("jailbreak", "applied_chat_script", "model", requestedModel,
@@ -55,8 +74,13 @@ func (h *ChatHandler) applyJailbreak(ctx context.Context, body map[string]any, r
 	}
 	// Best-effort usage counter for the dashboard's per-preset hit count. A
 	// failed write must not fail a request that is already being injected.
-	if err := h.Repo.RecordJailbreakUsage(doc.ID); err != nil {
-		log.Warn("jailbreak", "usage counter failed", "preset", doc.ID, "error", err)
+	// The nil guard keeps the playground override path safe on a handler
+	// built without a repository; the standing path only reaches here with
+	// a resolved doc, which already implies a repository.
+	if h.Repo != nil {
+		if err := h.Repo.RecordJailbreakUsage(doc.ID); err != nil {
+			log.Warn("jailbreak", "usage counter failed", "preset", doc.ID, "error", err)
+		}
 	}
 	if doc.GeminiSafety {
 		ctx = translator.WithGeminiSafety(ctx, true)

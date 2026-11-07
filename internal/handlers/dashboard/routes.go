@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/handlers/chat"
 	"axonrouter/proxy/internal/handlers/shared"
 	"axonrouter/proxy/internal/middleware"
 	"axonrouter/proxy/internal/modelhealth"
@@ -36,6 +37,11 @@ type DashboardHandler struct {
 	// is optional: a handler built outside a boot (tests, tooling) has none, and
 	// the live usage fields then read zero rather than being invented.
 	Limiter *middleware.RateLimiter
+	// Chat is the engine's chat handler, wired by SetupRoutes. The
+	// playground routes dispatch through it (the serving path itself, not a
+	// dashboard-side copy); nil in handler-only test builds, where the two
+	// routes are simply not registered.
+	Chat *chat.ChatHandler
 	// jailbreakImport fetches prompt collections from GitHub for the preset
 	// library. Nil means the production importer; a test points it at an
 	// httptest server.
@@ -226,6 +232,14 @@ func RegisterRoutes(r chi.Router, h *DashboardHandler) {
 		// Token Saver Testing Benches
 		r.Post("/tokensaver/rtk/test", h.HandleTestRTK)
 		r.Post("/tokensaver/caveman/test", h.HandleTestCaveman)
+
+		// Playground: operator chat over the real serving path, dispatched
+		// by the chat handler. Registered here as well as in
+		// SetupDashboardRoutes, because that table is the production one.
+		if h.Chat != nil {
+			r.Get("/playground/models", h.Chat.HandlePlaygroundModels)
+			r.Post("/playground/chat", h.Chat.HandlePlaygroundChat)
+		}
 
 		// Tunnel & Tailscale
 		r.Get("/tunnel/status", h.HandleTunnelStatus)

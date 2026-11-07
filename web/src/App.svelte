@@ -30,6 +30,7 @@
   import SkillsView from './components/SkillsView.svelte'
   import SettingsView from './components/SettingsView.svelte'
   import GuardrailsPanel from './components/security/GuardrailsPanel.svelte'
+  import PlaygroundView from './components/playground/PlaygroundView.svelte'
   import PlansView from './components/plans/PlansView.svelte'
   import Sidebar from './components/Sidebar.svelte'
   import UpdateModal from './components/UpdateModal.svelte'
@@ -402,6 +403,10 @@
       title: 'Guardrails',
       description: 'Scan prompts for personal data and injection attempts before they leave the gateway',
     },
+    playground: {
+      title: 'Playground',
+      description: 'Chat with models on your active connections, through the real serving path',
+    },
     plans: { title: 'Plans', description: 'Per-key quota plans and policy resolution' },
     jailbreak: { title: 'Persona', description: 'Per-model system-prompt injection and Gemini safety bypass' },
   }
@@ -769,6 +774,8 @@
               <ProfileSettingsView {settings} onRefresh={loadData} />
             {:else if activeTab === 'guardrails'}
               <GuardrailsPanel />
+            {:else if activeTab === 'playground'}
+              <PlaygroundView />
             {:else if activeTab === 'plans'}
               <PlansView />
             {:else if activeTab === 'jailbreak'}

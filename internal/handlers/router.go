@@ -61,6 +61,9 @@ func SetupRoutes(r interface {
 		// instance so its panel reports the layer a request was judged
 		// against, not a second one that can disagree with it.
 		dashH.Resilience = chatH.Resilience
+		// The playground routes in dashboard.RegisterRoutes dispatch through
+		// the chat handler; wire the same instance SetupRoutes built.
+		dashH.Chat = chatH
 	}
 	// Chat & Models Domain (no version here: the four version GETs are
 	// public in SetupServerRouter, upstream PUBLIC_API_PATHS parity).
@@ -292,6 +295,12 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Post("/api/translator/translate", HandleTranslatorTranslate)
 	if chatH != nil {
 		r.Post("/api/translator/send", chatH.HandleTranslatorSend)
+		// Playground: operator chat over the real serving path. The handlers
+		// live on the chat handler because dispatch is HandleChatCompletions
+		// itself; this dashboard group supplies the session guard, and the
+		// handler lends the traffic its "playground" API-key identity.
+		r.Get("/api/playground/models", chatH.HandlePlaygroundModels)
+		r.Post("/api/playground/chat", chatH.HandlePlaygroundChat)
 	}
 	// Backend parity batch 7 — credentials backup, MCP audit +
 	// transports, system info. Credentials and MCP audit add upstream's

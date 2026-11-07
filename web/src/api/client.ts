@@ -1019,6 +1019,29 @@ export interface JailbreakModelConfig {
   presetId: string
 }
 
+/** One selectable Playground entry: a provider model on an active
+ * connection, or a combo. Model is the wire id a client would send. */
+export interface PlaygroundModelEntry {
+  type: 'model' | 'combo'
+  provider: string
+  connectionId?: string
+  connectionName?: string
+  model: string
+}
+
+/** Body of POST /api/playground/chat. The gateway translates it into an
+ * ordinary chat request and serves it through the real serving path. */
+export interface PlaygroundChatRequest {
+  model: string
+  messages: { role: string; content: string }[]
+  systemPrompt?: string
+  presetId?: string
+  applyStandingPersona?: boolean
+  temperature?: number
+  maxTokens?: number
+  stream?: boolean
+}
+
 /** The global exclude list: models matching these rules are never injected. */
 export interface JailbreakExcludes {
   excludes: JailbreakKeyword[]
@@ -2616,6 +2639,27 @@ export const api = {
       method: 'DELETE',
     }),
   listJailbreakModels: () => request<Record<string, JailbreakModelConfig>>('/api/jailbreak/models'),
+  // Playground: model inventory from active connections, and a streaming
+  // chat that rides the serving path. The stream is read by the caller, so
+  // this returns the raw response (plus the request id the gateway echoes
+  // on this operator surface) instead of parsed JSON.
+  getPlaygroundModels: () => request<PlaygroundModelEntry[]>('/api/playground/models'),
+  playgroundChatStream: async (
+    body: PlaygroundChatRequest,
+    signal?: AbortSignal
+  ): Promise<{ response: Response; requestId: string }> => {
+    const res = await fetch('/api/playground/chat', {
+      method: 'POST',
+      headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    })
+    if (res.status === 401) {
+      handleUnauthorized('/api/playground/chat')
+    }
+    if (!res.ok) throw new ApiError(await responseErrorMessage(res), res.status)
+    return { response: res, requestId: res.headers.get('x-request-id') || '' }
+  },
   setJailbreakModel: (id: string, presetId: string, enabled: boolean) =>
     request<{ success: boolean }>('/api/jailbreak/models', {
       method: 'PUT',
