@@ -1,5 +1,22 @@
 # Changelog
 
+## [v1.9.42] - 2026-11-08
+
+# 1014 — TokenHarbor custom executor & precision 429 classification
+
+## Symptom
+
+TokenHarbor upstream requests were handled via plain OpenAI forward without custom error classification. Rate limit messages ("Rate limit reached. You can send your next request in 59 min 1 s.") and model capacity limits were treated identically, and proxy egress IP limits ("sharing this network address") risked unnecessary account locks.
+
+## Fix
+
+- Custom `ForwardTokenHarbor` executor ensuring SSE `stream_options: { include_usage: true }`.
+- Zero speculative hedging to prevent concurrency quota exhaustion on slow upstream free queues.
+- Precision 429 classification in `classifyTokenHarbor`:
+  - Model capacity limits (`"model is at capacity"`) trigger short model-scoped locks.
+  - Hourly key throttles (`"You can send your next request in X min Y s"`) dynamically parse exact retry durations and park only the affected account.
+  - Shared egress IP limits (`"many free accounts are sharing this network address"`) rotate the proxy pool without penalizing account status.
+
 ## [v1.9.41] - 2026-11-08
 
 # 1013 — Persona presets gain a third injection position: replace

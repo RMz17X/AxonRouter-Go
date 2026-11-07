@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.9.41",
+  "latestVersion": "1.9.42",
   "releaseNotes": "v1.9.16: first stable release of AxonRouter-Go from its own repository \u2014 the 9router-go fork fully renamed (module axonrouter/proxy, data dir ~/.axonrouter-go with legacy ~/.9router installs still resolving to their existing state), PostgreSQL 17 as the only database (SQLite removed from the product), Docker as the only supported delivery; the full Axon backend API surface ported and the dashboard write surface gated to operator sessions (council round 3); a performance wave replaces whole-table dashboard reads with SQL aggregation and a cached connection snapshot on the chat hot path, with PostgreSQL pool defaults raised to 50/25; smartfit proxy pools lock per provider, inherit to accounts, and cool down on a 30s-to-1h ladder with a 24h lock on location-policy rejections; the default gateway port moves to 3177; the official AxonRouter identity (logo, favicon, PWA icons) replaces the legacy artwork; Docker images publish to GHCR automatically on version tags; and a fresh-install boot blocker \u2014 a schema index created before its additive column existed \u2014 is fixed, so empty databases and the integration harness boot cleanly again."
 }
