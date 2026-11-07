@@ -1,5 +1,363 @@
 # Changelog
 
+## [v1.9.27] - 2026-11-07
+
+# 990 — Realtime table: provider folds under the model, new API Key column (key name + client IP)
+
+## Symptom
+
+The owner asked for two changes to the Usage page's realtime table:
+merge the Provider column into the Model column with the provider shown
+underneath the model, and add a new column carrying the client API key
+that was used — its name, and the IP the call came from.
+
+## Root cause
+
+The layout half was a straight table restructure, but the data half did
+not exist. The detail payload's `apiKey` field is the UPSTREAM provider
+credential the request used (that is what attributed requests to backend
+accounts; the caller's key was only ever recorded, masked, on the usage
+history row for per-key budgets). The client key's NAME and the client
+IP were recorded nowhere in the request details: the name never left the
+auth middleware's context value, and the IP was never resolved on the
+gateway path at all — the product's resolver (`auth.LoginClientIP`) was
+only used by the dashboard login.
+
+## Fix
+
+Backend:
+- The three gateway entry points that already stamp the dispatching key
+  onto the context (chat completions, messages, responses) now also
+  stamp the resolved client IP via a new `withClientIP` /
+  `clientIPFromContext` pair (`client_ip.go`), resolved by
+  `requestClientIP` through `auth.LoginClientIP` — the one sanctioned
+  resolver (edge-stamped real IP with peer proof, TRUSTED_PROXIES /
+  TRUST_PROXY chains, Cloudflare when trusted, else the socket address).
+- Both detail payload builders (success and failure) merge
+  `callerDetailFields(ctx)`: `apiKeyName` and the masked `clientApiKey`
+  from the authenticated key in context, plus `clientIp`. Absent pieces
+  stay absent — a keyless caller has nothing to record. The existing
+  `apiKey` field is untouched.
+- The detail list layer extracts the three fields
+  (`RequestDetailListRow` + select + scan) and `detailListItem` emits
+  them (`apiKeyName`, `clientApiKey`, `clientIp`, all omitempty). Rows
+  written before this change read as empty, which the UI renders as "—"
+  rather than inventing a caller.
+
+Frontend (`AxonRealtime.svelte` + types):
+- The Provider column is gone. The Model cell now stacks: the model
+  line, and underneath it the provider badge with the STREAM/JSON chip
+  from fragment 989.
+- A new API Key column sits after Upstream Account: the key's name on
+  the first line (the masked key when the key has no name, "—" when
+  there was no key), and the client IP in small mono underneath.
+- Mobile cards gain a "Key: <name> · <ip>" line when the row carries
+  caller data; the card search now also matches key name, masked key,
+  and IP.
+
+## Verification
+
+- `go build ./...` and `go vet` over the touched packages are clean;
+  gofmt clean.
+- svelte-check (with `--tsconfig ./tsconfig.app.json`) totals identical
+  to the pristine baseline (89 errors / 56 warnings, zero new) and the
+  web build succeeds.
+- The caller chain is the one the codebase already trusts: the
+  authenticated key object the auth middleware injects (the same source
+  the per-key budget accounting reads), and the login path's IP
+  resolver. Live pixel proof rides on the next staging view, like 988
+  and 989 — the column populates from real gateway traffic, which no
+  environment reachable from here can stage on demand.
+
+# 989 — STREAM/JSON mode information on the Usage page, wired from the dispatch layer
+
+## Symptom
+
+The owner asked for the stream-or-JSON information AxonRouter JS shows on
+its Usage page: a STREAM/JSON chip on each in-flight card, mode pills
+(Stream n / JSON n) on the realtime card, and the mode carried by the
+request rows. The Go port had deliberately omitted all of it (recorded
+in the 907 parity notes) because no Go usage surface recorded the mode:
+the field existed on the recent-request wire type and was populated
+nowhere.
+
+## Root cause
+
+The information died at the dispatch boundary. The forwarder knows the
+mode (`forwardRequestParams.IsStream`, parsed from the client's
+request), but `UsageLogInfo` — the struct every usage surface reads —
+carried no such field, the in-flight tracker aggregated its counters
+without a mode dimension, and the stored request-detail payloads never
+recorded it. Three surfaces, one missing wire.
+
+## Fix
+
+Backend:
+- `shared.UsageLogInfo` gains `IsStream`; all three constructions in
+  `tryForwardWithConnection` (success, failure, proxy-pool failure) set
+  it from the forwarder's own flag.
+- In-flight tracker: `TrackPendingRequested` takes the mode and keeps
+  two shadow counter families (`pending/modelstream/`,
+  `pending/acctstream/`) incremented with the same deltas as the totals.
+  `buildPayload` splits each aggregate key into up to two rows — the
+  streaming share and the rest — clamped so a leaked counter can never
+  report more streaming requests than the key holds; a drained account
+  pair deletes its shadow, and a drained model key deletes its own.
+  `ActiveRequest.isStream` is emitted without omitempty: on a live row,
+  false is information. The `/api/usage/active-requests` shape passes it
+  through.
+- Completed requests: both `PushRecent` sites (success and failure) set
+  `RecentRequest.IsStream` from the log info, and both stored detail
+  payloads (success and failure) record `"isStream"`.
+- Detail list: `RequestDetailListRow` extracts the flag from the stored
+  payload; rows written before it existed read as true — upstream's own
+  default for an unrecorded mode (`chatCore/requestDetail.js`:
+  `isStream ?? true`). `detailListItem` emits it on every row.
+
+Frontend:
+- The in-flight modal card draws upstream's ModeBadge (STREAM with the
+  wifi_tethering icon / JSON with the code icon, primary chip) at the
+  top right, beside the provider alias prefix fragment 988 added.
+- The realtime table and its mobile cards show the same chip beside the
+  provider badge; the Details tab's Provider cell carries it too.
+- The realtime filter pills gain Stream (n) and JSON (n) in the same
+  single-select group as All/Success/Failed — upstream's filterType
+  model — counting and filtering on the recorded mode.
+- Mechanical test fix: three `TrackPendingRequested` call sites in
+  `tracker_test.go` gain the new trailing argument (signature change);
+  no expectations changed.
+
+## Verification
+
+- `go build ./...` and `go vet` over the touched packages are clean.
+- A temporary in-package probe (run, then deleted) drove the tracker
+  through the memory store: two streaming + one JSON request on one
+  account key plus one streaming direct request produced exactly the
+  split rows {account ×2 STREAM, account ×1 JSON, direct ×1 STREAM},
+  and finishing the streaming requests drained only their rows.
+- svelte-check (with `--tsconfig ./tsconfig.app.json`) totals identical
+  to the pristine baseline (89 errors / 56 warnings, zero new) and the
+  web build succeeds.
+- Pixel proof rides on the next staging view, like 988: the chips render
+  from live traffic and recorded rows, which no environment reachable
+  from here can stage on demand.
+
+# 988 — In-flight cards draw the provider as upstream's alias prefix, not a grey pill
+
+## Symptom
+
+The owner screenshotted the Usage page's Active In-Flight Requests modal:
+each card led with a bare model line and a small grey pill whose text was
+a fragment-like word ("Trust", "Wz") — the custom node's name, presented
+with no context — above an unlabelled "Account: …" line. He asked for the
+streaming view's provider badge to be updated to the AxonRouter JS
+standard.
+
+## Root cause
+
+The Go port invented its own card: model line, then a detached pill
+rendering `providerDisplayName(provider)`. Upstream's ActiveRequestsModal
+never had such a pill — it renders the provider as a coloured alias
+prefix on the model line itself (`formatProviderModel`: "alias/model",
+the alias in the primary colour and semibold), over a labelled card:
+a "MODEL" micro-label above the model line, and an account footer
+separated by a hairline carrying an icon, an "ACCOUNT:" micro-label and
+the value. The pill was also the only place the provider appeared, so a
+short node name read as a stray fragment instead of an identity.
+
+## Fix
+
+Frontend only (`AxonRealtime.svelte` + one helper in analytics/types.ts):
+
+- New `providerAlias()`: the catalog alias when the registry carries one
+  (the same lookup chain `providerDisplayName` uses), else the display
+  name — so a custom compatible node still reads as itself, never as its
+  raw synthetic id.
+- The in-flight card now mirrors upstream's structure: "MODEL" label
+  with icon; the model line as `alias/` in primary semibold followed by
+  the model, with a redundant alias/provider prefix stripped from the
+  model the way upstream strips it, and the full display name plus
+  combo label in the title; below a hairline, the account footer with
+  icon and "ACCOUNT:" label, the ×count and the (conditional) elapsed
+  time right-aligned. The grid gains upstream's fourth column at `xl`.
+- The grey provider pill is gone from the modal. The completed-requests
+  table and mobile cards keep their full-name Provider badge — there the
+  name has a labelled column and reads correctly.
+
+Deliberately not drawn: upstream's STREAM/JSON mode chip. Go's tracker
+aggregates in-flight requests into counted (model, provider, account)
+rows with no stream flag and no per-request start time, so the chip
+would be decoration over nothing — the standing honesty rule for this
+card, unchanged. Elapsed time still renders when a row happens to carry
+a start time, as before.
+
+## Verification
+
+- svelte-check (with `--tsconfig ./tsconfig.app.json`) totals identical
+  to the pristine baseline (89 errors / 56 warnings, zero new) and the
+  web build succeeds.
+- The card markup is a direct port of upstream ActiveRequestsModal.js's
+  card structure, diffed field by field during the audit.
+- Pixel confirmation rides on the next staging view with live traffic:
+  the modal renders only while requests are in flight, which no
+  environment reachable from here can stage on demand. The owner's
+  screenshot shows the staging gateway serving OpenCode traffic, so the
+  first live open of the modal after deploy is the visual check.
+
+# 987 — Quota rows stack on mobile like upstream; CodeBuddy/WorkBuddy price fields forwarded
+
+## Symptom
+
+The owner asked for the CodeBuddy/WorkBuddy UI to be checked against
+AxonRouter JS so it looks as good there. The audit found the family
+surfaces already at parity — the Total Credit card, per-pack rows with
+the recurring/"expires in" wording, the hide-row action with persisted
+visibility, the Provider Detail "Credits left: X / Y (resets …)" line
+(verbatim with JS ConnectionRow), and the combo credit ordering — except
+for the quota row layout itself at phone width, plus one dropped field
+pair in the normalization.
+
+## Root cause
+
+Upstream's QuotaTable row stacks on mobile: the row is a column (name
+row, with the reset time riding on it, then the progress block owning a
+full row) and only becomes a horizontal row at `sm:` and up. Upstream's
+own comment records why: at 360 px the fixed 144 px name column plus the
+reset column left the progress column 0–27 px wide and cut the
+used/total text to two glyphs. The Go port kept a single horizontal
+flex row at every width — the fixed `w-36` name column and the reset
+column always present — reproducing exactly that crush for every
+provider's rows, CodeBuddy/WorkBuddy packs included. Separately,
+upstream's parseQuotaData forwards `price`/`priceNote` for the
+codebuddy-cn / codebuddy-intl / workbuddy branches and the shared row
+renders a price tagline under the pack name when a price is present;
+the Go normalization dropped both fields and the Go row had no tagline
+slot. (No CodeBuddy billing response on either side currently sets a
+price — upstream's only producer is the FreeBuff usage service — so this
+half is plumbing parity: the fields now survive end to end and the
+tagline renders the moment a quota carries one.)
+
+## Fix
+
+Frontend only, in the shared quota table (the same component upstream
+renders these providers with):
+
+- Row container is `relative flex flex-col gap-1.5 sm:flex-row
+  sm:items-center sm:gap-2`; the name cell drops its fixed width below
+  `sm:` (`sm:w-36 sm:shrink-0`) and gains a mobile-only reset span
+  (`sm:hidden`) showing the same countdown/"expires in" label; the
+  progress cell gains `sm:min-w-[7rem]`; the desktop reset cell is
+  `hidden sm:block`.
+- The hide-row button follows upstream's placement: absolute at the
+  row's top-right with a 44 px touch target on mobile, static 32 px at
+  `sm:` and up (the row is `relative` to anchor it).
+- The name cell gains the price tagline line
+  (`formatFreebucksPrice(price)` plus ` · priceNote`, title = priceNote),
+  rendered only when the quota carries a price; `formatFreebucksPrice`
+  is ported into quota/types.ts, `price`/`priceNote` join
+  NormalizedQuota, and the codebuddy-cn / codebuddy-intl / workbuddy
+  parse branch forwards both fields.
+- Untouched by design: Go's credit-balance row treatment (an amount, no
+  bar) and the gray "unknown" color state, both deliberate Go-side
+  choices upstream lacks; the Total Credit card; color thresholds
+  (>70 green, ≥30 yellow, else red — verified identical to upstream).
+
+## Verification
+
+- svelte-check totals identical to the pristine baseline (89 errors /
+  56 warnings, zero new), and the web build succeeds.
+- The layout classes are a direct port of upstream QuotaTable.js's row
+  markup, diffed line by line during the audit; every other family
+  surface named above was read in both trees before concluding parity.
+- A pixel-level check of populated CodeBuddy rows remains open by
+  environment: no CodeBuddy/WorkBuddy connection exists in any database
+  reachable from here, and the rows render only from a live billing
+  read, so the first staging view of a real account is the visual
+  confirmation. The change is class-level markup in one shared
+  component, with no logic altered.
+
+# 986 — Quota reads release quota locks on recovery; MiniMax M Plan windows render as progress
+
+## Symptom
+
+Two gaps around the Quota Tracker, reported by the owner:
+
+1. No automatic release: when a quota check showed an account's quota had
+   refilled (the owner's example: a MiniMax Global account whose credits
+   were back), the account stayed in cooldown / locked / exhausted until
+   the timer lapsed or an operator pressed the manual Reset button.
+2. MiniMax providers showed no progress UI: the M Plan rate windows
+   arrived in the tracker as nameless rows with no bar, no percentage and
+   no reset time, while other providers render a progress bar per window.
+
+## Root cause
+
+1. `HandleGetConnectionUsage` treated a usage read as one-way. Its only
+   state writes were for bad news (an Antigravity ToS message disables the
+   account; a validation message sets the verification flag). A successful
+   read that reported quota available changed nothing — the persisted
+   `rateLimitedUntil`, per-model locks and the stored quota error all
+   survived it. The only automatic releases in the tree were the chat
+   success path (a real generation) and the DeepSeek credential renewal.
+2. The MiniMax Code usage port stored each parsed M Plan window in the
+   quotas map as the internal `miniMaxCodeWindow` struct, whose fields are
+   all unexported — so every window serialized to `{}`. Upstream
+   (`open-sse/services/minimaxCodeUsage.js`) emits each window as a full
+   quota map (`used: 100-left, total: 100, remainingPercentage: left,
+   resetAt`), and the frontend's minimax branch and progress-bar rendering
+   were already built for exactly that shape; they simply never received
+   the numbers.
+
+## Fix
+
+1. New `usage_autorelease.go`: after a **live** usage fetch succeeds in
+   `HandleGetConnectionUsage` (the generic provider path, its
+   auth-refresh retry, and the Antigravity path on a message-free read),
+   `maybeAutoReleaseQuotaLocks` releases the connection's quota lock state
+   when the fresh quotas show availability (any unlimited row, any credit
+   balance above zero, or any window with `remainingPercentage > 0`).
+   The release re-reads the connection, requires stored evidence of a
+   quota-class park (a rate-limit timer, `lockedAllUntil`, a per-model
+   lock, or a stored error the provider classifier reads as quota
+   exhausted / rate limited), and then calls the same two Repo operations
+   the DeepSeek renewal uses: `ClearConnectionRateLimit` (also clears the
+   stored error and restores status) and `ClearConnectionModelLocks`.
+   Boundaries, all deliberate: a stored ToS-disable signature vetoes the
+   release; disabled accounts never reach the fetch (the handler returns
+   their stored reason first), nothing is reactivated and no verification
+   flag is cleared; cached usage responses return before any fetch, so
+   only live reads can release; Antigravity's in-memory strike breaker
+   (chat-path layer, self-expiring) is untouched — the persisted state is
+   what is released. Failures are logged and never fail the usage
+   response.
+2. `usage_minimax_code.go`: windows are converted with
+   `miniMaxCodeWindowQuota` into the upstream quota shape
+   (`usageQuota(100-remaining, 100, resetAt)` plus `name` and
+   `remaining`), so the tracker's existing minimax branch now renders the
+   progress bar, percentage and reset countdown per window. The credits
+   row is unchanged: MiniMax reports a balance with no grant total, so it
+   stays an amount (`isCreditBalance`) rather than an invented
+   percentage.
+
+## Verification
+
+- Temporary in-package probe (run, then removed): availability evaluation
+  (MiniMax window with quota left → available; all windows at zero → not;
+  credits balance > 0 → available; balance 0 → not; unlimited → available),
+  lock-state gate (rate-limit timer → release; model lock → release;
+  stored "quota exceeded" error → release; stored ToS signature →
+  vetoed; clean data → no release), and the window conversion (remaining
+  80 → used 20 / total 100 / remainingPercentage 80, name and resetAt
+  preserved).
+- `go build ./...` and `go vet` on the touched package clean. No frontend
+  files change; the svelte-check totals are unchanged.
+- Live proof with a real MiniMax account remains open by environment, not
+  by code: no MiniMax connection exists in any database reachable from
+  here, so the first staging read of a locked-then-refilled MiniMax
+  account is the live check. The probe covers the decision logic; the
+  fetch itself is the pre-existing port, unchanged except for the window
+  payload shape, which the probe pins to upstream's.
+
 ## [v1.9.26] - 2026-11-07
 
 # 985 — Usage Overview presence effect loops forever (effect_update_depth_exceeded) while requests are in flight
