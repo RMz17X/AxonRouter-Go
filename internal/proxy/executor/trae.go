@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/proxy"
 )
 
@@ -360,6 +361,9 @@ func traeCreateSession(ctx context.Context, client *http.Client, baseURL string,
 		return "", "", &proxy.UpstreamError{StatusCode: http.StatusBadGateway, Body: traeJSONError(err.Error())}
 	}
 	defer resp.Body.Close()
+	// This POST carries the first turn, so its body is a completion body:
+	// wrap it so the read reports progress to a stall gate riding ctx.
+	resp.Body = log.ProgressReader(ctx, resp.Body)
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", "", err
@@ -397,6 +401,9 @@ func traeStreamUpstream(ctx context.Context, client *http.Client, baseURL string
 		return err
 	}
 	defer resp.Body.Close()
+	// The events stream is the completion: wrap the body so every line read
+	// below reports progress to a stall gate riding ctx.
+	resp.Body = log.ProgressReader(ctx, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return &proxy.UpstreamError{StatusCode: resp.StatusCode, Body: body}

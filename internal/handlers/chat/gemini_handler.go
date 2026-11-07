@@ -230,6 +230,12 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 	// combo stall window here rather than letting it run from attempt start.
 	noteUpstreamProgress(ctx)
 
+	// ForwardGemini does not ride the shared DoRequest sender, so wrap the
+	// body at this receipt point: every later read — the stream scan, the
+	// non-stream read, the antigravity unwrap read — then keeps reporting
+	// progress instead of stalling silently inside one long read.
+	resp.Body = log.ProgressReader(ctx, resp.Body)
+
 	var bodyCloser io.Closer = resp.Body
 	defer func() {
 		if bodyCloser != nil {

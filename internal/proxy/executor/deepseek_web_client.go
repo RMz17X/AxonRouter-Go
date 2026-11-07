@@ -640,6 +640,10 @@ func (t deepSeekTurn) completion(ctx context.Context, accessToken string, reques
 		}
 		return nil, fmt.Errorf("deepseek-web: completion: %w", err)
 	}
+	// The completion stream is consumed by the caller over the following
+	// minutes: wrap the body so its reads report upstream progress to a
+	// stall gate riding ctx.
+	resp.Body = log.ProgressReader(ctx, resp.Body)
 	return resp, nil
 }
 

@@ -486,6 +486,10 @@ func ForwardGrokWeb(w http.ResponseWriter, req *Request) error {
 		return proxy.UpstreamFailure(http.StatusBadGateway, "grok-web: connection failed: "+err.Error())
 	}
 	defer func() { _ = response.Body.Close() }()
+	// The NDJSON stream is consumed below for the rest of the turn: wrap the
+	// body so its reads report upstream progress to a stall gate riding
+	// callCtx (and through it, the executor's request context).
+	response.Body = log.ProgressReader(callCtx, response.Body)
 
 	if response.StatusCode != http.StatusOK {
 		snippet, _ := io.ReadAll(io.LimitReader(response.Body, 4096))

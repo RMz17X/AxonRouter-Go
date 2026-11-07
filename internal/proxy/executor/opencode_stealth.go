@@ -249,7 +249,10 @@ func (s *opencodeStealthClient) forward(ctx context.Context, targetURL string, h
 		StatusCode: resp.StatusCode,
 		Status:     resp.Status,
 		Header:     make(http.Header, len(resp.Header)),
-		Body:       resp.Body,
+		// The stealth transport is this lane's receipt point: wrap the body
+		// as it is converted to a net/http response, so the caller's reads
+		// report upstream progress to a stall gate riding ctx.
+		Body: log.ProgressReader(ctx, resp.Body),
 	}
 	for k, v := range resp.Header {
 		httpResp.Header[k] = v

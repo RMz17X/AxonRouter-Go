@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/proxy"
 )
 
@@ -101,7 +102,13 @@ func DoFreebuffHTTP(ctx context.Context, client *http.Client, req *http.Request)
 		if reqClone.GetBody != nil {
 			reqClone.Body, _ = reqClone.GetBody()
 		}
-		return directFreebuffClient.Do(reqClone)
+		resp, err = directFreebuffClient.Do(reqClone)
+	}
+	// Every freebuff call (session, chat) leaves through here, so wrap at
+	// this single exit: body reads report upstream progress to a stall gate
+	// riding ctx.
+	if resp != nil && err == nil {
+		resp.Body = log.ProgressReader(ctx, resp.Body)
 	}
 	return resp, err
 }

@@ -374,6 +374,10 @@ func ForwardAzure(w http.ResponseWriter, req *Request) error {
 		return fmt.Errorf("upstream request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	// This executor dials directly instead of through the shared sender, so
+	// wrap the body at receipt: reads below keep reporting upstream progress
+	// to a stall gate riding req.Ctx.
+	resp.Body = log.ProgressReader(req.Ctx, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
@@ -662,6 +666,10 @@ func forwardCommandcodeOnce(ctx context.Context, w http.ResponseWriter, req *Req
 		return fmt.Errorf("upstream request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	// Direct dial, not the shared sender: wrap at receipt so the stream and
+	// non-stream readers below keep reporting upstream progress to a stall
+	// gate riding req.Ctx.
+	resp.Body = log.ProgressReader(req.Ctx, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		errBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))

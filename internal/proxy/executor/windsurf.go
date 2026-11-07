@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/proxy"
 )
 
@@ -404,6 +405,10 @@ func ForwardWindsurf(w http.ResponseWriter, req *Request) error {
 		return &proxy.UpstreamError{StatusCode: http.StatusBadGateway, Body: []byte(`{"error":{"message":"windsurf: ` + err.Error() + `","type":"api_error"}}`)}
 	}
 	defer resp.Body.Close()
+	// Direct dial, not the shared sender: wrap at receipt so the grpc-web
+	// frame reads below keep reporting upstream progress to a stall gate
+	// riding ctx.
+	resp.Body = log.ProgressReader(ctx, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return &proxy.UpstreamError{StatusCode: resp.StatusCode, Body: body}

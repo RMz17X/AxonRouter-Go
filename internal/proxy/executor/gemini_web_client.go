@@ -417,6 +417,9 @@ func (s *geminiWebSession) streamTurn(
 	if err != nil {
 		return fmt.Errorf("gemini-web: stream turn: %w", err)
 	}
+	// The turn's line stream is read below until EOF: wrap the body so those
+	// reads report upstream progress to a stall gate riding ctx.
+	response.Body = log.ProgressReader(ctx, response.Body)
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		return &geminiWebUpstreamStatus{Status: response.StatusCode, Operation: "StreamGenerate"}

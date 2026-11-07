@@ -351,5 +351,12 @@ func doRequestOnce(ctx context.Context, client *http.Client, method, url string,
 		// turned a 403 into an opaque 502 that no retry could recognise.
 		return nil, &UpstreamError{StatusCode: resp.StatusCode, Body: errBody, Header: resp.Header, ReadErr: readErr}
 	}
+	// The body leaves wrapped so every read — stream scan, single-shot
+	// read, a bridge fed from the body — reports upstream progress to a
+	// stall gate riding the request context (the combo response timeout).
+	// This is the receipt point for every caller of DoRequest, direct or
+	// via ForwardOpenAI and the provider helpers built on it. A context
+	// without a gate gets the body back unwrapped.
+	resp.Body = log.ProgressReader(ctx, resp.Body)
 	return resp, nil
 }

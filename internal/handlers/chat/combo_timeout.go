@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"axonrouter/proxy/internal/log"
 )
 
 // comboResponseTimeout serializes timeout expiry with response commitment. A
@@ -33,33 +35,23 @@ func newComboResponseTimeout(ctx context.Context, w http.ResponseWriter, timeout
 	ctx, cancel := context.WithCancel(ctx)
 	t := &comboResponseTimeout{ResponseWriter: w, cancel: cancel, header: make(http.Header), timeout: timeout}
 	// The gate rides its own context, so the serving paths running under it
-	// can report upstream progress without knowing the gate exists.
-	t.ctx = context.WithValue(ctx, comboGateCtxKey{}, t)
+	// can report upstream progress without knowing the gate exists. The
+	// registry lives in internal/log (next to the request-ID and account
+	// keys) because the executor package reports progress too and cannot
+	// import this package.
+	t.ctx = log.RegisterProgressGate(ctx, t)
 	t.timer = time.AfterFunc(timeout, t.expire)
 	return t
-}
-
-// comboGateCtxKey registers the active candidate's timeout gate in its
-// context.
-type comboGateCtxKey struct{}
-
-// upstreamProgresser is the slice of the timeout gate the serving paths
-// need: a single progress ping.
-type upstreamProgresser interface {
-	Progress()
 }
 
 // noteUpstreamProgress tells the combo timeout gate registered in ctx (if
 // any) that the upstream just showed a sign of life, restarting its stall
 // window. Contexts without a gate — direct requests, the last combo
-// candidate — make it a no-op.
+// candidate — make it a no-op. It delegates to the shared registry in
+// internal/log, the same one the response-body wrapper and the executor
+// package report through: one mechanism, several call sites.
 func noteUpstreamProgress(ctx context.Context) {
-	if ctx == nil {
-		return
-	}
-	if gate, ok := ctx.Value(comboGateCtxKey{}).(upstreamProgresser); ok && gate != nil {
-		gate.Progress()
-	}
+	log.NoteUpstreamProgress(ctx)
 }
 
 // Progress records upstream activity: while the candidate is uncommitted
