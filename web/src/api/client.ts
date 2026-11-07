@@ -2423,6 +2423,20 @@ export const api = {
       `/api/proxy-pools/${encodeURIComponent(id)}/test`,
       { method: 'POST' }
     ),
+  recoverProxyPools: () =>
+    request<{
+      success: boolean
+      checked: number
+      recovered: number
+      stillFailing: number
+      markedDead: number
+      error?: string
+    }>('/api/proxy-pools/recover?force=true', { method: 'POST' }),
+  clearAllProxyFitness: () =>
+    request<{ ok: boolean }>('/api/proxy-pools/fitness/clear-all', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
   deployVercelRelay: (payload: { vercelToken: string; projectName?: string }) =>
     request<{ success?: boolean; proxyUrl?: string; deployUrl?: string; error?: string }>('/api/proxy-pools/vercel-deploy', {
       method: 'POST',

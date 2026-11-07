@@ -12,6 +12,7 @@
     looksLikeJsonPayload,
     supportsJwtBulkImport,
   } from '../../lib/bulk-add'
+  import { deriveProxyGroups, deriveProxyTypes } from '../../lib/proxyBindings'
 
   interface Props {
     isOpen: boolean
@@ -47,25 +48,9 @@
   const NONE_PROXY_POOL_VALUE = '__none__'
   const BULK_PLACEHOLDER = 'name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named'
 
-  const availableProxyGroups = $derived.by(() => {
-    const set = new Set<string>()
-    for (const p of proxyPools) {
-      if (p.group && p.group.trim()) {
-        set.add(p.group.trim())
-      }
-    }
-    return Array.from(set).sort()
-  })
+  const availableProxyGroups = $derived(deriveProxyGroups(proxyPools))
 
-  const availableProxyTypes = $derived.by(() => {
-    const set = new Set<string>()
-    for (const p of proxyPools) {
-      if (p.type && p.type.trim()) {
-        set.add(p.type.trim())
-      }
-    }
-    return Array.from(set).sort()
-  })
+  const availableProxyTypes = $derived(deriveProxyTypes(proxyPools))
 
   // Field styling mirrors upstream shared Input/Select (bg-surface-2, rounded 10px).
   const labelCls = 'block text-sm font-medium text-text-main mb-1.5'
@@ -133,7 +118,10 @@
   let formApiKey = $state('')
   let formDefaultModel = $state('')
   let formPriority = $state(1)
-  let formProxyPoolId = $state(NONE_PROXY_POOL_VALUE)
+  // '' is the provider default (stored as null); NONE_PROXY_POOL_VALUE is an
+  // explicit direct choice and is stored as-is, matching how the provider
+  // page's per-connection picker reads providerSpecificData.proxyPoolId.
+  let formProxyPoolId = $state('')
   let formOllamaHostUrl = $state('')
   let azureData = $state({
     azureEndpoint: '',
@@ -206,7 +194,7 @@
     formApiKey = ''
     formDefaultModel = ''
     formPriority = 1
-    formProxyPoolId = NONE_PROXY_POOL_VALUE
+    formProxyPoolId = ''
     formOllamaHostUrl = ''
     azureData = { azureEndpoint: '', apiVersion: '2024-10-01-preview', deployment: '', organization: '' }
     cloudflareAccountId = ''
@@ -438,7 +426,7 @@
         name: formName.trim(),
         apiKey: formApiKey,
         priority: formPriority,
-        proxyPoolId: formProxyPoolId === NONE_PROXY_POOL_VALUE ? null : formProxyPoolId,
+        proxyPoolId: formProxyPoolId === '' ? null : formProxyPoolId,
         testStatus: isValid ? 'active' : 'unknown',
         providerSpecificData: providerSpecificDataForSave(),
         ...(isCompatible ? { defaultModel: formDefaultModel.trim() } : {}),
@@ -1036,24 +1024,25 @@
                   bind:value={formProxyPoolId}
                   class={selectCls}
                 >
-                  <option value={NONE_PROXY_POOL_VALUE}>None</option>
+                  <option value="">Provider default</option>
+                  <option value={NONE_PROXY_POOL_VALUE}>Direct (no proxy)</option>
                   {#if availableProxyGroups.length > 0}
-                    <optgroup label="Proxy Groups (Smart Fitness)">
+                    <optgroup label="Proxy Groups">
                       {#each availableProxyGroups as grp}
-                        <option value="group:{grp}">Group: {grp} ({proxyPools.filter((p) => p.group === grp && p.isActive).length} active)</option>
+                        <option value="group:{grp.name}">Group: {grp.name} ({grp.active} active)</option>
                       {/each}
                     </optgroup>
                   {/if}
                   {#if availableProxyTypes.length > 0}
-                    <optgroup label="Proxy Types (Smart Fitness)">
+                    <optgroup label="Proxy Types">
                       {#each availableProxyTypes as typ}
-                        <option value="type:{typ}">Type: {typ} ({proxyPools.filter((p) => p.type === typ && p.isActive).length} active)</option>
+                        <option value="type:{typ.type}">Type: {typ.type} ({typ.active} active)</option>
                       {/each}
                     </optgroup>
                   {/if}
                   <optgroup label="Individual Pools">
                     {#each proxyPools as pool (pool.id)}
-                      <option value={pool.id}>{pool.name}{pool.group ? ` [${pool.group}]` : ''}</option>
+                      <option value={pool.id}>{pool.name}{pool.group ? ` [${pool.group}]` : ''}{pool.isActive ? '' : ' (inactive)'}</option>
                     {/each}
                   </optgroup>
                 </select>

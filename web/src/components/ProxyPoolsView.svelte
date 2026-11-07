@@ -11,15 +11,22 @@
   import MenuItem from '../lib/ui/MenuItem.svelte'
   import CountedSelect from '../lib/ui/CountedSelect.svelte'
   import { api, getAuthHeaders, type ProxyPool } from '../api/client'
+  import GroupPickerModal from './proxypools/GroupPickerModal.svelte'
+  import GroupMembersModal from './proxypools/GroupMembersModal.svelte'
+  import PoolRow from './proxypools/PoolRow.svelte'
+  import RelayModals from './proxypools/RelayModals.svelte'
+  import GroupsTab from './proxypools/GroupsTab.svelte'
+  import FitnessTab from './proxypools/FitnessTab.svelte'
   import { notifications } from '../lib/notifications'
   import { parseProxyLine } from '../lib/proxy-import'
   import {
     filterProxyPools,
-    getLatencyBadge,
-    getStatusVariant,
-    hasMeasuredLatency,
     isFailedStatus,
+    poolMatchesSearch,
     poolStatusCounts,
+    poolTypeKey,
+    poolTypeOptions,
+    type GroupSummary,
     sortProxyPools,
     type PoolSortOption,
     type PoolStatusFilter
@@ -29,13 +36,6 @@
     ok: number
     blocked: number
     failed: number
-  }
-
-  function formatDateTime(value: string | null | undefined): string {
-    if (!value) return 'Never'
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return 'Never'
-    return date.toLocaleString()
   }
 
   interface PoolForm {
@@ -65,69 +65,19 @@
   // a pasted list were two separate modals opened by two separate buttons; they
   // are one task, so they became one dialog with two tabs (issue #224).
   let formTab = $state<'single' | 'bulk'>('single')
-  let showVercelModal = $state(false)
-  let showCloudflareModal = $state(false)
-  let showDenoModal = $state(false)
-  let showNetlifyModal = $state(false)
-  let showRelayMenu = $state(false)
   let editingPool = $state<ProxyPool | null>(null)
   let formData = $state<PoolForm>(normalizeFormData())
   let batchImportText = $state('')
-  let vercelForm = $state({ vercelToken: '', projectName: 'vercel-relay' })
-  let cloudflareForm = $state({ accountId: '', apiToken: '', projectName: 'cloudflare-relay' })
-  let denoForm = $state({ denoToken: '', orgDomain: '', projectName: '' })
-  let netlifyForm = $state({ netlifyToken: '', projectName: 'netlify-relay' })
+  // Bulk import group targeting: '' = no group, '__new__' = the name typed
+  // below, anything else = an existing group name.
+  let batchGroupChoice = $state('')
+  let batchGroupNew = $state('')
+  let batchTargetGroup = $derived(
+    batchGroupChoice === '__new__' ? batchGroupNew.trim() : batchGroupChoice
+  )
 
-  interface CloudflareBulkResult {
-    lineNumber: number
-    label: string
-    accountId: string
-    projectName: string
-    status: 'pending' | 'running' | 'success' | 'failed'
-    deployUrl?: string
-    error?: string
-  }
-
-  let showCloudflareBulkModal = $state(false)
-  let cloudflareBulkPoolName = $state('cloudflare-relay')
-  let cloudflareBulkText = $state('')
-  let cloudflareBulkResults = $state<CloudflareBulkResult[]>([])
-  let cloudflareBulkProgress = $state({
-    total: 0,
-    completed: 0,
-    success: 0,
-    failed: 0,
-    currentBatch: 0,
-    totalBatches: 0
-  })
-  let bulkCloudflareDeploying = $state(false)
-
-  interface VercelBulkResult {
-    lineNumber: number
-    label: string
-    tokenMasked: string
-    projectName: string
-    status: 'pending' | 'running' | 'success' | 'failed'
-    deployUrl?: string
-    error?: string
-  }
-
-  let showVercelBulkModal = $state(false)
-  let vercelBulkPoolName = $state('vercel-relay')
-  let vercelBulkText = $state('')
-  let vercelBulkResults = $state<VercelBulkResult[]>([])
-  let vercelBulkProgress = $state({
-    total: 0,
-    completed: 0,
-    success: 0,
-    failed: 0,
-    currentBatch: 0,
-    totalBatches: 0
-  })
-  let bulkVercelDeploying = $state(false)
   let saving = $state(false)
   let importing = $state(false)
-  let deploying = $state(false)
   let testingId = $state<string | null>(null)
   let selectedIds = $state<string[]>([])
   let healthChecking = $state(false)
@@ -139,7 +89,6 @@
     confirmText?: string
     onConfirm: () => Promise<void> | void
   } | null>(null)
-  let relayMenuRef = $state<HTMLDivElement | null>(null)
 
   // Tested pools float to the top (most recently tested first);
   // never-tested pools keep backend order below.
@@ -167,16 +116,6 @@
     fetchProxyPools()
   })
 
-  // Close the Deploy Relay menu on outside click (upstream parity).
-  $effect(() => {
-    if (!showRelayMenu || typeof document === 'undefined') return
-    const onDown = (e: MouseEvent) => {
-      if (relayMenuRef && !relayMenuRef.contains(e.target as Node)) showRelayMenu = false
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  })
-
   // Drop selections for pools that no longer exist.
   // Guard the write: assigning a fresh array unconditionally would retrigger
   // this effect forever (new identity each run) and freeze the page on loading.
@@ -189,6 +128,8 @@
 
   let statusFilter = $state<PoolStatusFilter>('all')
   let groupFilter = $state<string>('all')
+  let typeFilter = $state<string>('all')
+  let searchQuery = $state('')
   let sortOption = $state<PoolSortOption>('default')
   let activeViewTab = $state<'pools' | 'groups' | 'fitness'>('pools')
 
@@ -206,17 +147,6 @@
     }
     return Array.from(set).sort()
   })
-
-  interface GroupSummary {
-    name: string
-    pools: ProxyPool[]
-    totalCount: number
-    activeCount: number
-    inCooldownCount: number
-    avgFitness: number
-    avgLatency: number
-    strictCount: number
-  }
 
   let groupSummaries = $derived.by<GroupSummary[]>(() => {
     const groups = new Map<string, ProxyPool[]>()
@@ -268,6 +198,65 @@
     })
   })
 
+  // Fitness tab filters (the JS fitness tab filters its records by type and
+  // search; the pools here get the same treatment) + recovery actions whose
+  // backend endpoints existed but were never surfaced.
+  let fitnessSearch = $state('')
+  let fitnessType = $state<string>('all')
+  let recovering = $state(false)
+  let clearingFitness = $state(false)
+
+  let filteredFitness = $derived.by(() => {
+    let rows = fitnessLeaderboard
+    if (fitnessType !== 'all') rows = rows.filter((p) => poolTypeKey(p) === fitnessType)
+    if (fitnessSearch.trim()) rows = rows.filter((p) => poolMatchesSearch(p, fitnessSearch))
+    return rows
+  })
+  let filteredCooldown = $derived(filteredFitness.filter((p) => p.inCooldown))
+
+  async function handleRecover() {
+    recovering = true
+    try {
+      const data = await api.recoverProxyPools()
+      await fetchProxyPools()
+      if (data.error) {
+        notifications.warning(`Recovery ran with an error: ${data.error}`)
+      } else {
+        notifications.success(
+          `Auto-recover: ${data.recovered} recovered of ${data.checked} checked (${data.stillFailing} still failing)`
+        )
+      }
+    } catch (err) {
+      console.log('Error recovering proxy pools:', err)
+      notifications.error('Auto-recover failed')
+    } finally {
+      recovering = false
+    }
+  }
+
+  function handleClearAllFitness() {
+    confirmState = {
+      title: 'Clear All Cooldowns',
+      message:
+        'Clear every fitness and cooldown mark? Quarantined pools become eligible again immediately; the canary will re-quarantine any that still fail.',
+      confirmText: 'Clear All',
+      onConfirm: async () => {
+        confirmState = null
+        clearingFitness = true
+        try {
+          await api.clearAllProxyFitness()
+          await fetchProxyPools()
+          notifications.success('All fitness and cooldown marks cleared')
+        } catch (err) {
+          console.log('Error clearing fitness marks:', err)
+          notifications.error('Failed to clear cooldowns')
+        } finally {
+          clearingFitness = false
+        }
+      },
+    }
+  }
+
   async function testGroup(grpName: string) {
     const poolsInGroup = proxyPools.filter(
       (p) => (p.group || '').trim() === (grpName === 'Default' ? '' : grpName)
@@ -284,6 +273,12 @@
     if (groupFilter !== 'all') {
       pools = pools.filter((p) => (p.group || '').trim() === groupFilter)
     }
+    if (typeFilter !== 'all') {
+      pools = pools.filter((p) => poolTypeKey(p) === typeFilter)
+    }
+    if (searchQuery.trim()) {
+      pools = pools.filter((p) => poolMatchesSearch(p, searchQuery))
+    }
     return pools
   })
   let displayedPools = $derived(sortProxyPools(filteredPools, sortOption))
@@ -298,7 +293,7 @@
 
   $effect(() => {
     // Reset to page 1 whenever filter or sort changes
-    const _ = statusFilter + sortOption + groupFilter
+    const _ = statusFilter + sortOption + groupFilter + typeFilter + searchQuery
     currentPage = 1
   })
 
@@ -318,6 +313,11 @@
     { value: 'passed', label: 'Passed', count: counts.passed },
     { value: 'failed', label: 'Failed', count: counts.failed }
   ] satisfies { value: PoolStatusFilter; label: string; count: number }[])
+
+  let typeOptions = $derived([
+    { value: 'all', label: 'All', count: proxyPools.length },
+    ...poolTypeOptions(proxyPools)
+  ])
 
   let allSelected = $derived(
     paginatedPools.length > 0 && paginatedPools.every((p) => selectedIds.includes(p.id))
@@ -348,9 +348,12 @@
     formData = normalizeFormData()
   }
 
-  function openCreateModal(tab: 'single' | 'bulk' = 'single') {
+  function openCreateModal(tab: 'single' | 'bulk' = 'single', presetGroup = '') {
     resetForm()
     batchImportText = ''
+    batchGroupChoice = presetGroup
+    batchGroupNew = ''
+    if (presetGroup) formData = { ...formData, group: presetGroup }
     formTab = tab
     showFormModal = true
   }
@@ -369,87 +372,9 @@
     showFormModal = false
     resetForm()
     batchImportText = ''
+    batchGroupChoice = ''
+    batchGroupNew = ''
     formTab = 'single'
-  }
-
-  function openVercelModal() {
-    vercelForm = { vercelToken: '', projectName: 'vercel-relay' }
-    showVercelModal = true
-  }
-
-  function closeVercelModal() {
-    if (deploying) return
-    showVercelModal = false
-  }
-
-  function openCloudflareModal() {
-    cloudflareForm = { accountId: '', apiToken: '', projectName: 'cloudflare-relay' }
-    showCloudflareModal = true
-  }
-
-  function closeCloudflareModal() {
-    if (deploying) return
-    showCloudflareModal = false
-  }
-
-  function openCloudflareBulkModal() {
-    cloudflareBulkPoolName = 'cloudflare-relay'
-    cloudflareBulkText = ''
-    cloudflareBulkResults = []
-    cloudflareBulkProgress = {
-      total: 0,
-      completed: 0,
-      success: 0,
-      failed: 0,
-      currentBatch: 0,
-      totalBatches: 0
-    }
-    showCloudflareBulkModal = true
-  }
-
-  function closeCloudflareBulkModal() {
-    if (bulkCloudflareDeploying) return
-    showCloudflareBulkModal = false
-  }
-
-  function openVercelBulkModal() {
-    vercelBulkPoolName = 'vercel-relay'
-    vercelBulkText = ''
-    vercelBulkResults = []
-    vercelBulkProgress = {
-      total: 0,
-      completed: 0,
-      success: 0,
-      failed: 0,
-      currentBatch: 0,
-      totalBatches: 0
-    }
-    showVercelBulkModal = true
-  }
-
-  function closeVercelBulkModal() {
-    if (bulkVercelDeploying) return
-    showVercelBulkModal = false
-  }
-
-  function openDenoModal() {
-    denoForm = { denoToken: '', orgDomain: '', projectName: '' }
-    showDenoModal = true
-  }
-
-  function closeDenoModal() {
-    if (deploying) return
-    showDenoModal = false
-  }
-
-  function openNetlifyModal() {
-    netlifyForm = { netlifyToken: '', projectName: 'netlify-relay' }
-    showNetlifyModal = true
-  }
-
-  function closeNetlifyModal() {
-    if (deploying) return
-    showNetlifyModal = false
   }
 
   async function handleSave() {
@@ -557,6 +482,97 @@
       proxyPools = proxyPools.map((p) => (p.id === pool.id ? { ...p, isActive: pool.isActive } : p))
       notifications.error('Failed to update active state')
     }
+  }
+
+  // Group assignment: one picker serves the per-row action and the bulk bar.
+  // Groups are string tags, so assigning is a group-field write per pool.
+  let groupPicker = $state<{ mode: 'single'; pool: ProxyPool } | { mode: 'bulk' } | null>(null)
+  let groupAssigning = $state(false)
+
+  let groupCounts = $derived(
+    availableGroups.map((name) => ({
+      name,
+      count: proxyPools.filter((p) => (p.group || '').trim() === name).length,
+    }))
+  )
+
+  async function assignGroup(ids: string[], group: string | null) {
+    groupAssigning = true
+    let ok = 0
+    let failed = 0
+    try {
+      for (const id of ids) {
+        try {
+          await api.updateProxyPool(id, { group: group ?? '' })
+          ok += 1
+        } catch {
+          failed += 1
+        }
+      }
+      await fetchProxyPools()
+      const what = group ? `group "${group}"` : 'no group'
+      if (failed === 0) notifications.success(`Set ${ok} pool${ok === 1 ? '' : 's'} to ${what}`)
+      else notifications.warning(`Set ${ok} to ${what}, ${failed} failed`)
+    } finally {
+      groupAssigning = false
+      groupPicker = null
+    }
+  }
+
+  // Group member management from the Groups tab: the modal returns the
+  // desired member set; only the diff is written.
+  let membersModalGroup = $state<string | null>(null)
+  let membersSaving = $state(false)
+
+  async function saveGroupMembers(memberIds: string[]) {
+    const name = membersModalGroup
+    if (!name) return
+    const want = new Set(memberIds)
+    const joins = proxyPools.filter(
+      (p) => want.has(p.id) && (p.group || '').trim() !== name
+    )
+    const leaves = proxyPools.filter(
+      (p) => !want.has(p.id) && (p.group || '').trim() === name
+    )
+    if (joins.length === 0 && leaves.length === 0) {
+      membersModalGroup = null
+      return
+    }
+    membersSaving = true
+    let ok = 0
+    let failed = 0
+    try {
+      for (const p of joins) {
+        try {
+          await api.updateProxyPool(p.id, { group: name })
+          ok += 1
+        } catch {
+          failed += 1
+        }
+      }
+      for (const p of leaves) {
+        try {
+          await api.updateProxyPool(p.id, { group: '' })
+          ok += 1
+        } catch {
+          failed += 1
+        }
+      }
+      await fetchProxyPools()
+      if (failed === 0)
+        notifications.success(`Group "${name}" updated (${ok} change${ok === 1 ? '' : 's'})`)
+      else notifications.warning(`Group "${name}": ${ok} updated, ${failed} failed`)
+    } finally {
+      membersSaving = false
+      membersModalGroup = null
+    }
+  }
+
+  function handleGroupPick(group: string | null) {
+    if (!groupPicker) return
+    const ids =
+      groupPicker.mode === 'single' ? [groupPicker.pool.id] : [...selectedIds]
+    if (ids.length > 0) void assignGroup(ids, group)
   }
 
   async function bulkSetActive(isActive: boolean) {
@@ -791,8 +807,12 @@
       return
     }
 
+    // Partial import (upstream behaviour): valid lines are imported, invalid
+    // ones are reported and left in the box for fixing instead of aborting
+    // the whole paste.
     const parsedEntries: { proxyUrl: string; name: string }[] = []
     const invalidLines: string[] = []
+    const invalidRaw: string[] = []
 
     lines.forEach((line, index) => {
       try {
@@ -800,13 +820,9 @@
         if (parsed) parsedEntries.push(parsed)
       } catch (err) {
         invalidLines.push(`Line ${index + 1}: ${err instanceof Error ? err.message : 'Invalid'}`)
+        invalidRaw.push(line)
       }
     })
-
-    if (invalidLines.length > 0) {
-      notifications.error(`Invalid proxy format:\n${invalidLines.join('\n')}`)
-      return
-    }
 
     importing = true
     try {
@@ -818,36 +834,58 @@
       let skipped = 0
       let failed = 0
 
-      for (const entry of parsedEntries) {
+      // Dedupe against the database AND within the paste itself, then create
+      // with bounded concurrency — a 200-line paste used to be 200 serial
+      // round-trips.
+      const fresh = parsedEntries.filter((entry) => {
         const dedupeKey = `${entry.proxyUrl}|||`
         if (existingKeys.has(dedupeKey)) {
           skipped += 1
-          continue
+          return false
         }
-        try {
-          await api.createProxyPool({
-            name: entry.name,
-            proxyUrl: entry.proxyUrl,
-            noProxy: '',
-            isActive: true,
-          })
-          created += 1
-          existingKeys.add(dedupeKey)
-        } catch {
-          failed += 1
+        existingKeys.add(dedupeKey)
+        return true
+      })
+
+      const CHUNK = 8
+      for (let i = 0; i < fresh.length; i += CHUNK) {
+        const chunk = fresh.slice(i, i + CHUNK)
+        const results = await Promise.allSettled(
+          chunk.map((entry) =>
+            api.createProxyPool({
+              name: entry.name,
+              proxyUrl: entry.proxyUrl,
+              noProxy: '',
+              group: batchTargetGroup,
+              isActive: true,
+            })
+          )
+        )
+        for (const r of results) {
+          if (r.status === 'fulfilled') created += 1
+          else failed += 1
         }
       }
 
       await fetchProxyPools()
-      // The import ran to completion, so the dialog can close now. closeFormModal
-      // refuses while `importing` is still true, which is why this clears the
-      // draft directly instead of going through it.
-      showFormModal = false
-      batchImportText = ''
-      formTab = 'single'
-      notifications.success(
-        `Batch import completed: Created ${created}, Skipped ${skipped}, Failed ${failed}`
-      )
+      const summary = `Created ${created}, Skipped ${skipped}, Failed ${failed}`
+      if (invalidRaw.length > 0) {
+        // Keep the dialog open with only the rejected lines left to fix.
+        batchImportText = invalidRaw.join('\n')
+        notifications.warning(
+          `Batch import: ${summary}. ${invalidLines.length} invalid line${invalidLines.length === 1 ? '' : 's'} left in the box:\n${invalidLines.slice(0, 5).join('\n')}`
+        )
+      } else {
+        // closeFormModal refuses while `importing` is still true, which is
+        // why this clears the draft directly instead of going through it.
+        showFormModal = false
+        batchImportText = ''
+        batchGroupChoice = ''
+        batchGroupNew = ''
+        formTab = 'single'
+        if (failed > 0) notifications.warning(`Batch import completed: ${summary}`)
+        else notifications.success(`Batch import completed: ${summary}`)
+      }
     } catch (err) {
       console.log('Error batch importing proxies:', err)
       notifications.error('Batch import failed')
@@ -856,343 +894,33 @@
     }
   }
 
-  async function handleVercelDeploy() {
-    if (!vercelForm.vercelToken.trim()) return
-    deploying = true
-    try {
-      const data = await api.deployVercelRelay({
-        vercelToken: vercelForm.vercelToken.trim(),
-        projectName: vercelForm.projectName.trim() || undefined,
-      })
-      await fetchProxyPools()
-      closeVercelModal()
-      notifications.success(`Deployed: ${data.deployUrl || data.proxyUrl || ''}`)
-    } catch (err) {
-      console.log('Error deploying Vercel relay:', err)
-      notifications.error(err instanceof Error ? err.message : 'Deploy failed')
-    } finally {
-      deploying = false
-    }
-  }
-
-  async function handleCloudflareDeploy() {
-    if (!cloudflareForm.accountId.trim() || !cloudflareForm.apiToken.trim()) return
-    deploying = true
-    try {
-      const data = await api.deployCloudflareRelay({
-        accountId: cloudflareForm.accountId.trim(),
-        apiToken: cloudflareForm.apiToken.trim(),
-        projectName: cloudflareForm.projectName.trim() || undefined,
-        name: cloudflareForm.projectName.trim() || undefined,
-      })
-      await fetchProxyPools()
-      closeCloudflareModal()
-      notifications.success(`Deployed: ${data.deployUrl || data.proxyUrl || ''}`)
-    } catch (err) {
-      console.log('Error deploying Cloudflare relay:', err)
-      notifications.error(err instanceof Error ? err.message : 'Deploy failed')
-    } finally {
-      deploying = false
-    }
-  }
-
-  async function handleCloudflareBulkDeploy() {
-    const poolBase =
-      cloudflareBulkPoolName
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 32) || 'cloudflare-relay'
-
-    // Worker name = pool base. Number only appended when the same Cloudflare
-    // account appears more than once (script name is unique per account, NOT
-    // globally), so distinct accounts keep the clean identical name.
-    const accountCounts = new Map<string, number>()
-    const entries = cloudflareBulkText
-      .split(/\r?\n/)
-      .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
-      .filter(({ line }) => line.length > 0)
-      .map(({ line, lineNumber }) => {
-        const [label = '', accountId = '', apiToken = '', ...extra] = line
-          .split('|')
-          .map((part) => part.trim())
-        const seen = (accountCounts.get(accountId) ?? 0) + 1
-        accountCounts.set(accountId, seen)
-        return {
-          lineNumber,
-          label,
-          accountId,
-          apiToken,
-          projectName: seen === 1 ? poolBase : `${poolBase}-${seen}`,
-          valid: Boolean(label && accountId && apiToken && !extra.length)
-        }
-      })
-
-    if (!entries.length) return
-
-    const maskAccountId = (id: string) =>
-      id.length > 8 ? `${id.slice(0, 4)}…${id.slice(-4)}` : '••••'
-
-    cloudflareBulkResults = entries.map((entry) => ({
-      lineNumber: entry.lineNumber,
-      label: entry.label || `Line ${entry.lineNumber}`,
-      accountId: entry.accountId ? maskAccountId(entry.accountId) : '—',
-      projectName: entry.projectName,
-      status: entry.valid ? 'pending' : 'failed',
-      error: entry.valid ? undefined : 'Format harus name/email|accountID|apiToken'
-    }))
-
-    bulkCloudflareDeploying = true
-    const validEntries = entries
-      .map((entry, index) => ({ ...entry, originalIndex: index }))
-      .filter((entry) => entry.valid)
-    const BATCH_SIZE = 10
-    const totalBatches = Math.ceil(validEntries.length / BATCH_SIZE) || 1
-
-    let successCount = 0
-    let failedCount = entries.filter((entry) => !entry.valid).length
-
-    cloudflareBulkProgress = {
-      total: entries.length,
-      completed: failedCount,
-      success: 0,
-      failed: failedCount,
-      currentBatch: validEntries.length > 0 ? 1 : 0,
-      totalBatches
-    }
-
-    try {
-      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-        const batch = validEntries.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE)
-        if (!batch.length) continue
-
-        cloudflareBulkProgress.currentBatch = batchIndex + 1
-
-        const runningIndices = new Set(batch.map((item) => item.originalIndex))
-        cloudflareBulkResults = cloudflareBulkResults.map((result, idx) =>
-          runningIndices.has(idx) ? { ...result, status: 'running' } : result
-        )
-
-        await Promise.all(
-          batch.map(async (entry) => {
-            const index = entry.originalIndex
-            try {
-              const res = await api.deployCloudflareRelay({
-                accountId: entry.accountId,
-                apiToken: entry.apiToken,
-                projectName: entry.projectName,
-                name: entry.projectName,
-                email: entry.label
-              })
-
-              successCount += 1
-              cloudflareBulkResults = cloudflareBulkResults.map((result, resultIndex) =>
-                resultIndex === index
-                  ? { ...result, status: 'success', deployUrl: res.deployUrl || res.proxyUrl || 'Deployed' }
-                  : result
-              )
-              cloudflareBulkProgress.completed += 1
-              cloudflareBulkProgress.success += 1
-            } catch (error) {
-              failedCount += 1
-              cloudflareBulkResults = cloudflareBulkResults.map((result, resultIndex) =>
-                resultIndex === index
-                  ? { ...result, status: 'failed', error: error instanceof Error ? error.message : 'Deploy failed' }
-                  : result
-              )
-              cloudflareBulkProgress.completed += 1
-              cloudflareBulkProgress.failed += 1
-            }
-          })
-        )
-      }
-
-      await fetchProxyPools()
-      if (failedCount > 0) {
-        notifications.error(`${successCount} deployed, ${failedCount} failed`)
-      } else {
-        notifications.success(`${successCount} Cloudflare relays deployed`)
-      }
-    } catch (error) {
-      notifications.error(error instanceof Error ? error.message : 'Bulk deploy failed')
-    } finally {
-      bulkCloudflareDeploying = false
-    }
-  }
-
-  async function handleVercelBulkDeploy() {
-    const poolBase =
-      vercelBulkPoolName
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 32) || 'vercel-relay'
-
-    const tokenCounts = new Map<string, number>()
-    const entries = vercelBulkText
-      .split(/\r?\n/)
-      .map((line, index) => ({ line: line.trim(), lineNumber: index + 1 }))
-      .filter(({ line }) => line.length > 0)
-      .map(({ line, lineNumber }, index) => {
-        let label = `Token ${index + 1}`
-        let token = line
-        if (line.includes('|')) {
-          const parts = line.split('|').map((p) => p.trim())
-          label = parts[0] || `Token ${index + 1}`
-          token = parts[1] || ''
-        }
-        const seen = (tokenCounts.get(token) ?? 0) + 1
-        tokenCounts.set(token, seen)
-        return {
-          lineNumber,
-          label,
-          token,
-          projectName: seen === 1 ? poolBase : `${poolBase}-${seen}`,
-          valid: Boolean(token.length > 0)
-        }
-      })
-
-    if (!entries.length) return
-
-    const maskToken = (tok: string) =>
-      tok.length > 8 ? `${tok.slice(0, 4)}…${tok.slice(-4)}` : '••••'
-
-    vercelBulkResults = entries.map((entry) => ({
-      lineNumber: entry.lineNumber,
-      label: entry.label,
-      tokenMasked: entry.token ? maskToken(entry.token) : '—',
-      projectName: entry.projectName,
-      status: entry.valid ? 'pending' : 'failed',
-      error: entry.valid ? undefined : 'Token tidak boleh kosong'
-    }))
-
-    bulkVercelDeploying = true
-    const validEntries = entries
-      .map((entry, index) => ({ ...entry, originalIndex: index }))
-      .filter((entry) => entry.valid)
-    const BATCH_SIZE = 10
-    const totalBatches = Math.ceil(validEntries.length / BATCH_SIZE) || 1
-
-    let successCount = 0
-    let failedCount = entries.filter((entry) => !entry.valid).length
-
-    vercelBulkProgress = {
-      total: entries.length,
-      completed: failedCount,
-      success: 0,
-      failed: failedCount,
-      currentBatch: validEntries.length > 0 ? 1 : 0,
-      totalBatches
-    }
-
-    try {
-      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-        const batch = validEntries.slice(batchIndex * BATCH_SIZE, (batchIndex + 1) * BATCH_SIZE)
-        if (!batch.length) continue
-
-        vercelBulkProgress.currentBatch = batchIndex + 1
-
-        const runningIndices = new Set(batch.map((item) => item.originalIndex))
-        vercelBulkResults = vercelBulkResults.map((result, idx) =>
-          runningIndices.has(idx) ? { ...result, status: 'running' } : result
-        )
-
-        await Promise.all(
-          batch.map(async (entry) => {
-            const index = entry.originalIndex
-            try {
-              const res = await api.deployVercelRelay({
-                vercelToken: entry.token,
-                projectName: entry.projectName
-              })
-
-              successCount += 1
-              vercelBulkResults = vercelBulkResults.map((result, resultIndex) =>
-                resultIndex === index
-                  ? { ...result, status: 'success', deployUrl: res.deployUrl || res.proxyUrl || 'Deployed' }
-                  : result
-              )
-              vercelBulkProgress.completed += 1
-              vercelBulkProgress.success += 1
-            } catch (error) {
-              failedCount += 1
-              vercelBulkResults = vercelBulkResults.map((result, resultIndex) =>
-                resultIndex === index
-                  ? { ...result, status: 'failed', error: error instanceof Error ? error.message : 'Deploy failed' }
-                  : result
-              )
-              vercelBulkProgress.completed += 1
-              vercelBulkProgress.failed += 1
-            }
-          })
-        )
-      }
-
-      await fetchProxyPools()
-      if (failedCount > 0) {
-        notifications.error(`${successCount} deployed, ${failedCount} failed`)
-      } else {
-        notifications.success(`${successCount} Vercel relays deployed`)
-      }
-    } catch (error) {
-      notifications.error(error instanceof Error ? error.message : 'Bulk deploy failed')
-    } finally {
-      bulkVercelDeploying = false
-    }
-  }
-
-  async function handleDenoDeploy() {
-    if (!denoForm.denoToken.trim() || !denoForm.orgDomain.trim()) return
-    deploying = true
-    try {
-      const data = await api.deployDenoRelay({
-        denoToken: denoForm.denoToken.trim(),
-        orgDomain: denoForm.orgDomain.trim(),
-        projectName: denoForm.projectName.trim() || undefined,
-      })
-      await fetchProxyPools()
-      closeDenoModal()
-      notifications.success(`Deployed: ${data.deployUrl || data.proxyUrl || ''}`)
-    } catch (err) {
-      console.log('Error deploying Deno relay:', err)
-      notifications.error(err instanceof Error ? err.message : 'Deploy failed')
-    } finally {
-      deploying = false
-    }
-  }
-
-  async function handleNetlifyDeploy() {
-    if (!netlifyForm.netlifyToken.trim()) return
-    deploying = true
-    try {
-      const data = await api.deployNetlifyRelay({
-        netlifyToken: netlifyForm.netlifyToken.trim(),
-        projectName: netlifyForm.projectName.trim() || undefined,
-      })
-      await fetchProxyPools()
-      closeNetlifyModal()
-      notifications.success(`Deployed: ${data.deployUrl || data.proxyUrl || ''}`)
-    } catch (err) {
-      console.log('Error deploying Netlify relay:', err)
-      notifications.error(err instanceof Error ? err.message : 'Deploy failed')
-    } finally {
-      deploying = false
-    }
-  }
 </script>
 
 <!-- The one-pool form is shared by the Single tab and the edit dialog, so the
      fields live in one snippet rather than being written twice. -->
 {#snippet singleFields()}
   <Input label="Name" bind:value={formData.name} placeholder="Office Proxy" />
-  <Input
-    label="Group / Tag (optional)"
-    bind:value={formData.group}
-    placeholder="e.g. premium, dedicated-asia"
-    hint="Assign to a group for provider smart load balancing and failover"
-  />
+  <div class="flex flex-col gap-1.5">
+    <label class="text-sm font-medium text-text-main" for="pool-form-group">
+      Group / Tag (optional)
+    </label>
+    <input
+      id="pool-form-group"
+      type="text"
+      bind:value={formData.group}
+      placeholder="e.g. premium, dedicated-asia"
+      list="pool-group-names"
+      class="w-full rounded-sm border border-border bg-surface px-3 py-2 text-[16px] text-text-main outline-none transition-all placeholder:text-text-muted/60 focus:border-primary/60 focus:ring-2 focus:ring-primary/15 sm:text-sm"
+    />
+    <datalist id="pool-group-names">
+      {#each availableGroups as grp}
+        <option value={grp}></option>
+      {/each}
+    </datalist>
+    <p class="text-xs text-text-muted">
+      Assign to a group for provider smart load balancing and failover
+    </p>
+  </div>
   <Input label="Proxy URL" bind:value={formData.proxyUrl} placeholder="http://127.0.0.1:7897" />
   <Input
     label="No Proxy"
@@ -1250,93 +978,7 @@
            its own submenu, not one more verb in this list. -->
       <div class="flex flex-wrap items-center gap-2">
 
-        <div class="relative" bind:this={relayMenuRef}>
-          <Button
-            size="sm"
-            variant="secondary"
-            onclick={() => (showRelayMenu = !showRelayMenu)}
-          >
-            <span class="material-symbols-outlined text-[18px]">rocket_launch</span>
-            Deploy Relay
-            <span class="material-symbols-outlined ml-1 text-[18px]">
-              {showRelayMenu ? 'expand_less' : 'expand_more'}
-            </span>
-          </Button>
-
-          {#if showRelayMenu}
-            <div
-              class="absolute left-0 top-full z-50 mt-1 w-48 rounded-xl border border-black/10 bg-white p-1 shadow-xl dark:border-white/10 dark:bg-zinc-900 sm:left-auto sm:right-0"
-            >
-              <button
-                type="button"
-                onclick={() => {
-                  openCloudflareModal()
-                  showRelayMenu = false
-                }}
-                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-              >
-                <span class="material-symbols-outlined text-[20px] text-orange-500">cloud</span>
-                Cloudflare Relay
-              </button>
-              <button
-                type="button"
-                onclick={() => {
-                  openCloudflareBulkModal()
-                  showRelayMenu = false
-                }}
-                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-              >
-                <span class="material-symbols-outlined text-[20px] text-amber-500">playlist_add</span>
-                CF Bulk
-              </button>
-              <button
-                type="button"
-                onclick={() => {
-                  openVercelModal()
-                  showRelayMenu = false
-                }}
-                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-              >
-                <span class="material-symbols-outlined text-[20px] text-blue-500">cloud_upload</span>
-                Vercel Relay
-              </button>
-              <button
-                type="button"
-                onclick={() => {
-                  openVercelBulkModal()
-                  showRelayMenu = false
-                }}
-                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-              >
-                <span class="material-symbols-outlined text-[20px] text-sky-500">playlist_add</span>
-                Vercel Bulk
-              </button>
-              <button
-                type="button"
-                onclick={() => {
-                  openDenoModal()
-                  showRelayMenu = false
-                }}
-                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-              >
-                <span class="material-symbols-outlined text-[20px] text-green-500">terminal</span>
-                Deno Relay
-              </button>
-              <button
-                type="button"
-                onclick={() => {
-                  openNetlifyModal()
-                  showRelayMenu = false
-                }}
-                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-              >
-                <span class="material-symbols-outlined text-[20px] text-teal-500">deployed_code</span>
-                Netlify Relay
-              </button>
-            </div>
-          {/if}
-        </div>
-
+        <RelayModals onDeployed={fetchProxyPools} />
         <Menu label="Proxy pool actions" triggerIcon="menu" minWidth="15rem">
           <MenuItem
             label={healthChecking
@@ -1397,6 +1039,17 @@
       <!-- Filter & Sort Controls & Quick Cleanup -->
       <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div class="flex items-center gap-2 flex-wrap">
+          <div class="relative">
+            <span class="material-symbols-outlined pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-text-muted">search</span>
+            <input
+              type="text"
+              bind:value={searchQuery}
+              placeholder="Search name, URL, group…"
+              aria-label="Search proxy pools"
+              class="h-8 w-48 rounded-lg border border-border-subtle bg-surface-2 pl-7 pr-2 text-xs text-text-main outline-none transition-colors placeholder:text-text-muted focus:border-primary/50"
+            />
+          </div>
+
           <div class="flex items-center gap-1.5">
             <span class="text-xs text-text-muted shrink-0">Filter:</span>
             <CountedSelect
@@ -1409,16 +1062,22 @@
 
           <div class="flex items-center gap-1.5">
             <span class="text-xs text-text-muted shrink-0">Group:</span>
-            <select
-              bind:value={groupFilter}
-              class="h-8 rounded-lg border border-border-subtle bg-surface-2 px-2 text-xs text-text-main outline-none transition-colors hover:bg-surface-3 cursor-pointer"
-              aria-label="Filter proxy pools by group"
-            >
-              <option value="all">All Groups ({proxyPools.length})</option>
-              {#each availableGroups as grp}
-                <option value={grp}>{grp} ({proxyPools.filter((p) => (p.group || '').trim() === grp).length})</option>
-              {/each}
-            </select>
+            <CountedSelect
+              value={groupFilter}
+              options={[{ value: 'all', label: 'All Groups', count: proxyPools.length }, ...groupCounts.map((g) => ({ value: g.name, label: g.name, count: g.count }))]}
+              ariaLabel="Filter proxy pools by group"
+              onChange={(next) => (groupFilter = next)}
+            />
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs text-text-muted shrink-0">Type:</span>
+            <CountedSelect
+              value={typeFilter}
+              options={typeOptions}
+              ariaLabel="Filter proxy pools by type"
+              onChange={(next) => (typeFilter = next)}
+            />
           </div>
         </div>
 
@@ -1507,8 +1166,10 @@
                 {healthChecking ? 'progress_activity' : 'health_and_safety'}
               </span>
               {healthChecking
-                ? `Checking ${healthProgress.current}/${healthProgress.total}`
-                : 'Health Check'}
+                ? `Testing ${healthProgress.current}/${healthProgress.total}`
+                : selectedIds.length > 0
+                  ? 'Test Selected'
+                  : 'Test All'}
             </Button>
             {#if selectedIds.length > 0}
               <Button
@@ -1528,6 +1189,15 @@
               >
                 <span class="material-symbols-outlined text-[18px]">toggle_off</span>
                 Deactivate
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onclick={() => (groupPicker = { mode: 'bulk' })}
+                disabled={bulkBusy || healthChecking}
+              >
+                <span class="material-symbols-outlined text-[18px]">folder</span>
+                Set Group
               </Button>
               <Button
                 size="sm"
@@ -1563,149 +1233,24 @@
           <p class="text-sm text-text-muted mb-4">
             Try selecting a different filter option or reset filters.
           </p>
-          <Button variant="secondary" onclick={() => { statusFilter = 'all'; groupFilter = 'all'; }}>
+          <Button variant="secondary" onclick={() => { statusFilter = 'all'; groupFilter = 'all'; typeFilter = 'all'; searchQuery = ''; }}>
             Reset Filter
           </Button>
         </div>
       {:else}
         <div class="flex flex-col divide-y divide-black/[0.04] dark:divide-white/[0.05]">
           {#each paginatedPools as pool (pool.id)}
-            {@const latencyBadge = hasMeasuredLatency(pool) ? getLatencyBadge(pool.latency) : null}
-            <div class="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div class="flex items-start gap-3 min-w-0 flex-1">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.includes(pool.id)}
-                  onchange={() => toggleSelect(pool.id)}
-                  class="mt-1 size-4 shrink-0 rounded border-black/20 dark:border-white/20 cursor-pointer"
-                />
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <p class="min-w-0 max-w-full truncate text-sm font-medium sm:max-w-[18rem]">
-                      {pool.name}
-                    </p>
-                    <Badge variant={getStatusVariant(pool.testStatus)} size="sm" dot>
-                      {pool.testStatus || 'unknown'}
-                    </Badge>
-                    {#if latencyBadge}
-                      <Badge variant={latencyBadge.variant} size="sm">
-                        {latencyBadge.text}
-                      </Badge>
-                    {/if}
-                    <Badge variant={pool.isActive ? 'success' : 'default'} size="sm">
-                      {pool.isActive ? 'active' : 'inactive'}
-                    </Badge>
-                    {#if pool.group}
-                      <Badge variant="secondary" size="sm">
-                        <span class="material-symbols-outlined text-[13px] mr-1">folder</span>
-                        {pool.group}
-                      </Badge>
-                    {/if}
-                    {#if pool.inCooldown}
-                      <Badge variant="error" size="sm" dot>
-                        COOLDOWN ({pool.cooldownRemainingSec || 0}s)
-                      </Badge>
-                    {:else if typeof pool.fitnessScore === 'number'}
-                      <Badge variant={pool.fitnessScore >= 80 ? 'success' : pool.fitnessScore >= 50 ? 'warning' : 'error'} size="sm">
-                        fit: {Math.round(pool.fitnessScore)}%
-                      </Badge>
-                    {/if}
-                    {#if pool.consecutiveProbeFails && pool.consecutiveProbeFails > 0}
-                      <Badge variant="error" size="sm">
-                        probe fails: {pool.consecutiveProbeFails}/10
-                      </Badge>
-                    {/if}
-                    {#if pool.type === 'vercel'}
-                      <Badge size="sm">vercel relay</Badge>
-                    {/if}
-                    {#if pool.type === 'cloudflare'}
-                      <Badge size="sm">cloudflare relay</Badge>
-                    {/if}
-                    {#if pool.type === 'deno'}
-                      <Badge size="sm">deno relay</Badge>
-                    {/if}
-                    {#if pool.type === 'netlify'}
-                      <Badge size="sm">netlify relay</Badge>
-                    {/if}
-                    <Badge size="sm">
-                      {pool.boundConnectionCount || 0} bound
-                    </Badge>
-                  </div>
-                  <p class="text-xs text-text-muted truncate mt-1">{pool.proxyUrl}</p>
-                  {#if pool.noProxy}
-                    <p class="text-xs text-text-muted truncate">No proxy: {pool.noProxy}</p>
-                  {/if}
-                  <p class="text-[11px] text-text-muted mt-1">
-                    Last tested: {formatDateTime(pool.lastTestedAt)}
-                    {pool.lastError ? ` · ${pool.lastError}` : ''}
-                  </p>
-
-                  {#if pool.exitIpv4 || pool.exitIpv6 || pool.exitCountry || pool.exitIsp}
-                    <div class="flex flex-wrap items-center gap-1.5 mt-2 text-[11px]">
-                      {#if pool.exitIpv4}
-                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono font-medium text-emerald-700 bg-emerald-500/10 dark:text-emerald-300 dark:bg-emerald-500/15 border border-emerald-500/20">
-                          <span class="opacity-60 text-[9px] uppercase font-sans font-bold">IPv4</span> {pool.exitIpv4}
-                        </span>
-                      {/if}
-                      {#if pool.exitIpv6}
-                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono font-medium text-cyan-700 bg-cyan-500/10 dark:text-cyan-300 dark:bg-cyan-500/15 border border-cyan-500/20">
-                          <span class="opacity-60 text-[9px] uppercase font-sans font-bold">IPv6</span> {pool.exitIpv6}
-                        </span>
-                      {/if}
-                      {#if pool.exitCountry || pool.exitCity}
-                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-medium text-text-main bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08]">
-                          <span class="text-[12px]">📍</span> {[pool.exitCity, pool.exitCountry].filter(Boolean).join(', ')}
-                        </span>
-                      {/if}
-                      {#if pool.exitIsp || pool.exitOrg || pool.exitAsn}
-                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-medium text-text-muted bg-black/[0.04] dark:bg-white/[0.06] border border-black/[0.06] dark:border-white/[0.08]">
-                          <span class="text-[12px]">🏢</span> {[pool.exitAsn, pool.exitIsp || pool.exitOrg].filter(Boolean).join(' · ')}
-                        </span>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              </div>
-
-              <div class="flex items-center justify-end gap-1">
-                <Toggle
-                  size="sm"
-                  checked={pool.isActive === true}
-                  onChange={() => handleToggleActive(pool)}
-                  title={pool.isActive ? 'Disable' : 'Enable'}
-                />
-                <button
-                  type="button"
-                  onclick={() => handleTest(pool.id)}
-                  class="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary cursor-pointer disabled:opacity-50"
-                  title="Test proxy"
-                  disabled={testingId === pool.id}
-                >
-                  <span
-                    class="material-symbols-outlined text-[18px]"
-                    style={testingId === pool.id ? 'animation: spin 1s linear infinite' : undefined}
-                  >
-                    {testingId === pool.id ? 'progress_activity' : 'science'}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onclick={() => openEditModal(pool)}
-                  class="p-2 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary cursor-pointer"
-                  title="Edit"
-                >
-                  <span class="material-symbols-outlined text-[18px]">edit</span>
-                </button>
-                <button
-                  type="button"
-                  onclick={() => handleDelete(pool)}
-                  class="p-2 rounded hover:bg-red-500/10 text-red-500 cursor-pointer"
-                  title="Delete"
-                >
-                  <span class="material-symbols-outlined text-[18px]">delete</span>
-                </button>
-              </div>
-            </div>
+            <PoolRow
+              {pool}
+              selected={selectedIds.includes(pool.id)}
+              testing={testingId === pool.id}
+              {toggleSelect}
+              {handleToggleActive}
+              {handleTest}
+              {openEditModal}
+              {handleDelete}
+              onSetGroup={(p) => (groupPicker = { mode: 'single', pool: p })}
+            />
           {/each}
         </div>
 
@@ -1754,910 +1299,41 @@
       {/if}
     </Card>
     {:else if activeViewTab === 'groups'}
-      <div class="flex flex-col gap-4">
-        <!-- Group Overview Card -->
-        <Card>
-          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 class="text-sm font-semibold text-text-main flex items-center gap-2">
-                <span class="material-symbols-outlined text-primary text-[18px]">folder_special</span>
-                Proxy Group Balancing & Smart Fitness
-              </h2>
-              <p class="text-xs text-text-muted mt-1 max-w-2xl">
-                Grouping proxy nodes enables smart dynamic balancing. When a provider connection binds to a group (e.g. <span class="font-mono text-primary font-medium">group:dc</span>), the router selects the healthiest node based on latency EWMA and fitness score, and automatically falls over if a node fails.
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              onclick={() => openCreateModal('single')}
-            >
-              <span class="material-symbols-outlined text-[16px]">add</span>
-              New Pool in Group
-            </Button>
-          </div>
-        </Card>
-
-        {#if groupSummaries.length === 0}
-          <div class="rounded-xl border border-dashed border-border bg-surface p-12 text-center flex flex-col items-center justify-center gap-3">
-            <div class="size-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-              <span class="material-symbols-outlined text-[24px]">folder_off</span>
-            </div>
-            <div>
-              <h3 class="text-sm font-semibold text-text-main">No Custom Proxy Groups</h3>
-              <p class="text-xs text-text-muted mt-1 max-w-sm mx-auto">
-                All {proxyPools.length} proxies are currently ungrouped. Group proxy nodes (e.g. "dc", "residential", "fast") to enable smart dynamic balancing and automatic failover in connection bindings.
-              </p>
-            </div>
-            <Button size="sm" onclick={() => openCreateModal('single')}>
-              <span class="material-symbols-outlined text-[16px]">add</span>
-              Create Proxy in Group
-            </Button>
-          </div>
-        {:else}
-          <!-- Group Cards Grid -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {#each groupSummaries as grp (grp.name)}
-              <div class="rounded-xl border border-border bg-surface p-4 flex flex-col justify-between gap-4 shadow-sm hover:border-primary/40 transition-colors">
-                <div class="space-y-3">
-                  <!-- Header -->
-                  <div class="flex items-start justify-between gap-2">
-                    <div class="flex items-center gap-2 min-w-0">
-                      <span class="material-symbols-outlined text-primary text-[22px]">folder_open</span>
-                      <div>
-                        <h3 class="text-sm font-semibold text-text-main truncate">
-                          {grp.name}
-                        </h3>
-                        <p class="text-[11px] text-text-muted">Target ID: <span class="font-mono text-text-main font-medium">group:{grp.name}</span></p>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
-                      {#if grp.inCooldownCount > 0}
-                        <span class="rounded bg-red-500/15 border border-red-500/30 text-red-500 px-2 py-0.5 text-[11px] font-semibold animate-pulse">
-                          {grp.inCooldownCount} in cooldown
-                        </span>
-                      {:else}
-                        <span class="rounded bg-emerald-500/10 text-emerald-500 px-2 py-0.5 text-[11px] font-medium">
-                          All Healthy
-                        </span>
-                      {/if}
-                    </div>
-                  </div>
-
-                <!-- Metrics bar -->
-                <div class="grid grid-cols-3 gap-2 py-2 px-3 rounded-lg bg-surface-2 border border-border/50 text-center">
-                  <div>
-                    <div class="text-[10px] text-text-muted uppercase font-medium">Active Nodes</div>
-                    <div class="text-xs font-semibold text-text-main mt-0.5">{grp.activeCount} / {grp.totalCount}</div>
-                  </div>
-                  <div>
-                    <div class="text-[10px] text-text-muted uppercase font-medium">Avg Fitness</div>
-                    <div class="text-xs font-semibold mt-0.5 {grp.avgFitness >= 80 ? 'text-emerald-500' : grp.avgFitness >= 50 ? 'text-amber-500' : 'text-red-500'}">
-                      {grp.avgFitness}%
-                    </div>
-                  </div>
-                  <div>
-                    <div class="text-[10px] text-text-muted uppercase font-medium">Avg Latency</div>
-                    <div class="text-xs font-semibold text-text-main mt-0.5">{grp.avgLatency > 0 ? `${grp.avgLatency}ms` : 'N/A'}</div>
-                  </div>
-                </div>
-
-                <!-- Member Pools List -->
-                <div>
-                  <div class="text-[11px] font-medium text-text-muted mb-1.5 flex items-center justify-between">
-                    <span>Member Proxies ({grp.pools.length})</span>
-                    {#if grp.strictCount > 0}
-                      <span class="text-[10px] text-amber-500">{grp.strictCount} strict mode</span>
-                    {/if}
-                  </div>
-                  <div class="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar pr-1">
-                    {#each grp.pools as pool (pool.id)}
-                      <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2 border border-border/40 text-xs">
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-1.5">
-                            <span class="font-medium text-text-main truncate">{pool.name}</span>
-                            {#if !pool.isActive}
-                              <span class="text-[10px] text-text-muted">(off)</span>
-                            {/if}
-                            {#if pool.inCooldown}
-                              <span class="text-[10px] text-red-500 font-semibold animate-pulse">COOLDOWN ({pool.cooldownRemainingSec || 0}s)</span>
-                            {/if}
-                          </div>
-                          <div class="text-[10px] text-text-muted font-mono truncate">{pool.proxyUrl}</div>
-                        </div>
-                        <div class="flex items-center gap-1.5 shrink-0">
-                          {#if typeof pool.fitnessScore === 'number'}
-                            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded {pool.fitnessScore >= 80 ? 'bg-emerald-500/10 text-emerald-500' : pool.fitnessScore >= 50 ? 'bg-amber-500/10 text-amber-500' : 'bg-red-500/10 text-red-500'}">
-                              {pool.fitnessScore}%
-                            </span>
-                          {/if}
-                          {#if pool.latency}
-                            <span class="text-[10px] text-text-muted font-mono">{pool.latency}ms</span>
-                          {/if}
-                          <button
-                            type="button"
-                            onclick={() => handleTest(pool.id)}
-                            disabled={testingId === pool.id}
-                            class="p-1 rounded text-text-muted hover:text-text-main hover:bg-surface-3 transition-colors cursor-pointer"
-                            title="Test proxy"
-                          >
-                            <span class="material-symbols-outlined text-[14px] {testingId === pool.id ? 'animate-spin' : ''}">refresh</span>
-                          </button>
-                        </div>
-                      </div>
-                    {/each}
-                  </div>
-                </div>
-              </div>
-
-              <!-- Actions -->
-              <div class="flex items-center justify-between gap-2 pt-2 border-t border-border/40">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onclick={() => {
-                    groupFilter = grp.name === 'Default' ? '' : grp.name
-                    activeViewTab = 'pools'
-                  }}
-                >
-                  <span class="material-symbols-outlined text-[16px]">filter_list</span>
-                  View in Table
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onclick={() => testGroup(grp.name)}
-                  disabled={healthChecking}
-                >
-                  <span class="material-symbols-outlined text-[16px]">speed</span>
-                  Test Group
-                </Button>
-              </div>
-            </div>
-          {/each}
-        </div>
-        {/if}
-      </div>
+      <GroupsTab
+        {groupSummaries}
+        totalPools={proxyPools.length}
+        {healthChecking}
+        {testingId}
+        {openCreateModal}
+        {testGroup}
+        {handleTest}
+        onManage={(name) => (membersModalGroup = name)}
+        onViewGroup={(name) => {
+          groupFilter = name
+          activeViewTab = 'pools'
+        }}
+      />
     {:else if activeViewTab === 'fitness'}
-      <div class="flex flex-col gap-4">
-        <!-- Telemetry Stats Cards -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div class="rounded-xl border border-border bg-surface p-3.5">
-            <div class="text-[11px] font-medium text-text-muted">Total Monitored</div>
-            <div class="text-xl font-bold text-text-main mt-1">{proxyPools.length}</div>
-            <div class="text-[11px] text-text-muted mt-0.5">{counts.active} active in cluster</div>
-          </div>
-          <div class="rounded-xl border border-border bg-surface p-3.5">
-            <div class="text-[11px] font-medium text-text-muted">In Quarantine / Cooldown</div>
-            <div class="text-xl font-bold mt-1 {cooldownCount > 0 ? 'text-red-500' : 'text-emerald-500'}">
-              {cooldownCount}
-            </div>
-            <div class="text-[11px] text-text-muted mt-0.5">{cooldownCount > 0 ? 'Temporary penalty active' : 'Zero nodes quarantined'}</div>
-          </div>
-          <div class="rounded-xl border border-border bg-surface p-3.5">
-            <div class="text-[11px] font-medium text-text-muted">Canary Probe Interval</div>
-            <div class="text-xl font-bold text-text-main mt-1">10 min</div>
-            <div class="text-[11px] text-text-muted mt-0.5">Cloudflare trace endpoint</div>
-          </div>
-          <div class="rounded-xl border border-border bg-surface p-3.5">
-            <div class="text-[11px] font-medium text-text-muted">Quarantine Threshold</div>
-            <div class="text-xl font-bold text-text-main mt-1">10 fails</div>
-            <div class="text-[11px] text-text-muted mt-0.5">Consecutive canary drops</div>
-          </div>
-        </div>
-
-        <!-- Active Quarantine Table (if any) -->
-        {#if cooldownCount > 0}
-          <Card>
-            <div class="flex items-center justify-between mb-3">
-              <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-red-500 text-[20px]">warning</span>
-                <h2 class="text-sm font-semibold text-text-main">Nodes Currently in Cooldown</h2>
-              </div>
-              <span class="text-xs text-text-muted">Automatic rate-limit / canary quarantine</span>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="w-full text-left text-xs">
-                <thead>
-                  <tr class="border-b border-border/60 text-text-muted">
-                    <th class="py-2 px-3 font-medium">Proxy Name</th>
-                    <th class="py-2 px-3 font-medium">Group</th>
-                    <th class="py-2 px-3 font-medium">Cooldown Remaining</th>
-                    <th class="py-2 px-3 font-medium">Fitness Score</th>
-                    <th class="py-2 px-3 font-medium">Canary Fails</th>
-                    <th class="py-2 px-3 font-medium text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-border/30">
-                  {#each proxyPools.filter((p) => p.inCooldown) as pool (pool.id)}
-                    <tr>
-                      <td class="py-2.5 px-3">
-                        <div class="font-medium text-text-main">{pool.name}</div>
-                        <div class="text-[10px] text-text-muted font-mono">{pool.proxyUrl}</div>
-                      </td>
-                      <td class="py-2.5 px-3">
-                        <span class="px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border/40 text-[10px]">
-                          {pool.group || 'None'}
-                        </span>
-                      </td>
-                      <td class="py-2.5 px-3">
-                        <span class="font-mono text-red-500 font-semibold px-2 py-0.5 rounded bg-red-500/10 border border-red-500/20">
-                          {pool.cooldownRemainingSec || 0} seconds
-                        </span>
-                      </td>
-                      <td class="py-2.5 px-3">
-                        <span class="font-mono text-red-500 font-medium">
-                          {pool.fitnessScore ?? 0}%
-                        </span>
-                      </td>
-                      <td class="py-2.5 px-3">
-                        <span class="font-mono text-amber-500 font-medium">{pool.consecutiveProbeFails || 0} / 10</span>
-                      </td>
-                      <td class="py-2.5 px-3 text-right">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          disabled={testingId === pool.id}
-                          onclick={() => handleTest(pool.id)}
-                        >
-                          <span class="material-symbols-outlined text-[14px] {testingId === pool.id ? 'animate-spin' : ''}">refresh</span>
-                          Retest & Clear
-                        </Button>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        {/if}
-
-        <!-- Leaderboard / Telemetry Table -->
-        <Card>
-          <div class="flex items-center justify-between mb-3">
-            <div>
-              <h2 class="text-sm font-semibold text-text-main">Fitness Score Telemetry</h2>
-              <p class="text-xs text-text-muted">Sorted from lowest to highest score to easily identify degraded or blocked proxies.</p>
-            </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={healthChecking}
-              onclick={() => handleHealthCheck(true)}
-            >
-              <span class="material-symbols-outlined text-[16px]">speed</span>
-              Test All Nodes
-            </Button>
-          </div>
-
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead>
-                <tr class="border-b border-border/60 text-text-muted">
-                  <th class="py-2 px-3 font-medium">Node</th>
-                  <th class="py-2 px-3 font-medium">Group</th>
-                  <th class="py-2 px-3 font-medium">Fitness Score</th>
-                  <th class="py-2 px-3 font-medium">EWMA Latency</th>
-                  <th class="py-2 px-3 font-medium">Canary Probes</th>
-                  <th class="py-2 px-3 font-medium">Status</th>
-                  <th class="py-2 px-3 font-medium text-right">Test</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-border/30">
-                {#each fitnessLeaderboard as pool (pool.id)}
-                  {@const score = pool.fitnessScore ?? 100}
-                  <tr>
-                    <td class="py-2.5 px-3">
-                      <div class="font-medium text-text-main">{pool.name}</div>
-                      <div class="text-[10px] text-text-muted font-mono">{pool.proxyUrl}</div>
-                    </td>
-                    <td class="py-2.5 px-3">
-                      <span class="px-1.5 py-0.5 rounded bg-surface-2 text-text-muted border border-border/40 text-[10px]">
-                        {pool.group || 'None'}
-                      </span>
-                    </td>
-                    <td class="py-2.5 px-3">
-                      <div class="flex items-center gap-2 min-w-[120px]">
-                        <div class="flex-1 h-2 rounded-full bg-surface-3 overflow-hidden">
-                          <div
-                            class="h-full rounded-full transition-all {score >= 80 ? 'bg-emerald-500' : score >= 50 ? 'bg-amber-500' : 'bg-red-500'}"
-                            style="width: {score}%"
-                          ></div>
-                        </div>
-                        <span class="font-mono text-[11px] font-semibold {score >= 80 ? 'text-emerald-500' : score >= 50 ? 'text-amber-500' : 'text-red-500'}">
-                          {score}%
-                        </span>
-                      </div>
-                    </td>
-                    <td class="py-2.5 px-3 font-mono">
-                      {pool.ewmaLatencyMs ? `${Math.round(pool.ewmaLatencyMs)}ms` : pool.latency ? `${pool.latency}ms` : 'N/A'}
-                    </td>
-                    <td class="py-2.5 px-3">
-                      {#if (pool.consecutiveProbeFails || 0) > 0}
-                        <span class="text-amber-500 font-medium font-mono">{pool.consecutiveProbeFails}/10 fails</span>
-                      {:else}
-                        <span class="text-emerald-500 text-[11px]">Passing (10m)</span>
-                      {/if}
-                    </td>
-                    <td class="py-2.5 px-3">
-                      {#if pool.inCooldown}
-                        <span class="text-red-500 font-semibold text-[10px] px-1.5 py-0.5 rounded bg-red-500/10 border border-red-500/20 animate-pulse">
-                          COOLDOWN ({pool.cooldownRemainingSec || 0}s)
-                        </span>
-                      {:else if !pool.isActive}
-                        <span class="text-text-muted text-[10px]">Disabled</span>
-                      {:else}
-                        <span class="text-emerald-500 text-[10px]">Healthy</span>
-                      {/if}
-                    </td>
-                    <td class="py-2.5 px-3 text-right">
-                      <button
-                        type="button"
-                        onclick={() => handleTest(pool.id)}
-                        disabled={testingId === pool.id}
-                        class="p-1 rounded text-text-muted hover:text-text-main hover:bg-surface-2 transition-colors cursor-pointer"
-                        title="Run probe test"
-                      >
-                        <span class="material-symbols-outlined text-[15px] {testingId === pool.id ? 'animate-spin' : ''}">refresh</span>
-                      </button>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-
-        <!-- Technical Scoring Info -->
-        <div class="rounded-xl border border-border/50 bg-surface-2 p-4 text-xs text-text-muted space-y-2">
-          <div class="font-semibold text-text-main flex items-center gap-1.5">
-            <span class="material-symbols-outlined text-[16px] text-primary">info</span>
-            Smart Fitness & Cooldown Mechanics
-          </div>
-          <p>
-            The fitness engine continuously computes composite health: baseline starts at 100%, latency over 1500ms applies proportional penalties, while HTTP 429 / 403 / connection drops deduct 25 points. Nodes failing 10 consecutive canary probes enter automatic quarantine with exponential cooldown backoff (30s to 600s).
-          </p>
-        </div>
-      </div>
+      <FitnessTab
+        pools={proxyPools}
+        {counts}
+        {failedCount}
+        {cooldownCount}
+        {filteredFitness}
+        {filteredCooldown}
+        {typeOptions}
+        bind:fitnessSearch
+        bind:fitnessType
+        {recovering}
+        {clearingFitness}
+        {healthChecking}
+        {testingId}
+        {handleRecover}
+        {handleClearAllFitness}
+        {handleHealthCheck}
+        {handleTest}
+      />
     {/if}
-
-    <Modal isOpen={showVercelModal} title="Deploy Vercel Relay" onClose={closeVercelModal}>
-      <div class="flex flex-col gap-4">
-        <div class="rounded-lg bg-blue-500/5 border border-blue-500/10 p-3 flex flex-col gap-1.5">
-          <p class="text-sm text-text-main font-medium">What is Vercel Relay?</p>
-          <p class="text-xs text-text-muted">
-            Deploys an edge relay function to Vercel. All AI provider requests will be forwarded
-            through Vercel's edge network, masking your real IP from providers.
-          </p>
-          <ul class="text-xs text-text-muted list-disc pl-4 space-y-0.5">
-            <li>
-              Your IP is replaced by Vercel's dynamic edge IPs (hundreds of IPs across 20+ global
-              regions)
-            </li>
-            <li>
-              Vercel serves millions of apps — providers can't block Vercel IPs without affecting
-              legitimate traffic
-            </li>
-            <li>Free tier: 100GB bandwidth/month, 500K edge invocations</li>
-            <li>Deploy multiple relays on different accounts for more IP diversity</li>
-          </ul>
-        </div>
-        <div>
-          <Input
-            label="Vercel API Token"
-            type="password"
-            bind:value={vercelForm.vercelToken}
-            placeholder="your-vercel-api-token"
-          />
-          <p class="text-xs text-text-muted mt-1">
-            Token is used once for deployment and not stored.
-            <a
-              href="https://vercel.com/account/tokens"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-primary hover:underline"
-            >
-              Get token →
-            </a>
-          </p>
-        </div>
-        <Input
-          label="Project Name"
-          bind:value={vercelForm.projectName}
-          placeholder="my-relay"
-          hint="Unique name for your Vercel project. Leave empty for auto-generated name."
-        />
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            fullWidth
-            onclick={handleVercelDeploy}
-            disabled={!vercelForm.vercelToken.trim() || deploying}
-          >
-            {deploying ? 'Deploying... (may take ~1 min)' : 'Deploy'}
-          </Button>
-          <Button fullWidth variant="ghost" onclick={closeVercelModal} disabled={deploying}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Modal>
-
-    <Modal
-      isOpen={showVercelBulkModal}
-      title="Vercel Bulk"
-      size="3xl"
-      onClose={closeVercelBulkModal}
-    >
-      <div class="flex flex-col gap-4">
-        <div class="rounded-lg bg-sky-500/10 border border-sky-500/20 p-3 flex flex-col gap-1">
-          <p class="text-sm font-medium text-text-main">One account / token per line (Batch of 10 concurrent)</p>
-          <p class="text-xs text-text-muted">
-            Format: <code class="font-mono text-sky-500">name/email|vercelToken</code> atau langsung <code class="font-mono text-sky-500">vercelToken</code>. Project name otomatis memakai Pool Name + urutan batch.
-          </p>
-        </div>
-
-        <Input
-          label="Pool Name / Project Prefix"
-          bind:value={vercelBulkPoolName}
-          disabled={bulkVercelDeploying}
-          placeholder="e.g. vercel-relay, vc-indo, vc-pool"
-          hint="Prefix untuk nama pool dan project Vercel (contoh: vercel-relay-1, vercel-relay-2)."
-        />
-
-        <div class="flex flex-col gap-1.5">
-          <label for="vercel-bulk-textarea" class="text-xs font-medium text-text-muted">Tokens List</label>
-          <textarea
-            id="vercel-bulk-textarea"
-            bind:value={vercelBulkText}
-            disabled={bulkVercelDeploying}
-            placeholder={"team-a|vcp_xxxxxxxx...\nteam-b|vcp_yyyyyyyy...\nvcp_zzzzzzzz..."}
-            spellcheck="false"
-            rows={10}
-            class="min-h-[220px] w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
-          ></textarea>
-        </div>
-
-        {#if vercelBulkProgress.total > 0}
-          <div class="rounded-lg border border-border bg-surface p-3 flex flex-col gap-2">
-            <div class="flex items-center justify-between text-xs font-medium">
-              <span class="text-text-main flex items-center gap-1.5">
-                {#if bulkVercelDeploying}
-                  <span class="inline-block size-2 rounded-full bg-brand-500 animate-pulse"></span>
-                {/if}
-                {bulkVercelDeploying
-                  ? `Deploying Batch ${vercelBulkProgress.currentBatch} of ${vercelBulkProgress.totalBatches}...`
-                  : 'Deployment Complete'}
-              </span>
-              <span class="font-mono text-text-muted">
-                {vercelBulkProgress.completed} / {vercelBulkProgress.total} ({Math.round(
-                  (vercelBulkProgress.completed / vercelBulkProgress.total) * 100
-                ) || 0}%)
-              </span>
-            </div>
-
-            <div class="flex h-2 w-full overflow-hidden rounded-full bg-surface-2">
-              <div
-                class="bg-emerald-500 transition-all duration-300"
-                style="width: {(vercelBulkProgress.success / vercelBulkProgress.total) * 100}%"
-                title="{vercelBulkProgress.success} succeeded"
-              ></div>
-              <div
-                class="bg-red-500 transition-all duration-300"
-                style="width: {(vercelBulkProgress.failed / vercelBulkProgress.total) * 100}%"
-                title="{vercelBulkProgress.failed} failed"
-              ></div>
-            </div>
-
-            <div class="flex items-center justify-between text-[11px] text-text-muted pt-0.5">
-              <div class="flex items-center gap-3">
-                <span class="flex items-center gap-1 text-emerald-500 font-medium">
-                  <span class="size-1.5 rounded-full bg-emerald-500"></span>
-                  {vercelBulkProgress.success} Success
-                </span>
-                <span class="flex items-center gap-1 text-red-500 font-medium">
-                  <span class="size-1.5 rounded-full bg-red-500"></span>
-                  {vercelBulkProgress.failed} Failed
-                </span>
-              </div>
-              <span>Concurrency: 10/batch</span>
-            </div>
-          </div>
-        {/if}
-
-        {#if vercelBulkResults.length > 0}
-          <div class="max-h-60 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-            {#each vercelBulkResults as result}
-              <div class="flex items-start gap-3 p-2.5 text-xs">
-                <span class="w-6 shrink-0 text-text-muted font-mono">#{result.lineNumber}</span>
-                <div class="min-w-0 flex-1 flex flex-col gap-0.5">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="font-medium text-text-main">{result.label}</span>
-                    <Badge
-                      size="sm"
-                      variant={result.status === 'success'
-                        ? 'success'
-                        : result.status === 'failed'
-                          ? 'error'
-                          : result.status === 'running'
-                            ? 'warning'
-                            : 'neutral'}
-                    >
-                      {result.status}
-                    </Badge>
-                  </div>
-                  <p class="font-mono text-text-muted text-[11px]">
-                    {result.tokenMasked} · {result.projectName}
-                  </p>
-                  {#if result.deployUrl}
-                    <p class="break-all text-emerald-500 text-[11px] font-mono">{result.deployUrl}</p>
-                  {/if}
-                  {#if result.error}
-                    <p class="break-words text-red-500 text-[11px]">{result.error}</p>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            fullWidth
-            onclick={handleVercelBulkDeploy}
-            disabled={!vercelBulkText.trim() || bulkVercelDeploying}
-          >
-            {bulkVercelDeploying
-              ? `Deploying (${vercelBulkProgress.completed}/${vercelBulkProgress.total})...`
-              : 'Deploy All'}
-          </Button>
-          <Button fullWidth variant="ghost" onclick={closeVercelBulkModal} disabled={bulkVercelDeploying}>
-            Close
-          </Button>
-        </div>
-      </div>
-    </Modal>
-
-    <Modal
-      isOpen={showCloudflareModal}
-      title="Deploy Cloudflare Relay"
-      onClose={closeCloudflareModal}
-    >
-      <div class="flex flex-col gap-4">
-        <div class="rounded-lg bg-orange-500/5 border border-orange-500/10 p-3 flex flex-col gap-1.5">
-          <p class="text-sm text-text-main font-medium">What is Cloudflare Relay?</p>
-          <p class="text-xs text-text-muted">
-            Deploys a Cloudflare Worker as a proxy relay. All AI provider requests will be forwarded
-            through Cloudflare's global edge network.
-          </p>
-          <ul class="text-xs text-text-muted list-disc pl-4 space-y-0.5">
-            <li>High performance global routing and IP masking via Cloudflare Workers</li>
-            <li>Free tier: 100,000 requests per day</li>
-            <li>Requires Cloudflare Account ID and a Workers API Token (Edit Workers permission)</li>
-          </ul>
-          <div class="mt-2 pt-2 border-t border-orange-500/10 text-xs text-text-muted">
-            <p class="font-medium text-text-main mb-1">How to generate your API Token:</p>
-            <ol class="list-decimal pl-4 space-y-0.5">
-              <li>Go to <b>My Profile</b> → <b>API Tokens</b> → <b>Create Token</b></li>
-              <li>Scroll down to <b>Custom Token</b> and click <b>Get started</b></li>
-              <li>Under <b>Permissions</b>: Account | Workers Scripts | Edit</li>
-              <li>
-                Under <b>Account Resources</b>: Include | Account | <i>Your Account Name</i>
-              </li>
-              <li>Click <b>Continue to summary</b> → <b>Create Token</b></li>
-            </ol>
-          </div>
-        </div>
-        <Input
-          label="Account ID"
-          bind:value={cloudflareForm.accountId}
-          placeholder="your-cloudflare-account-id"
-          hint="Found on the right side of the Cloudflare dashboard overview page."
-        />
-        <div>
-          <Input
-            label="API Token"
-            type="password"
-            bind:value={cloudflareForm.apiToken}
-            placeholder="your-cloudflare-api-token"
-          />
-          <p class="text-xs text-text-muted mt-1">
-            Requires "Workers Scripts: Edit" permission.
-            <a
-              href="https://dash.cloudflare.com/profile/api-tokens"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-primary hover:underline"
-            >
-              Get token →
-            </a>
-          </p>
-        </div>
-        <Input
-          label="Worker Name"
-          bind:value={cloudflareForm.projectName}
-          placeholder="my-relay"
-          hint="Unique name for your Cloudflare Worker. Leave empty for auto-generated name."
-        />
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            fullWidth
-            onclick={handleCloudflareDeploy}
-            disabled={!cloudflareForm.accountId.trim() ||
-              !cloudflareForm.apiToken.trim() ||
-              deploying}
-          >
-            {deploying ? 'Deploying...' : 'Deploy Worker'}
-          </Button>
-          <Button fullWidth variant="ghost" onclick={closeCloudflareModal} disabled={deploying}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Modal>
-
-    <Modal
-      isOpen={showCloudflareBulkModal}
-      title="CF Bulk"
-      size="3xl"
-      onClose={closeCloudflareBulkModal}
-    >
-      <div class="flex flex-col gap-4">
-        <div class="rounded-lg bg-amber-500/10 border border-amber-500/20 p-3 flex flex-col gap-1">
-          <p class="text-sm font-medium text-text-main">One account per line (Batch of 10 concurrent)</p>
-          <p class="text-xs text-text-muted">
-            Format: <code class="font-mono text-amber-500">name/email|accountID|apiToken</code>. Nama worker/subdomain otomatis memakai Pool Name + urutan batch (bukan nama/email akun).
-          </p>
-        </div>
-
-        <Input
-          label="Pool Name / Worker Prefix"
-          bind:value={cloudflareBulkPoolName}
-          disabled={bulkCloudflareDeploying}
-          placeholder="e.g. cloudflare-relay, cf-indo, cf-pool"
-          hint="Prefix untuk nama pool dan subdomain worker Cloudflare (contoh: cloudflare-relay-1, cloudflare-relay-2)."
-        />
-
-        <div class="flex flex-col gap-1.5">
-          <label for="cf-bulk-textarea" class="text-xs font-medium text-text-muted">Accounts List</label>
-          <textarea
-            id="cf-bulk-textarea"
-            bind:value={cloudflareBulkText}
-            disabled={bulkCloudflareDeploying}
-            placeholder={"email@example.com|account-id|api-token\nteam-account|account-id|api-token"}
-            spellcheck="false"
-            rows={10}
-            class="min-h-[220px] w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
-          ></textarea>
-        </div>
-
-        {#if cloudflareBulkProgress.total > 0}
-          <div class="rounded-lg border border-border bg-surface p-3 flex flex-col gap-2">
-            <div class="flex items-center justify-between text-xs font-medium">
-              <span class="text-text-main flex items-center gap-1.5">
-                {#if bulkCloudflareDeploying}
-                  <span class="inline-block size-2 rounded-full bg-brand-500 animate-pulse"></span>
-                {/if}
-                {bulkCloudflareDeploying
-                  ? `Deploying Batch ${cloudflareBulkProgress.currentBatch} of ${cloudflareBulkProgress.totalBatches}...`
-                  : 'Deployment Complete'}
-              </span>
-              <span class="font-mono text-text-muted">
-                {cloudflareBulkProgress.completed} / {cloudflareBulkProgress.total} ({Math.round(
-                  (cloudflareBulkProgress.completed / cloudflareBulkProgress.total) * 100
-                ) || 0}%)
-              </span>
-            </div>
-
-            <div class="flex h-2 w-full overflow-hidden rounded-full bg-surface-2">
-              <div
-                class="bg-emerald-500 transition-all duration-300"
-                style="width: {(cloudflareBulkProgress.success / cloudflareBulkProgress.total) * 100}%"
-                title="{cloudflareBulkProgress.success} succeeded"
-              ></div>
-              <div
-                class="bg-red-500 transition-all duration-300"
-                style="width: {(cloudflareBulkProgress.failed / cloudflareBulkProgress.total) * 100}%"
-                title="{cloudflareBulkProgress.failed} failed"
-              ></div>
-            </div>
-
-            <div class="flex items-center justify-between text-[11px] text-text-muted pt-0.5">
-              <div class="flex items-center gap-3">
-                <span class="flex items-center gap-1 text-emerald-500 font-medium">
-                  <span class="size-1.5 rounded-full bg-emerald-500"></span>
-                  {cloudflareBulkProgress.success} Success
-                </span>
-                <span class="flex items-center gap-1 text-red-500 font-medium">
-                  <span class="size-1.5 rounded-full bg-red-500"></span>
-                  {cloudflareBulkProgress.failed} Failed
-                </span>
-              </div>
-              <span>Concurrency: 10/batch</span>
-            </div>
-          </div>
-        {/if}
-
-        {#if cloudflareBulkResults.length > 0}
-          <div class="max-h-60 overflow-y-auto rounded-lg border border-border divide-y divide-border">
-            {#each cloudflareBulkResults as result}
-              <div class="flex items-start gap-3 p-2.5 text-xs">
-                <span class="w-6 shrink-0 text-text-muted font-mono">#{result.lineNumber}</span>
-                <div class="min-w-0 flex-1 flex flex-col gap-0.5">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="font-medium text-text-main">{result.label}</span>
-                    <Badge
-                      size="sm"
-                      variant={result.status === 'success'
-                        ? 'success'
-                        : result.status === 'failed'
-                          ? 'error'
-                          : result.status === 'running'
-                            ? 'warning'
-                            : 'neutral'}
-                    >
-                      {result.status}
-                    </Badge>
-                  </div>
-                  <p class="font-mono text-text-muted text-[11px]">
-                    {result.accountId} · {result.projectName}
-                  </p>
-                  {#if result.deployUrl}
-                    <p class="break-all text-emerald-500 text-[11px] font-mono">{result.deployUrl}</p>
-                  {/if}
-                  {#if result.error}
-                    <p class="break-words text-red-500 text-[11px]">{result.error}</p>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            fullWidth
-            onclick={handleCloudflareBulkDeploy}
-            disabled={!cloudflareBulkText.trim() || bulkCloudflareDeploying}
-          >
-            {bulkCloudflareDeploying
-              ? `Deploying (${cloudflareBulkProgress.completed}/${cloudflareBulkProgress.total})...`
-              : 'Deploy All'}
-          </Button>
-          <Button fullWidth variant="ghost" onclick={closeCloudflareBulkModal} disabled={bulkCloudflareDeploying}>
-            Close
-          </Button>
-        </div>
-      </div>
-    </Modal>
-
-    <Modal isOpen={showDenoModal} title="Deploy Deno Relay" onClose={closeDenoModal}>
-      <div class="flex flex-col gap-4">
-        <div
-          class="rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-3 flex flex-col gap-1.5"
-        >
-          <p class="text-sm text-text-main font-medium">What is Deno Relay?</p>
-          <p class="text-xs text-text-muted">
-            Deploys a relay worker to Deno Deploy's global edge network. All AI provider requests
-            are forwarded through Deno's edge, masking your real IP.
-          </p>
-          <ul class="text-xs text-text-muted list-disc pl-4 space-y-0.5">
-            <li>Deno Deploy v2 runs on a high-performance global edge network</li>
-            <li>Free tier: 1M requests & 100GiB outbound traffic per month</li>
-            <li>No per-request CPU time limits (unlike Vercel/Cloudflare)</li>
-            <li>Support up to 20 active apps & 50 custom domains</li>
-            <li>Deploy multiple relays for maximum IP diversity</li>
-          </ul>
-          <div
-            class="mt-2 pt-2 border-t border-black/10 dark:border-white/10 text-xs text-text-muted"
-          >
-            <p class="font-medium text-text-main mb-1">How to generate API token:</p>
-            <ol class="list-decimal pl-4 space-y-0.5">
-              <li>Go to <b>console.deno.com</b></li>
-              <li>Select your <b>Organization</b> → <b>Settings</b> → <b>Organization Tokens</b></li>
-              <li>Create a <b>Organization Token</b> (prefix <b>ddo_</b>)</li>
-            </ol>
-          </div>
-        </div>
-        <div>
-          <Input
-            label="Deno Deploy API Token"
-            type="password"
-            bind:value={denoForm.denoToken}
-            placeholder="ddo_xxxxxxxxxxxxxxxx"
-          />
-          <p class="text-xs text-text-muted mt-1">
-            Token is used once for deployment, not stored. Found in Organization Settings.
-          </p>
-        </div>
-        <Input
-          label="Organization Domain"
-          bind:value={denoForm.orgDomain}
-          placeholder="your-org.deno.net"
-          hint="Organization's default domain. Your relay URL will be in the format: https://my-relay.your-org.deno.net"
-        />
-        <Input
-          label="App Name"
-          bind:value={denoForm.projectName}
-          placeholder="deno-relay"
-          hint="Unique app name. Leave empty for auto-generated name."
-        />
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            fullWidth
-            onclick={handleDenoDeploy}
-            disabled={!denoForm.denoToken.trim() || !denoForm.orgDomain.trim() || deploying}
-          >
-            {deploying ? 'Deploying...' : 'Deploy Relay'}
-          </Button>
-          <Button fullWidth variant="ghost" onclick={closeDenoModal} disabled={deploying}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Modal>
-
-    <Modal
-      isOpen={showNetlifyModal}
-      title="Deploy Netlify Relay"
-      onClose={closeNetlifyModal}
-    >
-      <div class="flex flex-col gap-4">
-        <div
-          class="rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-3 flex flex-col gap-1.5"
-        >
-          <p class="text-sm text-text-main font-medium">What is Netlify Relay?</p>
-          <p class="text-xs text-text-muted">
-            Deploys a serverless relay function to Netlify's global edge network. All AI provider
-            requests are forwarded through Netlify's edge, masking your real IP.
-          </p>
-          <ul class="text-xs text-text-muted list-disc pl-4 space-y-0.5">
-            <li>
-              Runs on Netlify Functions with a streaming response and a 30-second execution limit
-            </li>
-            <li>Free tier: 125,000 function invocations and 100GB bandwidth per month</li>
-            <li>Relay URL format: https://your-site.netlify.app/.netlify/functions/relay</li>
-            <li>Deploy multiple relays on different accounts for more IP diversity</li>
-          </ul>
-          <div
-            class="mt-2 pt-2 border-t border-black/10 dark:border-white/10 text-xs text-text-muted"
-          >
-            <p class="font-medium text-text-main mb-1">How to generate API token:</p>
-            <ol class="list-decimal pl-4 space-y-0.5">
-              <li>Go to <b>User Settings</b> → <b>Applications</b> → <b>Personal access tokens</b></li>
-              <li>Select <b>New access token</b> and generate a token</li>
-              <li>Copy the token — you won't see it again after leaving the page</li>
-            </ol>
-          </div>
-        </div>
-        <div>
-          <Input
-            label="Netlify API Token"
-            type="password"
-            bind:value={netlifyForm.netlifyToken}
-            placeholder="nfp_xxxxxxxxxxxxxxxx"
-          />
-          <p class="text-xs text-text-muted mt-1">Token is used once for deployment, not stored.</p>
-        </div>
-        <Input
-          label="Site Name"
-          bind:value={netlifyForm.projectName}
-          placeholder="netlify-relay"
-          hint="Unique site name (lowercase letters, numbers, hyphens). Your relay URL will be https://site-name.netlify.app/.netlify/functions/relay"
-        />
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Button
-            fullWidth
-            onclick={handleNetlifyDeploy}
-            disabled={!netlifyForm.netlifyToken.trim() || deploying}
-          >
-            {deploying ? 'Deploying...' : 'Deploy Relay'}
-          </Button>
-          <Button fullWidth variant="ghost" onclick={closeNetlifyModal} disabled={deploying}>
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </Modal>
 
     <Modal
       isOpen={showFormModal}
@@ -2717,17 +1393,47 @@
             </div>
           {:else}
             <div>
+              <label for="bulk-group" class="text-sm font-medium text-text-main mb-1 block">
+                Import into Group (optional)
+              </label>
+              <div class="flex flex-col gap-2 sm:flex-row">
+                <select
+                  id="bulk-group"
+                  bind:value={batchGroupChoice}
+                  class="h-9 rounded-lg border border-border-subtle bg-surface-2 px-2 text-sm text-text-main outline-none transition-colors hover:bg-surface-3 cursor-pointer"
+                >
+                  <option value="">No group</option>
+                  {#each availableGroups as grp}
+                    <option value={grp}>{grp}</option>
+                  {/each}
+                  <option value="__new__">New group…</option>
+                </select>
+                {#if batchGroupChoice === '__new__'}
+                  <input
+                    type="text"
+                    bind:value={batchGroupNew}
+                    placeholder="New group name"
+                    aria-label="New group name"
+                    class="h-9 min-w-0 flex-1 rounded-lg border border-border-subtle bg-surface-2 px-2 text-sm text-text-main outline-none placeholder:text-text-muted focus:border-primary/50"
+                  />
+                {/if}
+              </div>
+            </div>
+
+            <div>
               <label for="bulk-proxies" class="text-sm font-medium text-text-main mb-1 block">
                 Paste Proxy List (One per line)
               </label>
               <textarea
                 id="bulk-proxies"
                 bind:value={batchImportText}
-                placeholder={'http://user:pass@127.0.0.1:7897\n127.0.0.1:7897:user:pass'}
+                placeholder={'http://user:pass@127.0.0.1:7897\n127.0.0.1:7897:user:pass\nuser:pass@127.0.0.1:7897\n127.0.0.1:7897'}
                 class="w-full min-h-[180px] py-2 px-3 text-sm text-text-main bg-surface-2 border border-transparent rounded-brand focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all font-mono"
               ></textarea>
               <p class="text-xs text-text-muted mt-1">
-                Supported formats: protocol://user:pass@host:port, host:port:user:pass
+                Supported formats: protocol://user:pass@host:port, host:port:user:pass,
+                user:pass@host:port, host:port. Invalid lines are reported and left in the
+                box — valid lines still import.
               </p>
             </div>
 
@@ -2743,6 +1449,28 @@
         {/if}
       </div>
     </Modal>
+
+    <GroupMembersModal
+      isOpen={!!membersModalGroup}
+      groupName={membersModalGroup || ''}
+      pools={proxyPools}
+      busy={membersSaving}
+      onSave={saveGroupMembers}
+      onClose={() => (membersModalGroup = null)}
+    />
+
+    <GroupPickerModal
+      isOpen={!!groupPicker}
+      title={groupPicker?.mode === 'single'
+        ? `Set group — ${groupPicker.pool.name}`
+        : `Set group for ${selectedIds.length} selected pool${selectedIds.length === 1 ? '' : 's'}`}
+      groups={groupCounts}
+      showUngroup={groupPicker?.mode === 'bulk' ||
+        (groupPicker?.mode === 'single' && !!(groupPicker.pool.group || '').trim())}
+      busy={groupAssigning}
+      onPick={handleGroupPick}
+      onClose={() => (groupPicker = null)}
+    />
 
     <Modal
       isOpen={!!confirmState}

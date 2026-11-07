@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api } from '../../api/client'
+  import { api, type ProxyPool } from '../../api/client'
+  import { deriveProxyGroups, deriveProxyTypes } from '../../lib/proxyBindings'
   import Badge from '../../lib/ui/Badge.svelte'
   import Card from '../../lib/ui/Card.svelte'
   import ProxyResolutionNote from './ProxyResolutionNote.svelte'
@@ -13,7 +14,7 @@
 
   const NONE_PROXY_POOL_VALUE = '__none__'
 
-  let proxyPools = $state<Array<{ type?: string; group?: string; isActive?: boolean }>>([])
+  let proxyPools = $state<ProxyPool[]>([])
   let proxyPoolId = $state(NONE_PROXY_POOL_VALUE)
   let saving = $state(false)
   let savedFlash = $state(false)
@@ -95,31 +96,21 @@
   // selector could not resolve. Type-backed selection lives on the
   // Type chips below, which is also how the rest of the dashboard
   // derives group options.
-  let allProxyGroups = $derived.by(() => {
-    const counts = new Map<string, number>()
-    for (const p of proxyPools) {
-      const g = (p.group || '').trim()
-      if (!g) continue
-      if (!counts.has(g)) counts.set(g, 0)
-      if (p.isActive) counts.set(g, (counts.get(g) ?? 0) + 1)
-    }
-    return Array.from(counts.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([name, activeCount]) => ({ id: `group:${name}`, label: name, activeCount }))
-  })
+  let allProxyGroups = $derived(
+    deriveProxyGroups(proxyPools).map((g) => ({
+      id: `group:${g.name}`,
+      label: g.name,
+      activeCount: g.active,
+    }))
+  )
 
-  let allProxyTypes = $derived.by(() => {
-    const counts = new Map<string, number>()
-    for (const p of proxyPools) {
-      const t = (p.type || '').trim()
-      if (!t) continue
-      if (!counts.has(t)) counts.set(t, 0)
-      if (p.isActive) counts.set(t, (counts.get(t) ?? 0) + 1)
-    }
-    return Array.from(counts.entries())
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([type, activeCount]) => ({ id: `type:${type}`, label: type, activeCount }))
-  })
+  let allProxyTypes = $derived(
+    deriveProxyTypes(proxyPools).map((t) => ({
+      id: `type:${t.type}`,
+      label: t.type,
+      activeCount: t.active,
+    }))
+  )
 </script>
 
 <Card>
@@ -151,7 +142,7 @@
           : 'bg-surface-2 text-text-main border-border hover:bg-surface-3 disabled:opacity-50'}"
       >
         <span class="material-symbols-outlined text-[16px]">link_off</span>
-        <span>Direct (None)</span>
+        <span>Direct (no proxy)</span>
       </button>
       {#each allProxyGroups as grp}
         {@const isSelected = proxyPoolId === grp.id || proxyPoolId === grp.id.replace('group:', '')}
