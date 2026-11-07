@@ -303,13 +303,12 @@
   {:else}
     <!-- Desktop table -->
     <div class="hidden overflow-x-auto sm:block">
-      <table class="w-full min-w-[760px] border-collapse text-xs">
+      <table class="w-full min-w-[700px] border-collapse text-xs">
         <thead>
           <tr class="border-b border-border">
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">Model</th>
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">Upstream Account</th>
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">API Key</th>
-            <th class="py-2 pr-2 text-left font-semibold text-text-muted">Proxy</th>
             <th class="py-2 pr-2 text-right font-semibold whitespace-nowrap text-text-muted">Tokens In/Out</th>
             <th class="py-2 pr-2 text-right font-semibold text-text-muted">Cost</th>
             <th class="py-2 pr-2 text-right font-semibold text-text-muted">When</th>
@@ -326,17 +325,19 @@
                   {@render modeBadge(row.isStream !== false)}
                 </div>
               </td>
-              <td class="max-w-[160px] truncate py-2 pr-2" title={row.account || 'Direct (Free)'}>{row.account || 'Direct (Free)'}</td>
+              <td class="max-w-[160px] py-2 pr-2">
+                <div class="truncate" title={row.account || 'Direct (Free)'}>{row.account || 'Direct (Free)'}</div>
+                <div class="mt-1">
+                  {#if proxyLabel(row) !== 'direct'}
+                    <span class="inline-block rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title={proxyLabel(row)}>{proxyLabel(row)}</span>
+                  {:else}
+                    <span class="inline-block rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted">direct</span>
+                  {/if}
+                </div>
+              </td>
               <td class="max-w-[180px] py-2 pr-2">
                 <div class="truncate font-medium text-text-main" title={row.clientApiKey || row.apiKeyName || undefined}>{row.apiKeyName || row.clientApiKey || '—'}</div>
                 <div class="mt-0.5 truncate font-mono text-[10px] text-text-muted" title={row.clientIp || undefined}>{row.clientIp || '—'}</div>
-              </td>
-              <td class="py-2 pr-2 whitespace-nowrap font-mono text-[11px]">
-                {#if proxyLabel(row) !== 'direct'}
-                  <span class="inline-block rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title={proxyLabel(row)}>{proxyLabel(row)}</span>
-                {:else}
-                  <span class="inline-block rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted">direct</span>
-                {/if}
               </td>
               <td class="py-2 pr-2 text-right whitespace-nowrap tabular-nums">{fmtNumberUS(row.tokens?.prompt_tokens)} / {fmtNumberUS(row.tokens?.completion_tokens)}</td>
               <td class="py-2 pr-2 text-right whitespace-nowrap tabular-nums">{row.cost != null ? fmtCost(row.cost) : '—'}</td>
@@ -369,6 +370,11 @@
             <span class="inline-block rounded-full border border-border bg-surface px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
             {@render modeBadge(row.isStream !== false)}
             <span>{row.account || 'Direct (Free)'}</span>
+            {#if proxyLabel(row) !== 'direct'}
+              <span class="inline-block rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title={proxyLabel(row)}>{proxyLabel(row)}</span>
+            {:else}
+              <span class="inline-block rounded-full border border-border bg-surface px-1.5 py-0.5 text-[10px] text-text-muted">direct</span>
+            {/if}
             <span class="tabular-nums">{fmtNumberUS(row.tokens?.prompt_tokens)} / {fmtNumberUS(row.tokens?.completion_tokens)}</span>
             <span>{row.cost != null ? fmtCost(row.cost) : '—'}</span>
             <span>{relTime(row.timestamp)}</span>
