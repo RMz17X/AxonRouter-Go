@@ -50,10 +50,7 @@ const PLANS_LINK: NavLink = { kind: 'link', id: 'plans', label: 'Plans', icon: '
  * an advanced surface. The `advanced` preset (NAV_PRESETS below) reveals it
  * alongside Plans, and an operator can also reveal it by hand in Settings.
  */
-export const DEFAULT_HIDDEN_NAV_ENTRIES: NavLink[] = [
-  PLANS_LINK,
-  { kind: 'link', id: 'jailbreak', label: 'Persona', icon: 'masks' },
-]
+export const DEFAULT_HIDDEN_NAV_ENTRIES: NavLink[] = [PLANS_LINK]
 
 /**
  * What a deployment that never saved a hide list hides. Only an absent or
@@ -177,7 +174,7 @@ export const NAV_PRESETS: NavPresetDef[] = [
   {
     id: 'default',
     label: 'Default',
-    hint: 'Plans and Persona hidden, everything else in place',
+    hint: 'Plans hidden, everything else in place',
     visible: NAV_ORDER.filter((id) => !DEFAULT_HIDDEN_NAV_IDS.includes(id)),
   },
   {
