@@ -53,6 +53,10 @@
         <input type="radio" name="preset-position" value="append" bind:group={form.position} class="accent-brand-500" />
         Append (after existing system prompt)
       </label>
+      <label class="flex cursor-pointer items-center gap-2 text-xs text-text-main">
+        <input type="radio" name="preset-position" value="replace" bind:group={form.position} class="accent-brand-500" />
+        Replace (discard the client's system prompt)
+      </label>
     </div>
   </div>
 

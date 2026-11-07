@@ -119,12 +119,15 @@ func toAnySlice(v any) []any {
 	}
 }
 
-// injectSystemPrompt injects the configured prompt into the body at the requested position ("prepend" or "append").
+// injectSystemPrompt injects the configured prompt into the body at the requested
+// position ("prepend", "append", or "replace"). Prepend and append keep the
+// client's own system content and place the prompt before or after it; replace
+// discards the client's system content so the prompt is the only system content.
 func injectSystemPrompt(body map[string]any, prompt string, position string) {
 	if prompt == "" || body == nil {
 		return
 	}
-	if position != "append" {
+	if position != "append" && position != "replace" {
 		position = "prepend"
 	}
 
@@ -135,7 +138,9 @@ func injectSystemPrompt(body map[string]any, prompt string, position string) {
 			if strings.Contains(v, prompt) {
 				return // idempotent
 			}
-			if position == "append" {
+			if position == "replace" {
+				body["system"] = prompt
+			} else if position == "append" {
 				body["system"] = v + "\n\n" + prompt
 			} else {
 				body["system"] = prompt + "\n\n" + v
@@ -150,7 +155,9 @@ func injectSystemPrompt(body map[string]any, prompt string, position string) {
 				}
 			}
 			block := map[string]any{"type": "text", "text": prompt}
-			if position == "append" {
+			if position == "replace" {
+				body["system"] = []any{block}
+			} else if position == "append" {
 				body["system"] = append(v, block)
 			} else {
 				body["system"] = append([]any{block}, v...)
@@ -171,7 +178,9 @@ func injectSystemPrompt(body map[string]any, prompt string, position string) {
 					}
 				}
 				part := map[string]any{"text": prompt}
-				if position == "append" {
+				if position == "replace" {
+					si["parts"] = []any{part}
+				} else if position == "append" {
 					si["parts"] = append(parts, part)
 				} else {
 					si["parts"] = append([]any{part}, parts...)
@@ -208,6 +217,35 @@ func injectSystemPrompt(body map[string]any, prompt string, position string) {
 	}
 
 	newSysMsg := map[string]any{"role": "system", "content": prompt}
+
+	if position == "replace" {
+		// Drop every system/developer message; the persona message takes the
+		// slot of the first one removed (index 0 when there were none), so the
+		// remaining messages keep their relative order.
+		kept := make([]any, 0, len(msgs))
+		insertIdx := -1
+		for _, m := range msgs {
+			if msgMap, ok := m.(map[string]any); ok {
+				role, _ := msgMap["role"].(string)
+				if role == "system" || role == "developer" {
+					if insertIdx < 0 {
+						insertIdx = len(kept)
+					}
+					continue
+				}
+			}
+			kept = append(kept, m)
+		}
+		if insertIdx < 0 {
+			insertIdx = 0
+		}
+		var newMsgs []any
+		newMsgs = append(newMsgs, kept[:insertIdx]...)
+		newMsgs = append(newMsgs, newSysMsg)
+		newMsgs = append(newMsgs, kept[insertIdx:]...)
+		body["messages"] = newMsgs
+		return
+	}
 
 	if position == "append" {
 		// Find index after the last system/developer message

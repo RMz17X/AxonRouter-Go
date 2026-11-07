@@ -985,7 +985,7 @@ export interface JailbreakDoc {
   prompt: string
   geminiSafety: boolean
   mode?: 'single' | 'chat'
-  position?: 'prepend' | 'append'
+  position?: 'prepend' | 'append' | 'replace'
   turns?: ChatTurn[]
   source?: string
   /** Instruction-file convention: AGENTS, SOUL, PERSONA, LOAD, … */

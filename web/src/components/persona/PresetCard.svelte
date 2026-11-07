@@ -103,6 +103,10 @@
           <span class="rounded-full border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-blue-400">
             Append
           </span>
+        {:else if preset.position === 'replace'}
+          <span class="rounded-full border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-red-400">
+            Replace
+          </span>
         {:else}
           <span class="rounded-full border border-border-subtle bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
             Prepend

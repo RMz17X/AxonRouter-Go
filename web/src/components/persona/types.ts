@@ -13,7 +13,7 @@ export interface PresetFormState {
   kind: string
   geminiSafety: boolean
   mode: 'single' | 'chat'
-  position: 'prepend' | 'append'
+  position: 'prepend' | 'append' | 'replace'
   turns: ChatTurn[]
   source: string
   keywords: JailbreakKeyword[]
@@ -51,7 +51,8 @@ export function presetToForm(preset: JailbreakDoc): PresetFormState {
     kind: preset.kind || '',
     geminiSafety: !!preset.geminiSafety,
     mode: preset.mode === 'chat' ? 'chat' : 'single',
-    position: preset.position === 'append' ? 'append' : 'prepend',
+    position:
+      preset.position === 'append' || preset.position === 'replace' ? preset.position : 'prepend',
     turns:
       preset.turns && preset.turns.length > 0
         ? preset.turns.map((t) => ({ ...t }))

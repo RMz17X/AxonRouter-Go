@@ -29,7 +29,8 @@ type JailbreakDoc struct {
 	GeminiSafety bool   `json:"geminiSafety"`
 	// Mode decides between "single" (default system prompt) and "chat" (scripted fake history turns).
 	Mode string `json:"mode,omitempty"`
-	// Position determines injection placement: "prepend" (default) or "append".
+	// Position determines injection placement: "prepend" (default), "append",
+	// or "replace" (the client's own system content is discarded).
 	Position string `json:"position,omitempty"`
 	// Turns holds the scripted conversation turns when Mode == "chat".
 	Turns []ChatTurn `json:"turns,omitempty"`
