@@ -84,7 +84,7 @@
   import AddConnectionModal from './AddConnectionModal.svelte'
   import BulkImportJwtModal from './BulkImportJwtModal.svelte'
   import { supportsJwtBulkImport } from '../../lib/bulk-add'
-  import { deriveProxyGroups, deriveProxyTypes } from '../../lib/proxyBindings'
+  import { deriveProxyGroups, deriveProxyTypes, normalizeProxyTarget, parseProxyTargetParts, splitProxyTarget } from '../../lib/proxyBindings'
   import AddCustomModelModal from './AddCustomModelModal.svelte'
   import { nodeLimitsDraftOf, nodeLimitsSummary, nodeLimitsUsageSummary } from '../../lib/node-limits'
   import type { ProviderNodeLimitsPatch } from '../../api/client'
@@ -488,6 +488,27 @@
   let stickyLimit = $state('1')
   let thinkingLevel = $state('auto')
   let lockedProxyGroup = $state('')
+  let proxyLockOpen = $state(false)
+  let proxyLockPos = $state({ top: 0, right: 0 })
+  // The lock's display label and group selection, derived from the
+  // stored selector: a single group/type keeps its "Group: X" /
+  // "Type: X" label; several groups read "Groups: A + B".
+  let lockedProxyParts = $derived(parseProxyTargetParts(lockedProxyGroup))
+  let lockedGroupNames = $derived(
+    splitProxyTarget(lockedProxyGroup)
+      .filter((part) => part.startsWith('group:'))
+      .map((part) => part.slice(6))
+  )
+  let lockedProxyLabel = $derived.by(() => {
+    if (!lockedProxyGroup) return 'None (direct)'
+    const names = lockedProxyParts.map((p) => p.name).join(' + ')
+    if (lockedProxyParts.length > 1) {
+      if (lockedProxyParts.every((p) => p.kind === 'group')) return `Groups ${names}`
+      if (lockedProxyParts.every((p) => p.kind === 'type')) return `Types ${names}`
+      return `Multi ${names}`
+    }
+    return lockedProxyParts[0]?.kind === 'type' ? `Type ${names}` : `Group ${names}`
+  })
 
   // Proxy Pools
   let proxyPools = $state<ProxyPool[]>([])
@@ -1045,9 +1066,13 @@
       const strategy = settingsData?.providerStrategies?.[providerId]
       isRoundRobin = strategy?.fallbackStrategy === 'round-robin'
       stickyLimit = String(strategy?.stickyRoundRobinLimit ?? 1)
+      // normalizeProxyTarget, never a hand-rolled `group:${...}`: a
+      // proxyGroup stored already-prefixed ("group:ISP-BD") used to come
+      // back as "group:group:ISP-BD", a selector matching no pool, so
+      // every badge under the lock painted red while traffic flowed.
       lockedProxyGroup =
         (strategy?.proxyPoolId?.startsWith('group:') || strategy?.proxyPoolId?.startsWith('type:') ? strategy.proxyPoolId : '') ||
-        (strategy?.proxyGroup ? `group:${strategy.proxyGroup}` : '') ||
+        (strategy?.proxyGroup ? normalizeProxyTarget(strategy.proxyGroup) : '') ||
         ''
 
       // Extract Thinking Level
@@ -1479,8 +1504,7 @@
     return proxyBadgeInfo(conn, proxyPools, lockedProxyGroup)
   }
 
-  async function handleProxyGroupLockChange(e: Event) {
-    const val = (e.currentTarget as HTMLSelectElement).value
+  async function applyProxyGroupLock(val: string) {
     lockedProxyGroup = val
     try {
       const existing = settings?.providerStrategies || {}
@@ -1495,12 +1519,18 @@
       if (!val) {
         delete currentStrat.proxyPoolId
         delete currentStrat.proxyGroup
-      } else if (val.startsWith('group:')) {
-        currentStrat.proxyPoolId = val
-        currentStrat.proxyGroup = val.slice(6)
-      } else if (val.startsWith('type:')) {
+      } else if (val.startsWith('type:') && !val.includes(',')) {
         currentStrat.proxyPoolId = val
         delete currentStrat.proxyGroup
+      } else {
+        // A group selector, single ("group:A") or multi
+        // ("group:A,group:B"): proxyPoolId carries the selector and
+        // proxyGroup mirrors the bare name(s), comma-joined.
+        currentStrat.proxyPoolId = val
+        currentStrat.proxyGroup = val
+          .split(',')
+          .map((part) => part.replace(/^group:/, ''))
+          .join(',')
       }
       const updated = { ...existing, [providerId]: currentStrat }
       if (settings) settings.providerStrategies = updated
@@ -1508,6 +1538,31 @@
     } catch (err) {
       console.error('Failed to lock proxy group:', err)
     }
+  }
+
+  // Multi-group lock: toggling a group rewrites the selector from the
+  // selected names (in picker order, so the stored value is stable) and
+  // keeps the popover open for the next toggle. A type choice stays
+  // single — picking one replaces any group selection, and vice versa.
+  function toggleLockGroup(name: string) {
+    const selected = new Set(lockedGroupNames)
+    if (selected.has(name)) selected.delete(name)
+    else selected.add(name)
+    const names = availableProxyGroups.map((g) => g.name).filter((n) => selected.has(n))
+    applyProxyGroupLock(names.map((n) => `group:${n}`).join(','))
+  }
+
+  function toggleProxyLockMenu(e: MouseEvent) {
+    if (proxyLockOpen) {
+      proxyLockOpen = false
+      return
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    proxyLockPos = {
+      top: rect.bottom + 4,
+      right: Math.max(8, window.innerWidth - rect.right)
+    }
+    proxyLockOpen = true
   }
 
   // Proxy assignment
@@ -3712,27 +3767,79 @@
               <span class="material-symbols-outlined text-[16px] {lockedProxyGroup ? 'text-primary' : 'text-text-muted'}">lock</span>
               Proxy Lock:
             </span>
-            <select
-              value={lockedProxyGroup}
-              onchange={handleProxyGroupLockChange}
-              class="bg-surface-2 border border-border rounded-lg px-2 py-1 text-xs text-text-main focus:outline-none focus:border-primary cursor-pointer"
-            >
-              <option value="">None (direct)</option>
-              {#if availableProxyGroups.length > 0}
-                <optgroup label="Proxy Groups">
-                  {#each availableProxyGroups as grp}
-                    <option value="group:{grp.name}">Group: {grp.name} ({grp.active} active)</option>
-                  {/each}
-                </optgroup>
+            <div class="relative">
+              <button
+                type="button"
+                onclick={toggleProxyLockMenu}
+                class="flex items-center gap-1 bg-surface-2 border border-border rounded-lg px-2 py-1 text-xs text-text-main focus:outline-none focus:border-primary cursor-pointer"
+              >
+                <span class="max-w-[220px] truncate">{lockedProxyLabel}</span>
+                <span class="material-symbols-outlined text-[16px] text-text-muted">expand_more</span>
+              </button>
+              {#if proxyLockOpen}
+                <!-- Backdrop -->
+                <div
+                  class="fixed inset-0 z-[80]"
+                  onclick={() => (proxyLockOpen = false)}
+                  role="presentation"
+                ></div>
+                <div
+                  class="fixed z-[85] w-[270px] max-w-[85vw] max-h-[340px] overflow-y-auto rounded-xl border border-border bg-surface shadow-2xl py-1"
+                  style="top: {proxyLockPos.top}px; right: {proxyLockPos.right}px;"
+                >
+                  <div class="p-1">
+                    <button
+                      type="button"
+                      onclick={() => { proxyLockOpen = false; applyProxyGroupLock('') }}
+                      class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {!lockedProxyGroup ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
+                    >
+                      <span class="truncate">None (direct)</span>
+                      {#if !lockedProxyGroup}
+                        <span class="material-symbols-outlined text-[16px] text-primary shrink-0">check</span>
+                      {/if}
+                    </button>
+                  </div>
+                  {#if availableProxyGroups.length > 0}
+                    <div class="border-t border-border/60 px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                      Proxy Groups — select one or more
+                    </div>
+                    <div class="p-1">
+                      {#each availableProxyGroups as grp}
+                        <label class="flex items-center gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {lockedGroupNames.includes(grp.name) ? 'text-primary font-medium' : 'text-text-main'}">
+                          <input
+                            type="checkbox"
+                            checked={lockedGroupNames.includes(grp.name)}
+                            onchange={() => toggleLockGroup(grp.name)}
+                            class="h-3.5 w-3.5 shrink-0 accent-[var(--color-primary)]"
+                          />
+                          <span class="flex-1 truncate">Group: {grp.name}</span>
+                          <span class="text-text-muted font-normal">({grp.active} active)</span>
+                        </label>
+                      {/each}
+                    </div>
+                  {/if}
+                  {#if availableProxyTypes.length > 0}
+                    <div class="border-t border-border/60 px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide text-text-muted">
+                      Proxy Types — single selection
+                    </div>
+                    <div class="p-1">
+                      {#each availableProxyTypes as typ}
+                        <button
+                          type="button"
+                          onclick={() => { proxyLockOpen = false; applyProxyGroupLock(`type:${typ.type}`) }}
+                          class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {lockedProxyGroup === `type:${typ.type}` ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
+                        >
+                          <span class="truncate">Type: {typ.type} ({typ.active} active)</span>
+                          {#if lockedProxyGroup === `type:${typ.type}`}
+                            <span class="material-symbols-outlined text-[16px] text-primary shrink-0">check</span>
+                          {/if}
+                        </button>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
               {/if}
-              {#if availableProxyTypes.length > 0}
-                <optgroup label="Proxy Types">
-                  {#each availableProxyTypes as typ}
-                    <option value="type:{typ.type}">Type: {typ.type} ({typ.active} active)</option>
-                  {/each}
-                </optgroup>
-              {/if}
-            </select>
+            </div>
           </div>
         </div>
       </div>
@@ -4276,7 +4383,7 @@
                                   <div class="flex items-center gap-2 truncate">
                                     <span class="material-symbols-outlined text-[16px] text-primary">lock</span>
                                     <div class="flex flex-col text-left truncate">
-                                      <span class="truncate font-medium">Auto: Group {lockedProxyGroup.replace(/^(group|type):/, '')}</span>
+                                      <span class="truncate font-medium">Auto: {lockedProxyLabel}</span>
                                       <span class="text-[10px] text-text-muted font-normal">Inherit provider lock (Default)</span>
                                     </div>
                                   </div>

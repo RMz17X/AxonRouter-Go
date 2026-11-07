@@ -82,14 +82,10 @@ func (h *DashboardHandler) HandleProviderProxyResolution(w http.ResponseWriter, 
 
 	selector := singleID
 	if selector == "" && proxyGroup != "" {
-		switch {
-		case strings.HasPrefix(proxyGroup, "group:") || strings.HasPrefix(proxyGroup, "type:"):
-			selector = proxyGroup
-		case db.IsKnownProxyType(proxyGroup):
-			selector = "type:" + proxyGroup
-		default:
-			selector = "group:" + proxyGroup
-		}
+		// The same derivation the chat resolver applies
+		// (db.NormalizeProxyTarget): per comma-separated part, so a
+		// multi binding reads out as the union the chat path will use.
+		selector = db.NormalizeProxyTarget(proxyGroup)
 	}
 
 	switch {
@@ -101,11 +97,27 @@ func (h *DashboardHandler) HandleProviderProxyResolution(w http.ResponseWriter, 
 				"id": p.ID, "name": p.Name, "type": p.Type, "group": p.Group,
 			})
 		}
+		// The binding label names the selector's shape: a single kind
+		// keeps its name ("group" also when every part of a multi
+		// selector is a group), a mixed multi selector is "multi".
 		binding := "pool"
-		if strings.HasPrefix(selector, "group:") {
-			binding = "group"
-		} else if strings.HasPrefix(selector, "type:") {
-			binding = "type"
+		kinds := map[string]bool{}
+		for _, part := range db.SplitProxyTarget(selector) {
+			switch {
+			case strings.HasPrefix(part, "group:"):
+				kinds["group"] = true
+			case strings.HasPrefix(part, "type:"):
+				kinds["type"] = true
+			default:
+				kinds["pool"] = true
+			}
+		}
+		if len(kinds) == 1 {
+			for kind := range kinds {
+				binding = kind
+			}
+		} else if len(kinds) > 1 {
+			binding = "multi"
 		}
 		out["binding"] = binding
 		out["selector"] = selector

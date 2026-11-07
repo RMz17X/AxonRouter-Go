@@ -39,6 +39,66 @@ export function deriveProxyGroups(pools: ProxyPool[]): ProxyGroupSummary[] {
   return Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name))
 }
 
+// Binding-target helpers, shared by every surface that reads or writes a
+// proxy selector (the badge, the provider lock, the connection modal).
+// A target is one selector or a comma-separated list of them; each part
+// is a pool ID, a "group:<name>" or "type:<key>" selector, or a bare
+// name. These mirror the backend's SplitProxyTarget /
+// NormalizeProxyTarget (internal/db/proxyPools.go) so the dashboard's
+// derivations cannot drift from the resolver's.
+export function splitProxyTarget(target: string): string[] {
+  return target
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '' && part !== '__none__')
+}
+
+export interface ProxyTargetPart {
+  kind: 'group' | 'type' | 'bare'
+  name: string
+}
+
+// parseProxyTargetParts classifies each part of a target. The kind comes
+// from the part's first prefix; repeated prefixes ("group:group:X" —
+// the double-prefix a derivation bug once stored) are stripped so the
+// name is the real group or type name either way.
+export function parseProxyTargetParts(target: string): ProxyTargetPart[] {
+  return splitProxyTarget(target).map((raw) => {
+    let name = raw
+    let kind: ProxyTargetPart['kind'] = 'bare'
+    for (;;) {
+      if (name.startsWith('group:')) {
+        if (kind === 'bare') kind = 'group'
+        name = name.slice(6)
+      } else if (name.startsWith('type:')) {
+        if (kind === 'bare') kind = 'type'
+        name = name.slice(5)
+      } else {
+        break
+      }
+    }
+    return { kind, name }
+  })
+}
+
+// The bare values the backend treats as proxy types rather than group
+// names (isKnownProxyType in internal/db and internal/handlers/chat).
+const KNOWN_PROXY_TYPES = ['http', 'cloudflare', 'vercel', 'deno', 'netlify']
+
+// normalizeProxyTarget converts a stored proxyGroup value into selector
+// form: each part keeps an explicit prefix, a bare known type becomes a
+// type selector, any other bare value becomes a group selector. An
+// already-prefixed value passes through unchanged — prefixing it again
+// was the all-red-badges bug ("group:group:ISP-BD" matches no pool).
+export function normalizeProxyTarget(value: string): string {
+  return splitProxyTarget(value)
+    .map((part) => {
+      if (part.startsWith('group:') || part.startsWith('type:')) return part
+      return KNOWN_PROXY_TYPES.includes(part.toLowerCase()) ? `type:${part}` : `group:${part}`
+    })
+    .join(',')
+}
+
 export function deriveProxyTypes(pools: ProxyPool[]): ProxyTypeSummary[] {
   const byType = new Map<string, ProxyTypeSummary>()
   for (const p of pools) {

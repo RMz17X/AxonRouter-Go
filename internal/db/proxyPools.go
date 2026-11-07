@@ -417,14 +417,85 @@ func (r *Repo) DisableProxyPool(id string) error {
 	return r.UpdateProxyPool(id, map[string]any{"isActive": false})
 }
 
+// SplitProxyTarget splits a proxy binding target into its individual
+// selectors. A target is either a single selector or a comma-separated
+// list of them (a multi-group/type binding); the result is the parts in
+// order, trimmed, with blank and "__none__" parts dropped — they carry
+// no selection. A single selector returns a one-element slice.
+func SplitProxyTarget(target string) []string {
+	var parts []string
+	for _, raw := range strings.Split(target, ",") {
+		part := strings.TrimSpace(raw)
+		if part == "" || part == "__none__" {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	return parts
+}
+
+// NormalizeProxyTarget converts a stored proxyGroup value into the
+// selector form ActivePoolsByTarget matches: each comma-separated part
+// keeps an explicit "group:"/"type:" prefix, a bare value naming a
+// known proxy type becomes a type selector, and any other bare value
+// becomes a group selector. A comma-free value normalises exactly as
+// the historical single-selector derivation did. This is the one
+// derivation the chat resolver and the dashboard's proxy-resolution
+// readout share, so the two can never drift apart again.
+func NormalizeProxyTarget(target string) string {
+	if target == "" {
+		return ""
+	}
+	if !strings.Contains(target, ",") {
+		return normalizeProxyTargetPart(target)
+	}
+	parts := SplitProxyTarget(target)
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		out = append(out, normalizeProxyTargetPart(part))
+	}
+	return strings.Join(out, ",")
+}
+
+func normalizeProxyTargetPart(part string) string {
+	switch {
+	case strings.HasPrefix(part, "group:") || strings.HasPrefix(part, "type:"):
+		return part
+	case isKnownProxyType(part):
+		return "type:" + part
+	default:
+		return "group:" + part
+	}
+}
+
 // ActivePoolsByTarget returns active proxy pools matching target (pool ID,
 // fixed type "type:<type>" / "<type>", or group "group:<name>" / "<name>").
+// The target may also be a comma-separated list of selectors, in which
+// case the result is the union of every selector's matches, deduplicated
+// by pool ID in first-seen order.
 func (r *Repo) ActivePoolsByTarget(target string) []*ProxyPool {
 	target = strings.TrimSpace(target)
 	if target == "" || target == "__none__" {
 		return nil
 	}
+	var matched []*ProxyPool
+	seen := make(map[string]bool)
+	for _, part := range SplitProxyTarget(target) {
+		for _, pool := range r.activePoolsBySingleTarget(part) {
+			if seen[pool.ID] {
+				continue
+			}
+			seen[pool.ID] = true
+			matched = append(matched, pool)
+		}
+	}
+	return matched
+}
 
+// activePoolsBySingleTarget is ActivePoolsByTarget for exactly one
+// selector: a pool ID, a fixed type, or a group name, each in prefixed
+// or bare form.
+func (r *Repo) activePoolsBySingleTarget(target string) []*ProxyPool {
 	var matchType, matchGroup string
 	switch {
 	case strings.HasPrefix(strings.ToLower(target), "type:"):

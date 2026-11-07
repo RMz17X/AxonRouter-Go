@@ -83,20 +83,14 @@ func (h *ChatHandler) resolveProviderProxyPoolID(provider string, excluded map[s
 		}
 	}
 	if singleID == "" && proxyGroup != "" {
-		if strings.HasPrefix(proxyGroup, "group:") || strings.HasPrefix(proxyGroup, "type:") {
-			singleID = proxyGroup
-		} else if isKnownProxyType(proxyGroup) {
-			// A bare value naming a known proxy TYPE is a type binding,
-			// not a group: the dashboard's provider lock used to store
-			// its Type options as a bare proxyGroup, and prefixing those
-			// with "group:" sent the resolver looking for pools whose
-			// group field equals the type name — a selection that
-			// resolves to nothing and silently falls back to direct.
-			// This mirrors ActivePoolsByTarget's own bare-target rule.
-			singleID = "type:" + proxyGroup
-		} else {
-			singleID = "group:" + proxyGroup
-		}
+		// db.NormalizeProxyTarget is the one derivation: a part with an
+		// explicit prefix passes through, a bare value naming a known
+		// proxy TYPE becomes a type selector (a bare type stored as a
+		// group name would resolve to nothing and silently go direct),
+		// any other bare value becomes a group selector — applied per
+		// comma-separated part, so a multi binding ("A,B" as stored, or
+		// "group:A,group:B") survives as a union target.
+		singleID = db.NormalizeProxyTarget(proxyGroup)
 	}
 	// Pool rotation is a NoAuth-provider feature: the provider card offers it
 	// only inside its `isNoAuth` block, and there `rotateStrategy` holds a POOL
@@ -834,7 +828,7 @@ func (h *ChatHandler) getProviderConfig(provider string, connData *ConnectionDat
 func (h *ChatHandler) resolveEdgeRelay(connData *ConnectionData) (relayURL, noProxy string) {
 	if connData.ProxyPoolID != "" && connData.ProxyPoolID != "__none__" && connData.ProxyPoolID != "direct" && h.Repo != nil {
 		var pool *db.ProxyPool
-		if strings.HasPrefix(connData.ProxyPoolID, "group:") || strings.HasPrefix(connData.ProxyPoolID, "type:") || isKnownProxyType(connData.ProxyPoolID) || connData.ProxyPoolID == "cloudflare" {
+		if strings.HasPrefix(connData.ProxyPoolID, "group:") || strings.HasPrefix(connData.ProxyPoolID, "type:") || isKnownProxyType(connData.ProxyPoolID) || connData.ProxyPoolID == "cloudflare" || strings.Contains(connData.ProxyPoolID, ",") {
 			candidates := h.Repo.ActivePoolsByTarget(connData.ProxyPoolID)
 			if len(candidates) > 0 {
 				pool, _ = smart.DefaultTracker.PickBest(connData.Provider, candidates)

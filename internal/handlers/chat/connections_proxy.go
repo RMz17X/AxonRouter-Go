@@ -98,9 +98,13 @@ func (h *ChatHandler) getClientForConnection(connData *ConnectionData) (*http.Cl
 	// proxy was assigned to prevent, and the dashboard would keep showing the
 	// connection as proxied.
 	if connData.ProxyPoolID != "" && connData.ProxyPoolID != "__none__" && connData.ProxyPoolID != "direct" {
+		// A comma marks a multi-selector target: a pool ID can never
+		// contain one, so a comma-carrying value always takes the
+		// selector branch and reaches ActivePoolsByTarget intact.
 		isGroupOrType := strings.HasPrefix(connData.ProxyPoolID, "type:") ||
 			strings.HasPrefix(connData.ProxyPoolID, "group:") ||
-			isKnownProxyType(connData.ProxyPoolID)
+			isKnownProxyType(connData.ProxyPoolID) ||
+			strings.Contains(connData.ProxyPoolID, ",")
 
 		var pool *db.ProxyPool
 		if isGroupOrType {

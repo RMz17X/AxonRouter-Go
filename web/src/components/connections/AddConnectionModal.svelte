@@ -12,7 +12,7 @@
     looksLikeJsonPayload,
     supportsJwtBulkImport,
   } from '../../lib/bulk-add'
-  import { deriveProxyGroups, deriveProxyTypes } from '../../lib/proxyBindings'
+  import { deriveProxyGroups, deriveProxyTypes, parseProxyTargetParts } from '../../lib/proxyBindings'
 
   interface Props {
     isOpen: boolean
@@ -122,6 +122,12 @@
   // explicit direct choice and is stored as-is, matching how the provider
   // page's per-connection picker reads providerSpecificData.proxyPoolId.
   let formProxyPoolId = $state('')
+  // Multi-group mode for the proxy picker: the checkbox selection lives
+  // here and is mirrored into formProxyPoolId as the combined selector
+  // "group:A,group:B", so the submit payload is unchanged. One checked
+  // group stores exactly the single-group value "group:A".
+  let formProxyGroups = $state<string[]>([])
+  let formProxyMultiGroup = $state(false)
   let formOllamaHostUrl = $state('')
   let azureData = $state({
     azureEndpoint: '',
@@ -188,6 +194,32 @@
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  function syncProxyMultiGroup() {
+    // Picker order, so the stored selector is stable across toggles.
+    const ordered = availableProxyGroups.map((g) => g.name).filter((n) => formProxyGroups.includes(n))
+    formProxyPoolId = ordered.map((n) => `group:${n}`).join(',')
+  }
+
+  function enterProxyMultiGroup() {
+    formProxyGroups = parseProxyTargetParts(formProxyPoolId)
+      .filter((p) => p.kind === 'group')
+      .map((p) => p.name)
+    formProxyMultiGroup = true
+    syncProxyMultiGroup()
+  }
+
+  function exitProxyMultiGroup() {
+    formProxyMultiGroup = false
+    formProxyPoolId = formProxyGroups.length > 0 ? `group:${formProxyGroups[0]}` : ''
+  }
+
+  function toggleFormProxyGroup(name: string) {
+    formProxyGroups = formProxyGroups.includes(name)
+      ? formProxyGroups.filter((n) => n !== name)
+      : [...formProxyGroups, name]
+    syncProxyMultiGroup()
+  }
+
   function resetForm() {
     mode = 'single'
     formName = ''
@@ -195,6 +227,8 @@
     formDefaultModel = ''
     formPriority = 1
     formProxyPoolId = ''
+    formProxyGroups = []
+    formProxyMultiGroup = false
     formOllamaHostUrl = ''
     azureData = { azureEndpoint: '', apiVersion: '2024-10-01-preview', deployment: '', organization: '' }
     cloudflareAccountId = ''
@@ -1018,38 +1052,68 @@
 
             <div>
               <label for="connProxyPool" class={labelCls}>Proxy Pool</label>
-              <div class={selectWrapCls}>
-                <select
-                  id="connProxyPool"
-                  bind:value={formProxyPoolId}
-                  class={selectCls}
-                >
-                  <option value="">Provider default</option>
-                  <option value={NONE_PROXY_POOL_VALUE}>Direct (no proxy)</option>
-                  {#if availableProxyGroups.length > 0}
-                    <optgroup label="Proxy Groups">
-                      {#each availableProxyGroups as grp}
-                        <option value="group:{grp.name}">Group: {grp.name} ({grp.active} active)</option>
-                      {/each}
-                    </optgroup>
-                  {/if}
-                  {#if availableProxyTypes.length > 0}
-                    <optgroup label="Proxy Types">
-                      {#each availableProxyTypes as typ}
-                        <option value="type:{typ.type}">Type: {typ.type} ({typ.active} active)</option>
-                      {/each}
-                    </optgroup>
-                  {/if}
-                  <optgroup label="Individual Pools">
-                    {#each proxyPools as pool (pool.id)}
-                      <option value={pool.id}>{pool.name}{pool.group ? ` [${pool.group}]` : ''}{pool.isActive ? '' : ' (inactive)'}</option>
-                    {/each}
-                  </optgroup>
-                </select>
-                <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-text-muted">
-                  <span class="material-symbols-outlined text-[20px]">expand_more</span>
+              {#if formProxyMultiGroup}
+                <div class="rounded-lg border border-border divide-y divide-border/40 max-h-[180px] overflow-y-auto">
+                  {#each availableProxyGroups as grp}
+                    <label class="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-surface-2 text-text-main">
+                      <input
+                        type="checkbox"
+                        checked={formProxyGroups.includes(grp.name)}
+                        onchange={() => toggleFormProxyGroup(grp.name)}
+                        class="h-4 w-4 shrink-0 accent-[var(--color-primary)]"
+                      />
+                      <span class="flex-1">Group: {grp.name}</span>
+                      <span class="text-xs text-text-muted">({grp.active} active)</span>
+                    </label>
+                  {/each}
                 </div>
-              </div>
+                <p class="text-xs text-text-muted mt-1.5">
+                  {formProxyGroups.length === 0
+                    ? 'No group selected — the provider default applies.'
+                    : `${formProxyGroups.length} group${formProxyGroups.length === 1 ? '' : 's'} selected — traffic rotates across all of them.`}
+                </p>
+                <button type="button" onclick={exitProxyMultiGroup} class="text-xs text-primary underline mt-1 cursor-pointer">
+                  Use single selection
+                </button>
+              {:else}
+                <div class={selectWrapCls}>
+                  <select
+                    id="connProxyPool"
+                    bind:value={formProxyPoolId}
+                    class={selectCls}
+                  >
+                    <option value="">Provider default</option>
+                    <option value={NONE_PROXY_POOL_VALUE}>Direct (no proxy)</option>
+                    {#if availableProxyGroups.length > 0}
+                      <optgroup label="Proxy Groups">
+                        {#each availableProxyGroups as grp}
+                          <option value="group:{grp.name}">Group: {grp.name} ({grp.active} active)</option>
+                        {/each}
+                      </optgroup>
+                    {/if}
+                    {#if availableProxyTypes.length > 0}
+                      <optgroup label="Proxy Types">
+                        {#each availableProxyTypes as typ}
+                          <option value="type:{typ.type}">Type: {typ.type} ({typ.active} active)</option>
+                        {/each}
+                      </optgroup>
+                    {/if}
+                    <optgroup label="Individual Pools">
+                      {#each proxyPools as pool (pool.id)}
+                        <option value={pool.id}>{pool.name}{pool.group ? ` [${pool.group}]` : ''}{pool.isActive ? '' : ' (inactive)'}</option>
+                      {/each}
+                    </optgroup>
+                  </select>
+                  <div class="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-text-muted">
+                    <span class="material-symbols-outlined text-[20px]">expand_more</span>
+                  </div>
+                </div>
+                {#if availableProxyGroups.length > 1 && (formProxyPoolId === '' || formProxyPoolId.startsWith('group:'))}
+                  <button type="button" onclick={enterProxyMultiGroup} class="text-xs text-primary underline mt-1.5 cursor-pointer">
+                    Select multiple groups
+                  </button>
+                {/if}
+              {/if}
             </div>
 
             {#if proxyPools.length === 0}

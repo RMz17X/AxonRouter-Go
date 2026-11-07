@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { api, type ProxyPool } from '../../api/client'
-  import { deriveProxyGroups, deriveProxyTypes } from '../../lib/proxyBindings'
+  import { deriveProxyGroups, deriveProxyTypes, normalizeProxyTarget } from '../../lib/proxyBindings'
   import Badge from '../../lib/ui/Badge.svelte'
   import Card from '../../lib/ui/Card.svelte'
   import ProxyResolutionNote from './ProxyResolutionNote.svelte'
@@ -29,7 +29,7 @@
       if (cancelled) return
       proxyPools = (poolsData as any) || []
       const override = (settingsData?.providerStrategies || {})[providerId] || {}
-      proxyPoolId = override.proxyPoolId || (override.proxyGroup ? `group:${override.proxyGroup}` : NONE_PROXY_POOL_VALUE)
+      proxyPoolId = override.proxyPoolId || (override.proxyGroup ? normalizeProxyTarget(override.proxyGroup) : NONE_PROXY_POOL_VALUE)
     }).catch(() => {})
 
     return () => { cancelled = true }

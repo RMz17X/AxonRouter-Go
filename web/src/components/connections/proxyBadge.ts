@@ -1,4 +1,45 @@
 import type { ProviderConnection, ProxyPool } from '../../api/client'
+import { parseProxyTargetParts } from '../../lib/proxyBindings'
+
+interface BadgeSelector {
+  kind: 'group' | 'type'
+  name: string
+}
+
+/**
+ * Resolve a possibly multi-selector target ("group:A,group:B",
+ * "group:A,type:http", bare names mixed in) to the group/type selectors
+ * it names. A bare part is a group when pools carry the name as a
+ * group, else a type when pools carry it as one, else a group — the
+ * same reading the single bare-name branch below applies.
+ */
+function badgeSelectors(target: string, pools: ProxyPool[]): BadgeSelector[] {
+  return parseProxyTargetParts(target).map((part) => {
+    if (part.kind !== 'bare') return { kind: part.kind, name: part.name }
+    if (pools.some((p) => p.group === part.name)) return { kind: 'group' as const, name: part.name }
+    if (pools.some((p) => p.type === part.name)) return { kind: 'type' as const, name: part.name }
+    return { kind: 'group' as const, name: part.name }
+  })
+}
+
+/** Active pools matched by ANY selector, deduplicated by pool id. */
+function countActiveUnion(pools: ProxyPool[], selectors: BadgeSelector[]): number {
+  const ids = new Set<string>()
+  for (const p of pools) {
+    if (!p.isActive) continue
+    if (selectors.some((s) => (s.kind === 'group' ? p.group === s.name : p.type === s.name))) {
+      ids.add(p.id)
+    }
+  }
+  return ids.size
+}
+
+function multiLabel(selectors: BadgeSelector[]): { word: string; smart: string; names: string } {
+  const names = selectors.map((s) => s.name).join(' + ')
+  if (selectors.every((s) => s.kind === 'group')) return { word: 'Groups', smart: 'Smart Groups', names }
+  if (selectors.every((s) => s.kind === 'type')) return { word: 'Types', smart: 'Smart Types', names }
+  return { word: 'Multi', smart: 'Smart Multi', names }
+}
 
 export interface ProxyBadgeInfo {
   /** True when the connection is bound to a pool or a legacy per-connection proxy. */
@@ -36,6 +77,21 @@ export function proxyBadgeInfo(
       displayText: 'Direct (manual)',
       maskedProxyUrl: 'Direct (No proxy)',
       noProxyText: ''
+    }
+  }
+
+  if (poolId && poolId.includes(',')) {
+    const selectors = badgeSelectors(poolId, pools)
+    if (selectors.length > 0) {
+      const activeCount = countActiveUnion(pools, selectors)
+      const { word, smart, names } = multiLabel(selectors)
+      return {
+        hasAnyProxy: true,
+        variant: activeCount > 0 ? 'success' : 'error',
+        displayText: `${word}: ${names}${activeCount > 0 ? ` (${activeCount})` : ' (inactive)'}`,
+        maskedProxyUrl: `${smart}: ${names}`,
+        noProxyText: ''
+      }
     }
   }
 
@@ -83,7 +139,25 @@ export function proxyBadgeInfo(
 
   // Fallback to provider-level locked proxy group when no custom connection proxy is configured
   if (!hasAnyProxy && providerProxyGroup && providerProxyGroup !== 'none') {
-    const grp = providerProxyGroup.replace(/^(group|type):/, '')
+    if (providerProxyGroup.includes(',')) {
+      const selectors = badgeSelectors(providerProxyGroup, pools)
+      if (selectors.length > 0) {
+        const activeCount = countActiveUnion(pools, selectors)
+        const { word, names } = multiLabel(selectors)
+        return {
+          hasAnyProxy: true,
+          variant: activeCount > 0 ? 'success' : 'error',
+          displayText: `${word}: ${names} (auto)`,
+          maskedProxyUrl: `Default ${word}: ${names}`,
+          noProxyText: ''
+        }
+      }
+    }
+    // Strip REPEATED prefixes: a stored "group:group:X" (a derivation
+    // that prefixed an already-prefixed value) must still read as
+    // group X — stripping one prefix left "group:X" as the name, which
+    // matches no pool and painted every badge red.
+    const grp = providerProxyGroup.replace(/^((group|type):)+/, '')
     const activeCount = pools.filter((p) => (p.group === grp || p.type === grp) && p.isActive).length
     return {
       hasAnyProxy: true,
