@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type GuardrailLog, type GuardrailPolicy, type VaultStatus } from '../../api/client'
+  import { api, type GuardrailLog, type GuardrailPolicy } from '../../api/client'
   import Badge from '../../lib/ui/Badge.svelte'
   import Button from '../../lib/ui/Button.svelte'
   import Card from '../../lib/ui/Card.svelte'
@@ -7,7 +7,7 @@
   import Input from '../../lib/ui/Input.svelte'
   import Modal from '../../lib/ui/Modal.svelte'
   import Toggle from '../../lib/ui/Toggle.svelte'
-  import { Activity, AlertTriangle, KeyRound, Lock, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-svelte'
+  import { Activity, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-svelte'
 
   type BadgeTone = 'default' | 'neutral' | 'primary' | 'success' | 'warning' | 'danger' | 'error' | 'info' | 'outline'
 
@@ -33,7 +33,6 @@
     { id: 'block', label: 'Block', hint: 'Reject the request with 400' }
   ] as const
 
-  let vault = $state<VaultStatus | null>(null)
   let policies = $state<GuardrailPolicy[]>([])
   let logs = $state<GuardrailLog[]>([])
   let isLoading = $state(false)
@@ -59,10 +58,7 @@
   let customRegex = $state('')
   let customReplacement = $state('')
 
-  let rotateKey = $state('')
-  let isRotating = $state(false)
   let pendingDelete = $state<GuardrailPolicy | null>(null)
-  let isRotateConfirmOpen = $state(false)
 
   let visiblePolicies = $derived(
     scopeFilter === 'all' ? policies : policies.filter((p) => p.scope === scopeFilter)
@@ -74,15 +70,13 @@
     isLoading = true
     error = null
     try {
-      const [vaultRes, logRes, settingsRes] = await Promise.all([
-        api.getVaultStatus(),
+      const [logRes, settingsRes] = await Promise.all([
         api.getGuardrailLogs(50),
         api.getSettings()
       ])
       // Every scope is listed, because a policy scoped to one provider or one
       // key lives under its own scope id and is invisible to a scope-wide read.
       const groups = await Promise.all(SCOPES.map((s) => api.getGuardrailPolicies(s.id)))
-      vault = vaultRes
       logs = logRes ?? []
       policies = groups
         .flatMap((group) => group ?? [])
@@ -229,28 +223,6 @@
     }
   }
 
-  async function rotateMasterKey() {
-    error = null
-    notice = null
-    if (!rotateKey.trim()) return
-    try {
-      isRotating = true
-      const res = await api.rotateVault(rotateKey.trim())
-      rotateKey = ''
-      isRotateConfirmOpen = false
-      if (res.failures?.length) {
-        error = `${res.rewrapped} re-wrapped, ${res.failures.length} failed: ${res.failures.join(', ')}`
-      } else {
-        notice = `${res.rewrapped} data key(s) re-wrapped under the new master key`
-      }
-      await load()
-    } catch (err) {
-      error = err instanceof Error ? err.message : String(err)
-    } finally {
-      isRotating = false
-    }
-  }
-
   function parseConfig(raw: string): { detectors: string[]; action: string; customPatterns: Array<{ name: string; regex: string; replacement?: string }> } {
     try {
       const cfg = JSON.parse(raw) as { detectors?: unknown; action?: unknown; customPatterns?: unknown }
@@ -307,34 +279,6 @@
   <!-- Summary -->
   <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
     <div class="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-      <div class="font-code text-[10px] uppercase tracking-wider text-text-subtle">Vault</div>
-      <div class="mt-2">
-        {#if vault}
-          <Badge tone={vault.enabled ? 'success' : 'neutral'} dot>
-            {vault.enabled ? 'AES-256-GCM' : 'Plaintext'}
-          </Badge>
-        {:else}
-          <span class="text-sm text-text-subtle">—</span>
-        {/if}
-      </div>
-      <p class="mt-2 text-xs text-text-muted">Credentials at rest</p>
-    </div>
-
-    <div class="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-      <div class="font-code text-[10px] uppercase tracking-wider text-text-subtle">Sealed</div>
-      <div class="mt-1 text-2xl font-semibold text-success">{vault?.sealedCount ?? '—'}</div>
-      <p class="mt-1 text-xs text-text-muted">Credential slots encrypted</p>
-    </div>
-
-    <div class="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-      <div class="font-code text-[10px] uppercase tracking-wider text-text-subtle">Plaintext</div>
-      <div class="mt-1 text-2xl font-semibold {vault && vault.plaintextCount > 0 ? 'text-warning' : 'text-text-main'}">
-        {vault?.plaintextCount ?? '—'}
-      </div>
-      <p class="mt-1 text-xs text-text-muted">Rows awaiting sealing</p>
-    </div>
-
-    <div class="rounded-2xl border border-border bg-surface p-4 shadow-sm">
       <div class="font-code text-[10px] uppercase tracking-wider text-text-subtle">Guardrails</div>
       <div class="mt-1 text-2xl font-semibold text-text-main">{policies.length}</div>
       <p class="mt-1 text-xs text-text-muted">
@@ -343,56 +287,7 @@
     </div>
   </div>
 
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-    <!-- Credential vault -->
-    <Card title="Credential Vault" subtitle="Envelope encryption for provider secrets" padding="md" elev>
-      {#snippet icon()}
-        <Lock size={16} />
-      {/snippet}
-      {#snippet action()}
-        {#if vault}
-          <Badge tone={vault.enabled ? 'success' : 'neutral'} dot>
-            {vault.enabled ? 'Enabled' : 'Disabled'}
-          </Badge>
-        {/if}
-      {/snippet}
-
-      <div class="space-y-4">
-        {#if vault && !vault.enabled}
-          <div class="flex items-start gap-2.5 rounded-brand border border-warning/25 bg-warning/5 p-3">
-            <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-            <p class="text-xs leading-relaxed text-text-muted">
-              Credentials are stored in plaintext. Set
-              <span class="font-code text-text-main">ROUTER_MASTER_KEY</span>
-              to a base64 32-byte value and restart the gateway to encrypt them. This is opt-in —
-              nothing changes until you set it.
-            </p>
-          </div>
-        {:else if vault}
-          <div class="space-y-2 border-t border-border-subtle pt-4">
-            <Input
-              id="rotate-key"
-              label="Rotate master key"
-              type="password"
-              placeholder="base64 32-byte key"
-              bind:value={rotateKey}
-              hint="Re-wraps every data key without re-encrypting a secret. Keep ROUTER_MASTER_KEY_PREVIOUS on the old key so this can be undone."
-            />
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!rotateKey.trim()}
-              onclick={() => (isRotateConfirmOpen = true)}
-            >
-              Rotate key
-            </Button>
-          </div>
-        {:else}
-          <p class="text-sm text-text-muted">Vault status unavailable.</p>
-        {/if}
-      </div>
-    </Card>
-
+  <div class="grid grid-cols-1 gap-4">
     <!-- Guardrail enforcement -->
     <Card title="Guardrails" subtitle="Offline detection, no external service" padding="md" elev>
       {#snippet icon()}
@@ -447,7 +342,7 @@
           size="md"
           loading={isLoading}
           onclick={load}
-          title="Reload vault status, policies and audit log"
+          title="Reload policies and audit log"
         >
           <RefreshCw size={15} />
           Refresh
@@ -747,15 +642,4 @@
   confirmText="Delete"
   onClose={() => (pendingDelete = null)}
   onConfirm={deletePolicy}
-/>
-
-<ConfirmModal
-  isOpen={isRotateConfirmOpen}
-  title="Rotate master key"
-  message="Credentials are re-wrapped under the new key. Keep ROUTER_MASTER_KEY_PREVIOUS on the old key, otherwise sealed credentials become unreadable."
-  confirmText="Rotate"
-  variant="primary"
-  loading={isRotating}
-  onClose={() => (isRotateConfirmOpen = false)}
-  onConfirm={rotateMasterKey}
 />

@@ -188,9 +188,9 @@
       description: 'Manage your preferences',
       icon: 'settings',
     },
-    security: {
-      title: 'Security',
-      description: 'Encrypt provider credentials at rest and scan prompts before dispatch',
+    guardrails: {
+      title: 'Guardrails',
+      description: 'Scan prompts for personal data and injection attempts before dispatch',
       icon: 'shield_lock',
     },
     plans: {

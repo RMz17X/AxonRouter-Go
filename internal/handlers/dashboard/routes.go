@@ -167,9 +167,6 @@ func RegisterRoutes(r chi.Router, h *DashboardHandler) {
 		r.Delete("/plans/{id}", h.HandleDeletePlan)
 		r.Get("/plans/{id}/keys", h.HandlePlanKeys)
 
-		// F-5 Credential vault: status and master-key rotation.
-		r.Get("/vault/status", h.HandleGetVaultStatus)
-		r.Post("/vault/rotate", h.HandleRotateVault)
 		r.Get("/metrics", observ.Handler().ServeHTTP)
 
 		// Guardrails: policy CRUD and the audit log.

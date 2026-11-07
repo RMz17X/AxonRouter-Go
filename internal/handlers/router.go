@@ -547,18 +547,11 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Delete("/api/plans/{id}", dashH.HandleDeletePlan)
 	r.Get("/api/plans/{id}/keys", dashH.HandlePlanKeys)
 	r.Get("/api/metrics", observ.Handler().ServeHTTP)
-	r.Get("/api/vault/status", dashH.HandleGetVaultStatus)
 	r.Get("/api/guardrails/policies", dashH.HandleGetGuardrailPolicies)
 	r.Post("/api/guardrails/policies", dashH.HandleCreateGuardrailPolicy)
 	r.Put("/api/guardrails/policies/{id}", dashH.HandleUpdateGuardrailPolicy)
 	r.Delete("/api/guardrails/policies/{id}", dashH.HandleDeleteGuardrailPolicy)
 	r.Get("/api/guardrails/logs", dashH.HandleListGuardrailLogs)
-	// Rotation takes the new master key from the request body and
-	// re-wraps every connection DEK under it: in the wrong caller's
-	// hands it irreversibly destroys the sealed credential store,
-	// so it is operator-class like the other host-secret operations
-	// (council round 2, R2-S2).
-	r.Post("/api/vault/rotate", RequireOperatorCaller(repo, dashH.HandleRotateVault))
 	// The bare /api/models list is Axon's dashboard catalogue route:
 	// it serves the {models} shape (HandleModels branches on the
 	// path) behind the dashboard guard, where an engine API key is

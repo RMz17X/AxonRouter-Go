@@ -220,12 +220,6 @@ export interface GuardrailLog {
   createdAt: string
 }
 
-export interface VaultStatus {
-  enabled: boolean
-  sealedCount: number
-  plaintextCount: number
-}
-
 export interface ProviderStrategyConfig {
   proxyPoolId?: string
   proxyGroup?: string
@@ -1652,14 +1646,6 @@ export const api = {
     }),
   getPlanKeys: (id: string) =>
     request<{ id: string; keys: number }>(`/api/plans/${encodeURIComponent(id)}/keys`),
-
-  // F-5 credential vault
-  getVaultStatus: () => request<VaultStatus>('/api/vault/status'),
-  rotateVault: (masterKey: string) =>
-    request<{ status: string; rewrapped: number; failures: string[] }>('/api/vault/rotate', {
-      method: 'POST',
-      body: JSON.stringify({ masterKey }),
-    }),
 
   // F-4 guardrails
   // No scopeId lists the whole scope (including subject-scoped policies); an

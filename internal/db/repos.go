@@ -61,13 +61,8 @@ type Repo struct {
 	// slices handed to callers.
 	providerConnsMu sync.RWMutex
 	providerConns   map[providerConnsKey]providerConnsEntry
-	// vault is the optional credential vault. It is stored rather than held by
-	// value so a key rotation can swap the live vault without touching any
-	// reader that already captured a *Repo. A nil value means "no vault", which
-	// is every install that never set ROUTER_MASTER_KEY.
-	vault atomic.Value // *vault.Vault
 	// speed is the optional cluster speed layer (P3), installed by the
-	// app wiring via SetSpeedStore. Like the vault it is stored rather
+	// app wiring via SetSpeedStore. It is stored rather
 	// than held by value so the wiring can install it after the Repo is
 	// constructed. A nil value means "no layer" — every consumer in
 	// speed.go then no-ops and the database reads carry the behaviour.

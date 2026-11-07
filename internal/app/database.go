@@ -13,7 +13,6 @@ import (
 	"axonrouter/proxy/internal/speedlayer"
 	"axonrouter/proxy/internal/translator"
 	"axonrouter/proxy/internal/usagetracker"
-	"axonrouter/proxy/internal/vault"
 )
 
 // DatabaseModule handles database initialization and provides *sql.DB and *db.Repo.
@@ -22,10 +21,6 @@ var DatabaseModule = fx.Module("database",
 		ProvideDatabase,
 		ProvideRepo,
 	),
-	// An Invoke, not a Provide: the migration produces no value, it is a
-	// startup side effect. As a Provide it would be rejected for returning
-	// only an error.
-	fx.Invoke(MigrateVault),
 	fx.Invoke(InitSpeedLayer),
 )
 
@@ -111,32 +106,9 @@ func ProvideDatabase(lc fx.Lifecycle, cfg *config.Config) (*sql.DB, error) {
 // ProvideRepo provides *db.Repo using the database connection.
 func ProvideRepo(conn *sql.DB) *db.Repo {
 	repo := db.NewRepo(conn)
-	repo.SetVault(vault.NewFromEnv())
 	// G26: hydrate thought signatures from the database so a signature written before
 	// a restart is still replayable on the next tool turn. Fail-open — a broken
 	// database only leaves the store process-local, exactly as it was before.
 	translator.SetThoughtSignaturePersistence(repo)
 	return repo
-}
-
-// MigrateVault seals any credential still stored in plaintext.
-//
-// It is a separate provider so it runs after ProvideRepo — the Repo is what
-// carries the vault — and before the server starts accepting traffic, so a
-// connection is never dispatched with a half-migrated credential.
-//
-// Failure is not fatal. A row the migration cannot seal keeps working
-// in plaintext, which is strictly better than a gateway that refuses
-// to start.
-func MigrateVault(repo *db.Repo) error {
-	ctx := context.Background()
-	result, err := repo.MigratePlaintextCredentials(ctx)
-	if err != nil {
-		log.Warn("vault", "plaintext credential migration skipped", "error", err)
-		return nil
-	}
-	if result.Sealed > 0 || len(result.Skipped) > 0 {
-		log.Info("vault", "credential migration complete", "sealed", result.Sealed, "skipped", len(result.Skipped))
-	}
-	return nil
 }

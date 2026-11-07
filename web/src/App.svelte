@@ -29,7 +29,7 @@
   import QuotaTrackerView from './components/QuotaTrackerView.svelte'
   import SkillsView from './components/SkillsView.svelte'
   import SettingsView from './components/SettingsView.svelte'
-  import SecurityPanel from './components/security/SecurityPanel.svelte'
+  import GuardrailsPanel from './components/security/GuardrailsPanel.svelte'
   import PlansView from './components/plans/PlansView.svelte'
   import Sidebar from './components/Sidebar.svelte'
   import UpdateModal from './components/UpdateModal.svelte'
@@ -398,9 +398,9 @@
     'console-log': { title: 'Console Log', description: 'Live server console output' },
     terminal: { title: 'Console Log', description: 'Live server console output' },
     settings: { title: 'Settings', description: 'Manage your preferences and configuration' },
-    security: {
-      title: 'Security',
-      description: 'Encrypt provider credentials at rest, and scan prompts for personal data and injection attempts before they leave the gateway',
+    guardrails: {
+      title: 'Guardrails',
+      description: 'Scan prompts for personal data and injection attempts before they leave the gateway',
     },
     plans: { title: 'Plans', description: 'Per-key quota plans and policy resolution' },
     jailbreak: { title: 'Persona', description: 'Per-model system-prompt injection and Gemini safety bypass' },
@@ -767,8 +767,8 @@
               <TerminalView />
             {:else if activeTab === 'settings'}
               <ProfileSettingsView {settings} onRefresh={loadData} />
-            {:else if activeTab === 'security'}
-              <SecurityPanel />
+            {:else if activeTab === 'guardrails'}
+              <GuardrailsPanel />
             {:else if activeTab === 'plans'}
               <PlansView />
             {:else if activeTab === 'jailbreak'}

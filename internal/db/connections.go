@@ -45,17 +45,6 @@ func (r *Repo) CreateProviderConnection(id, provider, authType, name string, api
 	); err != nil {
 		return fmt.Errorf("create provider connection: %w", err)
 	}
-	// Seal after the insert: the sealed columns are written with one UPDATE per
-	// slot, which needs the row to exist.
-	sealed, err := r.sealOnWrite(id, string(data))
-	if err != nil {
-		return err
-	}
-	if sealed != string(data) {
-		if _, err = r.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
-			return fmt.Errorf("create provider connection: redact data: %w", err)
-		}
-	}
 	r.invalidateProviderConnections()
 	return nil
 }
@@ -82,19 +71,6 @@ func (r *Repo) CreateProviderConnectionFull(id, provider, authType, name string,
 	)
 	if err != nil {
 		return fmt.Errorf("create provider connection: %w", err)
-	}
-	// Seal after the insert so the credentials land in their own columns and
-	// the stored payload keeps only what the model resolver must read.
-	sealed, err := r.sealOnWrite(id, dataJSON)
-	if err != nil {
-		return err
-	}
-	if sealed == dataJSON {
-		r.invalidateProviderConnections()
-		return nil
-	}
-	if _, err = r.Exec(`UPDATE providerConnections SET data = ? WHERE id = ?`, sealed, id); err != nil {
-		return fmt.Errorf("create provider connection: redact data: %w", err)
 	}
 	r.invalidateProviderConnections()
 	return nil
@@ -149,7 +125,6 @@ func (r *Repo) GetProviderConnectionByName(provider, authType, name string) (*mo
 	if err != nil {
 		return nil, fmt.Errorf("get provider connection by name for %s: %w", provider, err)
 	}
-	r.hydrate(&conn)
 	return &conn, nil
 }
 
@@ -167,7 +142,6 @@ func (r *Repo) GetProviderConnectionByID(id string) (*models.ProviderConnection,
 	if err != nil {
 		return nil, err
 	}
-	r.hydrate(&conn)
 	return &conn, nil
 }
 
@@ -176,17 +150,10 @@ func (r *Repo) GetProviderConnectionByID(id string) (*models.ProviderConnection,
 // explicit overwrite does: the caller asked to change the key behind a name
 // they already own, not to add a second row with the same name.
 func (r *Repo) ReplaceProviderConnectionPayload(id, name, dataJSON string) error {
-	// Seal first: this is the dashboard's overwrite path, so the new key must
-	// never land in `data` in the clear even for the moment between the two
-	// statements.
-	sealed, err := r.sealOnWrite(id, dataJSON)
-	if err != nil {
-		return err
-	}
 	now := nowUTC()
 	res, err := r.Exec(
 		`UPDATE providerConnections SET name = ?, data = ?, updatedAt = ? WHERE id = ?`,
-		name, sealed, now, id,
+		name, dataJSON, now, id,
 	)
 	if err != nil {
 		return fmt.Errorf("replace provider connection %s: %w", id, err)
@@ -416,20 +383,6 @@ func (r *Repo) GetProviderConnections(provider string, activeOnly bool) ([]*mode
 		return nil, err
 	}
 
-	// A sealed credential is not in the data column, so each row is
-	// hydrated here the way the single-row readers do it. Without this
-	// the list carried a data blob with no apiKey, and every caller that
-	// reads the credential from it — the chat path, the dashboard's
-	// credential check, the Gemini Web rotation loop — saw an empty
-	// credential while the row itself was perfectly usable.
-	// Hydration runs only after listProviderConnections has closed its
-	// rows: hydrate performs nested queries (sealedPairFor) that need
-	// their own pool connection, and doing that while the result set is
-	// still open can deadlock the pool.
-	for _, conn := range connections {
-		r.hydrate(conn)
-	}
-
 	r.storeProviderConnections(cacheKey, connections)
 	return connections, nil
 }
@@ -466,7 +419,7 @@ func (r *Repo) GetLockedOrUnavailableConnections(ctx context.Context) ([]*models
 }
 
 // listProviderConnections drains a providerConnections query and closes
-// its rows before returning. Callers that hydrate or write per row must
+// its rows before returning. Callers that write per row must
 // go through a drain-first helper like this one: a nested pool checkout
 // while the SELECT rows are still open can deadlock the whole pool once
 // four concurrent callers pile up (MaxOpenConns is 4).

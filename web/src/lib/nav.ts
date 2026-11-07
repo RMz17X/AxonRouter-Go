@@ -86,7 +86,7 @@ export const NAV_GROUPS: NavGroup[] = [
     id: 'advanced-features',
     label: 'Advanced Features',
     entries: [
-      { kind: 'link', id: 'security', label: 'Security', icon: 'shield_lock' },
+      { kind: 'link', id: 'guardrails', label: 'Guardrails', icon: 'shield_lock' },
       { kind: 'link', id: 'jailbreak', label: 'Persona', icon: 'masks' },
       PLANS_LINK,
     ],
@@ -197,8 +197,8 @@ export const NAV_PRESETS: NavPresetDef[] = [
   {
     id: 'super-lite',
     label: 'Super Lite',
-    hint: 'Endpoint & Key, Providers, Combos, Usage, Settings, Security',
-    visible: ['endpoint', 'connections', 'combos', 'analytics', 'settings', 'security'],
+    hint: 'Endpoint & Key, Providers, Combos, Usage, Settings, Guardrails',
+    visible: ['endpoint', 'connections', 'combos', 'analytics', 'settings', 'guardrails'],
   },
 ]
 

@@ -24,7 +24,7 @@ export type ActiveTab =
   | 'console-log'
   | 'terminal'
   | 'settings'
-  | 'security'
+  | 'guardrails'
   | 'plans'
   | 'jailbreak'
   | 'keys' // legacy alias for the endpoint tab; see ROUTE_TO_TAB below
@@ -52,7 +52,7 @@ export const TAB_ROUTES: Record<ActiveTab, string> = {
   'console-log': '/dashboard/console-log',
   terminal: '/dashboard/console-log',
   settings: '/dashboard/profile',
-  security: '/dashboard/security',
+  guardrails: '/dashboard/guardrails',
   plans: '/dashboard/plans',
   jailbreak: '/dashboard/jailbreak',
   // Legacy alias: keys are managed on the endpoint tab (issue #199), so both
@@ -165,9 +165,11 @@ const ROUTE_TO_TAB: Record<string, ActiveTab> = {
   '/profile': 'settings',
   '/settings': 'settings',
 
-  // security: vault + guardrails
-  '/dashboard/security': 'security',
-  '/security': 'security',
+  // guardrails (the pre-rename 'security' paths stay as legacy aliases)
+  '/dashboard/guardrails': 'guardrails',
+  '/guardrails': 'guardrails',
+  '/dashboard/security': 'guardrails',
+  '/security': 'guardrails',
 
   // plans: reusable policy templates the API keys inherit from (F-3)
   '/dashboard/plans': 'plans',
@@ -238,7 +240,7 @@ export function pathToTab(pathname: string): ActiveTab {
   if (normalized.includes('combos')) return 'combos'
   if (normalized.includes('providers') || normalized.includes('connections')) return 'connections'
   if (normalized.includes('keys')) return 'endpoint'
-  if (normalized.includes('security')) return 'security'
+  if (normalized.includes('guardrails') || normalized.includes('security')) return 'guardrails'
   if (normalized.includes('plans')) return 'plans'
   if (normalized.includes('profile') || normalized.includes('settings')) return 'settings'
   return 'endpoint'

@@ -383,12 +383,6 @@ func pgUsageLedgerTables() []tableDef {
 var pgGoOnlyColumns = [][3]string{
 	{"providerConnections", "lastUsedAt", "TEXT"},
 	{"providerConnections", "consecutiveUseCount", "BIGINT DEFAULT 0"},
-	{"providerConnections", "secretWrappedDEK", "TEXT DEFAULT ''"},
-	{"providerConnections", "secretCiphertext", "TEXT DEFAULT ''"},
-	{"providerConnections", "tokenWrappedDEK", "TEXT DEFAULT ''"},
-	{"providerConnections", "tokenCiphertext", "TEXT DEFAULT ''"},
-	{"providerConnections", "refreshWrappedDEK", "TEXT DEFAULT ''"},
-	{"providerConnections", "refreshCiphertext", "TEXT DEFAULT ''"},
 	{"apiKeys", "rateLimitRPM", "INTEGER DEFAULT 0"},
 	{"apiKeys", "rateLimitTPM", "INTEGER DEFAULT 0"},
 	{"apiKeys", "rateLimitConcurrency", "INTEGER DEFAULT 0"},

@@ -10,7 +10,7 @@ import (
 )
 
 // TestOpenDatabaseRestrictsFileAndDirPermissions proves the at-rest
-// protection the credential vault's threat model relies on: the database
+// protection the credential store relies on: the database
 // holds provider API keys and OAuth tokens, so the file must be private to
 // the owning user and its directory must not be traversable by anyone else.
 //

@@ -964,7 +964,7 @@
   {#if loading}<span class="text-xs text-text-subtle">Loading…</span>{/if}
 
   <!-- Summary strip: label above, number below, description last — the same
-       reading order SecurityPanel uses, so the two pages scan identically. -->
+       reading order GuardrailsPanel uses, so the two pages scan identically. -->
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
     <div class="rounded-brand-lg border border-border-subtle bg-surface p-4 shadow-[var(--shadow-soft)]">
       <div class="font-code text-[10px] uppercase tracking-wider text-text-subtle">Presets</div>

@@ -79,8 +79,8 @@ describe('default visibility', () => {
     for (const saved of [undefined, null, {}, 'plans', { hidden: 'plans' }]) {
       const ids = renderedIds(saved)
       expect(ids, JSON.stringify(saved)).not.toContain('plans')
-      // Security was never a default and must stay visible out of the box.
-      expect(ids, JSON.stringify(saved)).toContain('security')
+      // Guardrails was never a default and must stay visible out of the box.
+      expect(ids, JSON.stringify(saved)).toContain('guardrails')
       expect(ids, JSON.stringify(saved)).toContain('settings')
     }
   })
@@ -92,9 +92,9 @@ describe('default visibility', () => {
 
   it('blocks the default-hidden tab until the operator restores it', () => {
     expect(isNavHidden('plans', undefined)).toBe(true)
-    // Security is no longer a default: only a saved list hides it.
-    expect(isNavHidden('security', undefined)).toBe(false)
-    expect(isNavHidden('security', { hidden: [] })).toBe(false)
+    // Guardrails is no longer a default: only a saved list hides it.
+    expect(isNavHidden('guardrails', undefined)).toBe(false)
+    expect(isNavHidden('guardrails', { hidden: [] })).toBe(false)
     expect(isNavHidden('plans', { hidden: ['plans'] })).toBe(true)
   })
 })
@@ -142,10 +142,10 @@ describe('visibility filtering', () => {
 
 describe('stored hide list', () => {
   it('stores ids in render order', () => {
-    const first = setNavVisible({ hidden: [] }, 'security', false)
-    expect(first).toEqual(['security'])
-    expect(setNavVisible(first, 'quota', false)).toEqual(['quota', 'security'])
-    expect(setNavVisible(['quota', 'security'], 'quota', true)).toEqual(['security'])
+    const first = setNavVisible({ hidden: [] }, 'guardrails', false)
+    expect(first).toEqual(['guardrails'])
+    expect(setNavVisible(first, 'quota', false)).toEqual(['quota', 'guardrails'])
+    expect(setNavVisible(['quota', 'guardrails'], 'quota', true)).toEqual(['guardrails'])
   })
 
   it('starts from the defaults when nothing was saved', () => {
@@ -255,23 +255,23 @@ describe('sidebar arrangement', () => {
   })
 
   it('keeps the arrangement to one of every row', () => {
-    const moved = moveNavEntry(moveNavEntry([], 'security', -1), 'media-tts', 1)
+    const moved = moveNavEntry(moveNavEntry([], 'guardrails', -1), 'media-tts', 1)
     expect(moved.length).toBe(NAV_ORDER.length)
     expect(new Set(moved).size).toBe(moved.length)
   })
 
   it('hides a row without losing the place it was moved to', () => {
-    const order = moveNavEntry([], 'security', -1)
+    const order = moveNavEntry([], 'guardrails', -1)
     const visible = renderedIds({ hidden: [] }, order)
-    const slot = visible.indexOf('security')
+    const slot = visible.indexOf('guardrails')
     // The row keeps the slot it was moved into: what follows it on screen is
     // what follows it in the stored arrangement.
-    expect(visible[slot + 1]).toBe(order[order.indexOf('security') + 1])
+    expect(visible[slot + 1]).toBe(order[order.indexOf('guardrails') + 1])
     // Hidden, the row leaves and its neighbours keep their own slots instead
     // of closing the gap.
-    const hidden = renderedIds({ hidden: ['security'] }, order)
-    expect(hidden).not.toContain('security')
-    expect(hidden[slot]).toBe(order[order.indexOf('security') + 1])
+    const hidden = renderedIds({ hidden: ['guardrails'] }, order)
+    expect(hidden).not.toContain('guardrails')
+    expect(hidden[slot]).toBe(order[order.indexOf('guardrails') + 1])
   })
 })
 
@@ -303,7 +303,7 @@ describe('sidebar presets', () => {
       'connections',
       'combos',
       'analytics',
-      'security',
+      'guardrails',
       'settings',
     ])
   })
