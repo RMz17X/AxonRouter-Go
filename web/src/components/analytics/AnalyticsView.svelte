@@ -99,9 +99,10 @@
     }, 3000)
   }
 
-  // Topology presence rule (Ricki, 2026-11-04): a provider belongs on the
-  // map only while it is active or its last request is under five minutes
-  // old; after five quiet minutes it leaves the map on its own. The clock
+  // Topology presence rule (Ricki, 2026-11-08, superseding his 2026-11-04
+  // five-minute rule): a provider belongs on the map only while it is
+  // active or its last request is under ten minutes old; after ten quiet
+  // minutes it leaves the map on its own. The clock
   // below is what lets nodes expire without any new data arriving, and
   // observedActivity remembers when each provider was last seen doing
   // something (live requests, pulses, errors, recent rows) so the
@@ -136,7 +137,7 @@
     // and is never cleared back to '' — so it is stamped only when its
     // value changes. Stamping it with "now" on every run (this effect
     // re-runs on every stats poll and SSE merge) kept an errored
-    // provider's presence fresh forever, and the five-minute rule never
+    // provider's presence fresh forever, and the retention rule never
     // expired it (review cycle 3, A-1). A different provider erroring
     // re-stamps; the previous one's stamp ages out on the normal rule.
     if (errorProvider !== prevErrorProvider) {
@@ -502,13 +503,13 @@
 
     // "Who is on the bus" is a presence question, and presence expires:
     // every source below is gated on the provider's last activity being
-    // under five minutes old (the rule stated at topologyNow above), NOT
+    // under ten minutes old (the rule stated at topologyNow above), NOT
     // on the selected stats period — the period drives the KPIs and
     // tables, never who is on the map. The backend keys usage by the
     // canonical provider id, while a connection row can hold either that
     // or the published alias, so both are tried before a provider counts
     // as idle.
-    const TOPOLOGY_RETENTION_MS = 5 * 60_000
+    const TOPOLOGY_RETENTION_MS = 10 * 60_000
     const activityMs = (provId: string) => {
       const raw = provId.trim()
       const canonical = raw.toLowerCase()
@@ -568,7 +569,7 @@
     if (lastProvider && fresh(lastProvider)) addProvider(lastProvider, 'recent')
     if (errorProvider && fresh(errorProvider)) addProvider(errorProvider, 'error')
 
-    // 2. Add recent requests — recent in the five-minute sense, not in
+    // 2. Add recent requests — recent in the ten-minute sense, not in
     //    the "latest N rows" sense the feed itself uses.
     for (const r of stats.recentRequests || []) {
       if (r.provider && fresh(r.provider)) addProvider(r.provider, 'recent')
@@ -579,7 +580,7 @@
     //    to be drawn here, and since that list is not usage-windowed the
     //    node outlived both the period and the connection itself: a
     //    provider the operator had merely configured sat on the map
-    //    indefinitely as if it were serving (#280). The five-minute gate
+    //    indefinitely as if it were serving (#280). The retention gate
     //    keeps that protection and tightens it — configured is not
     //    present, and neither is "used earlier today".
     for (const c of connections) {

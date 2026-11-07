@@ -578,6 +578,29 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			}
 		}
 
+		// Topology presence reads ByProvider.LastUsed, but no period window
+		// can be trusted to carry it: daily windows aggregate usageDaily
+		// rows, which hold no per-request time, so their LastUsed stays
+		// empty, and "today" starts at midnight. Overlay the newest request
+		// inside the topology retention window (10 minutes — the presence
+		// rule in AnalyticsView) from raw history, so a provider active
+		// moments ago reports that activity whatever period is selected.
+		// Only providers the selected window already aggregated are raised;
+		// an entry is never created here, so period totals and breakdown
+		// rows are unchanged.
+		{
+			retentionCutoff := now.Add(-10 * time.Minute).UTC().Format("2006-01-02T15:04:05.000Z")
+			if recent, err := repo.GetUsageGroupByProviderSince(retentionCutoff); err == nil {
+				for _, row := range recent {
+					cur, ok := resp.ByProvider[row.Provider]
+					if ok && row.LastUsed > cur.LastUsed {
+						cur.LastUsed = row.LastUsed
+						resp.ByProvider[row.Provider] = cur
+					}
+				}
+			}
+		}
+
 		// Calculate total aggregates from byProvider
 		successfulRequests := 0
 		for _, p := range resp.ByProvider {
