@@ -1,5 +1,413 @@
 # Changelog
 
+## [v1.9.21] - 2026-11-07
+
+# 977 — CodeBuddy family Phase 3 (final): bulk-JWT UI, intl identity backfill, userinfo probes, error-classification alignment, SSE finish_reason repair
+
+Phase 3 of closing the CodeBuddy-family gaps (audit CB #18–#26, WB #9,
+#10, #14–#19; CB #8). Builds on Phase 1 (fragment 975) and Phase 2
+(fragment 976). JS sources are the behavioral spec; Go ports contracts,
+not code.
+
+## 1. Bulk JWT UI (CB #24, WB #9)
+
+The route POST /api/oauth/{provider}/bulk-jwt existed with no frontend.
+Now it has the dashboard surface upstream has:
+
+- New `web/src/components/connections/BulkImportJwtModal.svelte`
+  (upstream BulkImportJwtModal.js, in this codebase's modal idiom):
+  paste box, the accepted formats, and the per-import result exactly as
+  upstream renders it — "✓ N added · ⊘ N duplicates skipped · ✗ N
+  failed" plus the per-failed-item "[index] error" list. Entries with
+  both tokens become OAuth connections with auto-refresh (server-side
+  behavior, unchanged).
+- `ProviderDetailView.svelte`: a "Bulk Add" button (playlist_add) in
+  the Connections toolbar, gated to the three family providers via
+  `supportsJwtBulkImport` (upstream ConnectionsSection gating), and the
+  modal mounted alongside the other connection modals; a successful
+  import refreshes the list.
+- `web/src/api/client.ts`: `api.bulkImportJwt(providerId, text)` +
+  `BulkJwtImportResult` / `BulkJwtImportEntry` types.
+- Add-connection bulk tab (upstream AddApiKeyModal behavior): for the
+  family providers a JSON-shaped paste now routes to bulk-jwt instead
+  of the per-key plan — `isJsonAccountPayload` → POST bulk-jwt and
+  surface {success, failed, skipped}; JSON-shaped but token-less →
+  "This JSON has no accessToken/refreshToken. Check the account export
+  shape." The detectors are ported into `web/src/lib/bulk-add.ts`
+  (bulkAdd.js), including the concatenated-pretty-JSON token-field
+  fallback; plain `name|token` lines still take the per-key plan.
+
+## 2. Intl identity backfill (CB #25)
+
+Upstream's run-once `backfillCodeBuddyIntlIdentity`
+(src/lib/oauth/providers/index.js), called from GET /api/providers and
+GET /api/providers/client, repairs codebuddy-intl oauth rows that hold
+an access token but no email/displayName, or still carry a generic
+"Account N" name — the identity is recovered from the stored JWT.
+
+- Hook: `DashboardHandler.backfillCodebuddyIntlIdentity`, called at the
+  top of `HandleGetProvidersClient` — the handler serving those exact
+  two routes (`internal/handlers/dashboard/codebuddy_intl_backfill.go`).
+  This is the repo's lazy-repair idiom (cf. fragment 972's identity pin
+  backfill on dashboard reads).
+- Run-once per process behind a mutex, with upstream's reset-on-failure
+  semantics: a pass that cannot read or write stays pending and the
+  next list call retries it. A failed pass never fails the list call.
+- Extraction precedence matches the family's device-save helpers
+  (fragment 975): email → preferred_username → sub; displayName → name
+  claim → given+family → email local part. Rename target is
+  email || displayName, only for /^Account \d+$/ names.
+- Write: `db.Repo.SetConnectionCodebuddyIntlIdentity` fills only empty
+  fields (data.email, data.displayName, the email column, optionally
+  the name) in one UPDATE — so the pass is idempotent by construction:
+  rows already carrying identity are never in the patch set, and a
+  second pass finds nothing to do. WorkBuddy and CN have no upstream
+  backfill; none was invented.
+
+## 3. Connection verification probes (CB #26, WB #10)
+
+Upstream testUtils.js probes codebuddy-intl and workbuddy at the
+Keycloak userinfo endpoint of the realm the token's `iss` claim names
+(fallback realms www.codebuddy.ai / www.workbuddy.ai), marked
+refreshable. Go's probe table had intl as a {tokenExists:true} stub and
+workbuddy missing entirely.
+
+- `connection_probe.go`: both providers now carry a real config —
+  buildURL deriving `<iss>/protocol/openid-connect/userinfo`, GET,
+  Bearer, `refreshable: true` — so they ride the file's established
+  machinery (connection proxy, refresh-on-401 with the family's real
+  refreshers from fragment 975, token persistence).
+- The URL builder lives in `connection_probe_codebuddy.go`: `iss` is
+  used only when it starts with https:// (trailing slash trimmed),
+  exactly upstream's guard.
+- CN stays {tokenExists:true} — upstream has no userinfo probe for it.
+- ToS-disabled rows stay protected by fragment 973's guard: the probe
+  still never dials for them.
+
+## 4. Error classification alignment (CB #18–#23, WB #14–#19)
+
+The old Go readings sentenced accounts on bare text: "restricted" /
+"unusual activity" → 7 days at ANY status for the family, 14018 → a
+generic 2 minutes, "request illegal" → an intl-only backoff. All
+replaced by upstream's gated verdicts. New classifier fields carry what
+a substring rule cannot: `ErrorRule.Exhausted / ModelScoped /
+RequestLevel` and `ErrorClassification.Exhausted / ModelScoped`.
+
+### Gated verdicts (new `internal/providers/errorclassify_codebuddy.go`)
+
+Consulted before ErrorRules, where upstream puts them:
+
+- **11140** (checkFallbackError's guard, code-gated — upstream gates on
+  the code literal, which only the family emits): HTTP 403 + code 11140
+  + restriction wording (WB_ACCOUNT_RESTRICTION_RE) → **2h, account
+  lock, exhausted**. Bare 11140 → **5 min, account lock, NOT
+  exhausted**. A safety wording in the body vetoes the guard, and the
+  request-level safety rules decide instead. The classifier receives
+  the extracted error text, whose "(code 11140)" suffix (and the raw
+  JSON body shape) both match WB_11140_CODE_RE.
+- **Family 429 sentences** (markAccountUnavailable's 429 block,
+  provider-gated, applied in upstream's order — a later check may
+  replace an earlier verdict):
+  - "model busy" text or a bare 14003 token → **model-scoped 5s**,
+    flat, backoff level reset to 0.
+  - Throttle wording (too many requests | rate.?limit exceeded | rate
+    limited | usage exceeds frequency limit) with NO quota wording →
+    **model-scoped 2 min**, never exhausted.
+  - "credits exhausted" / "insufficient credits" text or a bare 14018
+    token → **account-wide, exhausted, 7 days** (the direct path).
+    Upstream keys on the wording; the bare code is its constant
+    companion on the wire, so either claims the verdict.
+
+### Rule-table changes (`errorclassify.go`)
+
+- **Generic credit family** → upstream ERROR_RULES exactly: the 16
+  texts (insufficient_user_quota, 预扣费额度失败, 用户剩余额度,
+  用户额度不足, "user's credit limit is insufficient", "quota is
+  running low", credits exhausted, insufficient credits, insufficient
+  balance, out of credits, quota reached, quota exhausted,
+  insufficient_quota, insufficient quota, exceeded your current quota,
+  monthly quota exceeded) → **30 days, exhausted** (new
+  cooldownMonthlyExhausted), placed before the older 1-hour quota
+  spellings so the request path's verdict wins on overlapping texts.
+  The 1-hour spellings ERROR_RULES does not carry (insufficient credit
+  singular, credit exhausted singular, no remaining credits, quota
+  exceeded, monthly limit, frequency limit, payment required, free
+  allowance, credit balance is too low) are unchanged.
+- **11158** → one rule: status 400 only, **cooldown 0, model-scoped**
+  (the plan gate: skip the member/model, the account stays healthy).
+  The duplicated 2-minute copies are gone.
+- **Request-level rules, global** (upstream ERROR_RULES):
+  "did not pass the safety review", "safety review", "request illegal",
+  "content filter" → no fallback, no lock, no cooldown — for
+  codebuddy-cn and workbuddy too (WB #19). "conversation id missing"
+  travels with them: the current upstream ERROR_RULES carries no entry
+  for it (verified by grep), and its old intl-only backoff reading
+  parked accounts over a request fault, so it takes the same
+  request-level verdict as its sibling instead of a distinct invented
+  one.
+- Deleted: all bare-text family restriction rules (7d at any status),
+  the generic "unusual activity"/"restricted" 7d+30min copies, the
+  family "11140" substring rules, the generic 14018 2-minute rules,
+  and the duplicated rule blocks.
+
+### Consumers
+
+- **Exhausted representation** — no new flag: Go's status model already
+  derives `quota_exhausted` from the stored lastError text
+  (`EffectiveStatusWithError` via `LooksLikeQuotaExhausted`), checked
+  before the stale-marker recovery so a spent account stays exhausted
+  after its timer lapses. `connection_status.go` itself needed no edit;
+  the vocabulary in `errorclassify.go` gained the two family markers
+  whose texts carry no credit wording — "14018" and "restricted due to
+  unusual activity" — both Tencent-only strings.
+- `cooldownSecForClassification` (retry_after.go): an Exhausted
+  verdict now rides the banned class's unclamped path (a 7d/30d
+  sentence must not be cut to the 72h reset ceiling or replaced by a
+  429's Retry-After), and a ModelScoped verdict returns the
+  classifier's exact duration (the flat 5s busy sentence must not be
+  replaced by a reset reading).
+- Scope: both failover loops (fallback.go, combo.go) now honor
+  `cls.ModelScoped` ahead of the isModelScopedError text guess — the
+  gated busy/throttle bodies carry no quota text for the guess to see,
+  and parking the account for them was the bug being fixed.
+- fallback.go: a `!ShouldFallback` classification now excludes the
+  connection for the turn with NO lock writes, mirroring the combo
+  path's standing guard (request-level refusals at retryable statuses
+  previously still wrote account state).
+- **Combo member attempt cap** (combo.go, both member loops):
+  `comboMemberAttemptCap` returns 1 for codebuddy-cn / codebuddy-intl /
+  workbuddy (upstream COMBO_MEMBER_ACCOUNT_ATTEMPTS_BY_PROVIDER — the
+  burst is what the vendor's risk control answers with 11140) and the
+  standing 10 for everyone else. Only attempts that actually reach the
+  upstream count; a connection skipped as already-locked was never
+  dialled and does not spend the budget.
+
+## 5. Executor SSE repair (CB #8)
+
+Upstream's streaming passthrough (open-sse/utils/stream.js) rewrites
+CodeBuddy's `finish_reason: ""` to null on chunks and forwards only
+the first [DONE]. Go now does the same on the family's streaming path
+only: `codebuddySSENormalizer` (`internal/proxy/executor/
+codebuddy_sse.go`) wraps the stall reader at forwardCodebuddy's single
+stream call site — all three brands, one place — and transforms line
+by line (never buffering the stream): a data chunk whose choices carry
+an empty finish_reason is re-serialized with null; every other line,
+including the terminal chunk, passes through byte-identical; duplicate
+`data: [DONE]` lines are dropped after the first. The shared
+execSSEStream/sseStream and every other provider's stream are
+untouched.
+
+## Deliberate non-changes
+
+- **CB #7 X-Domain**: UNVERIFIED which value the upstream accepts —
+  both sides left exactly as they are.
+- **CB #9 conversation-UUID shape**: Go keeps its session-derived
+  conversation ids; WorkBuddy already uses fresh ids per JS.
+- The direct (non-combo) loop's treatment of non-retryable 400s is
+  unchanged for all providers; the 11158/safety verdicts are carried by
+  the classifier and the combo consumer, and a 400 never reaches the
+  direct loop's locking branch.
+
+## Remaining known deferrals (from phases 1–2)
+
+- Combo-picker credit pill (phase 2 deferral).
+- costAware combo-editor toggle (phase 2 deferral).
+
+## Verification (direct checks, no unit suites)
+
+- `go build ./...` and `go vet` on all touched packages: clean.
+- Classifier probe program (26 JS-shaped payloads, raw-JSON and
+  extracted shapes): 403+11140+restriction → 2h exhausted; bare 11140 →
+  5m not exhausted; 11140+safety → request-level; 14018 text/bare @429
+  family → 7d exhausted; credit texts off the direct path → 30d
+  exhausted; model busy / bare 14003 @429 → 5s model-scoped, backoff
+  reset; throttle wording → 2m model-scoped; throttle+quota wording →
+  not throttled (30d exhausted via the generic rule); 11158 @400 → 0
+  model-scoped; safety/request-illegal/conversation texts → no
+  fallback, no cooldown, all providers incl. workbuddy; bare
+  restriction text without the gated shape → generic status rules (the
+  7-day reading is gone).
+- SSE probe through the real ForwardCodebuddyCN against a fake
+  upstream: "" → null on non-terminal chunks, terminal "stop" chunk
+  byte-identical, duplicate [DONE] collapsed to one.
+- Boot smoke against a throwaway database on the local staging
+  PostgreSQL: gateway healthy; backfill patched the seeded
+  identity-less codebuddy-intl row (email + displayName from the JWT,
+  "Account 3" renamed to the email) and left identity-carrying, CN and
+  WorkBuddy rows untouched; a second list call changed nothing
+  (idempotent); bulk-jwt answered the client's exact request shape
+  (JSON paste → created; same token again → skipped duplicates;
+  unsupported provider → clean error); the intl and workbuddy test
+  endpoints dialed the iss-derived userinfo URL while CN kept its
+  instant tokenExists verdict.
+- svelte-check: 89 errors / 56 warnings — identical to the pre-phase
+  baseline, none in the touched files. `bun run build` succeeds.
+- Mechanical test-literal updates (behavior changed by this fragment):
+  `errorclassify_codebuddy_test.go` rewritten around the gated
+  verdicts; `errorclassify_test.go` credit-exhaustion test split into
+  the 30-day ERROR_RULES class and the retained 1-hour class.
+
+# 976 — CodeBuddy family Phase 2: catalogs, credit, intl caps/thinking, CN/WB usage, quota UI
+
+Phase 2 of closing the CodeBuddy-family gaps (audit CB #1–#6, #15–#17;
+WB #11–#13). Builds on Phase 1 (fragment 975). JS sources are the
+behavioral spec; Go ports contracts, not code.
+
+## 1. Catalogs CN + Intl (CB #1, #2, #4)
+
+- New home `internal/providers/codebuddy_catalog.go`: the three canonical
+  lists as package-level slices — `codebuddyCNModels` (33, JS registry
+  order), `codebuddyIntlModels` (23), `workbuddyModels` (21).
+  `registry_models.go` now references the slices under BOTH the canonical
+  id and the alias key (`codebuddy-cn`/`cbcn`, `codebuddy-intl`/`cbai`,
+  `workbuddy`/`wb`), so paired keys share one backing slice and can never
+  diverge again (CB #4).
+- CN counts: `cbcn` 13 → 33, `codebuddy-cn` 14 → 33 (union replaced by the
+  JS registry list verbatim, incl. `default`, `deepseek-v4-flash`,
+  `glm-4.6`, `hy3-x`, `step-5-preview`, `mimo-v2.6-pro`).
+- Intl counts: `cbai`/`codebuddy-intl` 15 → 23. Removed the wrongly-present
+  CN-generation rows (glm-5.0, glm-5.0-turbo, glm-5.1, glm-5v-turbo,
+  glm-4.7, minimax-m3, minimax-m2.7, kimi-k2.7, kimi-k2.5, hy3-preview,
+  deepseek-v4-pro, deepseek-v3-2-volc); added the virtual presets
+  (default/fast/balanced/primary/deep-model) and the GPT/Gemini rows.
+- Frontend static lists in `web/src/lib/models.ts` (`cbcn`, `cbai`)
+  replaced with the same ids and the JS registries' display names.
+
+## 2. Credit metadata (CB #3)
+
+- ONE home: `modelCredits` in `internal/providers/codebuddy_catalog.go`,
+  keyed by canonical provider id, values verbatim from the JS registries.
+  Absent model = unpriced (Intl/WB `default-model`); explicit 0 = free.
+  `providers.GetModelCredit(provider, model)` resolves aliases.
+- Four consumers, all reading that one table:
+  1. Catalog API — `aggregateProviderModels` (GET /api/provider-models)
+     adds `credit` to system entries when priced.
+  2. Pill — GET /api/models/caps entries gain `credit`; the provider
+     detail grid renders `x{credit.toFixed(2)}` next to the model id.
+  3. FREE badge + free-only filter — `isModelFree` consults the table
+     first (credit 0 ⇒ free), feeding the existing FREE badge and the
+     toolbar's free chip on the detail page.
+  4. Combo order — `chat.OrderByCredit` (port of JS `orderByCredit`:
+     free first, ascending credit, unpriced last, stable) applied as the
+     base order before rotation in both combo fallback handlers, with the
+     JS opt-out chain (per-combo `costAware` → global `comboCostAware` →
+     on; new fields on `db.ComboStrategy` / `db.SettingsData`). Go's
+     smart/tokenmaxxing strategies are exempt — they compute their own
+     dynamic ranking and have no JS counterpart in this position; the
+     capability reorder still runs last, as upstream.
+- Deliberately NOT surfaced on /v1/models: the OpenAI-style list carries
+  capabilities/pricing upstream, never registry credit; its typed
+  `ModelInfoObject` has 9 construction sites, most on combo/custom/live
+  paths where credit does not apply.
+
+## 3. Intl capabilities + thinking (CB #5, #6)
+
+- `capabilities.go`: full `codebuddy-intl` map in `providerCapabilities`
+  from `open-sse/providers/capabilities.js` (19 catalog rows) plus the
+  five virtual-preset rows merged from the JS registry layer (the merge
+  the workbuddy block already performs — Go has no registry caps layer,
+  and without preset rows the GetThinkingLevels caps gate swallows the
+  preset patterns). Includes the all-false `claude-opus-5` /
+  `claude-sonnet-4.6` guard rows (resolve here, block the global
+  *claude* patterns).
+- The stale `providerTokenLimits["codebuddy-intl"]` block is removed: it
+  borrowed CN's figures (393216 output for deepseek-v4.1-flash) and
+  outranked the capability table, which now declares Intl's own numbers
+  (128000) from the Intl catalog.
+- `thinking_levels.go`: the intl block (13 patterns) sits with the other
+  family blocks ABOVE the unqualified `*deepseek-v4.*` glob, mirroring
+  JS order; the dead trailing entry (`deepseek-v4*` → [low, high,
+  xhigh]) is deleted. Intl values verbatim from JS — presets
+  [medium]/[high], `deepseek-v4*`/`glm-5.3*`/`kimi-k2.8-preview` →
+  [low, high, **max**], `gpt-5.6-*`/`gpt-6-astra` → [none…max],
+  `gpt-5.5`/`gpt-5.4` → [low, medium, high, xhigh]. NOT normalized
+  against CN/WB (which use xhigh for deepseek) — each provider keeps its
+  own JS values.
+
+## 4. Usage fetchers CN + WorkBuddy (CB #15, WB #11)
+
+- `usage_providers.go`: the existing intl port is generalized into
+  `fetchCodeBuddyUsage(ctx, providerID, url, headers, …)` with thin
+  wrappers `fetchCodeBuddyCnUsage` / `fetchCodeBuddyIntlUsage` /
+  `fetchWorkBuddyUsage`, mirroring JS's one shared billing handler
+  (`open-sse/services/usage/codebuddy-cn.js`) with per-provider hosts
+  (CN copilot.tencent.com, Intl www.codebuddy.ai, WB www.workbuddy.ai)
+  and per-registry static identity headers (CN: CLI shape; WB:
+  WorkBuddy/5.5.6 set incl. X-Agent-* and X-Domain; Intl: the existing
+  port's IDE headers, untouched — a pre-existing divergence from the JS
+  registry's CLI headers, left as-is).
+- Parsing parity is inherited from the intl port, which already mirrors
+  JS exactly: precise-string fields preferred over numeric, refill vs
+  bonus split by the >2-day CycleEnd vs DeductionEnd gap, refill rows use
+  the Cycle* balances with cadence names (Daily ≤1.5d, Weekly ≤10d, else
+  Monthly; duplicates suffixed), bonus rows use lifetime Capacity* and
+  are numbered by soonest cycle end, plan from the first refill's
+  PackageName/SubProductName. Message strings keep JS's quirk of naming
+  "CodeBuddy CN" literally in the HTTP-status and payload-error branches
+  for all three providers; the credential/transport branches name the
+  actual provider id.
+- Dispatch: `codebuddy-cn` and `workbuddy` cases added to
+  `fetchProviderUsage`; the generic lock-derived fallback now only runs
+  on genuine fetch failure, as before.
+- Quota normalizer (`web/src/components/quota/types.ts`): `workbuddy`
+  joins the `codebuddy-cn`/`codebuddy-intl` case, so WorkBuddy quotas
+  render with the same recurring/expires semantics (the Phase 1
+  deferral, unblocked now that the fetcher exists).
+
+## 5. Quota UI extras (CB #16/#17, WB #12/#13)
+
+- Total Credit card: `isCreditPoolProvider` + `getTotalCredit` ported
+  into `quota/types.ts` (only finite positive totals participate; used
+  clamped per pack; remaining %, pack count). `QuotaTable.svelte` gains
+  a `provider` prop and renders the card above the per-pack rows for the
+  three credit-pool providers; `QuotaTrackerView` passes `conn.provider`.
+- Credits button: Go's connection row carries its actions in a menu
+  (not JS's icon cluster), so the on-demand fetch lands as a "Show
+  credits" / "Refresh credits" menu item (credit_card icon) on
+  credit-aware providers in ProviderDetailView, with the result rendered
+  inline in the badge row exactly as upstream ConnectionRow does:
+  "Credits left: X / Y (resets …)", or "Credits: <message>". Aggregation
+  mirrors JS fetchQuota (skip unlimited, remaining = Σ max(0, total −
+  used), earliest resetAt). Uses the existing
+  `api.getConnectionUsage(id, force=true)`.
+
+## Mechanical test-file fixes (listed per the no-test-suite rule)
+
+- `internal/providers/model_limits_precedence_test.go`:
+  TestProviderTokenLimits_CodebuddyIntl expectation 393216 → 128000 —
+  the row it pinned borrowed CN's figure through providerTokenLimits;
+  the Intl capability table (JS capabilities.js) declares 128000.
+- `internal/handlers/dashboard/codebuddy_cline_catalog_test.go`: intl
+  cases' wantID minimax-m3 → minimax-m3.1-flash — minimax-m3 is not in
+  the JS Intl registry; the test's intent (intl serves its own
+  catalogue) is unchanged.
+
+## Deferrals / out of scope
+
+- Combo picker (ModelSelectModal equivalent) price pill: the Go picker
+  builds from the static `models.ts` bundle, which must not become a
+  second home for credit values; the pill ships on the provider detail
+  page (JS ModelRow's home) and via both catalog APIs instead.
+- No costAware toggle in the combo editor UI: JS exposes it inside its
+  Smart Routing section; the Go settings fields and resolution chain are
+  in place, the editor control is a separate UI change.
+- Phase 3 items untouched (bulk-JWT UI, intl backfill, connection
+  probes, error-classification numbers, executor minors).
+
+### Added
+
+- **WorkBuddy is a registered provider** (CodeBuddy-family gap audit WB #1–#4). Registry entry mirroring `open-sse/providers/registry/workbuddy.js`: id `workbuddy`, alias `wb`, priority 90, authModes [oauth, apikey], passthroughModels, Tencent-blue `smart_toy` identity, signup invite URL. Transport in `KnownProviders`: `www.workbuddy.ai/v2/chat/completions`, OpenAI thinking format, the registry's static WorkBuddy identity headers, and the billing usage URL. The model catalog is WorkBuddy's own 21 ids from the JS registry (including the virtual presets `default-model`/`fast-model`/`balanced-model`/`primary-model`/`deep-model`) under both `workbuddy` and `wb` — never the CodeBuddy list, which WorkBuddy's gateway rejects. The dashboard catalog branch (`isCodebuddyFamily`) now includes `workbuddy`/`wb`, resolving through the canonical id to that list. Frontend: `web/src/lib/models.ts` gains the `wb` alias + model list, and `ProviderDetailView` treats `workbuddy` as a device-OAuth provider; the provider catalog itself is API-driven from the Go registry, so the card appears with no further UI wiring.
+- **WorkBuddy capabilities and thinking levels.** The 12 per-model entries from `open-sse/providers/capabilities.js` (including the GLM vision:false guard — the server drops images while claiming support) plus the registry layer-0 declarations for the presets and newer ids, merged into `providerCapabilities["workbuddy"]` because Go has no separate registry-caps layer; without the preset rows the capabilities gate in `GetThinkingLevels` would swallow the preset patterns. The 7 provider-qualified thinking patterns from `open-sse/providers/thinkingLevels.js` are ported with JS placement: presets (`fast`/`balanced` = medium, `primary` = high) and `deepseek-v4*` above the unqualified glob, `glm-5.3*`/`glm-5.2`/`hy3*` with the per-model block. Preset levels verified live in-process: fast-model → [medium], glm-5.2 → [high xhigh], hy3 → [low high], deepseek-v4.1-flash → [low high xhigh].
+- **WorkBuddy executor** (WB #5, the audit BLOCKER). `ForwardWorkbuddy` is a thin flavor of the shared CodeBuddy forward — the way upstream's `workbuddy.js` executor extends the CodeBuddy executor — reusing force-stream, the reasoning mirror, the prompt merge (with the leading identity swapped to "You are WorkBuddy."), and 6004 parsing. Its header builder starts from the CodeBuddy set and then strips the CodeBuddy CLI/Stainless identity (`X-Stainless-*`, `X-App`, `X-Private-Data`, `X-CodeBuddy-Request`; channel verification error 11128), sets the mandatory `WorkBuddy/5.5.6` client identity (error 10085 without it) with `X-IDE-Type`/`X-IDE-Name` = WorkBuddy and `X-Agent-Type: main`, mints fresh channel/conversation ids per request, honors the connection's `domain` override, and sets `X-User-Id` from the connection JWT with upstream's claim precedence (user_id → userId → uid → sub). Verified against a local fake upstream: identity headers exact, stripped headers absent, conversation ids differ across calls, request id equals message id, stream forced, WorkBuddy prompt injected. The existing `ck_` API-key branch behavior is preserved (the executor's Go-only extra).
+- **CodeBuddy-family request pacing** (CB #10). Upstream paces all three brands at 120 req/min through a leaky bucket on request starts (`open-sse/utils/providerRateLimiter.js`, applied by the shared executor base — codebuddy-cn, codebuddy-intl, and workbuddy alike). `internal/proxy/executor/codebuddy_pacing.go` implements the same semantics in-process: 500 ms slot interval per provider, at most 12 waiting, fail-open when the queue is full or the wait would exceed 2 s, context-aware sleep. Upstream's Valkey-backed distributed variant is not ported — this gateway is a single process, so the in-memory bucket is the whole mechanism.
+- **Real CodeBuddy-family token refreshers** (CB #11, WB #6). New `internal/proxy/oauth/codebuddy.go` registers dedicated refreshers for `codebuddy-cn`, `codebuddy-intl`, and `workbuddy` implementing the upstream contract (`open-sse/services/tokenRefresh/providers.js`): POST `{host}/v2/plugin/auth/token/refresh` with an empty JSON body and the refresh token in the `X-Refresh-Token` header, per-brand User-Agent (`CLI/2.63.2 CodeBuddy/2.63.2` / `IDE/2.63.2 CodeBuddy/2.63.2` / `IDE/2.63.2 WorkBuddy/2.63.2`), `X-Domain`, `X-Auth-Refresh-Source: plugin`, `X-Product: SaaS`. Hosts: CN → copilot.tencent.com, Intl → www.codebuddy.ai, WorkBuddy → www.workbuddy.ai. A rotated refresh token is persisted via the standard connection update; when the response carries none, the stored token is carried through. Because the refreshers register from `init()`, `RegisterAll` skips these providers, so the generic env-gated form-POST path can never fire for the family; the `KnownOAuthConfigs` entries now document the correct per-brand hosts (intl previously pointed at the CN host `copilot.tencent.com`) and a `workbuddy` entry was added.
+- **Device-save identity merge for the family** (CB #13/#14, WB #7/#8). The dedicated device flow now supports `workbuddy` end to end (provider list, start, poll — the dynamic dispatch already had it). `saveDeviceConnection` merges a family re-login by provider + email (upstream `connectionsRepo.js` behavior): when an email is known, the existing active row's id is reused so a rotated token updates the row instead of creating a credential-hash duplicate; the hash identity remains the fallback when no email can be determined. Polls now carry `expires_in` → `expiresAt` for all three providers, defaulting to 86400 when absent (upstream `mapTokens`), and capture displayName from the JWT — intl via the name/given/family/local-part extraction, WorkBuddy as the account email per its `mapTokens` — persisted alongside the email. CN stays email-only, as upstream.
+
+### Deferred to phases 2/3 (deliberate)
+
+- Catalog freshness/credit metadata for codebuddy-cn/intl (CB #1–#3), the live usage fetchers for CN and WorkBuddy, Bulk-JWT UI wiring (route already at parity), error-classification numbers 11140/14018/14003 (CB #18–#20), and connection backfill/verification probes. The quota response normalizer in `web/src/components/quota/types.ts` gains its `workbuddy` case together with the WorkBuddy usage fetcher in phase 2 — without the backend fetcher there is no payload to normalize.
+- `web/src/lib/providers.test.ts` was not extended with a workbuddy dual-auth assertion; it is a test fixture, and no test files failed to compile against these changes (full `go vet ./...` type-checks every Go test file clean).
+
 ## [v1.9.20] - 2026-11-06
 
 ## Antigravity rotation pacing — mechanism C IMPLEMENTED (A and B declined)
