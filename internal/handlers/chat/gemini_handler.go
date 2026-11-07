@@ -226,6 +226,10 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 		return fmt.Errorf("ForwardGemini (%s/%s): %w", provider, modelName, err)
 	}
 
+	// The response headers are in, so the upstream is alive: restart the
+	// combo stall window here rather than letting it run from attempt start.
+	noteUpstreamProgress(ctx)
+
 	var bodyCloser io.Closer = resp.Body
 	defer func() {
 		if bodyCloser != nil {
@@ -677,6 +681,9 @@ func (h *ChatHandler) handleGeminiStream(ctx context.Context, w http.ResponseWri
 	var totalChunks int
 	var totalBytesWritten int
 	err := proxy.ScanStream(upstream, func(chunk []byte) {
+		// Every chunk read is upstream progress, including the ones the
+		// translation below buffers instead of writing straight through.
+		noteUpstreamProgress(ctx)
 		chunkStr := strings.TrimSpace(string(chunk))
 		if chunkStr == "" || chunkStr == "[DONE]" {
 			return

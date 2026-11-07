@@ -13,9 +13,12 @@ type ComboStrategy struct {
 	Strategy    string `json:"strategy,omitempty"`
 	StickyLimit int    `json:"stickyLimit,omitempty"`
 	JudgeModel  string `json:"judgeModel,omitempty"`
-	// FirstTokenTimeoutMs bounds every combo candidate except the last until
-	// its first usable response; zero disables it. The last candidate keeps
-	// the global deadline, so the setting never makes a combo fail sooner.
+	// FirstTokenTimeoutMs bounds the upstream silence every combo candidate
+	// except the last may fall into before the combo moves on: any upstream
+	// progress (response headers, body chunks) restarts the window, so only
+	// a candidate that goes quiet for the whole span is cut; zero disables
+	// it. The last candidate keeps the global deadline, so the setting
+	// never makes a combo fail sooner.
 	FirstTokenTimeoutMs int `json:"firstTokenTimeoutMs,omitempty"`
 	// FirstTokenGraceMs is how long a model that timed out is left out of the
 	// combo chain before it is tried again. Nil means DefaultFirstTokenGraceMs;

@@ -10,12 +10,20 @@ import (
 // comboResponseTimeout serializes timeout expiry with response commitment. A
 // canceled candidate can never write into the next candidate's response. Once
 // committed, the timer is disarmed without canceling the live upstream stream.
+//
+// The timer is a STALL timer, not an absolute deadline: it bounds the
+// upstream silence a candidate may fall into, and every upstream progress
+// signal (response headers, any body chunk read — reported through
+// noteUpstreamProgress) restarts the full window. Only a candidate that
+// stays completely quiet for the whole span is canceled; a slow-starting
+// candidate that keeps progressing is never cut.
 type comboResponseTimeout struct {
 	http.ResponseWriter
 	ctx       context.Context
 	cancel    context.CancelFunc
 	mu        sync.Mutex
 	timer     *time.Timer
+	timeout   time.Duration
 	committed bool
 	expired   bool
 	header    http.Header
@@ -23,9 +31,48 @@ type comboResponseTimeout struct {
 
 func newComboResponseTimeout(ctx context.Context, w http.ResponseWriter, timeout time.Duration) *comboResponseTimeout {
 	ctx, cancel := context.WithCancel(ctx)
-	t := &comboResponseTimeout{ResponseWriter: w, ctx: ctx, cancel: cancel, header: make(http.Header)}
+	t := &comboResponseTimeout{ResponseWriter: w, cancel: cancel, header: make(http.Header), timeout: timeout}
+	// The gate rides its own context, so the serving paths running under it
+	// can report upstream progress without knowing the gate exists.
+	t.ctx = context.WithValue(ctx, comboGateCtxKey{}, t)
 	t.timer = time.AfterFunc(timeout, t.expire)
 	return t
+}
+
+// comboGateCtxKey registers the active candidate's timeout gate in its
+// context.
+type comboGateCtxKey struct{}
+
+// upstreamProgresser is the slice of the timeout gate the serving paths
+// need: a single progress ping.
+type upstreamProgresser interface {
+	Progress()
+}
+
+// noteUpstreamProgress tells the combo timeout gate registered in ctx (if
+// any) that the upstream just showed a sign of life, restarting its stall
+// window. Contexts without a gate — direct requests, the last combo
+// candidate — make it a no-op.
+func noteUpstreamProgress(ctx context.Context) {
+	if ctx == nil {
+		return
+	}
+	if gate, ok := ctx.Value(comboGateCtxKey{}).(upstreamProgresser); ok && gate != nil {
+		gate.Progress()
+	}
+}
+
+// Progress records upstream activity: while the candidate is uncommitted
+// and the gate has not fired, the stall window restarts in full. After
+// commit the timer is already stopped, and after expiry a late signal must
+// not resurrect the gate — the candidate stays canceled.
+func (t *comboResponseTimeout) Progress() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.committed || t.expired {
+		return
+	}
+	t.timer.Reset(t.timeout)
 }
 
 func (t *comboResponseTimeout) expire() {
@@ -97,8 +144,9 @@ func (t *comboResponseTimeout) timedOut() bool {
 	return t.expired
 }
 
-// comboTimeoutPolicy returns the per-candidate response timeout and the grace
-// period a timed-out model sits out. Both are zero when the timeout is off.
+// comboTimeoutPolicy returns the per-candidate upstream-silence window and
+// the grace period a timed-out model sits out. Both are zero when the
+// timeout is off.
 func (h *ChatHandler) comboTimeoutPolicy(comboName string) (timeout, grace time.Duration) {
 	settings, err := h.Repo.GetSettings()
 	if err != nil || settings == nil {

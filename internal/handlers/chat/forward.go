@@ -113,6 +113,10 @@ func (h *ChatHandler) forwardRequest(
 	h.resilienceReport(provider, cfg, resp.StatusCode)
 	release()
 
+	// The upstream answered: restart the combo stall window from the
+	// response headers instead of the attempt start.
+	noteUpstreamProgress(ctx)
+
 	var bodyCloser io.Closer = resp.Body
 	defer func() {
 		if bodyCloser != nil {
@@ -211,6 +215,7 @@ func (h *ChatHandler) handleClaudeUpstreamStream(ctx context.Context, w http.Res
 	state := &translator.ClaudeToOpenAIStreamState{Model: translator.RequestedModelFromContext(ctx)}
 	done := false
 	err := internalproxy.ScanStream(upstream, func(payload []byte) {
+		noteUpstreamProgress(ctx)
 		if done {
 			return
 		}
@@ -295,6 +300,7 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 		// OpenAI-compatible clients mid-turn (upstream 95c9d03e).
 		toolFill := internalproxy.NewStreamToolCallIDFill()
 		err := internalproxy.ScanStream(upstream, func(payload []byte) {
+			noteUpstreamProgress(ctx)
 			if patched, changed := toolFill.Fill(payload); changed {
 				payload = patched
 			}
@@ -340,6 +346,7 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 	}()
 	finished := false
 	err := internalproxy.ScanStream(upstream, func(chunk []byte) {
+		noteUpstreamProgress(ctx)
 		translated, err := translator.TranslateOpenAIToClaudeStreamSession(sessionKey, chunk)
 		if err != nil {
 			log.ErrorCtx(ctx, "stream", "translate error", "error", err)
