@@ -90,23 +90,20 @@ describe('dashboard API authentication and errors', () => {
     const requests: Array<{ url: string; init?: RequestInit }> = []
     globalThis.fetch = async (input, init) => {
       requests.push({ url: String(input), init })
-      return Response.json({ success: true, state: 'state-123', redirectUri: 'http://localhost:20130/callback' })
+      return Response.json({ success: true, state: 'state-123', redirectUri: 'https://antigravity.google/oauth-callback' })
     }
     try {
-      await api.getAntigravityAuthorizeUrl('http://localhost:20130/callback')
-      await api.antigravityExchange('code-123', 'http://localhost:20130/callback', 'state-123')
+      await api.getAntigravityAuthorizeUrl()
+      await api.antigravityExchange('code-123', 'state-123')
     } finally {
       globalThis.fetch = originalFetch
     }
 
-    expect(requests[0]?.url).toBe(
-      '/api/oauth/antigravity/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A20130%2Fcallback',
-    )
+    expect(requests[0]?.url).toBe('/api/oauth/antigravity/authorize')
     expect(requests[1]?.url).toBe('/api/oauth/antigravity/exchange')
     expect(requests[1]?.init?.method).toBe('POST')
     expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({
       code: 'code-123',
-      redirectUri: 'http://localhost:20130/callback',
       state: 'state-123',
     })
   })

@@ -1987,14 +1987,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ connectionId, model }),
     }),
-  getAntigravityAuthorizeUrl: (redirectUri: string) =>
+  // Antigravity mirrors agy's /login (fragment 982): the authorize URL is
+  // pinned to Google's own callback page and the PKCE verifier stays
+  // server-side, so the client only carries the code + state round trip.
+  getAntigravityAuthorizeUrl: () =>
     request<{ url: string; redirectUrl: string; authUrl: string; state: string; redirectUri: string }>(
-      `/api/oauth/antigravity/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`,
+      '/api/oauth/antigravity/authorize',
     ),
-  antigravityExchange: (code: string, redirectUri: string, state?: string) =>
+  antigravityExchange: (code: string, state: string) =>
     request<{ success: boolean; error?: string }>('/api/oauth/antigravity/exchange', {
       method: 'POST',
-      body: JSON.stringify({ code, redirectUri, state }),
+      body: JSON.stringify({ code, state }),
     }),
   getClineAuthorizeUrl: (provider: string, redirectUri?: string) =>
     request<{ url: string; authUrl: string; state: string; codeVerifier: string; codeChallenge: string; redirectUri: string }>(

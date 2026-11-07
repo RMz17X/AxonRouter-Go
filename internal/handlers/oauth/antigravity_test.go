@@ -13,8 +13,34 @@ import (
 	"axonrouter/proxy/internal/db"
 )
 
+// authorizeForTest runs the authorize handler and returns the minted
+// state plus the PKCE challenge carried in the authorization URL.
+func authorizeForTest(t *testing.T, handler *OAuthHandler) (string, string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/oauth/antigravity/authorize", nil)
+	rec := httptest.NewRecorder()
+	handler.HandleAntigravityAuthorize(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authorize status = %d: %s", rec.Code, rec.Body.String())
+	}
+	var res struct {
+		URL   string `json:"url"`
+		State string `json:"state"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &res); err != nil {
+		t.Fatalf("failed to unmarshal authorize JSON: %v", err)
+	}
+	authURL, err := url.Parse(res.URL)
+	if err != nil {
+		t.Fatalf("parse auth URL: %v", err)
+	}
+	return res.State, authURL.Query().Get("code_challenge")
+}
+
 func TestHandleAntigravityAuthorize(t *testing.T) {
 	handler := NewOAuthHandler(nil)
+	// The legacy ?redirect_uri= parameter rides along to prove it is no
+	// longer honored (fragment 982): the URL must still pin agy's page.
 	req := httptest.NewRequest(
 		http.MethodGet,
 		"/api/oauth/antigravity/authorize?state=custom_state_123&redirect_uri=http%3A%2F%2Flocalhost%3A20130%2Fcallback",
@@ -42,10 +68,10 @@ func TestHandleAntigravityAuthorize(t *testing.T) {
 	if authURL.Host != "accounts.google.com" {
 		t.Errorf("auth URL host = %q", authURL.Host)
 	}
-	if got := authURL.Query().Get("redirect_uri"); got != "http://localhost:20130/callback" {
+	if got := authURL.Query().Get("redirect_uri"); got != "https://antigravity.google/oauth-callback" {
 		t.Errorf("redirect_uri = %q", got)
 	}
-	if res.RedirectURI != "http://localhost:20130/callback" {
+	if res.RedirectURI != "https://antigravity.google/oauth-callback" {
 		t.Errorf("response redirectUri = %q", res.RedirectURI)
 	}
 	if authURL.Query().Get("state") != "custom_state_123" {
@@ -54,12 +80,23 @@ func TestHandleAntigravityAuthorize(t *testing.T) {
 	if authURL.Query().Get("access_type") != "offline" {
 		t.Errorf("access_type = %q", authURL.Query().Get("access_type"))
 	}
+	if authURL.Query().Get("prompt") != "consent" {
+		t.Errorf("prompt = %q", authURL.Query().Get("prompt"))
+	}
+	if authURL.Query().Get("code_challenge_method") != "S256" {
+		t.Errorf("code_challenge_method = %q", authURL.Query().Get("code_challenge_method"))
+	}
+	if authURL.Query().Get("code_challenge") == "" {
+		t.Errorf("code_challenge missing")
+	}
 	expectedScopes := []string{
 		"https://www.googleapis.com/auth/cloud-platform",
 		"https://www.googleapis.com/auth/userinfo.email",
 		"https://www.googleapis.com/auth/userinfo.profile",
 		"https://www.googleapis.com/auth/cclog",
 		"https://www.googleapis.com/auth/experimentsandconfigs",
+		"https://www.googleapis.com/auth/aicode",
+		"openid",
 	}
 	if got := authURL.Query().Get("scope"); got != strings.Join(expectedScopes, " ") {
 		t.Errorf("scope = %q", got)
@@ -73,32 +110,6 @@ func TestHandleAntigravityAuthorize(t *testing.T) {
 	}
 }
 
-func TestGetAntigravityRedirectURI(t *testing.T) {
-	tests := []struct {
-		name     string
-		request  *http.Request
-		expected string
-	}{
-		{
-			name:     "explicit loopback callback wins",
-			request:  httptest.NewRequest(http.MethodGet, "/?redirect_uri=http%3A%2F%2Flocalhost%3A20130%2Fcallback", nil),
-			expected: "http://localhost:20130/callback",
-		},
-		{
-			name:     "invalid callback falls back upstream default",
-			request:  httptest.NewRequest(http.MethodGet, "/", nil),
-			expected: "http://localhost:8080/callback",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := getAntigravityRedirectURI(test.request); got != test.expected {
-				t.Fatalf("getAntigravityRedirectURI() = %q, expected %q", got, test.expected)
-			}
-		})
-	}
-}
-
 func TestHandleAntigravityExchangeErrors(t *testing.T) {
 	handler := NewOAuthHandler(nil)
 
@@ -109,9 +120,9 @@ func TestHandleAntigravityExchangeErrors(t *testing.T) {
 		expectedCode int
 	}{
 		{name: "method must be post", method: http.MethodGet, expectedCode: http.StatusMethodNotAllowed},
-		{name: "missing code", method: http.MethodPost, body: `{"redirectUri":"http://localhost:20130/callback"}`, expectedCode: http.StatusBadRequest},
-		{name: "missing redirect uri", method: http.MethodPost, body: `{"code":"code-123"}`, expectedCode: http.StatusBadRequest},
-		{name: "invalid redirect uri", method: http.MethodPost, body: `{"code":"code-123","redirectUri":"javascript:alert(1)"}`, expectedCode: http.StatusBadRequest},
+		{name: "missing code", method: http.MethodPost, body: `{"state":"state-123"}`, expectedCode: http.StatusBadRequest},
+		{name: "missing state", method: http.MethodPost, body: `{"code":"code-123"}`, expectedCode: http.StatusBadRequest},
+		{name: "unknown state", method: http.MethodPost, body: `{"code":"code-123","state":"never-minted"}`, expectedCode: http.StatusBadRequest},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -129,7 +140,10 @@ func TestHandleAntigravityExchangeSuccess(t *testing.T) {
 	database, cleanup := setupTestDB(t)
 	defer cleanup()
 	repo := db.NewRepo(database)
-	const redirectURI = "http://localhost:20130/callback"
+
+	// Set from the authorize response before each exchange: the mock
+	// token endpoint only accepts the verifier whose S256 hash equals it.
+	var expectedChallenge string
 
 	mockGoogleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/token" {
@@ -145,8 +159,16 @@ func TestHandleAntigravityExchangeSuccess(t *testing.T) {
 			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
 		}
-		if got := r.Form.Get("redirect_uri"); got != redirectURI {
+		if got := r.Form.Get("redirect_uri"); got != "https://antigravity.google/oauth-callback" {
 			http.Error(w, "redirect mismatch", http.StatusBadRequest)
+			return
+		}
+		if _, present := r.Form["client_secret"]; present {
+			http.Error(w, "client_secret must not be sent", http.StatusBadRequest)
+			return
+		}
+		if verifier := r.Form.Get("code_verifier"); verifier == "" || sha256Base64(verifier) != expectedChallenge {
+			http.Error(w, "pkce verification failed", http.StatusBadRequest)
 			return
 		}
 		if got := r.Form.Get("code"); got != "valid_google_code_123" {
@@ -177,7 +199,9 @@ func TestHandleAntigravityExchangeSuccess(t *testing.T) {
 	defer func() { googleOAuthTokenURL = oldTokenURL }()
 
 	handler := NewOAuthHandler(repo)
-	body := `{"code":"valid_google_code_123","redirectUri":"` + redirectURI + `","state":"state-123"}`
+	state, challenge := authorizeForTest(t, handler)
+	expectedChallenge = challenge
+	body := `{"code":"valid_google_code_123","state":"` + state + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/oauth/antigravity/exchange", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
@@ -261,8 +285,13 @@ func TestHandleAntigravityExchangeSuccess(t *testing.T) {
 		t.Fatalf("failed to update DB with custom projectId: %v", err)
 	}
 
-	// Exchange again for the same account — custom project ID should be preserved
-	req2 := httptest.NewRequest(http.MethodPost, "/api/oauth/antigravity/exchange", strings.NewReader(body))
+	// Exchange again for the same account — custom project ID should be
+	// preserved. Verifiers are single-use (fragment 982), so the second
+	// login round mints a fresh state/verifier pair first.
+	state2, challenge2 := authorizeForTest(t, handler)
+	expectedChallenge = challenge2
+	body2 := `{"code":"valid_google_code_123","state":"` + state2 + `"}`
+	req2 := httptest.NewRequest(http.MethodPost, "/api/oauth/antigravity/exchange", strings.NewReader(body2))
 	rec2 := httptest.NewRecorder()
 	handler.HandleAntigravityExchange(rec2, req2)
 	if rec2.Code != http.StatusOK {

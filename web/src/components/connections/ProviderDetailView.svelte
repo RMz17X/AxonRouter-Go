@@ -24,7 +24,6 @@
     OAUTH_CHANNEL,
     readCallback,
     savePending,
-    oauthLoopbackCallbackURL,
     writeCallback,
   } from '../../lib/oauth-handoff'
   import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from '../../lib/models'
@@ -625,6 +624,9 @@
   let isConnecting = $state(false)
   let clineCodeVerifier = $state('')
   let clineRedirectUri = $state('')
+  // Antigravity (fragment 982): the PKCE verifier stays server-side; the
+  // modal only keeps the state the authorize step minted.
+  let antigravityState = $state('')
   let pkceCodeVerifier = $state('')
   let pkceState = $state('')
   let pkceRedirectUri = $state('')
@@ -661,11 +663,6 @@
     return dashboardCallbackURL(dashboardOrigin())
   }
 
-  function antigravityCallback(): string {
-    if (typeof window === 'undefined') return 'http://localhost:8080/callback'
-    return oauthLoopbackCallbackURL(window.location.port, window.location.protocol === 'https:')
-  }
-
   function rememberPending(p: { state: string; verifier?: string; redirectUri?: string; extra?: Record<string, string> }) {
     if (typeof window === 'undefined') return
     try {
@@ -677,6 +674,10 @@
 
   function consumeOAuthCallback(): boolean {
     if (typeof window === 'undefined' || autoSubmitted || isConnecting || !showOAuthModal) return false
+    // Antigravity never returns through the dashboard /callback page
+    // (fragment 982): Google displays the code on its own page and the
+    // user pastes it into the modal, so the auto-handoff skips it.
+    if (providerId === 'antigravity') return false
     let cb
     try {
       cb = readCallback(window.localStorage)
@@ -744,7 +745,7 @@
     }
     window.addEventListener('storage', onStorage)
     const onWindowMessage = (e: MessageEvent) => {
-      const trustedOrigin = e.origin === window.location.origin || e.origin === new URL(antigravityCallback()).origin
+      const trustedOrigin = e.origin === window.location.origin
       if (!trustedOrigin) return
       if (e.data?.type === 'oauth_callback' && e.data?.data) {
         const data = e.data.data as {
@@ -769,27 +770,12 @@
         }
         return
       }
-      if (e.data?.type === '9router-oauth-success' && e.data?.provider === 'antigravity') {
-        showOAuthModal = false
-        onRefresh()
-      } else if (e.data?.type === '9router-oauth-error' && e.data?.provider === 'antigravity') {
-        oauthError = `Login failed: ${e.data.error || 'Unknown error'}`
-      }
     }
     window.addEventListener('message', onWindowMessage)
     let bc: BroadcastChannel | null = null
     try {
       bc = new BroadcastChannel(OAUTH_CHANNEL)
-      bc.onmessage = (e) => {
-        if (e.data?.provider === 'antigravity' && e.data?.success) {
-          showOAuthModal = false
-          onRefresh()
-          return
-        }
-        if (e.data?.provider === 'antigravity' && e.data?.error) {
-          oauthError = `Login failed: ${e.data.error}`
-          return
-        }
+      bc.onmessage = () => {
         consumeOAuthCallback()
       }
     } catch {
@@ -1691,20 +1677,21 @@
     oauthError = null
     callbackInput = ''
     copiedAuthUrl = false
+    antigravityState = ''
     try {
-      const redirectUri = antigravityCallback()
-      const res = await api.getAntigravityAuthorizeUrl(redirectUri)
+      // agy-style flow (fragment 982): Google's own page shows the code;
+      // the user pastes it into the modal. Only the state is kept here —
+      // the PKCE verifier never leaves the server.
+      const res = await api.getAntigravityAuthorizeUrl()
       oauthAuthUrl = res.authUrl || res.url || res.redirectUrl
+      antigravityState = res.state || ''
       if (res.state) {
-        rememberPending({
-          state: res.state,
-          redirectUri: res.redirectUri || redirectUri,
-        })
+        rememberPending({ state: res.state })
       }
+      // No auto-open (Ricki, 2026-11-07): the modal presents the login
+      // URL with a copy affordance and an explicit "Open login page"
+      // button — the new tab opens only on that manual click.
       showOAuthModal = true
-      if (typeof window !== 'undefined' && oauthAuthUrl) {
-        window.open(oauthAuthUrl, '_blank', 'width=600,height=700')
-      }
     } catch (err) {
       alert(`Failed to initiate authorization: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -2454,8 +2441,12 @@
       } catch {
         pending = null
       }
-      const exchangeRedirectUri = redirectUri || pending?.redirectUri || antigravityCallback()
-      const res = await api.antigravityExchange(code, exchangeRedirectUri, pending?.state)
+      const state = antigravityState || pending?.state || ''
+      if (!state) {
+        oauthError = 'The authorization session has not been started yet. Close this modal and click Log in again.'
+        return
+      }
+      const res = await api.antigravityExchange(code, state)
       if (res?.success === false || (res as { error?: string })?.error) {
         oauthError = (res as { error?: string })?.error || 'Authorization failed'
       } else {
@@ -5502,24 +5493,28 @@
       <div class="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50 mb-4">
         <span class="material-symbols-outlined text-base text-primary animate-spin">progress_activity</span>
         <span class="text-sm">
-          {providerId === 'freebuff'
-            ? 'Waiting for Freebuff authorization… (auto-polling active)'
-            : deviceUserCode
-              ? `Waiting for device authorization… (auto-check every ${deviceInterval}s)`
-              : 'Waiting for popup authorization…'}
+          {providerId === 'antigravity'
+            ? 'Open the login page with the button below, sign in with Google, then paste the code Google shows you.'
+            : providerId === 'freebuff'
+              ? 'Waiting for Freebuff authorization… (auto-polling active)'
+              : deviceUserCode
+                ? `Waiting for device authorization… (auto-check every ${deviceInterval}s)`
+                : 'Waiting for popup authorization…'}
         </span>
       </div>
 
       <div class="flex items-center gap-3 my-3">
         <div class="flex-1 h-px bg-border"></div>
         <span class="text-xs text-text-muted uppercase tracking-wider">
-          {providerId === 'freebuff'
-            ? 'Authorization link & manual check'
-            : isClineOAuth
-              ? 'Log in via Cline, then paste the callback'
-              : oauthAuthUrl
-                ? 'Or paste callback URL manually'
-                : 'Manual token import'}
+          {providerId === 'antigravity'
+            ? 'Paste the code from Google'
+            : providerId === 'freebuff'
+              ? 'Authorization link & manual check'
+              : isClineOAuth
+                ? 'Log in via Cline, then paste the callback'
+                : oauthAuthUrl
+                  ? 'Or paste callback URL manually'
+                  : 'Manual token import'}
         </span>
         <div class="flex-1 h-px bg-border"></div>
       </div>
@@ -5595,7 +5590,7 @@
               class="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md border border-border bg-surface-2 hover:bg-surface-3 text-text-main cursor-pointer"
             >
               <span class="material-symbols-outlined text-sm">open_in_new</span>
-              Open
+              {providerId === 'antigravity' ? 'Open login page' : 'Open'}
             </button>
             <button
               type="button"
@@ -5635,29 +5630,35 @@
         {#if !deviceUserCode}
         <div>
           <p class="text-sm font-medium mb-1">
-            {providerId === 'freebuff'
-              ? 'Step 2: Finish in the browser / paste URL / Code / Token'
-              : isClineOAuth
-                ? 'Step 2: Paste the callback URL here'
-                : oauthAuthUrl
+            {providerId === 'antigravity'
+              ? 'Step 2: Paste the code from Google here'
+              : providerId === 'freebuff'
+                ? 'Step 2: Finish in the browser / paste URL / Code / Token'
+                : isClineOAuth
                   ? 'Step 2: Paste the callback URL here'
-                  : 'Manual token import (no browser login for this provider)'}
+                  : oauthAuthUrl
+                    ? 'Step 2: Paste the callback URL here'
+                    : 'Manual token import (no browser login for this provider)'}
           </p>
           <input
             bind:value={callbackInput}
-            placeholder={providerId === 'freebuff'
-              ? 'https://freebuff.com/onboard?auth_code=... or paste authToken'
-              : `${dashboardCallback()}?code=...&state=...`}
+            placeholder={providerId === 'antigravity'
+              ? 'Paste the authorization code shown by Google'
+              : providerId === 'freebuff'
+                ? 'https://freebuff.com/onboard?auth_code=... or paste authToken'
+                : `${dashboardCallback()}?code=...&state=...`}
             class="w-full px-2.5 py-1.5 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary font-mono"
           />
           <p class="text-[11px] text-text-muted mt-1">
-            {providerId === 'freebuff'
-              ? 'If the browser lands on /onboard, finish onboarding in the Freebuff tab, then paste the URL above or click Check & Connect.'
-              : isClineOAuth
-                ? 'Log in via the Cline tab that opened — the connection completes automatically. If it fails, copy the redirect URL (containing code=...) here and click Connect.'
-                : oauthAuthUrl
-                  ? 'Complete the login in the browser tab — the connection completes automatically. If it fails, copy the full URL from the browser here.'
-                  : 'Paste the access token here, then click Connect.'}
+            {providerId === 'antigravity'
+              ? 'After you sign in, Google’s Antigravity page displays an authorization code. Copy it, paste it above, then click Connect. The code works once — if it expires, close this modal and click Log in again.'
+              : providerId === 'freebuff'
+                ? 'If the browser lands on /onboard, finish onboarding in the Freebuff tab, then paste the URL above or click Check & Connect.'
+                : isClineOAuth
+                  ? 'Log in via the Cline tab that opened — the connection completes automatically. If it fails, copy the redirect URL (containing code=...) here and click Connect.'
+                  : oauthAuthUrl
+                    ? 'Complete the login in the browser tab — the connection completes automatically. If it fails, copy the full URL from the browser here.'
+                    : 'Paste the access token here, then click Connect.'}
           </p>
         </div>
         {/if}

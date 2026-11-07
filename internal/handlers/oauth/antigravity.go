@@ -53,19 +53,16 @@ func getAntigravityOAuthConfig() (clientID, clientSecret, tokenURL string) {
 	return
 }
 
-func getAntigravityRedirectURI(r *http.Request) string {
-	redirectURI := strings.TrimSpace(r.URL.Query().Get("redirect_uri"))
-	if validRedirectURI(redirectURI) {
-		return redirectURI
-	}
-	return "http://localhost:8080/callback"
-}
-
 // HandleAntigravityAuthorize returns the Google OAuth authorization URL for Antigravity.
 // GET /api/oauth/antigravity/authorize
+//
+// The URL mirrors agy's /login exactly (fragment 982): the fixed Google
+// callback page as redirect_uri and a PKCE S256 challenge whose verifier
+// stays server-side, keyed by state, until the exchange consumes it. A
+// client-supplied ?redirect_uri= is not honored for this provider — the
+// public Antigravity client registered only the Google page.
 func (h *OAuthHandler) HandleAntigravityAuthorize(w http.ResponseWriter, r *http.Request) {
 	clientID, _, _ := getAntigravityOAuthConfig()
-	redirectURI := getAntigravityRedirectURI(r)
 
 	scopes := defaultAntigravityScopes
 	if customScope := r.URL.Query().Get("scope"); customScope != "" {
@@ -77,14 +74,19 @@ func (h *OAuthHandler) HandleAntigravityAuthorize(w http.ResponseWriter, r *http
 		state = randomString(32)
 	}
 
+	verifier := pkceVerifier()
+	antigravityVerifiers.put(state, verifier)
+
 	params := url.Values{
-		"client_id":     {clientID},
-		"redirect_uri":  {redirectURI},
-		"response_type": {"code"},
-		"scope":         {strings.Join(scopes, " ")},
-		"access_type":   {"offline"},
-		"prompt":        {"consent"},
-		"state":         {state},
+		"client_id":             {clientID},
+		"redirect_uri":          {antigravityRedirectURI},
+		"response_type":         {"code"},
+		"scope":                 {strings.Join(scopes, " ")},
+		"access_type":           {"offline"},
+		"prompt":                {"consent"},
+		"state":                 {state},
+		"code_challenge":        {sha256Base64(verifier)},
+		"code_challenge_method": {"S256"},
 	}
 
 	authURL := googleOAuthAuthURL + "?" + params.Encode()
@@ -99,7 +101,7 @@ func (h *OAuthHandler) HandleAntigravityAuthorize(w http.ResponseWriter, r *http
 		"redirectUrl": authURL,
 		"authUrl":     authURL,
 		"state":       state,
-		"redirectUri": redirectURI,
+		"redirectUri": antigravityRedirectURI,
 	})
 }
 
@@ -113,7 +115,11 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 	}
 
 	var body struct {
-		Code        string `json:"code"`
+		Code  string `json:"code"`
+		State string `json:"state"`
+		// RedirectURI is accepted so older dashboard builds do not break
+		// on an unknown-field basis, but it is never honored: the exchange
+		// always repeats the fixed agy redirect (antigravityRedirectURI).
 		RedirectURI string `json:"redirectUri"`
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
@@ -127,24 +133,36 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 	}
 
 	code := cleanAuthCode(body.Code)
-	redirectURI := strings.TrimSpace(body.RedirectURI)
 	if code == "" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing code parameter")
 		return
 	}
-	if !validRedirectURI(redirectURI) {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing or invalid redirectUri")
+	state := strings.TrimSpace(body.State)
+	if state == "" {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing state parameter")
+		return
+	}
+	// Consume before the token call: the verifier is single-use whether
+	// the exchange succeeds or fails, so a replayed state can never ride
+	// a second attempt.
+	verifier, ok := antigravityVerifiers.consume(state)
+	if !ok {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "unknown or expired authorization state")
 		return
 	}
 
-	clientID, clientSecret, tokenURL := getAntigravityOAuthConfig()
+	clientID, _, tokenURL := getAntigravityOAuthConfig()
 
+	// agy's client is a public installed-app client: the exchange proves
+	// possession of the PKCE verifier instead of a client secret
+	// (fragment 982). The refresh path keeps its own configs and is not
+	// affected by this change.
 	form := url.Values{
 		"code":          {code},
 		"client_id":     {clientID},
-		"client_secret": {clientSecret},
-		"redirect_uri":  {redirectURI},
+		"redirect_uri":  {antigravityRedirectURI},
 		"grant_type":    {"authorization_code"},
+		"code_verifier": {verifier},
 	}
 
 	tokenReq, err := http.NewRequestWithContext(r.Context(), http.MethodPost, tokenURL, strings.NewReader(form.Encode()))

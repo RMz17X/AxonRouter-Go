@@ -120,7 +120,9 @@ func (h *OAuthHandler) dynExchange(w http.ResponseWriter, r *http.Request, provi
 		return
 	}
 
-	noPkce := provider == "cline" || provider == "cline-free" || provider == "clinepass" || provider == "kimchi"
+	// antigravity does PKCE with a server-side verifier (fragment 982):
+	// the client never holds a codeVerifier to send.
+	noPkce := provider == "cline" || provider == "cline-free" || provider == "clinepass" || provider == "kimchi" || provider == "antigravity"
 	if code == "" || redirectURI == "" || (codeVerifier == "" && !noPkce) {
 		axonError(w, http.StatusBadRequest, "Missing required fields")
 		return
@@ -143,7 +145,9 @@ func (h *OAuthHandler) dynExchange(w http.ResponseWriter, r *http.Request, provi
 		}
 	case "antigravity":
 		fn = h.HandleAntigravityExchange
-		payload = map[string]any{"code": code, "redirectUri": redirectURI}
+		// The exchange consumes the server-side PKCE verifier keyed by
+		// state (fragment 982); redirectUri is ignored by the handler.
+		payload = map[string]any{"code": code, "state": state}
 	case "gemini-cli", "iflow":
 		fn = h.HandleAuthCodeExchange
 		payload = map[string]any{
