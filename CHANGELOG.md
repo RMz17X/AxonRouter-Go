@@ -1,5 +1,136 @@
 # Changelog
 
+## [v1.9.44] - 2026-11-08
+
+# 1017 — Usage Overview topology nodes keep their positions
+
+## Symptom
+
+On /dashboard/usage, provider nodes on the topology map changed position
+constantly: a provider arriving, going quiet, or merely moving in the
+activity order reshuffled every node on the ring, so the map could not be
+read at a glance and the operator's pan jumped on every membership change.
+
+## Root cause
+
+`ProviderTopologyCard.svelte` placed nodes purely by list position: the
+angle was `-π/2 + 2π·idx/s` with `s = providers.length`, and the ring
+radii were functions of the same `s` (`rx = max(320, 204·s/2π)`,
+`ry = max(200, 0.55·rx)`). The `providers` prop is activity-ordered, so
+any membership or order change altered every angle and the ring size at
+once. The view layer compounded it: the card refit (resetting pan) on
+every node-count change.
+
+## Fix
+
+- New pure module `web/src/components/analytics/topologyLayout.ts`: a
+  session slot allocator plus ring geometry. Each provider owns a
+  numbered slot keyed by its id (the same lowercased identity the card
+  already matches activity against):
+  - a present provider keeps its slot unconditionally;
+  - a provider that leaves frees its slot for newcomers, but the slot is
+    remembered — on return it reclaims the same seat while it is free
+    (a slot another present provider owns is never taken back);
+  - a newcomer takes the lowest free slot;
+  - ring capacity comes from a coarse tier ladder (6/12/18/24/36/48/64)
+    covering the highest slot in use, and never shrinks during the
+    session, so radii and angles are stable; a tier step forced by a
+    genuinely larger concurrent set is the only moment existing angles
+    may change.
+  Angle and radii derive from slot and capacity only, using the card's
+  existing formulas with capacity in place of the live count.
+- `ProviderTopologyCard.svelte` consumes the allocator: placement is
+  keyed by provider id, the prop order no longer affects it, and the
+  refit effect now fires only when the ring size itself changes (a tier
+  step), so arrivals and departures no longer reset the operator's pan.
+  Hub, edges, artwork, active/pulse/last/error highlighting, drag/pan,
+  zoom controls, and the empty state are unchanged.
+- `AnalyticsView.svelte` is untouched: its derivation decides who is on
+  the map (the 10-minute retention of fragment 1016), the card now
+  decides where they sit.
+- Known boundary: slot memory lives in the card's component state, so
+  it lasts while the card stays mounted; leaving the Usage view and
+  coming back starts a fresh assignment (in the same first-seen order
+  the old layout used).
+
+## Verification
+
+- Web build via the heavy gate: green.
+- svelte-check (`--tsconfig ./tsconfig.app.json`): baseline
+  89 errors / 56 warnings, unchanged.
+- Allocator exercised directly (scratch script, since removed) against
+  the shipped module: A, B, C placed at capacity 6 → B leaves, A and C
+  coordinates bit-identical → B returns, reclaims its slot exactly →
+  newcomer D takes B's freed slot while A and C stay put → list reorder
+  moves nobody → a 7th concurrent provider steps capacity to 12 (the
+  one allowed movement) and later departures never shrink it, survivors
+  keeping their post-growth seats.
+
+# 1016 — Usage Overview topology retention is 10 minutes, end to end
+
+## Symptom
+
+On /dashboard/usage, a provider dropped off the topology map after five
+quiet minutes. The owner raised the retention to a full 10 minutes
+(2026-11-08), superseding his 2026-11-04 five-minute rule.
+
+## Root cause
+
+Two layers clipped presence at or below the old window:
+
+- Frontend: `TOPOLOGY_RETENTION_MS` in
+  `web/src/components/analytics/AnalyticsView.svelte` was `5 * 60_000`,
+  and the presence derivation (`topologyProviders`) gates every source on
+  it.
+- Backend: the derivation's durable source is
+  `stats.byProvider[key].lastUsed` from `GET /api/usage/stats`, but whole
+  period families could not supply it. Daily windows (7d/30d/60d/all)
+  aggregate `usageDaily` rows, which are keyed by date and carry no time
+  of day, so their `byProvider` entries always had an empty `lastUsed`;
+  the "today" window starts at midnight. On a freshly loaded page with a
+  daily period selected, a provider whose last request was 6–9 minutes
+  old therefore had no `lastUsed` at all and survived only if it happened
+  to sit in the recent-requests backstop (the latest 60 raw rows).
+
+## Fix
+
+- `AnalyticsView.svelte`: `TOPOLOGY_RETENTION_MS` is now `10 * 60_000`;
+  the presence-rule comments state the 10-minute rule dated 2026-11-08
+  superseding the 2026-11-04 five-minute rule.
+- `internal/handlers/usage_stats.go` (`HandleUsageStats`): after the
+  period window is aggregated and before totals are summed, overlay each
+  `byProvider` entry's `LastUsed` with the provider's newest raw
+  `usageHistory` timestamp inside the retention window
+  (`Repo.GetUsageGroupByProviderSince(now − 10m)`, answered by the
+  `idx_uh_ts_prov` index). The overlay only raises entries the selected
+  window already aggregated — it never creates one — so period totals
+  and breakdown membership are unchanged; a provider quiet for longer
+  than 10 minutes keeps its previous (possibly empty) `lastUsed` and
+  expires from the map on the normal rule. Side effect, intended: in a
+  daily period, the provider breakdown's Last Used cell now shows a real
+  timestamp for a provider active within the last 10 minutes instead of
+  staying blank; providers quiet longer stay blank there, as before.
+
+## Verification
+
+- Web build via the heavy gate: green.
+- `go build ./...` via the heavy gate: green.
+- svelte-check (`--tsconfig ./tsconfig.app.json`): baseline
+  89 errors / 56 warnings, unchanged.
+- Fresh-load case traced end to end: for the default "today" and "24h"
+  periods the raw window cache already fills `lastUsed` with the newest
+  in-window request; for daily periods the new overlay supplies it for
+  any provider active within the retention window; the recent-requests
+  stamps remain as a backstop in both paths.
+- Existing test expectations re-checked by reading (suite not run, per
+  the standing rule): `TestHandleUsageStats_DailyByProviderHasNoLastUsed`
+  (sqlite_legacy-quarantined) seeds no `usageHistory` rows, so the
+  overlay is a no-op for its fixture and its expectation still holds; no
+  web test asserts the retention window.
+- Other 5-minute constants in the tree (combo failover grace, account
+  pacing cap, latency window default, analytics chart labels) are
+  different rules and are untouched.
+
 ## [v1.9.43] - 2026-11-08
 
 # 1015 — Release version collision correction (v1.9.42 → v1.9.43)
