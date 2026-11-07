@@ -1,5 +1,331 @@
 # Changelog
 
+## [v1.9.22] - 2026-11-07
+
+# CodeBuddy leftovers: combo-picker credit pill, costAware editor toggle, CN X-Domain verdict
+
+Closes the three deferrals fragment 976 recorded.
+
+## (a) Credit pill in the combo picker
+
+Phase 2 left the picker without the credit pill because the picker builds
+its model list from the static `web/src/lib/models.ts` bundle, and copying
+credit values there would create a second home for numbers that belong to
+the one table in `internal/providers/codebuddy_catalog.go`. The pill now
+reads the values from the server instead:
+
+- `pickerExtras.ts` `loadPickerExtras` fetches `GET /api/models/caps` —
+  the endpoint fragment 976 already wired `credit` into — for exactly the
+  three providers whose caps can carry a price (`codebuddy-cn`,
+  `codebuddy-intl`, `workbuddy`, exported as `CREDIT_CAPS_PROVIDERS`).
+  Fetching caps for every catalog provider would be ~100 requests per
+  picker open for data only these three have. Each fetch fails soft like
+  the other extras, and the results land in
+  `ResolvedPickerExtras.modelCaps`, keyed `"<provider>/<model>"`.
+  `PickerExtrasSource.getModelCaps` is optional so existing test doubles
+  keep working.
+- `pickerData.ts` threads the map through: `PickerExtras.modelCaps`,
+  `PickerModel.credit` / `PickerModel.free` (flattened scalars, like the
+  caps booleans, so pill props compare by value), attached by
+  `creditFields()` at all three catalog push sites (bundle models,
+  customs, aliases). Node groups carry no credit — the family providers
+  are catalog providers, not nodes.
+- `ModelPill.svelte` renders the same two forms as the provider detail
+  grid (`ProviderDetailView.svelte`): a FREE badge when the server marks
+  the model free, otherwise `x{n.toFixed(2)}` with the "Credits per
+  request" tooltip. On the selected (brand-filled) pill the badge/pill
+  switches to a white-on-brand variant to stay readable.
+
+The static bundle stays free of credit values; the backend table remains
+the only source.
+
+## (b) costAware toggle in the combo editor
+
+The backend half shipped in fragment 976 (`db.ComboStrategy.CostAware`,
+global `comboCostAware`, resolution per-combo → global → on, ordering in
+`chat.OrderByCredit`); only the editor control was missing. It now sits
+on `ComboCard.svelte` beside "Respect stored order" — the card is where
+this dashboard keeps per-combo strategy controls — as a "Cheapest first"
+checkbox with the JS dashboard's helper text as its tooltip ("Cheapest
+first — tries free (x0.00) then low-credit members before pricey ones",
+AxonRouter `SmartRoutingSection.js`).
+
+Semantics mirror the JS combo modal exactly: the checkbox reads
+`strategyInfo.costAware !== false` (an absent flag inherits the global,
+whose default is on) and writes an explicit boolean in both directions
+through the existing settings home — `CombosView.handleToggleCostAware`
+merges `{ costAware }` into `settings.comboStrategies` and saves via
+`api.patchSettings`, the same path as every other strategy field.
+`ComboStrategyInfo` gains the `costAware?: boolean` field. Visibility
+follows the stored-order rule (hidden for the smart strategy, which
+orders members itself). No backend change.
+
+## (c) CN X-Domain live probe — BLOCKED, no account available
+
+Verdict: **blocked-no-account; the value stays UNVERIFIED and unchanged.**
+
+The probe needs an existing codebuddy-cn connection with a token in the
+local staging database. Direct query of the local staging PG
+(`router9_staging` on 127.0.0.1:15432, the only database this work is
+allowed to touch — the hijilaptop staging instance is off-limits) shows
+the `providerConnections` table is completely empty: zero rows for the
+whole CodeBuddy family, zero rows overall. No CN connection exists to
+probe with, and creating accounts was explicitly out of scope.
+
+Go's CN executor therefore keeps sending `X-Domain: www.codebuddy.cn`
+while the JS dashboard sends `copilot.tencent.com`; which value the
+upstream accepts remains unknown. The probe recipe for whenever a CN
+connection exists in a reachable database: one minimal authenticated
+request per candidate value through the connection's own proxy, token
+never printed, record which value upstream accepts; if both work, leave
+the value unchanged.
+
+## Verification
+
+- svelte-check (`--tsconfig tsconfig.app.json`): 89 errors / 56 warnings
+  on this tree and the identical totals on a pristine `ffc7167a`
+  worktree; the normalized error sets (file + message, line numbers
+  stripped) are byte-identical between the two — zero new errors, zero
+  removed. `make vet-svelte`'s ratchet still reports failure only
+  because its pinned baseline (80) is stale against the tree's
+  long-standing 89, the same gap fragments 975–977 recorded.
+- Go build + vet clean (frontend-only change set for this fragment; the
+  embedded bundle is rebuilt at release time).
+- No unit-test suites run (standing rule); the picker extras source
+  method is optional precisely so the existing picker test doubles keep
+  compiling unchanged.
+
+# 980 — Egress-consistency auditing in the routing log
+
+## Problem
+
+The per-request lines that land in `logs/routing.log` already named
+the connection (`conn=…`) and the egress path's label (`egress=…`, a
+pool name or "direct") — but never the address the request actually
+left from. For a rotating pool the label is stable while the address
+changes underneath it, and a provider that rate-limits or blocks by IP
+cannot be diagnosed from a label. An account whose path silently moved
+to a different egress mid-day — exactly the drift the anti-suspend work
+hunts — was invisible in the log.
+
+## What was built
+
+- `internal/handlers/chat/egress_ip.go` — the tracker. Each chat-lane
+  log entry for a connection now also carries:
+  - `egress_ip` — the last-known egress IPv4 of the connection's path,
+    discovered by an echo lookup THROUGH the connection's own client
+    (`getClientForConnection`: same pool/proxy/relay/direct transport
+    the request itself used), against the same echo targets the
+    dashboard's exit-node probe uses (v4.ident.me,
+    whatismyip.akamai.com, ipv4.icanhazip.com).
+  - `egress_changed` — `old->new`, present only when this connection's
+    path IP differs from the one its previous entry carried.
+- Freshness without blocking: lookups are cached per path for 10
+  minutes and refreshed in a background goroutine (single-flight per
+  path; a failed lookup keeps the last-known IP and retries after 1
+  minute). The request path only reads the cached value — it never
+  waits on an echo. A path's first-ever entry therefore carries no
+  `egress_ip` yet; the value appears from the next entry on.
+- Path identity (the cache key) is credential-free: the resolved
+  pool's id (`pool:<id>`), a relay's host (`relay:<host>`), a short
+  SHA-256 prefix of a legacy proxy target (`proxy:<hash>` — a proxy
+  URL can carry credentials and is never used raw), or `direct`.
+- Both caches are in-memory only (deliberate): a restart forgets the
+  previous per-connection IPs, so the first entry after a boot carries
+  no `egress_changed` marker — there is nothing honest to compare
+  against.
+- Hook points (`internal/handlers/chat/fallback.go`): the success
+  usage record and both failure records (upstream failure and the
+  proxy-blocked early return) — the same entries that already carried
+  `egress=`. The snapshot is taken once per attempt, so sibling lines
+  of one attempt agree and a change is marked once, on the attempt
+  that observed it. Emission is via `UsageLogInfo.ConnIdentityKV`
+  (`internal/handlers/shared/types.go`: new `EgressIP` /
+  `EgressChanged` fields), which the `[usage]` line and the fallback
+  failure lines already print. Scope: the chat lane — the media lanes
+  build their own usage records and do not carry the fields.
+
+## Verification
+
+- Temporary in-package probe (stub transports + a local stub HTTP
+  proxy; deleted after the run, suite not run): PASS —
+  - direct path: first fill returns immediately with no IP (proves the
+    request path never blocks on the echo); after the background
+    refresh lands, fills carry `egress_ip=203.0.113.7` with no marker;
+  - forced change: stub answer flipped and TTL lapsed → the next fill
+    carries `egress_ip=203.0.113.9` and
+    `egress_changed=203.0.113.7->203.0.113.9`; `ConnIdentityKV` emits
+    both keys;
+  - proxied path: echo travelled through the connection's own proxy
+    (stub proxy answering every absolute-URI GET), path key is
+    `proxy:<hash>`, never the raw URL.
+- Boot smoke (staging PG, scratch DB, dropped after): gateway boots
+  on the new binary, `/api/version` answers, and
+  `<DATA_DIR>/logs/routing.log` is created and written.
+- `go build ./...` clean; `go vet` clean on internal/handlers/chat and
+  internal/handlers/shared.
+
+# 979 — Scheduled generation probe for idle Antigravity accounts
+
+## Problem
+
+Fragment 973's ToS-disable detection is traffic-driven: the chat lane
+classifies generation responses as they pass. An account Google
+disabled while it sat idle produces no generation responses, so the
+disable stays invisible until the account's next real request draws the
+verdict — mid-rotation, in front of a user.
+
+## What was built
+
+- `internal/schedule/idleprobe.go` — the prober. On a 1-minute tick
+  (first sweep 15s after boot) it lists Antigravity connections and
+  probes each due one with ONE tiny generation request through the
+  existing in-process probe lane, `ChatHandler.PingConnection`
+  (connection pinned, probe context) — the same lane the quota
+  auto-ping uses, i.e. real credential resolution, OAuth refresh,
+  proxy-pool binding and executor. No HTTP self-call and no new probe
+  implementation: the test-model route's decisive surface IS the
+  generation path, and this is it, in-process. The loadCodeAssist
+  connection probe is deliberately NOT used (it answers for terminated
+  accounts).
+- The response flows through the chat lane's existing classification
+  untouched: a ToS 403 disables the account exactly as live traffic
+  would (973), a 429 parks it as live traffic would, a transport
+  failure changes nothing. Fail-open: a failed probe is logged and
+  dropped; the prober itself writes no account state, ever.
+- Probe shape: model `gemini-3.8-flash-low` (cheapest broadly-entitled
+  flash lane; the disable verdict is account-shaped, not model-shaped),
+  prompt "hi", max_tokens 1 — the auto-ping body shape.
+- Guardrails: concurrency 1 (sequential sweep); due list shuffled with
+  a jittered 3–13s pause between probes; at most 8 probes per tick;
+  per-account minimum interval enforced from an in-memory last-probe
+  map (an attempt counts, so a dead-egress account is not re-probed
+  every tick). Disabled accounts are never dialed: a connection is
+  skipped when it is inactive OR carries the stored disabled verdict
+  (data.status / data.testStatus == "disabled", the
+  DisableConnectionWithReason marker) — the second check covers the
+  resurrection shape (marker intact on an active row) where isActive
+  alone would let a probe through. Idle is measured from the
+  connection's lastUsedAt stamp (creation time for never-used rows).
+- `internal/app/server.go` — `startIdleProbe` wired beside the
+  auto-ping scheduler, bound to the shutdown context.
+
+## Settings (one home)
+
+All in `providerStrategies.<provider>` (`internal/db/settings.go`),
+resolved per sweep by `Repo.IdleProbeConfigFor`
+(`internal/db/accounts_idleprobe.go`), following fragment 974's
+derived-default pattern:
+
+- `idleProbeEnabled` — unset = derived default (enabled for
+  antigravity, off elsewhere); explicit false turns the prober off.
+- `idleProbeThresholdSec` — unset or non-positive = 6 hours.
+- `idleProbeIntervalSec` — unset or non-positive = 1 hour.
+
+Only antigravity is in the prober's scope even when another provider's
+strategy enables it: the disable blindness being closed is
+Antigravity's, and no other provider's verdicts feed a disable path.
+
+## Quota cost, honestly
+
+Each probe is one real generation call against the account's own quota
+("hi", one output token, cheapest flash lane). With the defaults, a
+permanently idle account is probed ~4 times a day; an account with any
+real traffic is probed rarely or never, because traffic keeps
+resetting its idle clock. This is a deliberate trade: a handful of
+one-token generations per idle account per day, in exchange for
+learning about a ToS disable on a background tick instead of from a
+failed user request.
+
+## Found and fixed on the way (latent bug, shipped code)
+
+`applyProviderStrategies` (`internal/db/settings_parse_maps.go`)
+rebuilds every ProviderStrategy field-by-field and never carried the
+pointer knobs — fragment 974's `cooldownJitterSec` was silently dropped
+on the parse path, so its EXPLICIT setting has been dead since v1.9.20
+(only the derived default ever applied). The parse now carries
+`cooldownJitterSec` plus the three new idle-probe fields verbatim
+(presence-checked, since explicit 0/false is a decision for these
+knobs). Without this fix the settings above could not have been read
+at all.
+
+## Verification (boot smoke, staging PG, scratch DB — dropped after)
+
+Seeded three Antigravity connections (fake credentials): A = active,
+idle 24h; B = active but carrying the stored disabled marker; C =
+inactive, idle 24h.
+
+- Phase A, `idleProbeThresholdSec=999999999` in providerStrategies:
+  two sweeps, ZERO probe/skip lines — the settings home governs.
+- Phase B, threshold flipped to 60 (settings row only, no restart):
+  the next tick logged `skipping stored-disabled connection` for B and
+  `probing idle connection` for A — and nothing for C. B's row was
+  byte-unchanged afterwards (updatedAt still the seed instant, no
+  lastError): never dialed. A's probe travelled the lane and its
+  existing classification disabled the account (the fake credential
+  resolves to no project ID — the lane's own disable verdict, recorded
+  with lastError), proving end-to-end that a probe verdict lands in
+  the same disable path as live traffic. With real credentials the
+  same dispatch draws the upstream's actual generation verdict.
+- `go build ./...` clean; `go vet` clean on internal/db,
+  internal/schedule, internal/app.
+
+# 978 — Antigravity identity mirror lifted to agy 1.5.2
+
+## What changed
+
+- `internal/providers/client_identity.go`: `AntigravityCLIVersion`
+  "1.5.1" → **"1.5.2"**. `AntigravityCLIChangelist` is UNCHANGED at
+  1012564305 (evidence below). Every derived surface follows through the
+  two constants' only consumers: the UA builder and the runtime identity
+  (`internal/providers/antigravity_identity.go`,
+  `internal/providers/antigravity_pin.go`) — User-Agent, loadCodeAssist
+  `ideVersion`, fresh pin snapshots.
+- `internal/providers/antigravity_identity.go`: header comment updated to
+  name the mirrored build (v1.5.2); no code change.
+
+## Evidence for the captured build (no guessing)
+
+- Live binary: `/home/hatch/.local/bin/agy`, 244,044,176 bytes, sha256
+  `da1751e7658469fa80bf36eda2c60ee61216d8e42b735a184382ba31d1f6b88e`,
+  mtime 2026-11-06 08:23 — bit-identical to the build the teardown pass
+  recorded as **v1.5.2** when the live binary self-updated 1.5.1 → 1.5.2
+  mid-analysis (`~/workspace/agy-analysis/FINDINGS-WIP.md`, "Self-update
+  incident"). The file has not been replaced since, so 1.5.2 is the build
+  this VM actually runs today. The binary was NOT executed for this
+  fragment (running it is what triggered the self-update last time).
+- Changelist: the embedded Go build version string was read out of THIS
+  binary (byte scan, the same source the 1.5.1 value came from):
+  `go1.28-20261102-RC00 cl/1012564305 +298f53e483` — the only `cl/` build
+  string in the file. The 1.5.2 build was compiled with the same
+  toolchain snapshot as 1.5.1, so the UA's `cl=` part does not move.
+  (`go version -m` cannot read this binary — Google's internal fork
+  build — which is why the value is taken from the raw string, exactly
+  as in the original teardown's go-evidence.json.)
+- UA grammar unchanged in this build: the format pieces `%s/%s/%s (%s)`,
+  `aidev_client`, `os_type=`, `auth_method=` are each present in the
+  1.5.2 binary; `antigravity/cli/` as a literal is absent, as expected —
+  the real CLI assembles it at runtime.
+
+## Pins untouched (permanence by design)
+
+Resolution reads the pin first — `AntigravityIdentityForPSD` returns the
+stored snapshot when one exists and only falls back to the runtime
+derivation otherwise (verified in code before the bump). Existing
+`antigravityIdentity` snapshots keep saying 1.5.1 verbatim for the
+account's whole life; only new pins and connection-less surfaces present
+1.5.2. The doc example in `antigravity_pin.go` still shows a 1.5.1
+snapshot — that is what stored pins genuinely look like, so it was left
+as-is deliberately.
+
+## Verification
+
+- `go build ./...` clean; `go vet ./internal/providers/` clean.
+- In-process probe (temporary `cmd/probe978`, deleted after the run):
+  - runtime UA: `antigravity/cli/1.5.2 (aidev_client; os_type=linux; arch=amd64; cl=1012564305; auth_method=consumer)`, ideVersion 1.5.2, platform 3
+  - fresh pin snapshot JSON carries the 1.5.2 UA + ideVersion
+  - a stored 1.5.1 pin resolves verbatim (UA and ideVersion both 1.5.1)
+
 ## [v1.9.21] - 2026-11-07
 
 # 977 — CodeBuddy family Phase 3 (final): bulk-JWT UI, intl identity backfill, userinfo probes, error-classification alignment, SSE finish_reason repair
