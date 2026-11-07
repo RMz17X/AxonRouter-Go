@@ -5,7 +5,7 @@ package executor
 func RegisterAll() {
 	Register("openai", func() Executor { return ForwardOpenAI })
 	Register("anthropic", func() Executor { return ForwardOpenAI })
-	Register("tokenharbor", func() Executor { return ForwardOpenAI })
+	Register("tokenharbor", func() Executor { return ForwardTokenHarbor })
 	Register("dahl", func() Executor { return ForwardOpenAI })
 	Register("bai", func() Executor { return ForwardOpenAI })
 	Register("atria", func() Executor { return ForwardOpenAI })

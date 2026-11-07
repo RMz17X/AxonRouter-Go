@@ -546,6 +546,10 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 		return cls
 	}
 
+	if cls, ok := classifyTokenHarbor(statusCode, lowerError, backoffLevel, provider); ok {
+		return cls
+	}
+
 	for _, rule := range ErrorRules {
 		// Text-based match (substring, case-insensitive)
 		if rule.Text != "" && lowerError != "" && strings.Contains(lowerError, rule.Text) {

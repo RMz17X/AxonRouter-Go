@@ -1750,6 +1750,11 @@ func extractResetDuration(body []byte) (time.Duration, bool) {
 		}
 	}
 
+	// 2b. TokenHarbor retry pattern: "You can send your next request in 59 min 1 s."
+	if dur, ok := providers.ParseTokenHarborRetryDuration(string(body)); ok && dur > 0 {
+		return clampResetDuration(dur), true
+	}
+
 	// 3. CodeBuddy date-time pattern (e.g. 2026-09-28 14:30:00 or with UTC offset)
 	if matches := codebuddyResetDateRegex.FindSubmatch(body); len(matches) > 2 {
 		dateStr := string(matches[1])
@@ -2076,7 +2081,8 @@ func isProxyLocationError(err error, body []byte) bool {
 	return strings.Contains(text, "user location is not supported") ||
 		(strings.Contains(text, "failed_precondition") && strings.Contains(text, "location")) ||
 		strings.Contains(text, "location_not_supported") ||
-		strings.Contains(text, "free_tier_region_blocked")
+		strings.Contains(text, "free_tier_region_blocked") ||
+		providers.IsTokenHarborEgressIpLimit(text)
 }
 
 // isProxyTransportError reports whether an upstream failure appears to be a transport/gateway error
