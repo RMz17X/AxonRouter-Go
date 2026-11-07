@@ -151,15 +151,18 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 		return
 	}
 
-	clientID, _, tokenURL := getAntigravityOAuthConfig()
+	clientID, clientSecret, tokenURL := getAntigravityOAuthConfig()
 
-	// agy's client is a public installed-app client: the exchange proves
-	// possession of the PKCE verifier instead of a client secret
-	// (fragment 982). The refresh path keeps its own configs and is not
-	// affected by this change.
+	// PKCE stays (fragment 982), but the exchange also sends the client's
+	// embedded secret: the live Google endpoint rejects the no-secret form
+	// with 400 (proven 2026-11-07 against v1.9.23; the same falsification
+	// hit the JS router and was fixed there in v0.1.33). The secret is the
+	// public one shipped in agy itself, carried by the provider config.
+	// The refresh path keeps its own configs and is not affected.
 	form := url.Values{
 		"code":          {code},
 		"client_id":     {clientID},
+		"client_secret": {clientSecret},
 		"redirect_uri":  {antigravityRedirectURI},
 		"grant_type":    {"authorization_code"},
 		"code_verifier": {verifier},
@@ -191,8 +194,10 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 	}
 
 	if tokenResp.StatusCode != http.StatusOK {
-		// Never log the raw body: token responses carry access/refresh tokens.
-		log.Warn("oauth", "antigravity token exchange non-200", "status", tokenResp.StatusCode, "bytes", len(respBody))
+		// Error bodies carry only Google's error/error_description — no
+		// tokens — so log them: a bare status made the 2026-11-07 live
+		// failure undiagnosable. Success bodies are never logged.
+		log.Warn("oauth", "antigravity token exchange non-200", "status", tokenResp.StatusCode, "body", string(respBody))
 		handlerutil.WriteJSONError(w, http.StatusBadGateway, fmt.Sprintf("token exchange returned status %d", tokenResp.StatusCode))
 		return
 	}

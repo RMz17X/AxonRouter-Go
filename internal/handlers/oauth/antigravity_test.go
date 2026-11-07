@@ -163,8 +163,10 @@ func TestHandleAntigravityExchangeSuccess(t *testing.T) {
 			http.Error(w, "redirect mismatch", http.StatusBadRequest)
 			return
 		}
-		if _, present := r.Form["client_secret"]; present {
-			http.Error(w, "client_secret must not be sent", http.StatusBadRequest)
+		// The live endpoint requires the embedded client secret even with
+		// PKCE (fragment 983): the mock mirrors that requirement.
+		if r.Form.Get("client_secret") == "" {
+			http.Error(w, "client_secret is required", http.StatusBadRequest)
 			return
 		}
 		if verifier := r.Form.Get("code_verifier"); verifier == "" || sha256Base64(verifier) != expectedChallenge {
