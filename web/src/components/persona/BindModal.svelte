@@ -1,9 +1,16 @@
 <script lang="ts">
-  import { api, type JailbreakDoc, type JailbreakModelConfig } from '../../api/client'
+  import { onMount } from 'svelte'
+  import {
+    api,
+    type Combo,
+    type JailbreakDoc,
+    type JailbreakModelConfig,
+    type ProviderConnection,
+  } from '../../api/client'
   import { matchesAnyJailbreakKeyword } from '../../lib/jailbreakKeywords'
   import Button from '../../lib/ui/Button.svelte'
   import Modal from '../../lib/ui/Modal.svelte'
-  import BindingTargetPicker from './BindingTargetPicker.svelte'
+  import ModelPickerModal from '../combos/ModelPickerModal.svelte'
   import BulkArm from './BulkArm.svelte'
 
   interface Props {
@@ -25,8 +32,8 @@
   // on purpose: later prop changes must not rewrite a form in use.
   // svelte-ignore state_referenced_locally
   const bindingEditId = editTarget?.id ?? ''
-  // Editing one existing binding reuses the Single tab: the id field is
-  // disabled and the on/off checkbox appears, which is the whole difference.
+  // Editing one existing binding reuses the Single tab: the target is shown
+  // read-only and the on/off checkbox appears, which is the whole difference.
   // A second modal for the same two controls was the alternative, and it
   // duplicated the combobox, the outside-click handler, and the footer.
   // svelte-ignore state_referenced_locally
@@ -72,6 +79,43 @@
     }
     return ''
   })
+
+  // The target is picked with the Combos flow's own picker (target 'combo',
+  // the value whose resolveFilteredCombos keeps combos pickable), fed with
+  // the live connections and combos exactly as CombosView passes them. The
+  // modal mounts fresh per open, so mounting is the fetch trigger. Both
+  // fetches are cosmetic-grade — the same posture as JailbreakView's chip
+  // data: a failure leaves the picker with what did load and the type chip
+  // reading MODEL, never a blocked form.
+  let pickerConnections = $state<ProviderConnection[]>([])
+  let pickerCombos = $state<Combo[]>([])
+  let showTargetPicker = $state(false)
+  onMount(() => {
+    void (async () => {
+      try {
+        pickerConnections = await api.getConnections()
+      } catch {}
+      try {
+        pickerCombos = await api.getCombos()
+      } catch {}
+    })()
+  })
+
+  // The MODEL/COMBO chip on the target field: the same derivation
+  // BindingList's rows use — the id is a combo when its name is one.
+  let targetIsCombo = $derived(
+    bindModelId !== '' && pickerCombos.some((c) => c.name === bindModelId)
+  )
+
+  // Single-select over a multi-select picker: a pick is the whole answer,
+  // so it sets the target and closes. bindModelId is only ever written here
+  // and by the initial edit capture — opening the picker cannot clear it,
+  // and a target the live inventory no longer offers (deactivated
+  // connection, deleted combo, legacy id) still displays and saves as-is.
+  function pickTarget(value: string) {
+    bindModelId = value
+    showTargetPicker = false
+  }
 
   // Close the single-bind preset combobox on a click anywhere outside it —
   // modal padding, the title bar, the tab strip, the page behind the overlay.
@@ -154,11 +198,31 @@
       <p class="text-xs text-text-subtle">
         {bindingEditId
           ? 'The id is what the client sends, so it cannot change here. Unbind and re-add to bind a different id.'
-          : 'Pick the model or combo exactly as the client sends it, then pick the preset it resolves to.'}
+          : 'Pick the model or combo to bind, then pick the preset it resolves to.'}
       </p>
       <div class="space-y-1.5">
         <span class="text-xs text-text-muted">Model or combo</span>
-        <BindingTargetPicker bind:value={bindModelId} disabled={!!bindingEditId} />
+        <div class="flex items-center gap-2">
+          <!-- The target is display state, not an inventory lookup: a target
+               the live inventory no longer offers still renders here and
+               saves unchanged. Editing never offers the picker — the id is
+               immutable, as the note above says. -->
+          <div class="flex min-w-0 flex-1 items-center gap-2 rounded-brand border border-border-subtle bg-surface-2 px-3 py-2">
+            {#if bindModelId}
+              {#if targetIsCombo}
+                <span class="shrink-0 rounded-full border border-brand-500/30 bg-brand-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-500">COMBO</span>
+              {:else}
+                <span class="shrink-0 rounded-full border border-border-subtle bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">MODEL</span>
+              {/if}
+              <span class="truncate font-code text-sm text-text-main" title={bindModelId}>{bindModelId}</span>
+            {:else}
+              <span class="text-sm text-text-subtle">No model picked yet</span>
+            {/if}
+          </div>
+          {#if !bindingEditId}
+            <Button variant="secondary" size="md" onclick={() => (showTargetPicker = true)}>Pick model…</Button>
+          {/if}
+        </div>
       </div>
       <label class="block space-y-1.5">
         <span class="text-xs text-text-muted">Preset</span>
@@ -236,4 +300,16 @@
   {:else}
     <BulkArm {presets} onClose={onClose} onSaved={onSaved} />
   {/if}
+
+  <!-- The Combos flow's picker, reused as-is: target 'combo' keeps combos
+       pickable as entries alongside the per-connection models. -->
+  <ModelPickerModal
+    isOpen={showTargetPicker}
+    target="combo"
+    connections={pickerConnections}
+    combos={pickerCombos}
+    addedModelValues={bindModelId ? [bindModelId] : []}
+    onSelect={pickTarget}
+    onClose={() => (showTargetPicker = false)}
+  />
 </Modal>
