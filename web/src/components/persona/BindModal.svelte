@@ -3,6 +3,7 @@
   import { matchesAnyJailbreakKeyword } from '../../lib/jailbreakKeywords'
   import Button from '../../lib/ui/Button.svelte'
   import Modal from '../../lib/ui/Modal.svelte'
+  import BindingTargetPicker from './BindingTargetPicker.svelte'
   import BulkArm from './BulkArm.svelte'
 
   interface Props {
@@ -37,8 +38,8 @@
   let bindError = $state('')
   let bindSaving = $state(false)
 
-  // Add binding: one modal with two tabs — a single id typed by hand, or
-  // many ids picked from the live catalog (BulkArm).
+  // Add binding: one modal with two tabs — a single id picked from the live
+  // inventory, or many ids picked from the live catalog (BulkArm).
   let bindModalTab = $state<'single' | 'many'>('single')
 
   // Single-bind preset combobox: a keyword search over name and id, so a
@@ -60,7 +61,7 @@
     return p ? p.name || p.id || bindPresetId : bindPresetId
   })
 
-  // A typed binding id that a preset keyword already covers needs no binding.
+  // A picked binding id that a preset keyword already covers needs no binding.
   let bindHint = $derived.by(() => {
     const id = bindModelId.trim()
     if (!id) return ''
@@ -95,7 +96,7 @@
   async function bindModel() {
     const id = bindModelId.trim()
     if (!id) {
-      bindError = 'Enter a model, provider, or combo id.'
+      bindError = 'Pick a model or combo to bind.'
       return
     }
     bindError = ''
@@ -119,9 +120,9 @@
 
 <Modal isOpen={true} onClose={onClose} title={bindingEditId ? 'Edit model binding' : 'Add model bindings'} size="xl" icon={bindingEditId ? 'edit' : 'link'}>
   {#if !bindingEditId}
-    <!-- Two tabs: type one id by hand, or pick many from the live catalog.
-         Single opens first — it is the common case. Editing an existing
-         binding always lands on Single, so the strip is hidden then. -->
+    <!-- Two tabs: pick one id from the live inventory, or pick many from the
+         live catalog. Single opens first — it is the common case. Editing an
+         existing binding always lands on Single, so the strip is hidden then. -->
     <div class="mb-5 flex gap-1 rounded-brand-lg border border-border-subtle bg-surface-2 p-1" role="tablist" aria-label="Binding mode">
       <button
         type="button"
@@ -153,18 +154,12 @@
       <p class="text-xs text-text-subtle">
         {bindingEditId
           ? 'The id is what the client sends, so it cannot change here. Unbind and re-add to bind a different id.'
-          : 'Type one model, provider, or combo id exactly as the client sends it, then pick the preset it resolves to.'}
+          : 'Pick the model or combo exactly as the client sends it, then pick the preset it resolves to.'}
       </p>
-      <label class="block space-y-1.5">
-        <span class="text-xs text-text-muted">Model / provider / combo id</span>
-        <input
-          type="text"
-          bind:value={bindModelId}
-          disabled={!!bindingEditId}
-          placeholder="providerx/deepseek-4-pro, or a combo name"
-          class="w-full rounded-brand border border-border-subtle bg-surface-2 px-3 py-2 font-code text-sm text-text-main outline-none focus:border-brand-500 disabled:opacity-50"
-        />
-      </label>
+      <div class="space-y-1.5">
+        <span class="text-xs text-text-muted">Model or combo</span>
+        <BindingTargetPicker bind:value={bindModelId} disabled={!!bindingEditId} />
+      </div>
       <label class="block space-y-1.5">
         <span class="text-xs text-text-muted">Preset</span>
         <div class="relative" data-preset-combobox>
