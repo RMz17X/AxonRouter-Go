@@ -143,14 +143,26 @@ func cooldownSecForClassification(statusCode int, cls providers.ErrorClassificat
 // account again instead of waiting out a lock it set itself. Every other
 // status keeps the quota-reset reading it has always had. maxResetCooldown
 // stops a hostile or nonsensical duration from parking an account forever.
+//
+// Exception: 503. A 503 is a capacity/node verdict ("no capacity available
+// for model", UNAVAILABLE) whose own timescale is seconds to minutes — the
+// classifier's Backoff class (2s→5min). Any reset duration found in its
+// body describes a different window (a quota reset), and borrowing it
+// parked accounts for hours on a capacity signal: the JS router benched a
+// model fleet-wide for ~2h that way on 2026-11-07 (fixed there in
+// v0.1.34 by clamping the capacity writer to its short window). The Go
+// equivalent is to keep 503 on the classifier backoff and never consult
+// the body for a duration.
 func retryableCooldownSec(statusCode int, base time.Duration, ue *upstreamError, provider string) int {
 	cooldown := base
 	if statusCode == http.StatusTooManyRequests {
 		if wait, ok := retryAfterWait(ue); ok {
 			cooldown = wait
 		}
-	} else if dur, ok := extractResetDuration(ue.Body); ok {
-		cooldown = dur
+	} else if statusCode != http.StatusServiceUnavailable {
+		if dur, ok := extractResetDuration(ue.Body); ok {
+			cooldown = dur
+		}
 	}
 	return ceilSeconds(min(cooldown, maxCooldownFor(provider)))
 }
