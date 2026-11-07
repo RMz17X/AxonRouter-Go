@@ -714,6 +714,10 @@ type detailListItem struct {
 	Protocol     string           `json:"protocol,omitempty"`
 	LoopWarning  string           `json:"loopWarning,omitempty"`
 	Proxy        string           `json:"proxy"`
+	IsStream     bool             `json:"isStream"`
+	APIKeyName   string           `json:"apiKeyName,omitempty"`
+	ClientAPIKey string           `json:"clientApiKey,omitempty"`
+	ClientIP     string           `json:"clientIp,omitempty"`
 }
 
 // HandleRequestDetails returns paged request detail objects for the Details tab.
@@ -819,6 +823,10 @@ func newDetailListItem(row db.RequestDetailListRow) detailListItem {
 		Protocol:     protocol,
 		LoopWarning:  row.LoopWarning,
 		Proxy:        proxy,
+		IsStream:     row.IsStream,
+		APIKeyName:   row.APIKeyName,
+		ClientAPIKey: row.ClientAPIKey,
+		ClientIP:     row.ClientIP,
 	}
 }
 

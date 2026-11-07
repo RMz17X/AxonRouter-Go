@@ -58,6 +58,8 @@ export interface ActiveRequestItem {
   provider?: string
   account?: string
   count?: number
+  /** Response mode the client asked for, from the tracker's stream counters. */
+  isStream?: boolean
   /** What the client asked for: the combo name when a combo served it. */
   requestedModel?: string
   /** Set only when a combo served this request — the map animates on it. */
@@ -99,6 +101,12 @@ export interface RequestDetailItem {
   apiKey?: string
   combo?: string
   protocol?: string
+  /** Response mode the client asked for; absent on payloads written before it was recorded (the API reads those as streamed, upstream's default). */
+  isStream?: boolean
+  /** The gateway caller: the client API key's name and masked form, and the client IP the gateway resolved. Absent on rows written before they were recorded, and on keyless calls. */
+  apiKeyName?: string
+  clientApiKey?: string
+  clientIp?: string
   cacheSource?: string
   proxy?: string
   cost?: number
@@ -229,6 +237,27 @@ export function providerDisplayName(
     return raw.charAt(0).toUpperCase() + raw.slice(1)
   }
   return id
+}
+
+// providerAlias resolves a stored provider id to the short mark the realtime
+// in-flight cards prefix the model with — upstream's getProviderAlias /
+// formatProviderModel treatment, where the provider reads as a coloured
+// "alias/" prefix of the model line instead of a detached pill. The catalog
+// alias wins when the registry carries one; anything else falls back to the
+// display name, so a custom compatible node still reads as itself ("Trust")
+// rather than as its raw synthetic id.
+export function providerAlias(
+  providerId?: string | null,
+  nodes?: { id: string; name?: string }[]
+): string {
+  const id = (providerId || '').trim()
+  if (!id) return ''
+  const lower = id.toLowerCase()
+  const cat = PROVIDER_CATALOG.find(
+    (p) => p.id === id || p.alias === id || p.id.toLowerCase() === lower || p.alias?.toLowerCase() === lower
+  )
+  if (cat?.alias) return cat.alias
+  return providerDisplayName(providerId, nodes)
 }
 
 export function fmt(n?: number): string {

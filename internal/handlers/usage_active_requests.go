@@ -18,6 +18,7 @@ type axonActiveRequest struct {
 	Provider string `json:"provider"`
 	Account  string `json:"account"`
 	Count    int    `json:"count"`
+	IsStream bool   `json:"isStream"`
 }
 
 func axonActiveRequests(items []usagetracker.ActiveRequest) []axonActiveRequest {
@@ -28,6 +29,7 @@ func axonActiveRequests(items []usagetracker.ActiveRequest) []axonActiveRequest 
 			Provider: item.Provider,
 			Account:  item.Account,
 			Count:    item.Count,
+			IsStream: item.IsStream,
 		})
 	}
 	return out

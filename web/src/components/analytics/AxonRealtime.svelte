@@ -14,6 +14,7 @@
     formatDetailStatus,
     formatDuration,
     formatLocalTimestamp,
+    providerAlias,
     providerDisplayName,
     type ActiveRequestItem,
     type RequestDetailItem,
@@ -27,7 +28,7 @@
   let { activeRequests = [], period = 'today' }: Props = $props()
 
   let rows = $state<RequestDetailItem[]>([])
-  let statusFilter = $state<'all' | 'success' | 'failed'>('all')
+  let statusFilter = $state<'all' | 'success' | 'failed' | 'stream' | 'json'>('all')
   let accountFilter = $state('')
   let search = $state('')
   let showAllMobile = $state(false)
@@ -81,6 +82,23 @@
     const model = r.model || r.requestedModel || '—'
     return r.comboName ? `${r.comboName} -> ${model}` : model
   }
+  // The in-flight card draws the provider the way upstream's
+  // formatProviderModel does: a coloured alias prefix on the model line
+  // ("ag/gemini-…"), not a detached grey pill. A model that already carries
+  // the alias (or the raw provider id) as its own prefix loses the
+  // duplicate, exactly as upstream strips it.
+  function activeModelParts(r: ActiveRequestItem): { alias: string; label: string } {
+    const alias = providerAlias(r.provider)
+    let model = r.model || r.requestedModel || '—'
+    const lowerModel = model.toLowerCase()
+    if (alias && lowerModel.startsWith(`${alias.toLowerCase()}/`)) {
+      model = model.slice(alias.length + 1)
+    } else {
+      const p = (r.provider || '').toLowerCase()
+      if (p && lowerModel.startsWith(`${p}/`)) model = model.slice(p.length + 1)
+    }
+    return { alias, label: r.comboName ? `${r.comboName} -> ${model}` : model }
+  }
   function proxyLabel(row: RequestDetailItem): string {
     const p = row.proxy
     if (typeof p === 'string' && p.trim() && p !== 'direct') {
@@ -111,6 +129,11 @@
   let activeTotal = $derived(activeRequests.reduce((sum, r) => sum + (r.count || 1), 0))
   let successCount = $derived(rows.filter(isSuccess).length)
   let failedCount = $derived(rows.filter(isFailed).length)
+  // Detail rows record the mode the client asked for; rows stored before
+  // the flag existed arrive without it and read as streamed (the API's
+  // default, upstream's own), so "stream" is everything not marked JSON.
+  let streamCount = $derived(rows.filter((r) => r.isStream !== false).length)
+  let jsonCount = $derived(rows.filter((r) => r.isStream === false).length)
   let accounts = $derived(
     [...new Set(rows.map((r) => r.account).filter((a): a is string => Boolean(a)))].sort()
   )
@@ -120,9 +143,11 @@
     return rows.filter((row) => {
       if (statusFilter === 'success' && !isSuccess(row)) return false
       if (statusFilter === 'failed' && !isFailed(row)) return false
+      if (statusFilter === 'stream' && row.isStream === false) return false
+      if (statusFilter === 'json' && row.isStream !== false) return false
       if (accountFilter && (row.account || '') !== accountFilter) return false
       if (q) {
-        const hay = `${row.model || ''} ${row.provider || ''} ${row.account || ''} ${row.apiKey || ''}`.toLowerCase()
+        const hay = `${row.model || ''} ${row.provider || ''} ${row.account || ''} ${row.apiKey || ''} ${row.apiKeyName || ''} ${row.clientApiKey || ''} ${row.clientIp || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true
@@ -183,14 +208,24 @@
     closeError()
   }
 
-  // ActiveRequestItem carries no stream flag, so Axon's STREAM/JSON mode chip
-  // cannot be drawn honestly for in-flight rows; the modal shows provider,
-  // account and count instead. Elapsed renders only when the row happens to
+  // In-flight rows carry the tracked response mode (the tracker splits its
+  // aggregates by it), so the card draws Axon's STREAM/JSON chip beside the
+  // provider alias prefix. Elapsed renders only when the row happens to
   // carry a start time.
   function activeStartedAt(r: ActiveRequestItem): string | undefined {
     return (r as unknown as { startedAt?: string }).startedAt
   }
 </script>
+
+{#snippet modeBadge(isStream: boolean)}
+  <span
+    class="inline-flex shrink-0 items-center gap-1 rounded-brand bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary"
+    title={isStream ? 'Streaming response' : 'Non-streaming JSON response'}
+  >
+    <span class="material-symbols-outlined text-[11px]" aria-hidden="true">{isStream ? 'wifi_tethering' : 'code'}</span>
+    {isStream ? 'STREAM' : 'JSON'}
+  </span>
+{/snippet}
 
 <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] flex min-w-0 flex-col gap-3 p-4">
   <div class="flex flex-wrap items-center justify-between gap-2">
@@ -217,12 +252,12 @@
     </div>
   {/if}
 
-  <!-- Filters. Axon also offers Stream/JSON pills; completed detail rows
-       carry no stream flag, so those pills would filter on nothing and are
-       deliberately not rendered (no dead controls). -->
+  <!-- Filters: one single-select pill group, Axon's set — status and the
+       recorded response mode share the dimension, as upstream's filterType
+       does. -->
   <div class="flex flex-wrap items-center gap-2">
     <div class="inline-flex items-center gap-1" role="group" aria-label="Status filter">
-      {#each [{ v: 'all', label: 'All', n: rows.length }, { v: 'success', label: 'Success', n: successCount }, { v: 'failed', label: 'Failed', n: failedCount }] as pill}
+      {#each [{ v: 'all', label: 'All', n: rows.length }, { v: 'stream', label: 'Stream', n: streamCount }, { v: 'json', label: 'JSON', n: jsonCount }, { v: 'success', label: 'Success', n: successCount }, { v: 'failed', label: 'Failed', n: failedCount }] as pill}
         <button
           type="button"
           onclick={() => (statusFilter = pill.v as typeof statusFilter)}
@@ -272,8 +307,8 @@
         <thead>
           <tr class="border-b border-border">
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">Model</th>
-            <th class="py-2 pr-2 text-left font-semibold text-text-muted">Provider</th>
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">Upstream Account</th>
+            <th class="py-2 pr-2 text-left font-semibold text-text-muted">API Key</th>
             <th class="py-2 pr-2 text-left font-semibold text-text-muted">Proxy</th>
             <th class="py-2 pr-2 text-right font-semibold whitespace-nowrap text-text-muted">Tokens In/Out</th>
             <th class="py-2 pr-2 text-right font-semibold text-text-muted">Cost</th>
@@ -284,11 +319,18 @@
         <tbody class="divide-y divide-border/50">
           {#each filtered as row (row.id ?? `${row.timestamp}-${row.model}`)}
             <tr class="transition-colors hover:bg-surface-2">
-              <td class="max-w-[240px] truncate py-2 pr-2 font-mono text-[11px]" title={modelLabel(row)}>{modelLabel(row)}</td>
-              <td class="py-2 pr-2 whitespace-nowrap">
-                <span class="inline-block rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
+              <td class="max-w-[240px] py-2 pr-2">
+                <div class="truncate font-mono text-[11px]" title={modelLabel(row)}>{modelLabel(row)}</div>
+                <div class="mt-1 flex items-center gap-1.5">
+                  <span class="inline-block rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
+                  {@render modeBadge(row.isStream !== false)}
+                </div>
               </td>
               <td class="max-w-[160px] truncate py-2 pr-2" title={row.account || 'Direct (Free)'}>{row.account || 'Direct (Free)'}</td>
+              <td class="max-w-[180px] py-2 pr-2">
+                <div class="truncate font-medium text-text-main" title={row.clientApiKey || row.apiKeyName || undefined}>{row.apiKeyName || row.clientApiKey || '—'}</div>
+                <div class="mt-0.5 truncate font-mono text-[10px] text-text-muted" title={row.clientIp || undefined}>{row.clientIp || '—'}</div>
+              </td>
               <td class="py-2 pr-2 whitespace-nowrap font-mono text-[11px]">
                 {#if proxyLabel(row) !== 'direct'}
                   <span class="inline-block rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title={proxyLabel(row)}>{proxyLabel(row)}</span>
@@ -325,11 +367,17 @@
           <div class="truncate font-mono text-[11px]" title={modelLabel(row)}>{modelLabel(row)}</div>
           <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-muted">
             <span class="inline-block rounded-full border border-border bg-surface px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
+            {@render modeBadge(row.isStream !== false)}
             <span>{row.account || 'Direct (Free)'}</span>
             <span class="tabular-nums">{fmtNumberUS(row.tokens?.prompt_tokens)} / {fmtNumberUS(row.tokens?.completion_tokens)}</span>
             <span>{row.cost != null ? fmtCost(row.cost) : '—'}</span>
             <span>{relTime(row.timestamp)}</span>
           </div>
+          {#if row.apiKeyName || row.clientApiKey || row.clientIp}
+            <div class="mt-1 truncate text-[10px] text-text-muted" title={row.clientApiKey || undefined}>
+              Key: {row.apiKeyName || row.clientApiKey}{#if row.clientIp} · {row.clientIp}{/if}
+            </div>
+          {/if}
           {#if isFailed(row)}
             <button
               type="button"
@@ -359,17 +407,39 @@
   {#if activeRequests.length === 0}
     <div class="py-8 text-center text-xs text-text-muted">No active in-flight requests</div>
   {:else}
-    <div class="grid max-h-[72vh] grid-cols-1 gap-2 overflow-y-auto p-1 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="grid max-h-[72vh] grid-cols-1 gap-2 overflow-y-auto p-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {#each activeRequests as r, i (i)}
-        <div class="rounded-brand border border-border bg-surface-2/50 px-3 py-2">
-          <div class="truncate font-mono text-[11px] font-medium" title={activeLabel(r)}>{activeLabel(r)}</div>
-          <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-muted">
-            <span class="inline-block rounded-full border border-border bg-surface px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(r.provider)}</span>
-            {#if (r.count || 1) > 1}<span>×{r.count}</span>{/if}
-            {#if activeStartedAt(r)}<span>{formatDuration(nowMs - new Date(activeStartedAt(r)!).getTime())}</span>{/if}
+        {@const parts = activeModelParts(r)}
+        <div class="flex min-w-0 flex-col justify-between gap-1.5 rounded-brand border border-border bg-surface-2/30 px-3 py-2 transition-colors hover:bg-surface-2/50">
+          <div class="flex items-start justify-between gap-1.5">
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1 text-[9px] font-medium tracking-wider text-text-muted uppercase">
+                <span class="material-symbols-outlined shrink-0 text-[10px] text-text-muted/70" aria-hidden="true">memory</span>
+                <span>Model</span>
+              </div>
+              <div
+                class="mt-0.5 truncate font-mono text-[11px] font-medium text-text-main"
+                title="{providerDisplayName(r.provider)} · {activeLabel(r)}"
+              >
+                {#if parts.alias}<span class="font-semibold text-primary">{parts.alias}/</span>{/if}<span>{parts.label}</span>
+              </div>
+            </div>
+            <div class="pt-0.5">
+              {@render modeBadge(r.isStream === true)}
+            </div>
           </div>
-          <div class="mt-1 truncate text-[11px] text-text-muted" title={r.account || 'Direct (Free)'}>
-            Account: {r.account || 'Direct (Free)'}
+          <div class="flex items-center justify-between gap-1.5 border-t border-border/50 pt-1.5 text-[11px]">
+            <div class="flex min-w-0 flex-1 items-center gap-1" title={r.account || 'Direct (Free)'}>
+              <span class="material-symbols-outlined shrink-0 text-[11px] text-text-muted/70" aria-hidden="true">account_circle</span>
+              <span class="shrink-0 text-[9px] tracking-wider text-text-muted uppercase">Account:</span>
+              <span class="truncate text-[11px] text-text-main">{r.account || 'Direct (Free)'}</span>
+            </div>
+            {#if (r.count || 1) > 1}
+              <span class="shrink-0 text-[10px] text-text-muted">×{r.count}</span>
+            {/if}
+            {#if activeStartedAt(r)}
+              <span class="shrink-0 font-mono text-[10px] text-text-muted tabular-nums">{formatDuration(nowMs - new Date(activeStartedAt(r)!).getTime())}</span>
+            {/if}
           </div>
         </div>
       {/each}

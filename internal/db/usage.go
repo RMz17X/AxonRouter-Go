@@ -829,6 +829,18 @@ type RequestDetailListRow struct {
 	Protocol     string
 	LoopWarning  string
 	Proxy        string
+	// IsStream is the mode the client asked for, extracted from the stored
+	// payload. Rows written before the payload carried the flag read as
+	// true — upstream's own default for an unrecorded mode
+	// (chatCore/requestDetail.js: isStream ?? true).
+	IsStream bool
+	// The gateway caller behind the request: the client API key's name and
+	// masked form, and the client IP the entry points resolved. All three
+	// are empty on rows written before the payload recorded them, and on
+	// keyless calls.
+	APIKeyName   string
+	ClientAPIKey string
+	ClientIP     string
 }
 
 // The sort carries an id tiebreaker (council round 1, C-3): timestamps
@@ -858,7 +870,11 @@ const requestDetailListSelect = `
 	       COALESCE(data #>> '{protocol}', ''),
 	       COALESCE(data #>> '{loopWarning}', COALESCE(data #>> '{anomalies,0,message}', '')),
 	       CASE WHEN data IS NULL THEN 0 ELSE 1 END,
-	       COALESCE(NULLIF(data ->> 'proxy', ''), NULLIF(data ->> 'egress', ''), NULLIF(data #>> '{egress,poolName}', ''), NULLIF(data #>> '{egress,poolId}', ''), NULLIF(data #>> '{egress,PoolID}', ''), NULLIF(data #>> '{egress,target}', ''), 'direct')
+	       COALESCE(NULLIF(data ->> 'proxy', ''), NULLIF(data ->> 'egress', ''), NULLIF(data #>> '{egress,poolName}', ''), NULLIF(data #>> '{egress,poolId}', ''), NULLIF(data #>> '{egress,PoolID}', ''), NULLIF(data #>> '{egress,target}', ''), 'direct'),
+	       COALESCE((data #>> '{isStream}')::boolean, true),
+	       COALESCE(data #>> '{apiKeyName}', ''),
+	       COALESCE(data #>> '{clientApiKey}', ''),
+	       COALESCE(data #>> '{clientIp}', '')
 	FROM requestDetails
 	%s
 	ORDER BY timestamp DESC, id DESC
@@ -906,7 +922,11 @@ func (r *Repo) GetRequestDetailsPaged(ctx context.Context, limit, offset int, si
 			&row.Account, &row.Cost, &row.Combo, &row.Protocol,
 			&row.LoopWarning,
 			&dataValid,
-			&row.Proxy); err != nil {
+			&row.Proxy,
+			&row.IsStream,
+			&row.APIKeyName,
+			&row.ClientAPIKey,
+			&row.ClientIP); err != nil {
 			return nil, total, fmt.Errorf("scan requestDetails: %w", err)
 		}
 		// A stored `data` that is NULL or not JSON is a broken read, not an

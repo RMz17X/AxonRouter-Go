@@ -40,6 +40,8 @@ export interface NormalizedQuota {
   resetAt?: string | null
   unlimited?: boolean
   recurring?: boolean
+  price?: number
+  priceNote?: string
   isCreditBalance?: boolean
   currency?: string
   unit?: string
@@ -81,6 +83,14 @@ export interface ProviderConnectionLike {
 }
 
 // ─── Pure helpers ────────────────────────────────────────────────────────────
+/**
+ * "15 Freebucks/hr" — a bare number would read as dollars; the unit is the
+ * hour, not the message. Port of upstream ProviderLimits/utils.js.
+ */
+export function formatFreebucksPrice(price: unknown): string {
+  return `${Math.max(0, Math.round(Number(price) || 0))} Freebucks/hr`
+}
+
 export function getConnectionLabel(connection: ProviderConnectionLike): string | null {
   return (
     connection.name?.trim() ||
@@ -830,6 +840,8 @@ export function parseQuotaData(provider: string, data: unknown): NormalizedQuota
               total: Number(quota.total) || 0,
               resetAt: (quota.resetAt as string) || null,
               recurring: quota.recurring !== false,
+              price: quota.price !== undefined ? Number(quota.price) : undefined,
+              priceNote: quota.priceNote !== undefined ? String(quota.priceNote) : undefined,
             })
           })
         }

@@ -988,10 +988,10 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		requestedName = translator.RequestedModelFromContext(ctx)
 	}
 	comboName := f.ComboName
-	usagetracker.GetTracker().TrackPendingRequested(requestedName, comboName, model, provider, connectionID, true, false)
+	usagetracker.GetTracker().TrackPendingRequested(requestedName, comboName, model, provider, connectionID, true, false, isStream)
 	defer func() {
 		hasErr := fwdErr != nil
-		usagetracker.GetTracker().TrackPendingRequested(requestedName, comboName, model, provider, connectionID, false, hasErr)
+		usagetracker.GetTracker().TrackPendingRequested(requestedName, comboName, model, provider, connectionID, false, hasErr, isStream)
 	}()
 
 	// A connection bound to a pool that cannot serve traffic must fail before
@@ -1025,6 +1025,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			ConnName:              connName,
 			ConnEmail:             connEmail,
 			Endpoint:              endpoint,
+			IsStream:              isStream,
 			Egress:                resolveEgress(connData, providerCfg).LogValue(),
 			OriginalInputTokens:   origTokens,
 			SavedTokens:           savedTokens,
@@ -1313,6 +1314,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			RequestedModel:        reqModel,
 			ComboName:             f.ComboName,
 			Protocol:              protocol,
+			IsStream:              isStream,
 			CacheSource:           resolveCacheSource(usage),
 			StartedAt:             startedAt,
 			ConnectionID:          connectionID,
@@ -1389,6 +1391,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			RequestedModel:        reqModel,
 			ComboName:             f.ComboName,
 			Protocol:              protocol,
+			IsStream:              isStream,
 			StartedAt:             startedAt,
 			ConnectionID:          connectionID,
 			ConnName:              connName,

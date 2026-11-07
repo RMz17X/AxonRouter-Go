@@ -79,6 +79,27 @@ const maxPersistedErrorLen = 512
 // taken from it, so a call site that passes a nil context records a client
 // abort as an ordinary 502 while the response says 499. The same context and
 // the same classifier decide both, so the row and the response agree.
+// callerDetailFields returns the request-detail payload fields naming the
+// gateway caller: the client API key's name and masked form, and the
+// client IP the entry points resolved. The payload's own "apiKey" field
+// is the UPSTREAM credential the request used and stays untouched — these
+// fields are the key the CLIENT presented, which is what an operator
+// auditing "who called, from where" is asking about. Absent pieces stay
+// absent (a keyless caller has no name to record), never zero-filled.
+func callerDetailFields(ctx context.Context) map[string]any {
+	fields := map[string]any{}
+	if caller := middleware.AuthenticatedApiKeyFromContext(ctx); caller != nil {
+		if caller.Name != nil && strings.TrimSpace(*caller.Name) != "" {
+			fields["apiKeyName"] = *caller.Name
+		}
+		fields["clientApiKey"] = maskAPIKey(caller.Key)
+	}
+	if ip := clientIPFromContext(ctx); ip != "" {
+		fields["clientIp"] = ip
+	}
+	return fields
+}
+
 func (h *ChatHandler) LogFailure(
 	ctx context.Context,
 	info *UsageLogInfo,
@@ -168,6 +189,7 @@ func (h *ChatHandler) LogFailure(
 		"apiKey":         maskAPIKey(info.APIKey),
 		"combo":          info.ComboName,
 		"protocol":       info.Protocol,
+		"isStream":       info.IsStream,
 		"cacheSource":    info.CacheSource,
 		"status":         status,
 		"timestamp":      now.Format("2006-01-02T15:04:05.000Z"),
@@ -192,6 +214,9 @@ func (h *ChatHandler) LogFailure(
 		if attempts := rec.Snapshot(); len(attempts) > 0 {
 			failurePayload["attempts"] = attempts
 		}
+	}
+	for k, v := range callerDetailFields(ctx) {
+		failurePayload[k] = v
 	}
 	reqData, marshalErr := json.Marshal(failurePayload)
 	if marshalErr != nil {
@@ -246,6 +271,7 @@ func (h *ChatHandler) LogFailure(
 		Status:           status,
 		RequestedModel:   info.RequestedModel,
 		ComboName:        info.ComboName,
+		IsStream:         info.IsStream,
 		LatencyMs:        latencyMs,
 		LoopWarning:      loopWarning,
 		Endpoint:         info.Endpoint,
@@ -488,6 +514,7 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		"apiKey":         maskAPIKey(info.APIKey),
 		"combo":          info.ComboName,
 		"protocol":       info.Protocol,
+		"isStream":       info.IsStream,
 		"cacheSource":    info.CacheSource,
 		"status":         "success",
 		"timestamp":      now.Format("2006-01-02T15:04:05.000Z"),
@@ -509,6 +536,9 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		if attempts := rec.Snapshot(); len(attempts) > 0 {
 			detailPayload["attempts"] = attempts
 		}
+	}
+	for k, v := range callerDetailFields(ctx) {
+		detailPayload[k] = v
 	}
 	reqData, err := json.Marshal(detailPayload)
 	if err != nil {
@@ -549,6 +579,7 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		Provider:         info.Provider,
 		RequestedModel:   info.RequestedModel,
 		ComboName:        info.ComboName,
+		IsStream:         info.IsStream,
 		LatencyMs:        latencyMs,
 		PromptTokens:     usage.PromptTokens,
 		CompletionTokens: usage.CompletionTokens,

@@ -261,12 +261,14 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 			log.Warn("usage", "forced credential refresh failed", "provider", conn.Provider, "conn", connID, "error", retry.err)
 		} else if retry.refreshed {
 			if retried, retryOK := fetchProviderUsage(fetchCtx, conn.Provider, data); retryOK {
+				h.maybeAutoReleaseQuotaLocks(r.Context(), connID, retried.quotas)
 				h.writeUsageResponse(w, connID, retried.toResponse())
 				return
 			}
 		}
 	}
 	if ok {
+		h.maybeAutoReleaseQuotaLocks(r.Context(), connID, res.quotas)
 		h.writeUsageResponse(w, connID, res.toResponse())
 		return
 	}
@@ -300,6 +302,9 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 					strings.Contains(lowerMsg, "verify your account") {
 					_ = h.Repo.SetConnectionVerificationRequired(conn.ID, "https://antigravity.google", res.message)
 				}
+			}
+			if res.message == "" {
+				h.maybeAutoReleaseQuotaLocks(r.Context(), connID, res.quotas)
 			}
 			h.writeUsageResponse(w, connID, res.toResponse())
 			return

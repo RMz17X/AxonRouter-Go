@@ -35,6 +35,12 @@ type ActiveRequest struct {
 	// map must not have to guess which names are combos.
 	RequestedModel string `json:"requestedModel,omitempty"`
 	ComboName      string `json:"comboName,omitempty"`
+	// IsStream splits one (model, provider, account) aggregate by the mode
+	// the clients asked for: buildPayload emits up to two rows per key, one
+	// per mode with a live count, so the dashboard's STREAM/JSON chip reads
+	// tracked fact. No omitempty — on a live row, false is information
+	// (a JSON request in flight), not an absence.
+	IsStream bool `json:"isStream"`
 }
 
 // RecentRequest matches the Next.js dashboard recentRequests item shape.
@@ -104,12 +110,14 @@ type PendingState struct {
 //	usage/recent                        ring of JSON RecentRequest
 //	usage/lasterror                     JSON lastError, 15 s TTL
 const (
-	modelCounterPrefix = "pending/model/"
-	acctCounterPrefix  = "pending/acct/"
-	namesPrefix        = "pending/names/"
-	recentRingKey      = "usage/recent"
-	lastErrorKey       = "usage/lasterror"
-	acctKeySep         = "\x1f"
+	modelCounterPrefix       = "pending/model/"
+	modelStreamCounterPrefix = "pending/modelstream/"
+	acctCounterPrefix        = "pending/acct/"
+	acctStreamCounterPrefix  = "pending/acctstream/"
+	namesPrefix              = "pending/names/"
+	recentRingKey            = "usage/recent"
+	lastErrorKey             = "usage/lasterror"
+	acctKeySep               = "\x1f"
 )
 
 // Tracker tracks in-flight requests, recent completions, and broadcasts SSE updates.
@@ -181,15 +189,16 @@ type lastError struct {
 
 // TrackPending updates the in-flight count for a given model, provider, and connection.
 func (t *Tracker) TrackPending(model, provider, connectionID string, started bool, isError bool) {
-	t.TrackPendingRequested("", "", model, provider, connectionID, started, isError)
+	t.TrackPendingRequested("", "", model, provider, connectionID, started, isError, false)
 }
 
 // TrackPendingRequested additionally records the names the client asked for and
 // the combo that served it. A combo request asks for the combo and is served by
 // a member, so both names describe one in-flight request: they share the same
 // counter and key, and they ride along for as long as that counter is above
-// zero.
-func (t *Tracker) TrackPendingRequested(requested, combo, model, provider, connectionID string, started bool, isError bool) {
+// zero. isStream additionally feeds the parallel stream counters, so the
+// payload can split the aggregate by response mode.
+func (t *Tracker) TrackPendingRequested(requested, combo, model, provider, connectionID string, started bool, isError bool, isStream bool) {
 	modelKey := model
 	if provider != "" {
 		modelKey = fmt.Sprintf("%s (%s)", model, provider)
@@ -219,8 +228,27 @@ func (t *Tracker) TrackPendingRequested(requested, combo, model, provider, conne
 		return
 	}
 	acctKey := acctCounterPrefix + connKey + acctKeySep + modelKey
-	if _, err := st.AddCounter(ctx, acctKey, delta); err != nil {
-		log.Debug("usagetracker", "pending account counter update dropped", "err", err)
+	newAcctCount, acctErr := st.AddCounter(ctx, acctKey, delta)
+	if acctErr != nil {
+		log.Debug("usagetracker", "pending account counter update dropped", "err", acctErr)
+	}
+
+	// The stream counters shadow the two totals above with the same delta,
+	// counting only the streaming share of each key. buildPayload splits a
+	// key's rows by them; the clamps there keep a leaked or raced counter
+	// from ever reporting more streaming requests than the key holds.
+	if isStream {
+		if _, err := st.AddCounter(ctx, modelStreamCounterPrefix+modelKey, delta); err != nil {
+			log.Debug("usagetracker", "pending model stream counter update dropped", "err", err)
+		}
+		acctStreamKey := acctStreamCounterPrefix + connKey + acctKeySep + modelKey
+		if _, err := st.AddCounter(ctx, acctStreamKey, delta); err != nil {
+			log.Debug("usagetracker", "pending account stream counter update dropped", "err", err)
+		} else if !started && newAcctCount <= 0 {
+			// The pair drained: drop its stream shadow too, so a later
+			// request under the same key starts from a clean split.
+			_ = st.Delete(ctx, acctStreamKey)
+		}
 	}
 
 	// Pair the names with the counter. Started sets them, zero clears them: a
@@ -233,6 +261,7 @@ func (t *Tracker) TrackPendingRequested(requested, combo, model, provider, conne
 	if newModelCount <= 0 {
 		_ = st.Delete(ctx, namesPrefix+modelKey)
 		_ = st.Delete(ctx, modelCounterPrefix+modelKey)
+		_ = st.Delete(ctx, modelStreamCounterPrefix+modelKey)
 	}
 
 	if !started && isError && provider != "" {
@@ -331,6 +360,36 @@ func (t *Tracker) buildPayload(repo *db.Repo) StreamPayload {
 	modelCounts, _ := st.Counters(ctx, modelCounterPrefix)
 	acctCounts, _ := st.Counters(ctx, acctCounterPrefix)
 
+	// Streaming shares of the same keys, from the shadow counters
+	// TrackPendingRequested maintains alongside the totals.
+	modelStream := make(map[string]int)
+	if sc, err := st.Counters(ctx, modelStreamCounterPrefix); err == nil {
+		for k, v := range sc {
+			if v > 0 {
+				modelStream[strings.TrimPrefix(k, modelStreamCounterPrefix)] = int(v)
+			}
+		}
+	}
+	acctStream := make(map[string]map[string]int)
+	if sc, err := st.Counters(ctx, acctStreamCounterPrefix); err == nil {
+		for k, v := range sc {
+			if v <= 0 {
+				continue
+			}
+			rest := strings.TrimPrefix(k, acctStreamCounterPrefix)
+			connKey, modelKey, found := strings.Cut(rest, acctKeySep)
+			if !found {
+				continue
+			}
+			inner, ok := acctStream[connKey]
+			if !ok {
+				inner = make(map[string]int)
+				acctStream[connKey] = inner
+			}
+			inner[modelKey] = int(v)
+		}
+	}
+
 	byModel := make(map[string]int, len(modelCounts))
 	for k, v := range modelCounts {
 		if v <= 0 {
@@ -388,6 +447,7 @@ func (t *Tracker) buildPayload(repo *db.Repo) StreamPayload {
 	}
 	var active []ActiveRequest
 	accountCountedModels := make(map[string]int)
+	accountStreamModels := make(map[string]int)
 	for connID, models := range byAccount {
 		accName := connMap[connID]
 		if connID == "__direct__" || connID == "" {
@@ -403,14 +463,16 @@ func (t *Tracker) buildPayload(repo *db.Repo) StreamPayload {
 			if count > 0 {
 				mName, pName := parseModelKey(modelKey)
 				accountCountedModels[modelKey] += count
-				active = append(active, ActiveRequest{
+				base := ActiveRequest{
 					Model:          mName,
 					Provider:       pName,
 					Account:        accName,
-					Count:          count,
 					RequestedModel: names[modelKey].Requested,
 					ComboName:      names[modelKey].Combo,
-				})
+				}
+				rows, emittedStream := splitActiveByMode(base, count, acctStream[connID][modelKey])
+				accountStreamModels[modelKey] += emittedStream
+				active = append(active, rows...)
 			}
 		}
 	}
@@ -421,14 +483,15 @@ func (t *Tracker) buildPayload(repo *db.Repo) StreamPayload {
 		remaining := totalCount - alreadyCounted
 		if remaining > 0 {
 			mName, pName := parseModelKey(modelKey)
-			active = append(active, ActiveRequest{
+			base := ActiveRequest{
 				Model:          mName,
 				Provider:       pName,
 				Account:        "Public / Direct",
-				Count:          remaining,
 				RequestedModel: names[modelKey].Requested,
 				ComboName:      names[modelKey].Combo,
-			})
+			}
+			rows, _ := splitActiveByMode(base, remaining, modelStream[modelKey]-accountStreamModels[modelKey])
+			active = append(active, rows...)
 		}
 	}
 
@@ -523,6 +586,35 @@ func recentFromHistoryRow(rh db.UsageHistoryRow) RecentRequest {
 		APIKey:           maskRecentAPIKey(rh.APIKey),
 		Account:          account,
 	}
+}
+
+// splitActiveByMode turns one aggregate key's total into up to two rows:
+// the streaming share and the rest, each with its own count and IsStream
+// set. The streaming share is clamped into [0, total] — the shadow
+// counters are best-effort dashboard state, and a leaked increment must
+// never let a split report more requests than the key actually holds.
+// Returns the rows plus the streaming count actually emitted, so callers
+// summing across accounts can keep a model-level remainder honest.
+func splitActiveByMode(base ActiveRequest, total, stream int) ([]ActiveRequest, int) {
+	if stream > total {
+		stream = total
+	}
+	if stream < 0 {
+		stream = 0
+	}
+	out := make([]ActiveRequest, 0, 2)
+	if stream > 0 {
+		row := base
+		row.Count = stream
+		row.IsStream = true
+		out = append(out, row)
+	}
+	if total-stream > 0 {
+		row := base
+		row.Count = total - stream
+		out = append(out, row)
+	}
+	return out, stream
 }
 
 func parseModelKey(key string) (model, provider string) {

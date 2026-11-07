@@ -53,15 +53,20 @@ type ConnectionData struct {
 // connections behind one provider, provider+model says nothing about which
 // key or subscription paid for it.
 type UsageLogInfo struct {
-	Provider       string
-	Model          string
-	ConnectionID   string
-	ConnName       string
-	ConnEmail      string
-	APIKey         string
-	APIKeyName     string
-	Endpoint       string
-	Protocol       string
+	Provider     string
+	Model        string
+	ConnectionID string
+	ConnName     string
+	ConnEmail    string
+	APIKey       string
+	APIKeyName   string
+	Endpoint     string
+	Protocol     string
+	// IsStream is whether the client asked for a streamed response. The
+	// dispatch layer knows it (it parsed the request); the usage surfaces
+	// (in-flight tracker, recent ring, request details) only repeat it, so
+	// it has to ride this struct from the forwarder to the loggers.
+	IsStream       bool
 	RequestedModel string
 	ComboName      string
 	CacheSource    string

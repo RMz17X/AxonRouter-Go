@@ -99,6 +99,7 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	// Record the dispatching key so the outbound guardrail tap can resolve the
 	// right policy. A keyless caller leaves it unset and the tap stays inert.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
+	ctx = withClientIP(ctx, requestClientIP(r))
 
 	// Check prompt/response cache for non-streaming requests before model
 	// resolution: a hit answers the turn without touching a provider, so it
@@ -387,6 +388,7 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// policy scoped to it. A keyless caller leaves it unset and the tap stays
 	// inert.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
+	ctx = withClientIP(ctx, requestClientIP(r))
 	// Body-size input estimate for streams whose upstream ignores
 	// include_usage: the translator falls back to it in the terminal usage
 	// block so the client's meter still moves. Inline base64 media makes the

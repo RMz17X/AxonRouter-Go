@@ -233,6 +233,13 @@
                   <span title={item.provider || undefined} class="font-sans">
                     {providerDisplayName(item.provider, providerNodes)}
                   </span>
+                  <span
+                    class="inline-flex shrink-0 items-center gap-1 rounded-brand bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary"
+                    title={item.isStream === false ? 'Non-streaming JSON response' : 'Streaming response'}
+                  >
+                    <span class="material-symbols-outlined text-[11px]" aria-hidden="true">{item.isStream === false ? 'code' : 'wifi_tethering'}</span>
+                    {item.isStream === false ? 'JSON' : 'STREAM'}
+                  </span>
                 </div>
               </td>
               <td class="py-3 px-4 font-mono text-[11px] text-text-muted">

@@ -186,6 +186,7 @@ func (h *ChatHandler) newResponsesContext(r *http.Request, requestedModel string
 	ctx = translator.WithRequestedModel(ctx, stripModelContextMarker(requestedModel))
 	// The dispatching key decides which guardrail policy governs the response.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
+	ctx = withClientIP(ctx, requestClientIP(r))
 
 	providerCfg, err := h.getProviderConfig(modelInfo.Provider, nil)
 	if err == nil && executor.UpstreamSpeaksResponses(modelInfo.Provider, modelInfo.Model, providerCfg) {

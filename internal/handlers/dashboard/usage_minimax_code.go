@@ -97,7 +97,7 @@ func fetchMiniMaxCodeUsage(ctx context.Context, provider, accessToken, userID st
 			}
 		}
 		for _, w := range windows {
-			quotas[w.name] = w
+			quotas[w.name] = miniMaxCodeWindowQuota(w)
 		}
 	}
 	if len(quotas) == 0 {
@@ -127,6 +127,20 @@ func creditsQuota(balance string) map[string]any {
 	q := usageQuota(0, usageNum(balance, 0), "")
 	q["isCreditBalance"] = true
 	q["currency"] = "credits"
+	return q
+}
+
+// miniMaxCodeWindowQuota renders one M Plan window in the dashboard quota
+// shape upstream emits: a 0–100 percent row whose remainingPercentage the
+// quota table draws as a progress bar with a reset countdown. The internal
+// window struct carries only unexported fields, so placing it in the
+// quotas map directly serialized to an empty object — the tracker showed
+// each window with no bar, no percentage and no reset time at all.
+func miniMaxCodeWindowQuota(w miniMaxCodeWindow) map[string]any {
+	resetAt, _ := w.resetAt.(string)
+	q := usageQuota(100-w.remaining, 100, resetAt)
+	q["name"] = w.name
+	q["remaining"] = w.remaining
 	return q
 }
 

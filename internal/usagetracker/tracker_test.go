@@ -205,7 +205,7 @@ func TestGetTracker_SingletonAndParseModelKey(t *testing.T) {
 func TestTracker_RequestedModelPairing(t *testing.T) {
 	tr := NewTracker()
 
-	tr.TrackPendingRequested("PRO", "PRO", "deepseek-v4.1-flash", "tokenharbor", "conn_a", true, false)
+	tr.TrackPendingRequested("PRO", "PRO", "deepseek-v4.1-flash", "tokenharbor", "conn_a", true, false, false)
 	state := tr.GetActiveState(nil)
 	if len(state.ActiveRequests) != 1 {
 		t.Fatalf("expected 1 active request, got %d", len(state.ActiveRequests))
@@ -230,15 +230,15 @@ func TestTracker_RequestedModelPairing(t *testing.T) {
 	}
 
 	// Two in-flight requests on the same member share one row and one pairing.
-	tr.TrackPendingRequested("PRO", "PRO", "deepseek-v4.1-flash", "tokenharbor", "conn_a", true, false)
+	tr.TrackPendingRequested("PRO", "PRO", "deepseek-v4.1-flash", "tokenharbor", "conn_a", true, false, false)
 	state = tr.GetActiveState(nil)
 	if len(state.ActiveRequests) != 1 || state.ActiveRequests[0].Count != 2 {
 		t.Fatalf("expected one row with count 2, got %+v", state.ActiveRequests)
 	}
 
 	// Both finishing clears the pairing together with the counter.
-	tr.TrackPendingRequested("PRO", "PRO", "deepseek-v4.1-flash", "tokenharbor", "conn_a", false, false)
-	tr.TrackPendingRequested("PRO", "PRO", "deepseek-v4.1-flash", "tokenharbor", "conn_a", false, false)
+	tr.TrackPendingRequested("PRO", "PRO", "deepseek-v4.1-flash", "tokenharbor", "conn_a", false, false, false)
+	tr.TrackPendingRequested("PRO", "PRO", "deepseek-v4.1-flash", "tokenharbor", "conn_a", false, false, false)
 	state = tr.GetActiveState(nil)
 	if len(state.ActiveRequests) != 0 {
 		t.Fatalf("expected the pairing to be gone with the counter, got %+v", state.ActiveRequests)

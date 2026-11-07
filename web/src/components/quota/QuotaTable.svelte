@@ -1,6 +1,7 @@
 <script lang="ts">
   // Port of Next.js ProviderLimits/QuotaTable.js for the Go dashboard.
   import {
+    formatFreebucksPrice,
     formatResetTime,
     formatResetTimeDisplay,
     getRemainingPercentage,
@@ -199,18 +200,31 @@
         {@const countdownLabel = recurring ? `in ${countdown}` : `expires in ${countdown}`}
 
         <div
-          class="flex items-center gap-2 border-b border-border-subtle/60 hover:bg-surface-2/60 transition-colors {cellPad}"
+          class="relative flex flex-col gap-1.5 border-b border-border-subtle/60 hover:bg-surface-2/60 transition-colors sm:flex-row sm:items-center sm:gap-2 {cellPad}"
         >
           <!-- Name -->
-          <div class="flex w-36 min-w-0 items-center gap-1.5">
+          <div class="flex min-w-0 items-center gap-1.5 sm:w-36 sm:shrink-0">
             <span class="text-[10px] shrink-0">{colors.emoji}</span>
-            <span class="{nameText} font-medium text-text-main truncate">
-              {quota.name}
+            <div class="min-w-0">
+              <div class="{nameText} font-medium text-text-main truncate">
+                {quota.name}
+              </div>
+              {#if quota.price !== undefined}
+                <div class="text-[10px] text-text-muted truncate" title={quota.priceNote || ''}>
+                  {formatFreebucksPrice(quota.price)}{quota.priceNote ? ` · ${quota.priceNote}` : ''}
+                </div>
+              {/if}
+            </div>
+            <!-- Reset time rides the name row on mobile so the value column keeps its width -->
+            <span class="{resetPrimary} ml-auto shrink-0 truncate text-text-muted sm:hidden">
+              {countdown !== '-' ? countdownLabel : resetDisplay || 'N/A'}
             </span>
           </div>
 
-          <!-- Progress + used/total -->
-          <div class="min-w-0 flex-1 {compact ? 'space-y-1' : 'space-y-1.5'}">
+          <!-- Progress + used/total: owns a full row on mobile, because at phone
+               width the fixed name column plus the reset column would leave it
+               only a few pixels and cut the used/total text to nothing. -->
+          <div class="min-w-0 flex-1 sm:min-w-[7rem] {compact ? 'space-y-1' : 'space-y-1.5'}">
             {#if !isUnlimited && !isCreditBalance && !isUnknown}
               <div
                 class="{compact ? 'h-1' : 'h-1.5'} rounded-full overflow-hidden border {colors.bgLight} {quota.remainingPct ===
@@ -256,8 +270,8 @@
             </div>
           </div>
 
-          <!-- Reset time -->
-          <div class="min-w-0 shrink">
+          <!-- Reset time (desktop only; mobile shows it on the name row) -->
+          <div class="hidden min-w-0 shrink sm:block">
             {#if countdown !== '-' || resetDisplay}
               {#if compact}
                 <div
@@ -290,11 +304,11 @@
             <button
               type="button"
               onclick={() => onHideQuota?.(quota)}
-              class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main"
+              class="absolute right-1 top-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main sm:static sm:h-8 sm:w-8"
               title="Hide this quota row"
               aria-label="Hide quota {quota.name}"
             >
-              <span class="material-symbols-outlined text-[15px]">visibility_off</span>
+              <span class="material-symbols-outlined text-[18px]">visibility_off</span>
             </button>
           {/if}
         </div>
