@@ -116,7 +116,7 @@
     <div class="absolute inset-0 bg-black/50 fade-in" onclick={onClose} aria-hidden="true"></div>
 
     <div
-      class="relative w-full max-w-md bg-surface border border-border rounded-brand-lg shadow-[var(--shadow-elev)] fade-in overflow-hidden flex flex-col max-h-[85vh] z-10 p-4!"
+      class="relative w-full max-w-[1180px] bg-surface border border-border rounded-brand-lg shadow-[var(--shadow-elev)] fade-in overflow-hidden flex flex-col max-h-[85vh] z-10 p-4!"
       role="dialog"
       aria-modal="true"
     >
@@ -182,7 +182,7 @@
       </div>
 
       <!-- Categories & Models List -->
-      <div class="max-h-[400px] overflow-y-auto space-y-3 custom-scrollbar">
+      <div class="min-h-0 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
         <!-- Combos section - always first -->
         {#if filteredCombos.length > 0}
           <div>
