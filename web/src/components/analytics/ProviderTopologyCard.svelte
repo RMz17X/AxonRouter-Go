@@ -2,6 +2,11 @@
   import { onMount } from 'svelte'
   import type { ActiveRequestItem } from './types'
   import ProviderArtwork from '../providers/ProviderArtwork.svelte'
+  import {
+    createTopologySlotAllocator,
+    topologyRingRadii,
+    topologySlotAngle
+  } from './topologyLayout'
 
   interface ProviderNodeItem {
     id: string
@@ -64,21 +69,31 @@
   // Track image load errors to fallback to stylish initials
   let imageErrors = $state<Record<string, boolean>>({})
 
-  // Upstream exact node radius formula:
-  // s = providers.length
-  // a = Math.max(320, 204 * s / (2 * Math.PI)) // rx
-  // i = Math.max(200, 0.55 * a)                 // ry
+  // Ring placement is slot-based, not list-based: each provider owns a
+  // numbered slot for the session (see topologyLayout.ts), so a provider
+  // arriving, leaving, or being reordered in the activity-ordered prop
+  // list moves nobody else, and the ring radii follow the slot capacity
+  // instead of the live count. The allocator lives as long as the card
+  // stays mounted; an unmount forgets every assignment. sync() is
+  // idempotent for an unchanged provider set, which is what makes it
+  // safe to reconcile inside this derivation.
+  const topologySlots = createTopologySlotAllocator()
+
   let geometry = $derived.by(() => {
-    const s = displayProviders.length
-    const rx = Math.max(320, (204 * s) / (2 * Math.PI))
-    const ry = Math.max(200, 0.55 * rx)
+    const keys = displayProviders.map((p) => p.id.toLowerCase().trim())
+    topologySlots.sync(keys)
+    const capacity = topologySlots.capacity
+    const { rx, ry } = topologyRingRadii(capacity)
 
     const nodes = displayProviders.map((p, idx) => {
-      const angle = -Math.PI / 2 + (2 * Math.PI * idx) / s
+      const pid = keys[idx]
+      // slotOf is total after sync; the index fallback is unreachable in
+      // practice and only guards a future allocator change.
+      const slot = topologySlots.slotOf(pid) ?? idx
+      const angle = topologySlotAngle(slot, capacity)
       const x = rx * Math.cos(angle)
       const y = ry * Math.sin(angle)
 
-      const pid = p.id.toLowerCase().trim()
       const pname = (p.name || '').toLowerCase().trim()
       const palias = (p.alias || '').toLowerCase().trim()
       const isProviderMatch = (target: string) => {
@@ -172,11 +187,15 @@
     panY = 0
   }
 
-  let prevNodeCount = 0
+  // Refit only when the ring itself changes size (a capacity tier step).
+  // Providers entering or leaving inside a tier leave rx/ry untouched,
+  // and refitting then would reset the operator's pan for no reason —
+  // the whole point of the slot layout is that nothing on screen moves.
+  let prevRingKey = ''
   $effect(() => {
-    const count = geometry.nodes.length
-    if (count !== prevNodeCount) {
-      prevNodeCount = count
+    const ringKey = `${geometry.rx}x${geometry.ry}`
+    if (ringKey !== prevRingKey) {
+      prevRingKey = ringKey
       fitView()
     }
   })
