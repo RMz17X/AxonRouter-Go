@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { api, getAuthHeaders, normalizeLastError, type ProviderConnection, type ProviderNode } from '../../api/client'
   import { PROVIDER_CATALOG } from '../../lib/providers'
   import {
@@ -145,15 +146,24 @@
     for (const r of stats.recentRequests || []) {
       if (r.provider) stamp(r.provider, r.timestamp ? new Date(r.timestamp).getTime() : NaN)
     }
-    let changed = false
-    const next = new Map(observedActivity)
-    for (const [k, v] of stamps) {
-      if (v > (next.get(k) || 0)) {
-        next.set(k, v)
-        changed = true
+    // The merge reads observedActivity to grow it monotonically, and the
+    // write must not re-trigger this effect: the stamps above are taken
+    // with Date.now(), so a tracked read+write here re-stamps with a
+    // later "now" on every pass and loops until Svelte aborts with
+    // effect_update_depth_exceeded (seen live 2026-11-07 whenever a
+    // request was in flight on the Overview). untrack breaks the cycle:
+    // the effect re-runs on its real inputs only.
+    untrack(() => {
+      let changed = false
+      const next = new Map(observedActivity)
+      for (const [k, v] of stamps) {
+        if (v > (next.get(k) || 0)) {
+          next.set(k, v)
+          changed = true
+        }
       }
-    }
-    if (changed) observedActivity = next
+      if (changed) observedActivity = next
+    })
   })
   // mergeRecent unions an incoming SSE list with what is on screen. The SSE
   // stream carries only this process's in-memory ring, so a plain replace
