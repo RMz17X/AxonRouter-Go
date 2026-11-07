@@ -1,5 +1,252 @@
 # Changelog
 
+## [v1.9.30] - 2026-11-07
+
+# 999 — Fitness tab: filters, Auto-Recover, Clear Cooldowns
+
+## Symptom
+
+The Fitness & Canary tab listed every pool with no way to filter (the JS
+fitness tab filters by type and search), and two backend capabilities
+had no UI at all: `POST /api/proxy-pools/recover` (auto-recovery probing
+of unhealthy pools) and `POST /api/proxy-pools/fitness/clear-all`
+(clearing fitness/cooldown marks).
+
+## Fix
+
+Frontend only (`ProxyPoolsView.svelte` + two client methods):
+
+- A filter row: search (name/URL/group) and the same counted Type filter
+  as the Pools tab (993), applied to both the cooldown table and the
+  fitness leaderboard, with a "Showing N of M" hint while filtering. The
+  cluster stat cards stay global.
+- "Auto-Recover" calls the recover endpoint (force mode) and reports the
+  server's checked / recovered / still-failing counts verbatim;
+  disabled when nothing is in cooldown or failed.
+- "Clear Cooldowns" calls fitness/clear-all behind the standard confirm
+  dialog, making clear that quarantined pools become eligible at once
+  and the canary re-quarantines any that still fail.
+
+## Verification
+
+- svelte-check baseline held (89/56, zero new); web build succeeds.
+- Endpoint semantics read from the handlers before wiring
+  (`batch4_health.go` recover result shape; `batch4_fitness.go`
+  clear-all body).
+
+# 998 — Proxy assignment pickers: one derivation, one vocabulary
+
+## Symptom
+
+Every surface that assigns a proxy to a connection had grown its own
+copy of the group/type derivation and its own words for the same
+states: section titles came in three variants ("Proxy Groups",
+"Proxy Groups (Smart Fitness)", "Proxy Groups (Smart Fitness &
+Balancing)"), and in AddConnectionModal the "None" option's `__none__`
+sentinel was converted to null on save — silently turning an
+explicit-direct choice into inherit-the-provider-default, the opposite
+of what the same sentinel means in ProviderDetailView.
+
+## Fix
+
+Frontend only:
+
+- New `web/src/lib/proxyBindings.ts`: `deriveProxyGroups` /
+  `deriveProxyTypes` (distinct trimmed values with total + active
+  counts, zero-active entries kept). AddConnectionModal,
+  ProviderDetailView (lock select, per-connection dropdown, Apply
+  Proxy modal) and NoAuthProxyCard all consume it; the three local
+  copies are deleted.
+- Section titles are "Proxy Groups" / "Proxy Types" /
+  "Individual Pools" everywhere.
+- AddConnectionModal offers both zero states distinctly: "Provider
+  default" (stores null) and "Direct (no proxy)" (stores `__none__`
+  unchanged), round-tripping the same states ProviderDetailView's
+  dropdown reads back. Inactive pools there are now marked
+  "(inactive)" like everywhere else.
+- NoAuthProxyCard's direct chip is relabelled "Direct (no proxy)".
+
+Deliberately unchanged: the per-connection dropdown's lock-aware
+labels (they encode lock state, not vocabulary drift), the Proxy Lock
+"None (direct)" and Apply "None (unbind all)" labels (they describe
+removing a lock/assignment), and NoAuthProxyCard's raw settings fetch
+(its `cache: 'no-store'` merge and any-response-is-success semantics
+are not behaviour-identical to the api client, so a swap would be a
+behaviour change wearing a refactor's clothes).
+
+## Verification
+
+- svelte-check with `--tsconfig ./tsconfig.app.json`: 89 errors /
+  56 warnings before and after (pristine worktree vs working tree);
+  ProviderDetailView's 9 pre-existing errors are byte-identical as a
+  message set, all in untouched regions.
+
+# 997 — Proxy Pools: batch import takes four formats and imports partially
+
+## Symptom
+
+The batch import accepted only two line formats
+(`protocol://user:pass@host:port` and `host:port:user:pass`), created
+pools one serial request at a time, and — worst — aborted the entire
+paste when any single line was invalid.
+
+## Fix
+
+Frontend only (`web/src/lib/proxy-import.ts` + the import flow):
+
+- The parser additionally accepts `user:pass@host:port` and bare
+  `host:port` (http assumed for both scheme-less forms), bracketed IPv6
+  hosts in every scheme-less form, and validates ports (numeric,
+  1–65535). Stored URLs are canonicalised through `URL` as before.
+- Imports are partial, matching upstream: valid lines import, invalid
+  lines are counted, reported with reasons, and left in the textarea for
+  fixing instead of discarding the whole paste.
+- Deduplication now also covers duplicates inside the paste itself
+  (previously only against existing pools).
+- Creates run with bounded concurrency (chunks of 8) instead of strictly
+  serially.
+
+## Verification
+
+- svelte-check baseline held (89/56, zero new); web build succeeds.
+- The pre-existing parser unit file was left untouched (per the standing
+  no-test-suites-before-production rule it was not run; the two original
+  formats keep their exact previous outputs).
+
+# 996 — Proxy Pools: visual cleanup and the view split into components
+
+## Symptom
+
+The pools page read as messy (owner report): each row carried up to ten
+badges plus four emoji exit chips, the latency badge used emoji glyphs,
+filters mixed three different control styles, the same test action had
+three names ("Test All" / "Health Check" / "Test All Nodes") and two
+icons, the Deploy Relay menu was a hand-rolled white/zinc dropdown
+sitting next to the shared Menu component, and everything — three tabs,
+eight dialogs — lived in one 2,762-line file.
+
+## Fix
+
+Frontend only:
+
+- Row diet: the four relay badges become one "{Type} relay" badge; the
+  bound count becomes plain muted text; the four exit chips (with 📍/🏢
+  emoji) become one mono line — exit IP · city, country · ASN · ISP.
+  The latency badge drops its ⚡/⏳/🐢 glyphs (colour thresholds kept).
+- One vocabulary: the test action is "Test All" / "Test Selected"
+  everywhere with the single `science` icon. The group filter joins
+  status and type on the shared CountedSelect. The Deploy Relay dropdown
+  is restyled onto theme tokens with monochrome icons and rendered from
+  one item list instead of six hand-written buttons (it keeps its
+  descriptive trigger — the shared Menu's visible label is only "Menu").
+- The view is split along its real seams into
+  `web/src/components/proxypools/`: `PoolRow.svelte`,
+  `GroupsTab.svelte`, `FitnessTab.svelte`, and `RelayModals.svelte`
+  (the Deploy Relay menu + all six deploy dialogs and their handlers;
+  its only link back is an `onDeployed` refetch callback). The shared
+  `formatDateTime` and the `GroupSummary` type move to
+  `proxypools/helpers.ts`. ProxyPoolsView drops from ~3,050 lines
+  (post-993–999) to ~1,490; RelayModals stays whole at ~1,080 because
+  the six deploy dialogs share one progress idiom that reads best in
+  one place.
+
+## Verification
+
+- svelte-check with `--tsconfig ./tsconfig.app.json`: 89 errors /
+  56 warnings — identical totals to the pristine baseline; the two
+  diagnostics touching these files (a Badge tone complaint and an
+  unused `_`) are the original monolith's own, carried verbatim.
+- Web build succeeds.
+
+# 995 — Proxy Pools: import targets a group; Groups tab manages members
+
+## Symptom
+
+Bulk-imported proxies always landed ungrouped (the import had no group
+option), and the Proxy Groups tab was display-only: summaries with no way
+to change membership, while its "New Pool in Group" button opened the
+plain create dialog without the group filled in.
+
+## Fix
+
+Frontend only:
+
+- The Bulk Add tab gains an "Import into Group" control — No group / an
+  existing group / a new group name — and imported pools are created with
+  that group.
+- `openCreateModal` takes a group preset; the Groups tab's per-card
+  "Add Pool" opens the create dialog with the group already filled.
+- New `proxypools/GroupMembersModal.svelte`: a searchable checkbox list
+  of every pool (checked = member, pools from other groups marked);
+  saving writes only the membership diff (joins set the tag, leaves clear
+  it) and reports ok/failed honestly. Each group card gains a
+  "Manage Members" action opening it.
+- The group card's "View in Table" drops a dead `Default` special case
+  (group summaries never contain one).
+
+## Verification
+
+- svelte-check baseline held (89/56, zero new); web build succeeds.
+
+# 994 — Proxy Pools: add-to-group actions (row, bulk, form)
+
+## Symptom
+
+There was no way to put an existing pool into a group except editing it
+one by one and retyping the group name into a free-text field (owner
+report, 2026-11-07) — and no bulk assignment at all. Groups are string
+tags (owner decision: keep the tag model, build the management UX), so
+every missing action was a group-field write the UI never offered.
+
+## Fix
+
+Frontend only:
+
+- New `proxypools/GroupPickerModal.svelte`: lists existing groups with
+  member counts, offers "No group" when removal means something, and a
+  new-group name field — one picker for every assignment surface.
+- Pools list: a per-row "Set group" action opens the picker for that pool.
+- Bulk bar: a "Set Group" action applies the picker to the whole
+  selection; writes run per pool with an honest ok/failed report (the
+  existing bulk-report discipline), never claiming more than the server
+  confirmed.
+- The pool form's Group field becomes a combobox (native datalist over
+  the existing groups): free text still allowed, existing names offered,
+  which kills the typo-splits-group failure mode.
+
+## Verification
+
+- svelte-check baseline held (89/56, zero new); web build succeeds.
+
+# 993 — Proxy Pools: search box and a Type filter
+
+## Symptom
+
+The Proxy Pools page could not be searched and had no type filter (owner
+report, 2026-11-07): with dozens of pools and 10 rows per page, finding one
+proxy meant paging by eye. The assignment pickers elsewhere already treat
+type as a first-class dimension (`type:<type>` bindings); the pools page
+itself did not.
+
+## Fix
+
+Frontend only (`ProxyPoolsView.svelte` toolbar + `proxypools/helpers.ts`):
+
+- A search input filters the list by name, proxy URL, or group
+  (case-insensitive substring, applied inside the existing filter chain).
+- A Type filter (CountedSelect, counted options, only types present in the
+  data) with two families in one list, per the owner's decision: protocols
+  derived from the proxy URL's scheme (HTTP / HTTPS / SOCKS4 / SOCKS5 —
+  `socks` normalises to SOCKS5), and relay origins taken from the stored
+  `type` (Cloudflare / Vercel / Deno / Netlify / Relay), which wins over
+  the scheme whenever it names a relay.
+- Both join the page-reset effect and the empty-state Reset Filter button.
+
+## Verification
+
+- svelte-check with `--tsconfig ./tsconfig.app.json` stays at the pristine
+  baseline (89 errors / 56 warnings, zero new) and the web build succeeds.
+
 ## [v1.9.29] - 2026-11-07
 
 # 992 — The model picker modal takes the desktop width upstream gives it
