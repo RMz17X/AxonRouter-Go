@@ -3638,6 +3638,9 @@
             <p class="text-text-muted">
               {providerConnections.length} connection{providerConnections.length === 1 ? '' : 's'}
             </p>
+            {#if providerConnections.length > 0}
+              <ProviderAccountStatusStrip connections={providerConnections} healthById={connectionHealthById} showCount={false} />
+            {/if}
             {#if isProviderAllDisabled}
               <Badge variant="default" size="sm">
                 <span class="flex items-center gap-1">
@@ -4044,10 +4047,8 @@
       </div>
     {/if}
 
-    <!-- Connections List -->
-    {#if providerConnections.length > 0}
-      <ProviderAccountStatusStrip connections={providerConnections} healthById={connectionHealthById} />
-    {/if}
+    <!-- Connections List (the account status strip lives in the page
+         header, beside the connection count) -->
       {#if providerConnections.length === 0}
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-3">

@@ -49,6 +49,25 @@
     if (names.length <= 3) return names.join(', ')
     return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`
   })
+
+  // A group/type binding is identified by its selector name, not by the
+  // pools it happens to match: the operator picked the group, so the
+  // readout names the group (the pool list is noise at group scale —
+  // hundreds of relay names). Bare pool parts resolve to the pool's
+  // display name via the candidate list.
+  let selectorNames = $derived.by(() => {
+    if (!data) return ''
+    const byId = new Map(data.candidates.map((c) => [c.id, c.name || c.id]))
+    return data.selector
+      .split(',')
+      .map((part) => {
+        const p = part.trim()
+        if (p.startsWith('group:')) return p.slice('group:'.length)
+        if (p.startsWith('type:')) return p.slice('type:'.length)
+        return byId.get(p) ?? p
+      })
+      .join(', ')
+  })
 </script>
 
 {#if data && data.binding === 'direct'}
@@ -72,7 +91,15 @@
   {#if data.resolves}
     <p class="flex items-center gap-1.5 text-xs text-text-muted">
       <span class="material-symbols-outlined text-[14px]">check_circle</span>
-      Resolves to {data.candidateCount} active pool{data.candidateCount === 1 ? '' : 's'}: {poolNames}.
+      {#if data.binding === 'group'}
+        Resolves to proxy group: {selectorNames}.
+      {:else if data.binding === 'type'}
+        Resolves to proxy type: {selectorNames}.
+      {:else if data.binding === 'multi'}
+        Resolves to proxy groups: {selectorNames}.
+      {:else}
+        Resolves to {data.candidateCount} active pool{data.candidateCount === 1 ? '' : 's'}: {poolNames}.
+      {/if}
     </p>
   {:else}
     <p class="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">

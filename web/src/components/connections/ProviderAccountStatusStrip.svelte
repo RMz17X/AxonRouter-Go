@@ -6,9 +6,12 @@
   interface Props {
     connections: ProviderConnection[]
     healthById: Map<string, ConnectionHealth>
+    /** Hide the "N accounts" label (the provider header already counts
+     * connections next to where the strip is placed there). */
+    showCount?: boolean
   }
 
-  let { connections, healthById }: Props = $props()
+  let { connections, healthById, showCount = true }: Props = $props()
 
   interface StateBucket {
     state: ConnectionHealthState
@@ -79,11 +82,13 @@
 <!-- Account health summary: counts by state, derived from the server's
      effectiveStatus plus the locks census (see connectionHealth.ts). The
      badge vocabulary mirrors the connection rows below it. -->
-<div class="flex flex-wrap items-center gap-1.5 px-1 py-2 sm:gap-2" role="status" aria-label="Account status summary">
-  <span class="text-xs font-medium text-text-muted">
-    {connections.length}
-    {connections.length === 1 ? 'account' : 'accounts'}
-  </span>
+<div class="flex flex-wrap items-center gap-1.5 sm:gap-2 {showCount ? 'px-1 py-2' : ''}" role="status" aria-label="Account status summary">
+  {#if showCount}
+    <span class="text-xs font-medium text-text-muted">
+      {connections.length}
+      {connections.length === 1 ? 'account' : 'accounts'}
+    </span>
+  {/if}
   {#each buckets as bucket (bucket.state)}
     <span
       class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold {bucket.chipClass} {bucket.names.length === 0 ? 'opacity-45' : ''}"
