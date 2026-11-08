@@ -91,3 +91,12 @@ stitch-screenshots/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# Local harvest artefacts (accounts/credentials) — never commit
+harvested_perch_accounts.json
+perch_models_test_results.json
+scripts/__pycache__/
+/axonrouter.db
+screenshots/modal_verification/
+scripts/harvest_*.py
+scripts/perch_auto_refresh.py

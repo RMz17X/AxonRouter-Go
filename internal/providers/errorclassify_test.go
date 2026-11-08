@@ -145,3 +145,38 @@ func TestClassify404AndToSViolation24hCooldown(t *testing.T) {
 		t.Errorf("TOS cooldown = %dms, want %dms (24h)", tos.CooldownMs, cooldownBannedAccount)
 	}
 }
+
+func TestClassifyDahlModelConcurrency(t *testing.T) {
+	msg := `{"error":{"code":"model_concurrency","message":"This model is at concurrency capacity. Paid accounts are admitted first."}}`
+	res := ClassifyErrorForProvider(http.StatusTooManyRequests, msg, 0, "dahl")
+	if !res.ShouldFallback {
+		t.Fatal("model_concurrency should trigger fallback to next candidate")
+	}
+	if !res.ModelScoped {
+		t.Errorf("model_concurrency must be ModelScoped (not account-scoped)")
+	}
+	if res.CooldownMs != 30000 {
+		t.Errorf("expected 30000ms (30s) cooldown, got %dms", res.CooldownMs)
+	}
+
+	// Also test extracted prose when code is absent in message text
+	prose := "This model is at concurrency capacity. Paid accounts are admitted first."
+	resProse := ClassifyErrorForProvider(http.StatusTooManyRequests, prose, 0, "dahl")
+	if !resProse.ShouldFallback || !resProse.ModelScoped || resProse.CooldownMs != 30000 {
+		t.Errorf("expected 30s model-scoped fallback for prose, got %+v", resProse)
+	}
+}
+
+func TestClassifyUnsupportedImageUrl(t *testing.T) {
+	msg := `messages[43].content[1].type has unsupported value "image_url"`
+	res := ClassifyErrorForProvider(http.StatusBadRequest, msg, 0, "dahl")
+	if !res.ShouldFallback {
+		t.Fatal("unsupported image_url should trigger fallback to next candidate")
+	}
+	if !res.ModelScoped {
+		t.Errorf("unsupported image_url must be ModelScoped")
+	}
+	if res.CooldownMs != 0 {
+		t.Errorf("expected 0ms cooldown (no lock), got %dms", res.CooldownMs)
+	}
+}

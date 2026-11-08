@@ -43,6 +43,28 @@ func ParseTokenHarborRetryDuration(text string) (time.Duration, bool) {
 	return 0, false
 }
 
+// TokenHarborAdjustedCooldown applies policy-based padding to TokenHarbor rate limit delays:
+// 1. Hourly/quota resets (>= 5 min) get a minimum floor of 70 minutes (4200s).
+// 2. Short burst/per-minute resets (< 5 min) get a 5-second buffer (e.g. 32s -> 37s, 1s -> 6s)
+//    to prevent boundary collision retries.
+func TokenHarborAdjustedCooldown(dur time.Duration) time.Duration {
+	const (
+		hourlyThreshold = 5 * time.Minute
+		hourlyFloor     = 70 * time.Minute
+		burstBuffer     = 5 * time.Second
+	)
+	if dur >= hourlyThreshold {
+		if dur < hourlyFloor {
+			return hourlyFloor
+		}
+		return dur + burstBuffer
+	}
+	if dur > 0 {
+		return dur + burstBuffer
+	}
+	return hourlyFloor
+}
+
 // IsTokenHarborEgressIpLimit reports whether the error is bound to the source/proxy address
 // rather than an account quota.
 func IsTokenHarborEgressIpLimit(text string) bool {
@@ -96,9 +118,9 @@ func classifyTokenHarbor(statusCode int, rawError string, backoffLevel int, prov
 			strings.Contains(lowerError, "you can send your next request in") ||
 			strings.Contains(lowerError, "per-minute rate limit")) {
 
-		cooldown := 3600 * time.Second // default 1 hour
+		cooldown := TokenHarborAdjustedCooldown(0) // default 70 min floor
 		if dur, ok := ParseTokenHarborRetryDuration(lowerError); ok && dur > 0 {
-			cooldown = dur
+			cooldown = TokenHarborAdjustedCooldown(dur)
 		}
 
 		return ErrorClassification{
@@ -107,6 +129,19 @@ func classifyTokenHarbor(statusCode int, rawError string, backoffLevel int, prov
 			NewBackoffLevel: backoffLevel,
 			ModelScoped:     false, // LOCK THIS ACCOUNT/KEY
 			Exhausted:       false, // Temporary throttle, not permanently exhausted
+		}, true
+	}
+
+	// 4. Upstream HTML / Cloudflare 500 Error ("This page couldn’t load", "500: this page")
+	// TokenHarbor frontend/edge sometimes glitches and serves HTML 500.
+	// This is transient, fallback to next connection with short 15s cooldown.
+	if statusCode >= 500 || strings.Contains(lowerError, "this page couldn’t load") || strings.Contains(lowerError, "this page couldnt load") {
+		return ErrorClassification{
+			ShouldFallback:  true,
+			CooldownMs:      15 * 1000, // 15 seconds transient cooldown
+			NewBackoffLevel: backoffLevel,
+			ModelScoped:     false,
+			Exhausted:       false,
 		}, true
 	}
 

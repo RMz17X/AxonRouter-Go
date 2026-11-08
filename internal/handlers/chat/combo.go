@@ -894,6 +894,36 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 			// capped per provider (comboMemberAttemptCap).
 			memberAttempts := 0
 			attemptCap := comboMemberAttemptCap(modelInfo.Provider)
+
+			if shouldHedge, hedgeDelay, maxAttempts := h.shouldHedgeProvider(modelInfo.Provider); shouldHedge && modelInfo.ConnectionID == "" && h.Repo != nil {
+				allConns, cErr := h.Repo.GetProviderConnections(modelInfo.Provider, true)
+				if cErr == nil && len(allConns) > 1 {
+					candidates := h.pickHedgeCandidates(allConns, modelInfo.Provider, modelInfo.Model, maxAttempts)
+					if len(candidates) > 1 {
+						var upstreamBody map[string]any
+						upstreamBodyJSON := adapterTrimmedBody(body, entry, adapterModels)
+						if err := json.Unmarshal(upstreamBodyJSON, &upstreamBody); err == nil {
+							upstreamBody["model"] = h.wireModelForNode(modelInfo.Provider, modelInfo.Model)
+							repairToolCallIDsInMap(upstreamBody)
+							candidateCtx = h.applyJailbreak(candidateCtx, upstreamBody, comboName, jailbreakLegIDs(modelInfo.Provider, modelInfo.Model)...)
+							if upstreamJSON, err := json.Marshal(upstreamBody, json.Deterministic(true)); err == nil {
+								targetWriter := candidateWriter
+								fwdErr := h.executeHedged(candidateCtx, targetWriter, modelInfo.Provider, modelInfo.Model, comboName, comboName, upstreamJSON, isStream, translateResponse, forwardEndpoint(ctx, "/v1/chat/completions"), candidates, hedgeDelay, maxAttempts)
+								if fwdErr == nil {
+									return
+								}
+								var ue *upstreamError
+								if errors.As(fwdErr, &ue) {
+									retry.note(ue)
+									lastErr = ue
+								}
+								continue
+							}
+						}
+					}
+				}
+			}
+
 			// Try up to 10 connections for this model entry
 			for connAttempt := 0; connAttempt < 10; connAttempt++ {
 				var connID string
@@ -1097,6 +1127,24 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 						// rotation.
 						if providers.IsModelFitError(ue.StatusCode, ue.Body) {
 							log.Info("combo", "model too small for request, next member",
+								"provider", modelInfo.Provider, "model", modelInfo.Model)
+							retry.note(ue)
+							lastErr = ue
+							break
+						}
+						if providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
+							log.Warn("combo", "model cluster concurrency saturated, next member",
+								"provider", modelInfo.Provider, "model", modelInfo.Model)
+							if modelInfo.Provider == "dahl" {
+								RecordDahlModelConcurrencyBlocked(modelInfo.Model, 30*time.Second)
+							}
+							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, ue)
+							retry.note(ue)
+							lastErr = ue
+							break
+						}
+						if providers.IsUnsupportedMediaError(ue.StatusCode, ue.Body) {
+							log.Warn("combo", "model rejected media format, next member",
 								"provider", modelInfo.Provider, "model", modelInfo.Model)
 							retry.note(ue)
 							lastErr = ue
@@ -1366,6 +1414,34 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 			// capped per provider (comboMemberAttemptCap).
 			memberAttempts := 0
 			attemptCap := comboMemberAttemptCap(modelInfo.Provider)
+
+			if shouldHedge, hedgeDelay, maxAttempts := h.shouldHedgeProvider(modelInfo.Provider); shouldHedge && modelInfo.ConnectionID == "" && h.Repo != nil {
+				allConns, cErr := h.Repo.GetProviderConnections(modelInfo.Provider, true)
+				if cErr == nil && len(allConns) > 1 {
+					candidates := h.pickHedgeCandidates(allConns, modelInfo.Provider, modelInfo.Model, maxAttempts)
+					if len(candidates) > 1 {
+						entryBody, err := adapterTrimmedMap(translatedReq, entry, adapterModels)
+						if err == nil {
+							entryBody["model"] = h.wireModelForNode(modelInfo.Provider, modelInfo.Model)
+							candidateCtx = h.applyJailbreak(candidateCtx, entryBody, comboName, jailbreakLegIDs(modelInfo.Provider, modelInfo.Model)...)
+							if upstreamJSON, err := json.Marshal(entryBody, json.Deterministic(true)); err == nil {
+								targetWriter := candidateWriter
+								fwdErr := h.executeHedged(candidateCtx, targetWriter, modelInfo.Provider, modelInfo.Model, comboName, comboName, upstreamJSON, isStream, !translator.IsResponsesClient(ctx), forwardEndpoint(ctx, "/v1/v1/messages"), candidates, hedgeDelay, maxAttempts)
+								if fwdErr == nil {
+									return
+								}
+								var ue *upstreamError
+								if errors.As(fwdErr, &ue) {
+									retry.note(ue)
+									lastErr = ue
+								}
+								continue
+							}
+						}
+					}
+				}
+			}
+
 			// Try up to 10 connections for this model entry
 			for connAttempt := 0; connAttempt < 10; connAttempt++ {
 				var connID string
@@ -1531,6 +1607,24 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 						// rotation.
 						if providers.IsModelFitError(ue.StatusCode, ue.Body) {
 							log.Info("combo", "model too small for request, next member",
+								"provider", modelInfo.Provider, "model", modelInfo.Model)
+							retry.note(ue)
+							lastErr = ue
+							break
+						}
+						if providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
+							log.Warn("combo", "model cluster concurrency saturated, next member",
+								"provider", modelInfo.Provider, "model", modelInfo.Model)
+							if modelInfo.Provider == "dahl" {
+								RecordDahlModelConcurrencyBlocked(modelInfo.Model, 30*time.Second)
+							}
+							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, ue)
+							retry.note(ue)
+							lastErr = ue
+							break
+						}
+						if providers.IsUnsupportedMediaError(ue.StatusCode, ue.Body) {
+							log.Warn("combo", "model rejected media format, next member",
 								"provider", modelInfo.Provider, "model", modelInfo.Model)
 							retry.note(ue)
 							lastErr = ue
@@ -1754,6 +1848,18 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 	if providers.LooksLikeToSDisabled(ue.StatusCode, string(ue.Body)) || strings.Contains(errLower, "terms of service") || strings.Contains(errLower, "tos_violation") || strings.Contains(errLower, "account has been deleted") || strings.Contains(errLower, "account has been banned") {
 		if h.Repo != nil {
 			_ = h.Repo.DisableConnectionWithReason(connID, http.StatusForbidden, "Account disabled: "+errText)
+		}
+		h.getSessionAffinity().EvictConnection(connID)
+		*excludeIDs = append(*excludeIDs, connID)
+		return
+	}
+	if provider == "dahl" && (ue.StatusCode == http.StatusPaymentRequired || strings.Contains(errLower, "available tokens exhausted") || strings.Contains(errLower, "insufficient_quota") || strings.Contains(errLower, "invalid_api_key") || ue.StatusCode == http.StatusUnauthorized) {
+		if h.Repo != nil {
+			reason := "Dahl quota exhausted: " + errText
+			if ue.StatusCode == http.StatusUnauthorized || strings.Contains(errLower, "invalid_api_key") {
+				reason = "Dahl account expired or invalid key: " + errText
+			}
+			_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, reason)
 		}
 		h.getSessionAffinity().EvictConnection(connID)
 		*excludeIDs = append(*excludeIDs, connID)

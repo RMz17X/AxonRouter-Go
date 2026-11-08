@@ -2,16 +2,18 @@
   import type { ProviderConnection } from '../../api/client'
   import { emailPrivacy, formatEmailLabel } from '../../lib/privacy'
   import type { ConnectionHealth, ConnectionHealthState } from './connectionHealth'
+  import type { ProviderStats } from './types'
 
   interface Props {
     connections: ProviderConnection[]
     healthById: Map<string, ConnectionHealth>
+    stats?: ProviderStats
     /** Hide the "N accounts" label (the provider header already counts
      * connections next to where the strip is placed there). */
     showCount?: boolean
   }
 
-  let { connections, healthById, showCount = true }: Props = $props()
+  let { connections, healthById, stats, showCount = true }: Props = $props()
 
   interface StateBucket {
     state: ConnectionHealthState
@@ -19,6 +21,7 @@
     chipClass: string
     dotClass?: string
     icon?: string
+    count: number
     names: string[]
   }
 
@@ -29,13 +32,44 @@
   }
 
   let buckets = $derived.by(() => {
+    const counts = new Map<ConnectionHealthState, number>()
     const byState = new Map<ConnectionHealthState, string[]>()
-    for (const state of STATE_ORDER) byState.set(state, [])
-    for (const conn of connections) {
-      const health = healthById.get(conn.id)
-      if (!health) continue
-      byState.get(health.state)?.push(displayName(conn))
+    for (const state of STATE_ORDER) {
+      counts.set(state, 0)
+      byState.set(state, [])
     }
+
+    if (stats && stats.total > connections.length) {
+      // Fast path: use cached stats directly from providerStats
+      counts.set('active', stats.connected)
+      counts.set('error', stats.errorCount)
+      const disabledCount = stats.allDisabled
+        ? stats.total
+        : Math.max(0, stats.total - stats.connected - stats.errorCount)
+      counts.set('disabled', disabledCount)
+
+      // Sample names from currently visible connections for tooltip
+      for (const conn of connections) {
+        const health = healthById.get(conn.id)
+        if (!health) continue
+        const list = byState.get(health.state)
+        if (list && list.length < 8) {
+          list.push(displayName(conn))
+        }
+      }
+    } else {
+      for (const conn of connections) {
+        const health = healthById.get(conn.id)
+        if (!health) continue
+        const currentCount = counts.get(health.state) || 0
+        counts.set(health.state, currentCount + 1)
+        const list = byState.get(health.state)
+        if (list && list.length < 8) {
+          list.push(displayName(conn))
+        }
+      }
+    }
+
     const style: Record<ConnectionHealthState, { label: string; chipClass: string; dotClass?: string; icon?: string }> = {
       active: {
         label: 'Active',
@@ -68,13 +102,19 @@
         dotClass: 'bg-text-muted/60',
       },
     }
-    return STATE_ORDER.map((state): StateBucket => ({ state, names: byState.get(state) ?? [], ...style[state] }))
+    return STATE_ORDER.map((state): StateBucket => ({
+      state,
+      count: counts.get(state) ?? 0,
+      names: byState.get(state) ?? [],
+      ...style[state]
+    }))
   })
 
   function bucketTitle(bucket: StateBucket): string {
-    if (bucket.names.length === 0) return `No ${bucket.label.toLowerCase()} accounts`
+    if (bucket.count === 0) return `No ${bucket.label.toLowerCase()} accounts`
     const shown = bucket.names.slice(0, 8)
-    const extra = bucket.names.length - shown.length
+    const extra = bucket.count - shown.length
+    if (shown.length === 0) return `${bucket.label}: ${bucket.count} accounts`
     return `${bucket.label}: ${shown.join(', ')}${extra > 0 ? `, +${extra} more` : ''}`
   }
 </script>
@@ -85,13 +125,13 @@
 <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 {showCount ? 'px-1 py-2' : ''}" role="status" aria-label="Account status summary">
   {#if showCount}
     <span class="text-xs font-medium text-text-muted">
-      {connections.length}
-      {connections.length === 1 ? 'account' : 'accounts'}
+      {stats?.total ?? connections.length}
+      {(stats?.total ?? connections.length) === 1 ? 'account' : 'accounts'}
     </span>
   {/if}
   {#each buckets as bucket (bucket.state)}
     <span
-      class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold {bucket.chipClass} {bucket.names.length === 0 ? 'opacity-45' : ''}"
+      class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold {bucket.chipClass} {bucket.count === 0 ? 'opacity-45' : ''}"
       title={bucketTitle(bucket)}
     >
       {#if bucket.icon}
@@ -100,7 +140,7 @@
         <span class="size-1.5 rounded-full {bucket.dotClass}"></span>
       {/if}
       {bucket.label}
-      {bucket.names.length}
+      {bucket.count}
     </span>
   {/each}
 </div>

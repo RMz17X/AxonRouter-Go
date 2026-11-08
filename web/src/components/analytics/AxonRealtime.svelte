@@ -43,12 +43,17 @@
   // Relative times re-render on a 30 s tick, like Axon's TimeAgo.
   let nowMs = $state(Date.now())
 
+  let inFlight = false
   async function load() {
+    if (inFlight) return
+    inFlight = true
     try {
       const res = await api.getRequestDetails(20, 0, period)
       if (res && Array.isArray(res.details)) rows = res.details as RequestDetailItem[]
     } catch {
       // A failed poll keeps the previous rows on screen; the next cycle retries.
+    } finally {
+      inFlight = false
     }
   }
 
@@ -60,7 +65,7 @@
   onMount(() => {
     const poll = setInterval(() => {
       if (!document.hidden) load()
-    }, 5000)
+    }, 10000)
     const tick = setInterval(() => (nowMs = Date.now()), 30_000)
     return () => {
       clearInterval(poll)

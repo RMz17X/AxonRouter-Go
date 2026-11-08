@@ -20,7 +20,7 @@
 
   interface Props {
     isOpen: boolean
-    target: 'combo' | 'vision' | 'audio' | 'judge' | 'router'
+    target: 'combo' | 'vision' | 'audio' | 'judge' | 'router' | 'api-key' | 'models'
     connections?: ProviderConnection[]
     combos?: Combo[]
     providerNodes?: ProviderNode[]
@@ -86,12 +86,45 @@
       disabledModels: disabledModels ?? fetchedExtras.disabledModels,
       deprecations: deprecations ?? fetchedExtras.deprecations,
       modelCaps: fetchedExtras.modelCaps,
+      connectedProviders: fetchedExtras.connectedProviders,
+      providerStats: fetchedExtras.providerStats,
     })
   )
   let filteredCombos = $derived(
     resolveFilteredCombos(combos, currentComboName, searchQuery, target)
   )
   let filteredGroups = $derived(resolveFilteredGroups(groups, searchQuery, target))
+
+  let activeFilter = $state<'all' | 'connected' | 'vision' | 'reasoning'>('all')
+
+  let displayGroups = $derived.by(() => {
+    let grps = filteredGroups
+    if (activeFilter === 'connected') {
+      grps = grps.filter((g) => g.isConnected || (g.accountCount ?? 0) > 0)
+    } else if (activeFilter === 'vision') {
+      grps = grps
+        .map((g) => ({
+          ...g,
+          models: g.models.filter((m) => m.caps.vision),
+        }))
+        .filter((g) => g.models.length > 0)
+    } else if (activeFilter === 'reasoning') {
+      grps = grps
+        .map((g) => ({
+          ...g,
+          models: g.models.filter((m) => m.caps.reasoning),
+        }))
+        .filter((g) => g.models.length > 0)
+    }
+    return grps
+  })
+
+  let totalModelsCount = $derived(groups.reduce((acc, g) => acc + g.models.length, 0))
+  let connectedModelsCount = $derived(
+    groups
+      .filter((g) => g.isConnected || (g.accountCount ?? 0) > 0)
+      .reduce((acc, g) => acc + g.models.length, 0)
+  )
 
   function handleToggle(val: string) {
     if (addedModelValues.includes(val)) {
@@ -111,9 +144,9 @@
 </script>
 
 {#if isOpen}
-  <div class="fixed inset-0 z-[70] flex items-center justify-center p-4">
+  <div class="fixed inset-0 z-[120] flex items-center justify-center p-4">
     <!-- Overlay -->
-    <div class="absolute inset-0 bg-black/50 fade-in" onclick={onClose} aria-hidden="true"></div>
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-xs fade-in" onclick={onClose} aria-hidden="true"></div>
 
     <div
       class="relative w-full max-w-[1180px] bg-surface border border-border rounded-brand-lg shadow-[var(--shadow-elev)] fade-in overflow-hidden flex flex-col max-h-[85vh] z-10 p-4!"
@@ -132,7 +165,9 @@
                   ? 'Select Judge Model'
                   : target === 'router'
                     ? 'Select System One Router'
-                    : 'Add Model to Combo'}
+                    : target === 'api-key' || target === 'models'
+                      ? 'Select Allowed Models'
+                      : 'Add Model to Combo'}
           </h2>
         </div>
         <button
@@ -151,8 +186,8 @@
         <span>Click to add, click again to remove. Changes are saved automatically.</span>
       </div>
 
-      <!-- Search -->
-      <div class="mb-3">
+      <!-- Search & Filters -->
+      <div class="mb-3 space-y-2">
         <div class="relative">
           <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
           <input
@@ -179,12 +214,53 @@
             {/if}
           </div>
         </div>
+
+        <!-- Quick filter chips -->
+        <div class="flex items-center gap-1.5 overflow-x-auto text-[11px]">
+          <button
+            type="button"
+            onclick={() => (activeFilter = 'all')}
+            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'all'
+              ? 'bg-brand-500 text-white font-medium shadow-xs'
+              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+          >
+            All ({totalModelsCount})
+          </button>
+          <button
+            type="button"
+            onclick={() => (activeFilter = 'connected')}
+            class="px-2 py-0.5 rounded-full transition cursor-pointer flex items-center gap-1 {activeFilter === 'connected'
+              ? 'bg-emerald-600 text-white font-medium shadow-xs'
+              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span>Connected ({connectedModelsCount})</span>
+          </button>
+          <button
+            type="button"
+            onclick={() => (activeFilter = 'vision')}
+            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'vision'
+              ? 'bg-brand-500 text-white font-medium shadow-xs'
+              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+          >
+            Vision
+          </button>
+          <button
+            type="button"
+            onclick={() => (activeFilter = 'reasoning')}
+            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'reasoning'
+              ? 'bg-brand-500 text-white font-medium shadow-xs'
+              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+          >
+            Reasoning
+          </button>
+        </div>
       </div>
 
       <!-- Categories & Models List -->
       <div class="min-h-0 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
-        <!-- Combos section - always first -->
-        {#if filteredCombos.length > 0}
+        <!-- Combos section - always first (if filter allows) -->
+        {#if filteredCombos.length > 0 && activeFilter !== 'vision' && activeFilter !== 'reasoning'}
           <div>
             <div class="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5 z-10">
               <span class="text-xs font-medium text-brand-500">Combos</span>
@@ -204,7 +280,7 @@
         {/if}
 
         <!-- Provider sections -->
-        {#each filteredGroups as group (group.id)}
+        {#each displayGroups as group (group.id)}
           <div>
             <div class="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5 z-10">
               <ProviderArtwork
@@ -215,6 +291,15 @@
               <span class="text-xs font-medium text-brand-500">
                 {formatEmailLabel(group.name, $emailPrivacy)}
               </span>
+              {#if (group.accountCount ?? 0) > 0}
+                <span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-500 font-semibold border border-emerald-500/20">
+                  {group.accountCount} active
+                </span>
+              {:else if group.isConnected}
+                <span class="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-500 font-semibold border border-emerald-500/20">
+                  active
+                </span>
+              {/if}
               <span class="text-[10px] text-text-muted">
                 ({group.models.length})
               </span>
@@ -237,7 +322,7 @@
           </div>
         {/each}
 
-        {#if filteredCombos.length === 0 && filteredGroups.length === 0}
+        {#if (filteredCombos.length === 0 || activeFilter === 'vision' || activeFilter === 'reasoning') && displayGroups.length === 0}
           <div class="text-center py-4 text-text-muted">
             <Search class="w-6 h-6 mx-auto mb-1 opacity-50" />
             <p class="text-xs">No models found</p>

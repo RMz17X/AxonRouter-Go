@@ -19,6 +19,7 @@ type StreamState struct {
 	TextBlockIndex       int
 	ThinkingBlockStarted bool
 	ThinkingBlockIndex   int
+	ThinkFilter          *ThinkStreamFilter
 	ToolCalls            map[int]ToolCallState
 	ToolArgBuffers       map[int]string
 	FinishReason         string

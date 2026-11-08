@@ -445,6 +445,18 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Website:      "https://zed.dev",
 		Notice:       &Notice{SignupURL: "https://zed.dev/native_app_signin"},
 	},
+	"perch": {
+		ID:           "perch",
+		Name:         "Perch AI",
+		Alias:        "perch",
+		Category:     CategoryAPIKey,
+		AuthType:     "apikey",
+		Color:        "#2563EB",
+		Icon:         "terminal",
+		ServiceKinds: []string{"llm"},
+		Website:      "https://perchai.app",
+		Notice:       &Notice{APIKeyURL: "https://app.perchai.app", SignupURL: "https://chat.perchai.app"},
+	},
 	"atmorouter": {
 		ID:           "atmorouter",
 		Name:         "AtmoRouter",

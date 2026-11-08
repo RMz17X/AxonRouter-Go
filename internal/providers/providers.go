@@ -1444,6 +1444,14 @@ var KnownProviders = map[string]ProviderConfig{
 			"content-type": "application/json",
 		},
 	},
+	"perch": {
+		BaseURL:    "https://app.perchai.app",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+		StaticHeaders: map[string]string{
+			"content-type": "application/json",
+		},
+	},
 	"atmorouter": {
 		BaseURL:    "https://atmorouter.dev/v1/chat/completions",
 		AuthHeader: "Authorization",

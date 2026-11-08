@@ -1347,10 +1347,15 @@ export function normalizeConnection(c: ProviderConnection): ProviderConnection {
 // Connections API
 export const api = {
   // Connections
-  getConnections: async (provider?: string) => {
-    const url = provider ? `/api/connections?provider=${encodeURIComponent(provider)}` : '/api/connections'
+  getConnections: async (provider?: string, page?: number, pageSize?: number) => {
+    const params = new URLSearchParams()
+    if (provider) params.set('provider', provider)
+    if (page && page > 0) params.set('page', String(page))
+    if (pageSize && pageSize > 0) params.set('pageSize', String(pageSize))
+    const qs = params.toString()
+    const url = qs ? `/api/connections?${qs}` : '/api/connections'
     const conns = await request<ProviderConnection[]>(url)
-    return conns.map(normalizeConnection)
+    return Array.isArray(conns) ? conns.map(normalizeConnection) : []
   },
   getProviderStats: async () => {
     const res = await request<{ stats?: Record<string, Record<string, { total: number; connected: number; error: number; allDisabled: boolean; lastError?: string }>> }>('/api/providers/stats')

@@ -697,6 +697,8 @@ func quotaCacheBlocked(provider, connectionID, model string) bool {
 		return IsAntigravityModelBlocked(connectionID, model)
 	case "codex":
 		return IsCodexConnectionExhausted(connectionID)
+	case "dahl":
+		return IsDahlModelConcurrencyBlocked(model)
 	}
 	return false
 }

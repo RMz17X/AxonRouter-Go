@@ -129,6 +129,9 @@ func cooldownSecForClassification(statusCode int, cls providers.ErrorClassificat
 	if cls.ModelScoped {
 		return ceilSeconds(time.Duration(cls.CooldownMs) * time.Millisecond)
 	}
+	if provider == "tokenharbor" && cls.CooldownMs > 0 {
+		return ceilSeconds(time.Duration(cls.CooldownMs) * time.Millisecond)
+	}
 	return retryableCooldownSec(statusCode, time.Duration(cls.CooldownMs)*time.Millisecond, ue, provider)
 }
 

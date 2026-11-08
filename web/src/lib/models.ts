@@ -145,6 +145,7 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "zed": "zd",
   "atmorouter": "atmo",
   "runcrate": "rc",
+  "perch": "pc",
 };
 
 const FREEBUFF_MODELS: ProviderModel[] = [
@@ -6172,6 +6173,50 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     { "id": "zai-org/GLM-5.3-Flash", "name": "GLM 5.3 Flash" },
     { "id": "Qwen/Qwen3.8-Flash", "name": "Qwen3.8 Flash" },
     { "id": "openai/gpt-oss-120b", "name": "gpt-oss 120B" }
+  ],
+  "pc": [
+    { "id": "standard", "name": "Standard (Perch Combo)", "capabilities": ["reasoning"] },
+    { "id": "standard_max", "name": "Standard Max (Perch Combo 1M)", "capabilities": ["reasoning"] },
+    { "id": "pro", "name": "Pro (Perch Combo)", "capabilities": ["reasoning"] },
+    { "id": "pro_max", "name": "Pro Max (Perch Combo 1M)", "capabilities": ["reasoning"] },
+    { "id": "combo", "name": "Perch Auto Combo", "capabilities": ["reasoning"] },
+    { "id": "auto", "name": "Auto" },
+    { "id": "default", "name": "Default" },
+    { "id": "deepseek-flash-starter", "name": "DeepSeek Flash Starter", "capabilities": ["reasoning"] },
+    { "id": "glm-5.3-flash-starter", "name": "GLM 5.3 Flash Starter", "capabilities": ["reasoning"] },
+    { "id": "minimax-m3.1-flash-starter", "name": "MiniMax M3.1 Flash Starter", "capabilities": ["reasoning"] },
+    { "id": "crouton-alpha", "name": "Crouton Alpha" },
+    { "id": "beam-1.0-starter", "name": "Beam 1.0 Starter" },
+    { "id": "claude-opus-5.5", "name": "Claude Opus 5.5", "capabilities": ["reasoning"] },
+    { "id": "claude-sonnet-5.5", "name": "Claude Sonnet 5.5", "capabilities": ["reasoning"] },
+    { "id": "claude-haiku-5.5", "name": "Claude Haiku 5.5", "capabilities": ["reasoning"] },
+    { "id": "gemini-4-argon", "name": "Gemini 4 Argon", "capabilities": ["reasoning"] },
+    { "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol", "capabilities": ["reasoning"] },
+    { "id": "kimi-3.1-pro", "name": "Kimi 3.1 Pro", "capabilities": ["reasoning"] },
+    { "id": "grok-4.7", "name": "Grok 4.7", "capabilities": ["reasoning"] },
+    { "id": "hy4", "name": "Hunyuan 4", "capabilities": ["reasoning"] }
+  ],
+  "perch": [
+    { "id": "standard", "name": "Standard (Perch Combo)", "capabilities": ["reasoning"] },
+    { "id": "standard_max", "name": "Standard Max (Perch Combo 1M)", "capabilities": ["reasoning"] },
+    { "id": "pro", "name": "Pro (Perch Combo)", "capabilities": ["reasoning"] },
+    { "id": "pro_max", "name": "Pro Max (Perch Combo 1M)", "capabilities": ["reasoning"] },
+    { "id": "combo", "name": "Perch Auto Combo", "capabilities": ["reasoning"] },
+    { "id": "auto", "name": "Auto" },
+    { "id": "default", "name": "Default" },
+    { "id": "deepseek-flash-starter", "name": "DeepSeek Flash Starter", "capabilities": ["reasoning"] },
+    { "id": "glm-5.3-flash-starter", "name": "GLM 5.3 Flash Starter", "capabilities": ["reasoning"] },
+    { "id": "minimax-m3.1-flash-starter", "name": "MiniMax M3.1 Flash Starter", "capabilities": ["reasoning"] },
+    { "id": "crouton-alpha", "name": "Crouton Alpha" },
+    { "id": "beam-1.0-starter", "name": "Beam 1.0 Starter" },
+    { "id": "claude-opus-5.5", "name": "Claude Opus 5.5", "capabilities": ["reasoning"] },
+    { "id": "claude-sonnet-5.5", "name": "Claude Sonnet 5.5", "capabilities": ["reasoning"] },
+    { "id": "claude-haiku-5.5", "name": "Claude Haiku 5.5", "capabilities": ["reasoning"] },
+    { "id": "gemini-4-argon", "name": "Gemini 4 Argon", "capabilities": ["reasoning"] },
+    { "id": "gpt-6.1-sol", "name": "GPT-6.1 Sol", "capabilities": ["reasoning"] },
+    { "id": "kimi-3.1-pro", "name": "Kimi 3.1 Pro", "capabilities": ["reasoning"] },
+    { "id": "grok-4.7", "name": "Grok 4.7", "capabilities": ["reasoning"] },
+    { "id": "hy4", "name": "Hunyuan 4", "capabilities": ["reasoning"] }
   ],
   "af": [
     {

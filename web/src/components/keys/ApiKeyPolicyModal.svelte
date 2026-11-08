@@ -1,7 +1,9 @@
 <script lang="ts">
   import { api, type APIKey, type APIKeyPolicy, type Plan } from '../../api/client'
-  import { Loader2, Save, X } from 'lucide-svelte'
+  import { Layers, Loader2, Save, Trash2, X } from 'lucide-svelte'
   import { isNavEntryHidden } from '../../lib/navVisibility.svelte'
+  import { pushEscapeHandler } from '../../lib/ui/escapeStack'
+  import ModelPickerModal from '../combos/ModelPickerModal.svelte'
 
   interface Props {
     apiKey: APIKey
@@ -14,12 +16,11 @@
   // 0 means unlimited everywhere, so the initial value of an unset column is
   // 0 rather than blank: the operator sees "no limit" without guessing.
   let rpm = $state(apiKey.rateLimitRpm ?? 0)
-  let tpm = $state(apiKey.rateLimitTpm ?? 0)
+  // Tokens are managed in unit M (Millions of tokens) for intuitive input.
+  let tpmM = $state(apiKey.rateLimitTpm ? Number((apiKey.rateLimitTpm / 1_000_000).toFixed(4)) : 0)
   let concurrency = $state(apiKey.rateLimitConcurrency ?? 0)
-  // The lifetime budget and the concurrency wait are the two governance columns
-  // the modal gained alongside the per-window rates. Both read 0 as "unset":
-  // no quota, and the server's default queue timeout.
-  let tokenQuota = $state(apiKey.tokenQuota ?? 0)
+  // The lifetime budget in M (Millions of tokens).
+  let tokenQuotaM = $state(apiKey.tokenQuota ? Number((apiKey.tokenQuota / 1_000_000).toFixed(4)) : 0)
   let queueTimeoutMs = $state(apiKey.queueTimeoutMs ?? 0)
 
   // expiresAt is stored as RFC3339. The input is a plain datetime-local because
@@ -33,6 +34,7 @@
   let name = $state(apiKey.name ?? '')
   let models = $state<string[]>([])
   let modelDraft = $state('')
+  let isModelPickerOpen = $state(false)
   let isLoadingModels = $state(false)
   let isSaving = $state(false)
   let error = $state<string | null>(null)
@@ -148,9 +150,9 @@
       isSaving = true
       const policy: APIKeyPolicy = {
         rateLimitRpm: nonNegative(rpm),
-        rateLimitTpm: nonNegative(tpm),
+        rateLimitTpm: Math.round(nonNegative(tpmM) * 1_000_000),
         rateLimitConcurrency: nonNegative(concurrency),
-        tokenQuota: nonNegative(tokenQuota),
+        tokenQuota: Math.round(nonNegative(tokenQuotaM) * 1_000_000),
         queueTimeoutMs: nonNegative(queueTimeoutMs),
         expiresAt: toRFC3339(expiresLocal),
         metadata: metadataValue,
@@ -182,13 +184,10 @@
     modelDraft = ''
   }
 
-  // Escape closes the dialog, matching every other modal in this dashboard.
-  function onKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') onClose()
-  }
+  $effect(() => {
+    return pushEscapeHandler(() => onClose())
+  })
 </script>
-
-<svelte:window onkeydown={onKeydown} />
 
 <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
   <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-surface-2 border border-border shadow-2xl">
@@ -286,19 +285,29 @@
               bind:value={rpm}
               class="w-full bg-surface border border-border rounded-lg px-3 py-2 font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
             />
+            <p class="text-text-subtle text-[10px] mt-1 font-mono">
+              {rpm > 0 ? `${rpm.toLocaleString()} req/min` : '0 = Unlimited'}
+            </p>
           </div>
           <div>
-            <label for="pol-tpm" class="block font-semibold text-text-muted mb-1">
-              Tokens / minute
+            <label for="pol-tpm" class="block font-semibold text-text-muted mb-1 flex items-center justify-between">
+              <span>Tokens / minute</span>
+              <span class="px-1.5 py-0.2 rounded bg-brand-500/10 text-brand-500 font-bold text-[10px]">M Tokens</span>
             </label>
-            <input
-              id="pol-tpm"
-              type="number"
-              min="0"
-              step="1"
-              bind:value={tpm}
-              class="w-full bg-surface border border-border rounded-lg px-3 py-2 font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
-            />
+            <div class="relative">
+              <input
+                id="pol-tpm"
+                type="number"
+                min="0"
+                step="0.01"
+                bind:value={tpmM}
+                class="w-full bg-surface border border-border rounded-lg pl-3 pr-8 py-2 font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
+              />
+              <span class="absolute right-2.5 top-1/2 -translate-y-1/2 font-bold text-text-muted text-[11px] pointer-events-none">M</span>
+            </div>
+            <p class="text-text-subtle text-[10px] mt-1 font-mono">
+              {tpmM > 0 ? `${Math.round(tpmM * 1_000_000).toLocaleString()} tokens/min` : '0 = Unlimited'}
+            </p>
           </div>
           <div>
             <label for="pol-conc" class="block font-semibold text-text-muted mb-1">
@@ -312,25 +321,31 @@
               bind:value={concurrency}
               class="w-full bg-surface border border-border rounded-lg px-3 py-2 font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
             />
+            <p class="text-text-subtle text-[10px] mt-1 font-mono">
+              {concurrency > 0 ? `${concurrency} concurrent` : '0 = Unlimited'}
+            </p>
           </div>
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label for="pol-quota" class="block font-semibold text-text-muted mb-1">
-              Lifetime token quota
+            <label for="pol-quota" class="block font-semibold text-text-muted mb-1 flex items-center justify-between">
+              <span>Lifetime token quota</span>
+              <span class="px-1.5 py-0.2 rounded bg-brand-500/10 text-brand-500 font-bold text-[10px]">M Tokens</span>
             </label>
-            <input
-              id="pol-quota"
-              type="number"
-              min="0"
-              step="1"
-              bind:value={tokenQuota}
-              class="w-full bg-surface border border-border rounded-lg px-3 py-2 font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
-            />
-            <p class="text-text-subtle mt-1">
-              Total prompt + completion tokens for the key's lifetime. Once spent, requests are
-              refused with 403.
+            <div class="relative">
+              <input
+                id="pol-quota"
+                type="number"
+                min="0"
+                step="0.1"
+                bind:value={tokenQuotaM}
+                class="w-full bg-surface border border-border rounded-lg pl-3 pr-8 py-2 font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
+              />
+              <span class="absolute right-2.5 top-1/2 -translate-y-1/2 font-bold text-text-muted text-[11px] pointer-events-none">M</span>
+            </div>
+            <p class="text-text-subtle text-[10px] mt-1 font-mono">
+              {tokenQuotaM > 0 ? `${Math.round(tokenQuotaM * 1_000_000).toLocaleString()} tokens lifetime` : '0 = Unlimited'}
             </p>
           </div>
           <div>
@@ -345,9 +360,8 @@
               bind:value={queueTimeoutMs}
               class="w-full bg-surface border border-border rounded-lg px-3 py-2 font-code text-xs text-text-main focus:outline-none focus:border-brand-500"
             />
-            <p class="text-text-subtle mt-1">
-              How long a request waits for a free concurrency slot before it is refused with 429.
-              Leave 0 for the server default.
+            <p class="text-text-subtle text-[10px] mt-1 font-mono">
+              {queueTimeoutMs > 0 ? `${queueTimeoutMs} ms` : '0 = Server default'}
             </p>
           </div>
         </div>
@@ -399,22 +413,31 @@
           <div>
             <h3 class="font-headline text-xs font-bold text-text-main">Model access</h3>
             <p class="text-text-subtle mt-0.5">
-              Patterns may use <span class="font-code">*</span> per segment, e.g.
-              <span class="font-code">e2e/allowed-*</span>. An empty list allows every model.
+              Select models using the picker or add custom wildcard patterns (<span class="font-code">*</span>). An empty list allows every model.
             </p>
           </div>
-          <button
-            type="button"
-            onclick={loadModels}
-            disabled={isLoadingModels}
-            class="shrink-0 px-2.5 py-1.5 rounded-lg border border-border text-[11px] text-text-muted hover:text-text-main hover:border-brand-500/40 transition cursor-pointer disabled:opacity-50"
-          >
-            {#if isLoadingModels}
-              <Loader2 class="w-3.5 h-3.5 animate-spin inline" />
-            {:else}
-              Reload
-            {/if}
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              onclick={() => (isModelPickerOpen = true)}
+              class="px-2.5 py-1.5 rounded-lg bg-brand-500/10 border border-brand-500/30 text-[11px] font-semibold text-brand-500 hover:bg-brand-500/20 transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Layers class="w-3.5 h-3.5" />
+              <span>Browse Models</span>
+            </button>
+            <button
+              type="button"
+              onclick={loadModels}
+              disabled={isLoadingModels}
+              class="shrink-0 px-2.5 py-1.5 rounded-lg border border-border text-[11px] text-text-muted hover:text-text-main hover:border-brand-500/40 transition cursor-pointer disabled:opacity-50"
+            >
+              {#if isLoadingModels}
+                <Loader2 class="w-3.5 h-3.5 animate-spin inline" />
+              {:else}
+                Reload
+              {/if}
+            </button>
+          </div>
         </div>
 
         <div class="flex gap-2">
@@ -422,7 +445,7 @@
             type="text"
             bind:value={modelDraft}
             onkeydown={(e) => e.key === 'Enter' && (e.preventDefault(), addModel())}
-            placeholder="e2e/allowed-*"
+            placeholder="e.g. anthropic/* or e2e/allowed-*"
             class="flex-1 bg-surface border border-border rounded-lg px-3 py-2 font-code text-[11px] text-text-main focus:outline-none focus:border-brand-500"
           />
           <button
@@ -430,27 +453,39 @@
             onclick={addModel}
             class="px-3 py-2 rounded-lg bg-surface-3 border border-border text-[11px] text-text-main hover:border-brand-500/40 transition cursor-pointer"
           >
-            Add
+            Add Pattern
           </button>
         </div>
 
         {#if models.length > 0}
-          <div class="flex flex-wrap gap-1.5">
-            {#each models as pattern, i (pattern)}
-              <span
-                class="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-brand-500/10 border border-brand-500/25 font-code text-[11px] text-brand-500"
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between text-[11px] text-text-muted">
+              <span>Allowed Models ({models.length}):</span>
+              <button
+                type="button"
+                onclick={() => (models = [])}
+                class="text-danger hover:underline cursor-pointer text-[10px]"
               >
-                {pattern}
-                <button
-                  type="button"
-                  onclick={() => (models = models.filter((_, idx) => idx !== i))}
-                  aria-label="Remove {pattern}"
-                  class="hover:text-danger transition cursor-pointer"
+                Clear all
+              </button>
+            </div>
+            <div class="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-1 bg-surface/50 border border-border/50 rounded-lg">
+              {#each models as pattern, i (pattern)}
+                <span
+                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-brand-500/10 border border-brand-500/25 font-code text-[11px] text-brand-500"
                 >
-                  <X class="w-3 h-3" />
-                </button>
-              </span>
-            {/each}
+                  {pattern}
+                  <button
+                    type="button"
+                    onclick={() => (models = models.filter((_, idx) => idx !== i))}
+                    aria-label="Remove {pattern}"
+                    class="hover:text-danger transition cursor-pointer"
+                  >
+                    <X class="w-3 h-3" />
+                  </button>
+                </span>
+              {/each}
+            </div>
           </div>
         {:else}
           <p class="text-text-subtle font-code text-[11px]">
@@ -490,3 +525,20 @@
     </form>
   </div>
 </div>
+
+{#if isModelPickerOpen}
+  <ModelPickerModal
+    isOpen={isModelPickerOpen}
+    target="api-key"
+    addedModelValues={models}
+    onSelect={(val) => {
+      if (!models.includes(val)) {
+        models = [...models, val]
+      }
+    }}
+    onDeselect={(val) => {
+      models = models.filter((m) => m !== val)
+    }}
+    onClose={() => (isModelPickerOpen = false)}
+  />
+{/if}

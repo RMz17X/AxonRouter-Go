@@ -299,9 +299,13 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 		// opening a new tool-call index without an id aborts strict
 		// OpenAI-compatible clients mid-turn (upstream 95c9d03e).
 		toolFill := internalproxy.NewStreamToolCallIDFill()
+		thinkFilter := translator.NewThinkStreamFilter()
 		err := internalproxy.ScanStream(upstream, func(payload []byte) {
 			noteUpstreamProgress(ctx)
 			if patched, changed := toolFill.Fill(payload); changed {
+				payload = patched
+			}
+			if patched, changed := thinkFilter.FilterSSEPayload(payload); changed {
 				payload = patched
 			}
 			if metrics.TTFT == 0 {
@@ -441,6 +445,8 @@ func sseToClaudeJSON(raw []byte) ([]byte, bool) {
 		}
 		if r, ok := delta["reasoning_content"].(string); ok && r != "" {
 			reasoningParts = append(reasoningParts, r)
+		} else if r, ok := delta["reasoning"].(string); ok && r != "" {
+			reasoningParts = append(reasoningParts, r)
 		}
 		if fr, ok := choice["finish_reason"].(string); ok {
 			finishReason = fr
@@ -484,6 +490,13 @@ func sseToClaudeJSON(raw []byte) ([]byte, bool) {
 	}
 	msg := map[string]any{"role": "assistant"}
 	content := strings.Join(contentParts, "")
+	if strings.Contains(content, "<think>") {
+		thinkPart, clean := translator.ExtractAndStripThink(content)
+		content = clean
+		if len(reasoningParts) == 0 && thinkPart != "" {
+			reasoningParts = append(reasoningParts, thinkPart)
+		}
+	}
 	if content == "" {
 		if len(toolCalls) > 0 {
 			msg["content"] = nil
@@ -592,6 +605,9 @@ func (h *ChatHandler) handleJSONResponse(ctx context.Context, w http.ResponseWri
 	}
 
 	if !translate {
+		if normalized, changed := translator.NormalizeOpenAIResponseJSON(body); changed {
+			body = normalized
+		}
 		// The !translate path serves both OpenAI bodies (/v1/chat/completions,
 		// translateResponse hardcoded false) and Claude bodies (claude/anthropic
 		// providers). ParseResponseUsage handles both formats.

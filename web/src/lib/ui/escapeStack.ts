@@ -23,6 +23,7 @@ export function createEscapeStack(target: KeydownTarget): EscapeStack {
 
   const onKeydown = (e: KeyboardEvent) => {
     if (e.key !== 'Escape' || handlers.length === 0) return
+    e.stopPropagation()
     handlers[handlers.length - 1]()
   }
 

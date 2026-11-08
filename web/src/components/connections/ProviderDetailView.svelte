@@ -46,6 +46,7 @@
     fetchProviderModelsData,
     fetchSuggestedModels,
     getIconPath,
+    getProviderStats,
     isChatModel,
     type CustomModelData,
     type ModelItem,
@@ -110,8 +111,9 @@
 
   interface Props {
     providerId: string
-    connections: ProviderConnection[]
-    providerNodes: ProviderNode[]
+    connections?: ProviderConnection[]
+    providerStats?: Record<string, Record<string, any>>
+    providerNodes?: ProviderNode[]
     onBack: () => void
     onRefresh: () => void
     /** Called with the new id after a URL-suffix rename moves this node. */
@@ -121,6 +123,7 @@
   let {
     providerId,
     connections = [],
+    providerStats = {},
     providerNodes = [],
     onBack,
     onRefresh,
@@ -223,7 +226,7 @@
     // Reading currentTime re-derives health as locks lapse, so a lock that
     // expires while the page is open drops out of the counts and badges.
     void currentTime
-    return buildHealthByConnection(providerConnections, availabilityByConnection, currentTime)
+    return buildHealthByConnection(paginatedConnections, availabilityByConnection, currentTime)
   })
 
   onMount(() => {
@@ -244,25 +247,66 @@
     selectedNode?.id || selectedCatalogItem?.alias || PROVIDER_ID_TO_ALIAS[providerId] || providerId
   )
 
+  // Cached stats from providerStats (O(1) lookup)
+  let cachedStats = $derived(
+    getProviderStats([], providerId, undefined, providerStats)
+  )
+
   // Filtered connections for this provider, sorted by priority ASC
   let providerConnections = $derived(
-    connections
-      .filter((c) => c.provider === providerId)
-      .sort((a, b) => (a.priority ?? 999999) - (b.priority ?? 999999))
+    connections.length > 0
+      ? connections
+          .filter((c) => c.provider === providerId)
+          .sort((a, b) => (a.priority ?? 999999) - (b.priority ?? 999999))
+      : pagedConnections
+  )
+
+  let totalConnectionsCount = $derived(
+    cachedStats.total > 0
+      ? cachedStats.total
+      : (pagedConnections.length > 0 ? pagedConnections.length : providerConnections.length)
   )
 
   // Connections pagination
   let connPageSize = $state<number>(10)
   let connPage = $state<number>(1)
-  let connTotalPages = $derived(Math.max(1, Math.ceil(providerConnections.length / connPageSize)))
-  let paginatedConnections = $derived(
-    providerConnections.slice((connPage - 1) * connPageSize, connPage * connPageSize)
+  let pagedConnections = $state<ProviderConnection[]>([])
+  let isLoadingConnections = $state<boolean>(false)
+
+  let connTotalPages = $derived(
+    Math.max(1, Math.ceil(totalConnectionsCount / connPageSize))
   )
+
+  async function loadPagedConnections(pId: string, page: number, size: number) {
+    if (!pId) return
+    isLoadingConnections = true
+    try {
+      const data = await api.getConnections(pId, page, size)
+      pagedConnections = data
+    } catch (err) {
+      console.error('Failed to load paged connections', err)
+      pagedConnections = []
+    } finally {
+      isLoadingConnections = false
+    }
+  }
 
   $effect(() => {
     void providerId
     connPage = 1
   })
+
+  $effect(() => {
+    if (providerId) {
+      loadPagedConnections(providerId, connPage, connPageSize)
+    }
+  })
+
+  let paginatedConnections = $derived(
+    pagedConnections.length > 0
+      ? pagedConnections
+      : providerConnections.slice((connPage - 1) * connPageSize, connPage * connPageSize)
+  )
 
   $effect(() => {
     if (connPage > connTotalPages) {
@@ -292,9 +336,15 @@
   )
 
   let isProviderAllDisabled = $derived(
-    providerConnections.length > 0 && providerConnections.every((c) => c.isActive === 0)
+    cachedStats.total > 0
+      ? cachedStats.allDisabled
+      : providerConnections.length > 0 && providerConnections.every((c) => c.isActive === 0)
   )
-  let isProviderActive = $derived(providerConnections.some((c) => c.isActive === 1))
+  let isProviderActive = $derived(
+    cachedStats.total > 0
+      ? cachedStats.connected > 0
+      : providerConnections.some((c) => c.isActive === 1)
+  )
 
   async function handleToggleProvider(targetActive: boolean) {
     try {
@@ -3636,10 +3686,10 @@
           </div>
           <div class="flex items-center gap-2 flex-wrap">
             <p class="text-text-muted">
-              {providerConnections.length} connection{providerConnections.length === 1 ? '' : 's'}
+              {totalConnectionsCount} connection{totalConnectionsCount === 1 ? '' : 's'}
             </p>
-            {#if providerConnections.length > 0}
-              <ProviderAccountStatusStrip connections={providerConnections} healthById={connectionHealthById} showCount={false} />
+            {#if totalConnectionsCount > 0}
+              <ProviderAccountStatusStrip connections={paginatedConnections} stats={cachedStats} healthById={connectionHealthById} showCount={false} />
             {/if}
             {#if isProviderAllDisabled}
               <Badge variant="default" size="sm">
@@ -3653,7 +3703,7 @@
         </div>
       </div>
 
-      {#if providerConnections.length > 0}
+      {#if totalConnectionsCount > 0}
         <div class="flex shrink-0 items-center gap-2 self-center ml-auto">
           <Toggle
             size="sm"
@@ -3996,7 +4046,7 @@
     {/if}
 
     <!-- Select All Checkbox & Sensor Email Toggle -->
-    {#if providerConnections.length > 0}
+    {#if totalConnectionsCount > 0 || providerConnections.length > 0}
       <div class="mb-3 flex items-center justify-between gap-2 border-b border-black/[0.03] pb-2 dark:border-white/[0.03]">
         <label class="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted hover:text-primary">
           <input
@@ -4049,7 +4099,12 @@
 
     <!-- Connections List (the account status strip lives in the page
          header, beside the connection count) -->
-      {#if providerConnections.length === 0}
+      {#if isLoadingConnections && paginatedConnections.length === 0}
+        <div class="flex items-center justify-center p-8 text-text-muted gap-2 text-sm">
+          <span class="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+          <span>Loading connections...</span>
+        </div>
+      {:else if totalConnectionsCount === 0 && paginatedConnections.length === 0}
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex items-center gap-3">
           <div class="inline-flex items-center justify-center w-9 h-9 rounded-full bg-primary/10 text-primary shrink-0">
@@ -4142,7 +4197,7 @@
         {#each paginatedConnections as conn, localIdx (conn.id)}
           {@const globalIdx = (connPage - 1) * connPageSize + localIdx}
           {@const isFirst = globalIdx === 0}
-          {@const isLast = globalIdx === providerConnections.length - 1}
+          {@const isLast = globalIdx === totalConnectionsCount - 1}
           {@const isSelected = selectedConnIds.includes(conn.id)}
           {@const status = oneByOneStatuses[conn.id]}
           {@const specificData = conn.providerSpecificData as Record<string, unknown> | undefined}
@@ -4816,7 +4871,7 @@
       {#if connTotalPages > 1}
         <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs text-text-muted">
           <div class="flex items-center gap-2">
-            <span>Showing {(connPage - 1) * connPageSize + 1} to {Math.min(connPage * connPageSize, providerConnections.length)} of {providerConnections.length} accounts</span>
+            <span>Showing {(connPage - 1) * connPageSize + 1} to {Math.min(connPage * connPageSize, totalConnectionsCount)} of {totalConnectionsCount} accounts</span>
             <select
               value={connPageSize}
               onchange={(e) => {

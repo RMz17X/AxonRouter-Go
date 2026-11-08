@@ -137,6 +137,8 @@ var ProviderAliasMap = map[string]string{
 	"ws":       "windsurf",
 	"xq":       "xquik",
 	"zd":       "zed",
+	"pc":       "perch",
+	"perchai":  "perch",
 	"atmo":     "atmorouter",
 	"rc":       "runcrate",
 	"hc":       "hcnsec",

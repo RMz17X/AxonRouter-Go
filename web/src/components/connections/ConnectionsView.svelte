@@ -29,24 +29,6 @@
   }: Props = $props()
 
   let showAddNodeModal = $state(false)
-  let providerConnections = $state<ProviderConnection[]>([])
-
-  async function loadProviderConns(provId: string) {
-    try {
-      providerConnections = await api.getConnections(provId)
-    } catch (err) {
-      console.error('Failed to load connections for provider', provId, err)
-      providerConnections = []
-    }
-  }
-
-  $effect(() => {
-    if (selectedProviderId) {
-      loadProviderConns(selectedProviderId)
-    } else {
-      providerConnections = []
-    }
-  })
 
   // The dialog owns the protocol choice now (#182), so opening it takes no
   // argument — passing one through onclick would hand this a MouseEvent.
@@ -105,16 +87,14 @@
 {#if selectedProviderId}
   <ProviderDetailView
     providerId={selectedProviderId}
-    connections={providerConnections.length > 0 ? providerConnections : connections.filter((c) => c.provider === selectedProviderId)}
+    {providerStats}
+    connections={connections.filter((c) => c.provider === selectedProviderId)}
     {providerNodes}
     onBack={() => {
       selectedProviderId = null
       onBackToOverview?.()
     }}
-    onRefresh={() => {
-      if (selectedProviderId) loadProviderConns(selectedProviderId)
-      onRefresh()
-    }}
+    onRefresh={onRefresh}
     {onSelectProvider}
   />
 {:else}

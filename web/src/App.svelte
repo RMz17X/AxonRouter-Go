@@ -121,6 +121,11 @@
   function navigate(tab: ActiveTab, replace = false, providerId?: string | null) {
     activeTab = tab
     selectedMedia = null
+    if ((tab === 'endpoint' || tab === 'cli-tools' || tab.startsWith('media-')) && apiKeys.length === 0) {
+      api.getApiKeys().then((res) => {
+        if (Array.isArray(res)) apiKeys = res
+      }).catch(() => {})
+    }
     if (tab === 'connections') {
       selectedProviderId = providerId || null
       const path = providerId ? providerPath(providerId) : TAB_ROUTES.connections
@@ -174,11 +179,18 @@
       console.error('provider catalog failed to load', err)
     }
     try {
+      const shouldFetchKeysImmediately =
+        activeTab === 'endpoint' ||
+        activeTab === 'cli-tools' ||
+        activeTab.startsWith('media-')
+
       const [statsRes, nodesRes, combosRes, keysRes, settingsRes] = await Promise.all([
         api.getProviderStats().catch(() => ({})),
         api.getProviderNodes().catch(() => []),
         api.getCombos().catch(() => []),
-        api.getApiKeys().catch(() => []),
+        shouldFetchKeysImmediately
+          ? api.getApiKeys().catch(() => [])
+          : Promise.resolve(apiKeys.length ? apiKeys : []),
         api.getSettings().catch(() => ({})),
       ])
       providerStats = statsRes
@@ -190,6 +202,14 @@
       // Every cost surface reads the display currency from the store, so it is
       // pushed in wherever the settings land.
       setDisplayCurrency(settingsRes.displayCurrency)
+
+      if (!shouldFetchKeysImmediately && apiKeys.length === 0) {
+        setTimeout(() => {
+          api.getApiKeys().then((res) => {
+            if (Array.isArray(res)) apiKeys = res
+          }).catch(() => {})
+        }, 1200)
+      }
     } finally {
       settingsLoaded = true
       isLoading = false
@@ -307,11 +327,11 @@
       // to keep an already-visible list fresh.
       if (!READS_CONNECTIONS.includes(activeTab)) return
       try {
-        const [connsRes, nodesRes] = await Promise.all([
-          api.getConnections().catch(() => null),
+        const [statsRes, nodesRes] = await Promise.all([
+          api.getProviderStats().catch(() => null),
           api.getProviderNodes().catch(() => null)
         ])
-        if (connsRes) connections = connsRes
+        if (statsRes) providerStats = statsRes
         if (nodesRes) providerNodes = nodesRes
       } catch {
         // silent refresh error

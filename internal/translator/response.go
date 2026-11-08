@@ -396,6 +396,14 @@ func TranslateOpenAIToClaude(openaiResp []byte) ([]byte, *OpenAIUsage, error) {
 	if reasoning == "" {
 		reasoning = msg.Reasoning
 	}
+	cleanContent := msg.Content
+	if strings.Contains(cleanContent, "<think>") {
+		thinkPart, stripped := ExtractAndStripThink(cleanContent)
+		cleanContent = stripped
+		if reasoning == "" {
+			reasoning = thinkPart
+		}
+	}
 	if reasoning != "" {
 		contentBlocks = append(contentBlocks, map[string]any{
 			"type":     "thinking",
@@ -404,10 +412,10 @@ func TranslateOpenAIToClaude(openaiResp []byte) ([]byte, *OpenAIUsage, error) {
 	}
 
 	// Text content
-	if msg.Content != "" {
+	if cleanContent != "" {
 		contentBlocks = append(contentBlocks, map[string]any{
 			"type": "text",
-			"text": msg.Content,
+			"text": cleanContent,
 		})
 	}
 
@@ -687,6 +695,23 @@ func TranslateOpenAIToClaudeStreamSession(sessionKey string, openaiChunk []byte)
 
 	// 2. Reasoning
 	reasoningContent := extractReasoningText(delta)
+
+	content := delta.Content
+	if content != "" {
+		if state.ThinkFilter == nil {
+			state.ThinkFilter = NewThinkStreamFilter()
+		}
+		thinkDelta, cleanDelta := state.ThinkFilter.Feed(content)
+		if thinkDelta != "" {
+			if reasoningContent == "" {
+				reasoningContent = thinkDelta
+			} else {
+				reasoningContent += thinkDelta
+			}
+		}
+		content = cleanDelta
+	}
+
 	if reasoningContent != "" {
 		stopTextBlock(state, &results)
 		if !state.ThinkingBlockStarted {
@@ -713,7 +738,7 @@ func TranslateOpenAIToClaudeStreamSession(sessionKey string, openaiChunk []byte)
 	}
 
 	// 3. Content
-	if delta.Content != "" {
+	if content != "" {
 		stopThinkingBlock(state, &results)
 		if !state.TextBlockStarted {
 			state.TextBlockIndex = state.NextBlockIndex
@@ -734,7 +759,7 @@ func TranslateOpenAIToClaudeStreamSession(sessionKey string, openaiChunk []byte)
 			"index": state.TextBlockIndex,
 			"delta": map[string]any{
 				"type": "text_delta",
-				"text": delta.Content,
+				"text": content,
 			},
 		})
 	}

@@ -137,6 +137,16 @@ var ErrorRules = []ErrorRule{
 	// status 400 only). The code-gated guard is a text rule here because
 	// the extracted error text always carries the "(code 11158)" suffix.
 	{Text: "11158", CooldownMs: 0, ModelScoped: true, RequireStatus: http.StatusBadRequest},
+
+	// Dahl inference cluster queue capacity: temporary GPU concurrency saturation,
+	// not an account quota issue. Pause this model for 30s so router skips it.
+	{Text: "model_concurrency", CooldownMs: 30000, ModelScoped: true},
+	{Text: "concurrency capacity", CooldownMs: 30000, ModelScoped: true},
+
+	// Unsupported vision / image input format on text-only models (e.g. Dahl/MiniMax 400 "unsupported value \"image_url\"")
+	{Text: "unsupported value \"image_url\"", CooldownMs: 0, ModelScoped: true},
+	{Text: "does not support image", CooldownMs: 0, ModelScoped: true},
+	{Text: "does not support vision", CooldownMs: 0, ModelScoped: true},
 	{Text: "model_not_in_plan", CooldownMs: cooldownLong},
 	{Text: "当前账号类型暂不支持该模型", CooldownMs: cooldownLong},
 	{Text: "额度已用尽", CooldownMs: cooldownLong},
@@ -485,6 +495,29 @@ func IsModelFitError(statusCode int, body []byte) bool {
 	return false
 }
 
+// IsModelConcurrencyError reports whether an upstream failure is a cluster-wide
+// model concurrency limit (e.g. Dahl "model_concurrency"), meaning every connection
+// on this provider will fail for this model. Combos should break to the next model
+// immediately instead of exhausting connection retries.
+func IsModelConcurrencyError(statusCode int, body []byte) bool {
+	if statusCode != http.StatusTooManyRequests || len(body) == 0 {
+		return false
+	}
+	text := strings.ToLower(string(body))
+	return strings.Contains(text, "model_concurrency")
+}
+
+// IsUnsupportedMediaError reports whether an upstream rejected the request due to
+// an unsupported media/vision block (e.g. "unsupported value \"image_url\"").
+// Combos can failover to a vision-capable candidate.
+func IsUnsupportedMediaError(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest || len(body) == 0 {
+		return false
+	}
+	text := strings.ToLower(string(body))
+	return strings.Contains(text, "image_url") && (strings.Contains(text, "unsupported") || strings.Contains(text, "not supported"))
+}
+
 // GetQuotaCooldown calculates exponential backoff cooldown for rate limits.
 // Level 0 → 2s, Level 1 → 2s, Level 2 → 4s, Level 3 → 8s, ... capped at MaxMs.
 func GetQuotaCooldown(backoffLevel int) int {
@@ -548,6 +581,16 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 
 	if cls, ok := classifyTokenHarbor(statusCode, lowerError, backoffLevel, provider); ok {
 		return cls
+	}
+
+	// Model capability mismatch (e.g. text model receiving vision/image input)
+	if statusCode == http.StatusBadRequest && strings.Contains(lowerError, "image_url") && (strings.Contains(lowerError, "unsupported") || strings.Contains(lowerError, "not supported")) {
+		return ErrorClassification{
+			ShouldFallback:  true,
+			CooldownMs:      0,
+			NewBackoffLevel: backoffLevel,
+			ModelScoped:     true,
+		}
 	}
 
 	for _, rule := range ErrorRules {

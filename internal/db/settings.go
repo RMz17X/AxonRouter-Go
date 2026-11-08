@@ -112,6 +112,13 @@ type ProviderStrategy struct {
 	// selects the derived default of 1 hour; non-positive values fall
 	// back to the default.
 	IdleProbeIntervalSec *int `json:"idleProbeIntervalSec,omitempty"`
+	// HedgeEnabled controls speculative hedging across multiple accounts
+	// to race concurrency capacity and avoid 429 errors.
+	HedgeEnabled *bool `json:"hedgeEnabled,omitempty"`
+	// HedgeDelayMs is the delay before launching a parallel speculative candidate.
+	HedgeDelayMs int `json:"hedgeDelayMs,omitempty"`
+	// HedgeMaxAttempts is the maximum number of parallel/speculative candidates.
+	HedgeMaxAttempts int `json:"hedgeMaxAttempts,omitempty"`
 }
 
 // CapacityAdapterEntry defines settings for an input-modality capability adapter pool.

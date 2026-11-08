@@ -119,8 +119,18 @@ export function getProviderStats(
   authTypes?: string[],
   summaryStats?: Record<string, Record<string, { total?: number; connected?: number; error?: number; allDisabled?: boolean; lastError?: string }>>
 ): ProviderStats {
-  if (summaryStats && summaryStats[providerId]) {
+  if (summaryStats && Object.keys(summaryStats).length > 0) {
     const provStats = summaryStats[providerId]
+    if (!provStats) {
+      return {
+        total: 0,
+        connected: 0,
+        errorCount: 0,
+        allDisabled: false,
+        latestError: null,
+        connections: [],
+      }
+    }
     let total = 0
     let connected = 0
     let errorCount = 0
@@ -148,6 +158,14 @@ export function getProviderStats(
         latestError: undefined,
         connections: [],
       }
+    }
+    return {
+      total: 0,
+      connected: 0,
+      errorCount: 0,
+      allDisabled: false,
+      latestError: null,
+      connections: [],
     }
   }
 

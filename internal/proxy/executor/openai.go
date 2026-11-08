@@ -350,6 +350,13 @@ func sseStream(o sseStreamOpts) error {
 		if liftAliases {
 			patchers = append(patchers, liftReasoningAliasesPayload)
 		}
+		thinkFilter := translator.NewThinkStreamFilter()
+		patchers = append(patchers, func(p []byte) []byte {
+			if patched, changed := thinkFilter.FilterSSEPayload(p); changed {
+				return patched
+			}
+			return p
+		})
 		return proxy.SSECopy(hw, upstream, flusher, func(chunk []byte) {
 			if ttft != nil && *ttft == 0 {
 				*ttft = time.Since(startTime).Milliseconds()

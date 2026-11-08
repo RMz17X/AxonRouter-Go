@@ -41,6 +41,12 @@ var pendingUpstreamDivergences = map[string]map[string][]string{
 		"kimi-k2.7":           {"minimal", "low", "medium", "high", "xhigh"},
 		"kimi-k2.6":           {"minimal", "low", "medium", "high", "xhigh"},
 	},
+	"codebuddy-intl": {
+		"kimi-k2.6":           {"none", "minimal", "low", "medium", "high", "xhigh"},
+		"deepseek-v4.1-flash": {"low", "high", "max"},
+		"deepseek-v4-pro":     {"low", "high", "max"},
+		"glm-5.2":             {"high", "xhigh"},
+	},
 	// Upstream has no agnes entry in capabilities.js at all, so it publishes
 	// no reasoning levels for the provider. Go declares agnes-3.0-pro and
 	// agnes-3.0-flash as reasoning models (they stream reasoning_content), so

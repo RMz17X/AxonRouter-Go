@@ -118,8 +118,10 @@
 
   $effect(() => {
     const t = setInterval(() => {
-      topologyNow = Date.now()
-    }, 5000)
+      if (typeof document === 'undefined' || !document.hidden) {
+        topologyNow = Date.now()
+      }
+    }, 15000)
     return () => clearInterval(t)
   })
 

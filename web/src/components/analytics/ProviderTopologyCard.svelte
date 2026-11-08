@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import type { ActiveRequestItem } from './types'
   import ProviderArtwork from '../providers/ProviderArtwork.svelte'
+  import { getAnimationLevel } from '../../lib/displayPrefs'
   import {
     createTopologySlotAllocator,
     topologyRingRadii,
@@ -58,6 +59,7 @@
   let containerEl = $state<HTMLDivElement | null>(null)
   let containerWidth = $state(800)
   let containerHeight = $state(480)
+  let animLevel = $state<'default' | 'minimal' | 'off'>('default')
 
   // Zoom & Pan transforms
   let zoom = $state(0.85)
@@ -228,6 +230,7 @@
   }
 
   onMount(() => {
+    animLevel = getAnimationLevel()
     if (!containerEl) return
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
@@ -265,80 +268,63 @@
       {#each geometry.nodes as node (node.id)}
         {#if node.isActive}
           <!-- Expanding Shockwave Ripples from Provider Target -->
-          <g class="topology-shockwave-group">
-            <circle
-              cx={node.x}
-              cy={node.y}
-              r="35"
-              fill="none"
-              stroke={node.color || '#22d3ee'}
-              opacity="0"
-            >
-              <animate attributeName="r" values="32;105" dur="1.1s" repeatCount="indefinite" />
-              <animate attributeName="opacity" values="0.85;0" dur="1.1s" repeatCount="indefinite" />
-              <animate attributeName="stroke-width" values="3.5;0.5" dur="1.1s" repeatCount="indefinite" />
-            </circle>
-          </g>
+          {#if animLevel === 'default'}
+            <g class="topology-shockwave-group">
+              <circle
+                cx={node.x}
+                cy={node.y}
+                r="35"
+                fill="none"
+                stroke={node.color || '#22d3ee'}
+                opacity="0"
+              >
+                <animate attributeName="r" values="32;75" dur="2.4s" repeatCount="indefinite" />
+                <animate attributeName="opacity" values="0.7;0" dur="2.4s" repeatCount="indefinite" />
+                <animate attributeName="stroke-width" values="2.5;0.5" dur="2.4s" repeatCount="indefinite" />
+              </circle>
+            </g>
+          {/if}
 
           <!-- Bidirectional Neural Stream (Router <-> Provider) -->
           <g class="topology-edge-electric">
-            <!-- 1. Outgoing Prompt Stream: Outer electric halo (Router -> Provider) -->
-            <path
-              d={node.path}
-              fill="none"
-              stroke="#22d3ee"
-              stroke-width="10"
-              stroke-opacity="0.32"
-              stroke-linecap="round"
-              class="topology-edge-halo"
-            />
-            <!-- 2. Mid plasma forward stream -->
+            <!-- 1. Forward plasma stream -->
             <path
               d={node.path}
               fill="none"
               stroke="#06b6d4"
-              stroke-width="4.5"
+              stroke-width="3.5"
               stroke-opacity="0.8"
               stroke-linecap="round"
               class="topology-edge-plasma"
             />
-            <!-- 3. Hot core laser forward beam -->
+            <!-- 2. Core laser beam -->
             <path
               d={node.path}
               fill="none"
               stroke="#f8fafc"
-              stroke-width="2"
+              stroke-width="1.5"
               class="topology-edge-kame"
             />
 
-            <!-- 4. Incoming Token Stream: Reverse emerald/gold plasma (Provider -> Router) -->
+            <!-- 3. Return stream (Provider -> Router) -->
             <path
               d={node.returnPath}
               fill="none"
               stroke="#10b981"
-              stroke-width="3"
-              stroke-opacity="0.9"
-              class="topology-edge-return"
-            />
-            <path
-              d={node.returnPath}
-              fill="none"
-              stroke="#fef08a"
-              stroke-width="1.4"
+              stroke-width="2.5"
+              stroke-opacity="0.85"
               class="topology-edge-return"
             />
 
-            <!-- One forwarding token and one returning token per hop. The
-                 previous version ran three forward dots, four reverse dots and
-                 four sparks, and every one of them carried a drop-shadow
-                 filter, so each frame re-rasterised the filter region of every
-                 active edge (issue #381 follow-up). -->
-            <circle r="4.5" fill="#38bdf8" opacity="0.95">
-              <animateMotion dur="0.42s" repeatCount="indefinite" path={node.path} />
-            </circle>
-            <circle r="4.2" fill="#34d399" opacity="0.95">
-              <animateMotion dur="0.48s" repeatCount="indefinite" path={node.returnPath} />
-            </circle>
+            {#if animLevel !== 'off'}
+              <!-- Forward and return tokens with lightweight smooth motion -->
+              <circle r="4" fill="#38bdf8" opacity="0.95">
+                <animateMotion dur="1.6s" repeatCount="indefinite" path={node.path} />
+              </circle>
+              <circle r="3.5" fill="#34d399" opacity="0.95">
+                <animateMotion dur="1.8s" repeatCount="indefinite" path={node.returnPath} />
+              </circle>
+            {/if}
           </g>
         {:else if node.isLast}
           <!-- Last Provider Active Edge (Amber) -->
@@ -370,7 +356,7 @@
         {/if}
       {/each}
       <!-- Center Router Absorption Rings when activeCount > 0 -->
-      {#if activeCount > 0}
+      {#if activeCount > 0 && animLevel !== 'off'}
         <g class="topology-router-absorption">
           <circle
             cx="0"
@@ -381,23 +367,25 @@
             stroke-dasharray="5 5"
             opacity="0"
           >
-            <animate attributeName="r" values="55;20" dur="0.9s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0;0.8;0" dur="0.9s" repeatCount="indefinite" />
-            <animate attributeName="stroke-width" values="1;2.5;0.5" dur="0.9s" repeatCount="indefinite" />
+            <animate attributeName="r" values="50;22" dur="2.2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0;0.6;0" dur="2.2s" repeatCount="indefinite" />
+            <animate attributeName="stroke-width" values="1;2;0.5" dur="2.2s" repeatCount="indefinite" />
           </circle>
-          <circle
-            cx="0"
-            cy="0"
-            r="30"
-            fill="none"
-            stroke="#facc15"
-            stroke-dasharray="4 6"
-            opacity="0"
-          >
-            <animate attributeName="r" values="65;24" dur="1.1s" begin="0.45s" repeatCount="indefinite" />
-            <animate attributeName="opacity" values="0;0.7;0" dur="1.1s" begin="0.45s" repeatCount="indefinite" />
-            <animate attributeName="stroke-width" values="0.8;2;0.5" dur="1.1s" begin="0.45s" repeatCount="indefinite" />
-          </circle>
+          {#if animLevel === 'default'}
+            <circle
+              cx="0"
+              cy="0"
+              r="30"
+              fill="none"
+              stroke="#facc15"
+              stroke-dasharray="4 6"
+              opacity="0"
+            >
+              <animate attributeName="r" values="58;26" dur="2.6s" begin="0.8s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0;0.5;0" dur="2.6s" begin="0.8s" repeatCount="indefinite" />
+              <animate attributeName="stroke-width" values="0.8;1.5;0.5" dur="2.6s" begin="0.8s" repeatCount="indefinite" />
+            </circle>
+          {/if}
         </g>
       {/if}
     </svg>

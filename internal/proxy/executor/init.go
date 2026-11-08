@@ -106,6 +106,7 @@ func RegisterAll() {
 	Register("trae", func() Executor { return ForwardTrae })
 	Register("windsurf", func() Executor { return ForwardWindsurf })
 	Register("zed", func() Executor { return ForwardZed })
+	Register("perch", func() Executor { return ForwardPerch })
 	Register("minimax-code", func() Executor { return ForwardMinimaxCode })
 	Register("minimax-code-global", func() Executor { return ForwardMinimaxCode })
 	Register("daoxe", func() Executor { return ForwardOpenAI })

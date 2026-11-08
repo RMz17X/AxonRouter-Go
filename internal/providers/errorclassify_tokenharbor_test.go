@@ -67,7 +67,7 @@ func TestClassifyTokenHarbor_Scenarios(t *testing.T) {
 		}
 	})
 
-	t.Run("Hourly Key Rate Limit locks Account (not ModelScoped)", func(t *testing.T) {
+	t.Run("Hourly Key Rate Limit locks Account with 70min floor (not ModelScoped)", func(t *testing.T) {
 		body := `{"error":{"message":"Rate limit reached. You can send your next request in 59 min 1 s.","type":"rate_limit_exceeded"}}`
 		cls, ok := classifyTokenHarbor(http.StatusTooManyRequests, body, 0, "tokenharbor")
 		if !ok {
@@ -76,9 +76,36 @@ func TestClassifyTokenHarbor_Scenarios(t *testing.T) {
 		if cls.ModelScoped {
 			t.Error("expected ModelScoped to be FALSE for account-level key throttle")
 		}
-		expectedMs := int((59*60 + 1) * 1000)
+		expectedMs := int(70 * 60 * 1000) // 70 min floor
 		if cls.CooldownMs != expectedMs {
-			t.Errorf("expected %dms, got %dms", expectedMs, cls.CooldownMs)
+			t.Errorf("expected %dms (70m floor), got %dms", expectedMs, cls.CooldownMs)
+		}
+	})
+
+	t.Run("Short burst rate limit gets 5s buffer", func(t *testing.T) {
+		body := `{"error":{"message":"Rate limit reached. You can send your next request in 32 s.","type":"rate_limit_exceeded"}}`
+		cls, ok := classifyTokenHarbor(http.StatusTooManyRequests, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if cls.ModelScoped {
+			t.Error("expected ModelScoped to be FALSE for short burst limit")
+		}
+		expectedMs := int((32 + 5) * 1000) // 32s + 5s buffer = 37s
+		if cls.CooldownMs != expectedMs {
+			t.Errorf("expected %dms (37s), got %dms", expectedMs, cls.CooldownMs)
+		}
+	})
+
+	t.Run("Default hourly rate limit without duration gets 70min floor", func(t *testing.T) {
+		body := `{"error":{"message":"Rate limit reached.","type":"rate_limit_exceeded"}}`
+		cls, ok := classifyTokenHarbor(http.StatusTooManyRequests, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		expectedMs := int(70 * 60 * 1000) // 70 min floor
+		if cls.CooldownMs != expectedMs {
+			t.Errorf("expected %dms (70m floor), got %dms", expectedMs, cls.CooldownMs)
 		}
 	})
 
@@ -93,6 +120,20 @@ func TestClassifyTokenHarbor_Scenarios(t *testing.T) {
 		}
 		if cls.CooldownMs != 5*60*1000 {
 			t.Errorf("expected 5m cooldown, got %dms", cls.CooldownMs)
+		}
+	})
+
+	t.Run("Upstream HTML 500 error gives short transient cooldown", func(t *testing.T) {
+		body := `upstream returned HTML: 500: This page couldn’t load`
+		cls, ok := classifyTokenHarbor(http.StatusInternalServerError, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if cls.ModelScoped {
+			t.Error("expected ModelScoped to be FALSE for 500 transient error")
+		}
+		if cls.CooldownMs != 15*1000 {
+			t.Errorf("expected 15s cooldown, got %dms", cls.CooldownMs)
 		}
 	})
 }

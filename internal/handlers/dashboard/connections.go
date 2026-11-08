@@ -44,8 +44,29 @@ func (h *DashboardHandler) HandleGetConnections(w http.ResponseWriter, r *http.R
 		return
 	}
 	h.autoDisableFatalConnections(conns)
-	sanitized := make([]map[string]any, 0, len(conns))
-	for _, c := range conns {
+
+	total := len(conns)
+	page := parsePositiveIntQuery(r.URL.Query().Get("page"), 0)
+	pageSize := parsePositiveIntQuery(r.URL.Query().Get("pageSize"), 0)
+
+	var paged []*models.ProviderConnection
+	if page > 0 && pageSize > 0 {
+		w.Header().Set("X-Total-Count", strconv.Itoa(total))
+		w.Header().Set("Access-Control-Expose-Headers", "X-Total-Count")
+		offset := (page - 1) * pageSize
+		if offset < total {
+			end := offset + pageSize
+			if end > total {
+				end = total
+			}
+			paged = conns[offset:end]
+		}
+	} else {
+		paged = conns
+	}
+
+	sanitized := make([]map[string]any, 0, len(paged))
+	for _, c := range paged {
 		if c == nil {
 			continue
 		}
@@ -815,6 +836,7 @@ func (h *DashboardHandler) HandleCreateConnection(w http.ResponseWriter, r *http
 		return
 	}
 
+	InvalidateProviderStatsCache()
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
 		"id":     req.ID,
@@ -1060,6 +1082,7 @@ func (h *DashboardHandler) HandleUpdateConnection(w http.ResponseWriter, r *http
 		return
 	}
 
+	InvalidateProviderStatsCache()
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "id": id})
 }
 
@@ -1212,6 +1235,7 @@ func (h *DashboardHandler) HandleDeleteConnection(w http.ResponseWriter, r *http
 		return
 	}
 
+	InvalidateProviderStatsCache()
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"status": "ok", "id": id})
 }
 

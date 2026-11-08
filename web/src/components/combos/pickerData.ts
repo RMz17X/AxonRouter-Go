@@ -38,6 +38,8 @@ export interface PickerGroup {
   id: string
   name: string
   color?: string
+  accountCount?: number
+  isConnected?: boolean
   models: PickerModel[]
 }
 
@@ -49,6 +51,9 @@ export interface PickerExtras {
   deprecations?: Record<string, unknown>
   /** Server caps for credit-priced providers, keyed "<provider>/<model>". */
   modelCaps?: Record<string, ModelCaps>
+  /** Provider IDs with active accounts / connections from providerStats or connections */
+  connectedProviders?: string[]
+  providerStats?: Record<string, Record<string, { total?: number; connected?: number }>>
 }
 
 /** Credit price / free flag for one picker row, from the server caps map. */
@@ -72,13 +77,46 @@ export function resolveModelPickerGroups(
 ): PickerGroup[] {
   // Upstream parity (page.js fetchData + ModelSelectModal.js groupedModels):
   // `activeProviders` holds ALL connections (no isActive filter) — every
-  // connected provider shows, plus no-auth providers. Inactive connections
-  // are still selectable upstream, so the picker mirrors that.
+  // connected provider shows, plus no-auth providers. Also include any
+  // provider identified as having active connections in providerStats.
   const connectedProviderIds = new Set<string>()
   for (const c of connections) {
     if (c.provider) {
       connectedProviderIds.add(c.provider)
     }
+  }
+  if (extras.connectedProviders) {
+    for (const p of extras.connectedProviders) {
+      connectedProviderIds.add(p)
+    }
+  }
+  if (extras.providerStats) {
+    for (const [p, authMap] of Object.entries(extras.providerStats)) {
+      if (!authMap || typeof authMap !== 'object') continue
+      for (const item of Object.values(authMap)) {
+        if (item && ((item.total ?? 0) > 0 || (item.connected ?? 0) > 0)) {
+          connectedProviderIds.add(p)
+          break
+        }
+      }
+    }
+  }
+
+  function getAccountCount(provId: string, alias?: string): number {
+    let count = 0
+    const stats = extras.providerStats
+    if (stats) {
+      const pStats = stats[provId] || (alias ? stats[alias] : undefined)
+      if (pStats) {
+        for (const item of Object.values(pStats)) {
+          count += item?.total || item?.connected || 0
+        }
+      }
+    }
+    if (count === 0 && connections.length > 0) {
+      count = connections.filter((c) => c.provider === provId || (alias && c.provider === alias)).length
+    }
+    return count
   }
 
   const groups: PickerGroup[] = []
@@ -189,10 +227,13 @@ export function resolveModelPickerGroups(
 
     if (visible.length > 0) {
       seenGroupIds.add(catItem.id)
+      const accCount = getAccountCount(catItem.id, catItem.alias)
       groups.push({
         id: catItem.id,
         name: catItem.name || catItem.id,
         color: catItem.color,
+        accountCount: accCount,
+        isConnected: isConnected || accCount > 0,
         models: visible,
       })
     }
@@ -205,6 +246,7 @@ export function resolveModelPickerGroups(
   for (const node of providerNodes) {
     if (!node.id || seenGroupIds.has(node.id)) continue
     const conn = connections.find((c) => c.provider === node.id)
+    const isConnectedNode = conn !== undefined || connectedProviderIds.has(node.id)
     const psd = (conn?.providerSpecificData || {}) as Record<string, unknown>
     const nodePrefix = (psd.prefix as string) || node.prefix || node.id
     const displayName = node.name || conn?.name || node.id
@@ -222,16 +264,7 @@ export function resolveModelPickerGroups(
         ),
       }))
 
-    // providerNodes lists every node; ones with a connection row are usable as
-    // picker values (matches upstream activeProviders, which holds all
-    // connections regardless of isActive). Upstream parity (ModelSelectModal.js
-    // 6a1573eb): a compatible node that already has user-added custom models is
-    // selectable WITHOUT a connection — local / self-hosted endpoints don't
-    // always need a stored key, so gating on connections hid models the user had
-    // added. Such nodes are LLM-only, which is why they are unioned here, in the
-    // LLM-only half of the picker, instead of behind a kind filter. With custom
-    // models present there is always something to show, so no placeholder group.
-    if (!conn && (!isCompatibleNode || registeredCustom.length === 0)) continue
+    if (!isConnectedNode && (!isCompatibleNode || registeredCustom.length === 0)) continue
 
     const nodeModels = Object.entries(extras.modelAliases || {})
       .filter(([, fullModel]) => typeof fullModel === 'string' && fullModel.startsWith(`${node.id}/`))
@@ -263,12 +296,26 @@ export function resolveModelPickerGroups(
           ]
 
     seenGroupIds.add(node.id)
+    const accCount = getAccountCount(node.id)
     groups.push({
       id: node.id,
       name: displayName,
+      accountCount: accCount,
+      isConnected: isConnectedNode || accCount > 0,
       models: modelsToShow,
     })
   }
+
+  // Sort groups: providers with active connections / accounts appear first,
+  // then other providers. Within each bucket, sort alphabetically by name.
+  groups.sort((a, b) => {
+    const aActive = (a.isConnected || (a.accountCount ?? 0) > 0) ? 1 : 0
+    const bActive = (b.isConnected || (b.accountCount ?? 0) > 0) ? 1 : 0
+    if (aActive !== bActive) {
+      return bActive - aActive
+    }
+    return a.name.localeCompare(b.name)
+  })
 
   return groups
 }

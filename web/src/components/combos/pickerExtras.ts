@@ -8,6 +8,7 @@ export interface PickerExtrasSource {
   getModelDeprecations: () => Promise<{ deprecations?: Record<string, unknown> } | null>
   /** Optional so test doubles pre-dating the credit pill keep working. */
   getModelCaps?: (provider: string) => Promise<{ provider: string; caps: Record<string, ModelCaps> } | null>
+  getProviderStats?: () => Promise<Record<string, Record<string, { total?: number; connected?: number }>> | null>
 }
 
 export interface ResolvedPickerExtras {
@@ -23,6 +24,9 @@ export interface ResolvedPickerExtras {
    * through GET /api/models/caps — never copied into the static bundle.
    */
   modelCaps: Record<string, ModelCaps>
+  /** Provider IDs with active accounts / connections in providerStats. */
+  connectedProviders: string[]
+  providerStats: Record<string, Record<string, { total?: number; connected?: number }>>
 }
 
 export const EMPTY_PICKER_EXTRAS: ResolvedPickerExtras = {
@@ -31,6 +35,8 @@ export const EMPTY_PICKER_EXTRAS: ResolvedPickerExtras = {
   disabledModels: {},
   deprecations: {},
   modelCaps: {},
+  connectedProviders: [],
+  providerStats: {},
 }
 
 /**
@@ -54,11 +60,12 @@ export const CREDIT_CAPS_PROVIDERS = ['codebuddy-cn', 'codebuddy-intl', 'workbud
  * two that succeeded.
  */
 export async function loadPickerExtras(source: PickerExtrasSource): Promise<ResolvedPickerExtras> {
-  const [aliasRes, customRes, disabledRes, deprecationRes, ...capsResList] = await Promise.all([
+  const [aliasRes, customRes, disabledRes, deprecationRes, statsRes, ...capsResList] = await Promise.all([
     source.getModelAliases().catch(() => null),
     source.getCustomModels().catch(() => null),
     source.getDisabledModels().catch(() => null),
     source.getModelDeprecations().catch(() => null),
+    source.getProviderStats ? source.getProviderStats().catch(() => null) : Promise.resolve(null),
     ...CREDIT_CAPS_PROVIDERS.map((p) =>
       source.getModelCaps ? source.getModelCaps(p).catch(() => null) : Promise.resolve(null)
     ),
@@ -73,11 +80,29 @@ export async function loadPickerExtras(source: PickerExtrasSource): Promise<Reso
     }
   })
 
+  const rawStats = (statsRes || {}) as Record<string, Record<string, { total?: number; connected?: number }>>
+  const connectedProviders: string[] = []
+  for (const [provId, authMap] of Object.entries(rawStats)) {
+    if (!authMap || typeof authMap !== 'object') continue
+    let hasActive = false
+    for (const item of Object.values(authMap)) {
+      if (item && ((item.total ?? 0) > 0 || (item.connected ?? 0) > 0)) {
+        hasActive = true
+        break
+      }
+    }
+    if (hasActive) {
+      connectedProviders.push(provId)
+    }
+  }
+
   return {
     modelAliases: aliasRes?.aliases || {},
     customModels: parseCustomModelsResponse(customRes),
     disabledModels: parseDisabledModelsMap(disabledRes),
     deprecations: deprecationRes?.deprecations || {},
     modelCaps,
+    connectedProviders,
+    providerStats: rawStats,
   }
 }

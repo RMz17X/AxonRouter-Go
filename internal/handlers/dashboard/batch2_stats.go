@@ -161,13 +161,20 @@ func computeProviderSummaryStats(conns []*models.ProviderConnection) map[string]
 	return stats
 }
 
-// The summary is cached for 15s like AxonRouter's stale-while-revalidate
-// cache; the value served is identical, only the refresh is synchronous.
+// The summary is cached for 10 minutes like requested by operator;
+// mutations to connections invalidate it immediately.
 var (
 	summaryStatsCache   map[string]map[string]*providerSummaryStat
 	summaryStatsExpires time.Time
 	summaryStatsMu      sync.Mutex
 )
+
+// InvalidateProviderStatsCache clears the cached provider stats so the next request computes fresh stats.
+func InvalidateProviderStatsCache() {
+	summaryStatsMu.Lock()
+	summaryStatsCache = nil
+	summaryStatsMu.Unlock()
+}
 
 func (h *DashboardHandler) HandleProviderStats(w http.ResponseWriter, r *http.Request) {
 	summaryStatsMu.Lock()
@@ -210,7 +217,7 @@ func (h *DashboardHandler) HandleProviderStats(w http.ResponseWriter, r *http.Re
 		if rows.Err() == nil && len(stats) > 0 {
 			summaryStatsMu.Lock()
 			summaryStatsCache = stats
-			summaryStatsExpires = time.Now().Add(60 * time.Second)
+			summaryStatsExpires = time.Now().Add(10 * time.Minute)
 			summaryStatsMu.Unlock()
 
 			handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"stats": stats})
@@ -227,7 +234,7 @@ func (h *DashboardHandler) HandleProviderStats(w http.ResponseWriter, r *http.Re
 
 	summaryStatsMu.Lock()
 	summaryStatsCache = stats
-	summaryStatsExpires = time.Now().Add(60 * time.Second)
+	summaryStatsExpires = time.Now().Add(10 * time.Minute)
 	summaryStatsMu.Unlock()
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"stats": stats})

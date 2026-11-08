@@ -43,6 +43,21 @@
     handleHealthCheck,
     handleTest,
   }: Props = $props()
+
+  let page = $state(1)
+  let pageSize = $state(15)
+
+  $effect(() => {
+    // Reset page on search or type change
+    fitnessSearch
+    fitnessType
+    page = 1
+  })
+
+  let totalPages = $derived(Math.max(1, Math.ceil(filteredFitness.length / pageSize)))
+  let paginatedFitness = $derived(
+    filteredFitness.slice((page - 1) * pageSize, page * pageSize)
+  )
 </script>
 
       <div class="flex flex-col gap-4">
@@ -218,7 +233,7 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-border/30">
-                {#each filteredFitness as pool (pool.id)}
+                {#each paginatedFitness as pool (pool.id)}
                   {@const score = pool.fitnessScore ?? 100}
                   <tr>
                     <td class="py-2.5 px-3">
@@ -280,6 +295,47 @@
               </tbody>
             </table>
           </div>
+
+          {#if totalPages > 1 || filteredFitness.length > 15}
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 mt-2 border-t border-border/40 text-xs text-text-muted">
+              <div class="flex items-center gap-2">
+                <span>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filteredFitness.length)} of {filteredFitness.length} nodes</span>
+                <span class="opacity-40">|</span>
+                <div class="flex items-center gap-1.5">
+                  <span>Per page:</span>
+                  <select
+                    bind:value={pageSize}
+                    class="bg-surface-2 border border-border/40 rounded px-1.5 py-0.5 text-xs text-text-main focus:outline-none focus:border-primary cursor-pointer"
+                  >
+                    <option value={15}>15</option>
+                    <option value={30}>30</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-1">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={page <= 1}
+                  onclick={() => { page = Math.max(1, page - 1) }}
+                >
+                  Previous
+                </Button>
+                <span class="px-2 font-mono text-[11px] text-text-muted">{page} / {totalPages}</span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onclick={() => { page = Math.min(totalPages, page + 1) }}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          {/if}
         </Card>
 
         <!-- Technical Scoring Info -->

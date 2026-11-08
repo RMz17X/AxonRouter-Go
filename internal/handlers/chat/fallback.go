@@ -201,6 +201,21 @@ func (h *ChatHandler) handleAccountFallback(
 		ctx = internalproxy.WithSeatBudget(ctx, seatBudgetMs)
 	}
 
+	if shouldHedge, hedgeDelay, maxAttempts := h.shouldHedgeProvider(provider); shouldHedge && len(allConns) > 1 && !handlerutil.IsProbeContext(ctx) {
+		candidates := h.pickHedgeCandidates(allConns, provider, model, maxAttempts)
+		if len(candidates) > 1 {
+			log.InfoCtx(ctx, "hedging", "dispatching hedged request", "provider", provider, "model", model, "candidates", len(candidates), "delay", hedgeDelay)
+			hedgeErr := h.executeHedged(ctx, w, provider, model, "", "", body, isStream, translateResponse, endpoint, candidates, hedgeDelay, maxAttempts)
+			if hedgeErr == nil {
+				return nil
+			}
+			var ue *upstreamError
+			if errors.As(hedgeErr, &ue) && providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
+				return hedgeErr
+			}
+		}
+	}
+
 	var excludeIDs []string
 	// Pools already refused by an OpenCode free-tier gate in this turn. The
 	// resolver filters them out, so the retry walks to the next egress instead
@@ -293,6 +308,20 @@ func (h *ChatHandler) handleAccountFallback(
 			excludeIDs = append(excludeIDs, connObj.ID)
 			lastErr = ue
 			continue
+		}
+		if ue != nil && providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
+			log.WarnCtx(attemptCtx, "fallback", "model cluster concurrency saturated, breaking account retries",
+				"conn", connObj.ID, "provider", provider, "model", model)
+			cooldownSec := 30
+			if provider == "dahl" {
+				RecordDahlModelConcurrencyBlocked(model, time.Duration(cooldownSec)*time.Second)
+			}
+			lockKey := canonicalLockModel(provider, model)
+			_ = h.Repo.LockConnectionModel(connObj.ID, lockKey, cooldownSec, 1)
+			_ = h.Repo.RecordConnectionScopedError(connObj.ID, model, "chat", ue.StatusCode, extractErrorText(ue.Body), 1)
+			excludeIDs = append(excludeIDs, connObj.ID)
+			lastErr = ue
+			break
 		}
 		if errors.As(lastErr, &ue) && providers.RetryableStatusCodes[ue.StatusCode] {
 			if handlerutil.IsProbeContext(ctx) {
@@ -393,6 +422,15 @@ func (h *ChatHandler) handleAccountFallback(
 			} else if providers.LooksLikeToSDisabled(ue.StatusCode, string(ue.Body)) || strings.Contains(errLower, "terms of service") || strings.Contains(errLower, "tos_violation") || strings.Contains(errLower, "account has been deleted") || strings.Contains(errLower, "account has been banned") {
 				if h.Repo != nil {
 					_ = h.Repo.DisableConnectionWithReason(connObj.ID, http.StatusForbidden, "Account disabled: "+errorText)
+				}
+				h.getSessionAffinity().EvictConnection(connObj.ID)
+			} else if provider == "dahl" && (ue.StatusCode == http.StatusPaymentRequired || strings.Contains(errLower, "available tokens exhausted") || strings.Contains(errLower, "insufficient_quota") || strings.Contains(errLower, "invalid_api_key") || ue.StatusCode == http.StatusUnauthorized) {
+				if h.Repo != nil {
+					reason := "Dahl quota exhausted: " + errorText
+					if ue.StatusCode == http.StatusUnauthorized || strings.Contains(errLower, "invalid_api_key") {
+						reason = "Dahl account expired or invalid key: " + errorText
+					}
+					_ = h.Repo.DisableConnectionWithReason(connObj.ID, ue.StatusCode, reason)
 				}
 				h.getSessionAffinity().EvictConnection(connObj.ID)
 			}
@@ -1643,6 +1681,15 @@ func extractErrorText(body []byte) string {
 				codeStr = cv
 			}
 		}
+		if codeStr == "" {
+			if errVal, ok := rawMap["error"]; ok {
+				if errMap, ok := errVal.(map[string]any); ok {
+					if c, ok := errMap["code"].(string); ok && c != "" {
+						codeStr = c
+					}
+				}
+			}
+		}
 		if codeStr != "" && res != "" && !strings.Contains(res, codeStr) {
 			res = fmt.Sprintf("%s (code %s)", res, codeStr)
 		} else if res == "" && codeStr != "" {
@@ -1727,7 +1774,7 @@ func extractResetDuration(body []byte) (time.Duration, bool) {
 
 	// 2b. TokenHarbor retry pattern: "You can send your next request in 59 min 1 s."
 	if dur, ok := providers.ParseTokenHarborRetryDuration(string(body)); ok && dur > 0 {
-		return clampResetDuration(dur), true
+		return clampResetDuration(providers.TokenHarborAdjustedCooldown(dur)), true
 	}
 
 	// 3. CodeBuddy date-time pattern (e.g. 2026-09-28 14:30:00 or with UTC offset)
@@ -1882,6 +1929,8 @@ func isModelQuotaText(errorText string) bool {
 	return strings.Contains(upper, "QUOTA_EXHAUSTED") ||
 		strings.Contains(errorText, "Individual quota reached") ||
 		strings.Contains(upper, "MODEL_CAPACITY_EXHAUSTED") ||
+		strings.Contains(upper, "CONCURRENCY CAPACITY") ||
+		strings.Contains(upper, "MODEL_CONCURRENCY") ||
 		// Qoder's billing envelope: code 110/112 or a pricingUrl field
 		// (qoderIsBillingBlock). The refusal is per model — the account's
 		// free models keep working while a paid one is out of credits.
