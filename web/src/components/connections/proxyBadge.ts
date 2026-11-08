@@ -65,7 +65,8 @@ export interface ProxyBadgeInfo {
 export function proxyBadgeInfo(
   conn: Pick<ProviderConnection, 'providerSpecificData'>,
   pools: ProxyPool[] = [],
-  providerProxyGroup?: string
+  providerProxyGroup?: string,
+  providerProxyPoolId?: string
 ): ProxyBadgeInfo {
   const psd = (conn.providerSpecificData as Record<string, unknown> | undefined) || {}
   const poolId = typeof psd.proxyPoolId === 'string' && psd.proxyPoolId ? psd.proxyPoolId : null
@@ -136,6 +137,28 @@ export function proxyBadgeInfo(
   const legacyUrl = typeof psd.connectionProxyUrl === 'string' ? psd.connectionProxyUrl : ''
   const hasLegacyProxy = psd.connectionProxyEnabled === true && !!legacyUrl
   const hasAnyProxy = !!poolId || hasLegacyProxy
+
+  // Fallback to a provider-level single-pool binding when no custom
+  // connection proxy is configured.
+  if (!hasAnyProxy && providerProxyPoolId) {
+    const boundPool = pools.find((p) => p.id === providerProxyPoolId)
+    if (boundPool) {
+      return {
+        hasAnyProxy: true,
+        variant: boundPool.isActive ? 'success' : 'error',
+        displayText: `Pool: ${boundPool.name} (auto)`,
+        maskedProxyUrl: `Default Pool: ${boundPool.name}`,
+        noProxyText: ''
+      }
+    }
+    return {
+      hasAnyProxy: true,
+      variant: 'error',
+      displayText: 'Pool: (missing) (auto)',
+      maskedProxyUrl: 'Default Pool: (missing)',
+      noProxyText: ''
+    }
+  }
 
   // Fallback to provider-level locked proxy group when no custom connection proxy is configured
   if (!hasAnyProxy && providerProxyGroup && providerProxyGroup !== 'none') {

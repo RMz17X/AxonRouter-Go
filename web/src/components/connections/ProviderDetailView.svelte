@@ -529,6 +529,11 @@
   let stickyLimit = $state('1')
   let thinkingLevel = $state('auto')
   let lockedProxyGroup = $state('')
+  // A provider binding to ONE pool: the strategy's proxyPoolId holds a
+  // bare pool id (the form the Apply Proxy modal's individual-pool choice
+  // writes). It is not a selector, so the lock label and the row badges
+  // read it from its own state instead of the group/type derivation.
+  let lockedProxyPoolId = $state('')
   let proxyLockOpen = $state(false)
   let proxyLockPos = $state({ top: 0, right: 0 })
   // The lock's display label and group selection, derived from the
@@ -541,6 +546,10 @@
       .map((part) => part.slice(6))
   )
   let lockedProxyLabel = $derived.by(() => {
+    if (lockedProxyPoolId) {
+      const name = proxyPools.find((p) => p.id === lockedProxyPoolId)?.name
+      return name ? `Pool ${name}` : 'Pool (missing)'
+    }
     if (!lockedProxyGroup) return 'None (direct)'
     const names = lockedProxyParts.map((p) => p.name).join(' + ')
     if (lockedProxyParts.length > 1) {
@@ -1115,6 +1124,19 @@
         (strategy?.proxyPoolId?.startsWith('group:') || strategy?.proxyPoolId?.startsWith('type:') ? strategy.proxyPoolId : '') ||
         (strategy?.proxyGroup ? normalizeProxyTarget(strategy.proxyGroup) : '') ||
         ''
+      // A bare proxyPoolId (no group:/type: prefix, no comma list) is a
+      // binding to ONE pool: the resolver returns it verbatim, so the UI
+      // surfaces it as a pool binding, never as a group selector.
+      const rawStrategyPoolId = strategy?.proxyPoolId
+      lockedProxyPoolId =
+        rawStrategyPoolId &&
+        !rawStrategyPoolId.startsWith('group:') &&
+        !rawStrategyPoolId.startsWith('type:') &&
+        !rawStrategyPoolId.includes(',') &&
+        rawStrategyPoolId !== '__none__' &&
+        rawStrategyPoolId !== 'direct'
+          ? rawStrategyPoolId
+          : ''
 
       // Extract Thinking Level
       const thinking = (settingsData as any)?.providerThinking?.[providerId]
@@ -1542,11 +1564,14 @@
 
   // Per-row proxy badge (upstream ConnectionRow) — see proxyBadge.ts.
   function proxyBadgeFor(conn: ProviderConnection) {
-    return proxyBadgeInfo(conn, proxyPools, lockedProxyGroup)
+    return proxyBadgeInfo(conn, proxyPools, lockedProxyGroup, lockedProxyPoolId)
   }
 
   async function applyProxyGroupLock(val: string) {
     lockedProxyGroup = val
+    // A lock write owns the strategy's proxyPoolId, so any pool binding
+    // it replaces is gone from the UI state too.
+    lockedProxyPoolId = ''
     try {
       const existing = settings?.providerStrategies || {}
       const currentStrat = { ...(existing[providerId] || {}) }
@@ -1578,6 +1603,27 @@
       await api.updateSettings({ providerStrategies: updated })
     } catch (err) {
       console.error('Failed to lock proxy group:', err)
+    }
+  }
+
+  // Provider-level binding to ONE pool: the strategy's proxyPoolId holds
+  // the pool id directly (the resolver returns it verbatim and the
+  // serving path resolves that single pool), with no proxyGroup mirror —
+  // a mirror would re-read as a group selector. One settings write binds
+  // the whole provider; accounts keep only their own custom marks.
+  async function applyProviderProxyPool(poolId: string) {
+    lockedProxyGroup = ''
+    lockedProxyPoolId = poolId
+    try {
+      const existing = settings?.providerStrategies || {}
+      const currentStrat = { ...(existing[providerId] || {}) }
+      currentStrat.proxyPoolId = poolId
+      delete currentStrat.proxyGroup
+      const updated = { ...existing, [providerId]: currentStrat }
+      if (settings) settings.providerStrategies = updated
+      await api.updateSettings({ providerStrategies: updated })
+    } catch (err) {
+      console.error('Failed to lock proxy pool:', err)
     }
   }
 
@@ -1630,8 +1676,10 @@
     }
   }
 
-  // Upstream applies bulk proxy changes to every connection of the provider,
-  // regardless of the checkbox selection.
+  // Only the one-to-one rotation below still stamps per connection:
+  // distributing accounts across pools IS a per-account marking. Uniform
+  // group / type / pool choices go through the provider strategy instead
+  // (handleApplyProxyPool), as a single settings write.
   //
   // Cancel sets the abort flag and the loop stops on the next iteration, so
   // closing the modal no longer leaves requests firing in the background. The
@@ -1674,10 +1722,23 @@
     showApplyProxyModal = false
   }
 
+  // A uniform choice for the whole provider is ONE provider-level
+  // binding (the strategy), never a stamp on every connection: accounts
+  // inherit it dynamically per request, and the only per-account marks
+  // that remain are the custom ones set on a single row. The upstream
+  // port this replaces looped one update per connection — at 31k
+  // connections that ground for minutes and froze every account to that
+  // day's choice, immune to later provider-level changes.
   async function handleApplyProxyPool(poolId: string | null) {
-    await applyProxyAssignments(
-      providerConnections.map((c) => ({ id: c.id, poolId }))
-    )
+    showApplyProxyModal = false
+    if (poolId === null) {
+      await applyProxyGroupLock('')
+    } else if (poolId.startsWith('group:') || poolId.startsWith('type:')) {
+      await applyProxyGroupLock(poolId)
+    } else {
+      await applyProviderProxyPool(poolId)
+    }
+    onRefresh()
   }
 
   async function handleApplyProxyRotate() {
@@ -3805,7 +3866,7 @@
           <!-- Provider Proxy Lock -->
           <div class="flex items-center gap-1.5 border-l border-border pl-2.5 ml-1">
             <span class="text-xs text-text-muted font-medium flex items-center gap-1" title="Lock provider to a proxy group. All accounts automatically route through it unless set to a custom proxy.">
-              <span class="material-symbols-outlined text-[16px] {lockedProxyGroup ? 'text-primary' : 'text-text-muted'}">lock</span>
+              <span class="material-symbols-outlined text-[16px] {lockedProxyGroup || lockedProxyPoolId ? 'text-primary' : 'text-text-muted'}">lock</span>
               Proxy Lock:
             </span>
             <div class="relative">
@@ -3832,10 +3893,10 @@
                     <button
                       type="button"
                       onclick={() => { proxyLockOpen = false; applyProxyGroupLock('') }}
-                      class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {!lockedProxyGroup ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
+                      class="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-xs rounded-lg hover:bg-surface-2 transition-colors cursor-pointer {!lockedProxyGroup && !lockedProxyPoolId ? 'bg-primary/10 text-primary font-medium' : 'text-text-main'}"
                     >
                       <span class="truncate">None (direct)</span>
-                      {#if !lockedProxyGroup}
+                      {#if !lockedProxyGroup && !lockedProxyPoolId}
                         <span class="material-symbols-outlined text-[16px] text-primary shrink-0">check</span>
                       {/if}
                     </button>
@@ -5891,7 +5952,7 @@
     <div class="relative flex max-h-[85vh] w-full flex-col bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] fade-in max-w-lg">
       <div class="flex shrink-0 items-center justify-between px-6 pt-5 pb-3 border-b border-border-subtle">
         <h2 class="text-lg font-semibold text-text-main">
-          Apply Proxy ({providerConnections.length} connections)
+          Apply Proxy (provider-wide)
         </h2>
         <button
           type="button"
@@ -5917,7 +5978,7 @@
           <span class="material-symbols-outlined text-primary text-lg">sync_alt</span>
           <div>
             <div class="text-xs font-medium text-text-main">One-to-one (rotate)</div>
-            <div class="text-[11px] text-text-muted">Distribute active proxy pools round-robin</div>
+            <div class="text-[11px] text-text-muted">Distribute active proxy pools round-robin — one custom mark per account</div>
           </div>
         </button>
 
@@ -5929,8 +5990,8 @@
         >
           <span class="material-symbols-outlined text-red-500 text-lg">link_off</span>
           <div>
-            <div class="text-xs font-medium text-text-main">None (unbind all)</div>
-            <div class="text-[11px] text-text-muted">Remove proxy pool from connections</div>
+            <div class="text-xs font-medium text-text-main">None (clear provider binding)</div>
+            <div class="text-[11px] text-text-muted">Accounts without a custom proxy go direct</div>
           </div>
         </button>
 
