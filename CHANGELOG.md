@@ -1,5 +1,18 @@
 # Changelog
 
+## [v1.9.47] - 2026-11-08
+
+# 1020 — API Keys table pagination for high-volume deployments (30k+ keys)
+## Symptom
+- On instances with tens of thousands of client API keys (e.g. 30k+ keys), opening the API Keys tab caused severe browser tab lag, frame drops, and near-freeze due to rendering thousands of DOM nodes at once.
+- The `tokenChipWidth` reactive derivation scanned all 30k keys on every single keystroke in search and filter pill toggles.
+## Fix
+- Added client-side pagination to `ApiKeysTable.svelte` with selectable page sizes (10, 20, 50, 100 / page, default 20).
+- Only keys on the active page (`pagedKeys`) are mounted into the DOM for both mobile card list and desktop table views.
+- Bounded `tokenChipWidth` calculation to `pagedKeys` ($O(\text{pageSize})$ instead of $O(N)$), eliminating search input stutter.
+- Header "Select all" is now page-scoped (`toggleSelectAllPage`), preventing memory pressure from storing 30,000 IDs simultaneously.
+- Automatic page reset on search/filter changes and auto-clamping when the filtered list shrinks.
+
 ## [v1.9.46] - 2026-11-08
 
 # 1019 — Apply Proxy binds the provider once; per-account marks are custom-only
