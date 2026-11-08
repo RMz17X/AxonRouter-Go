@@ -1,5 +1,22 @@
 # Changelog
 
+## [v1.9.56] - 2026-11-08
+
+# 1034 — Per-page browser tab titles
+
+## Change
+- The document title now follows the active page: App sets
+  document.title from the same pageMeta map that feeds the TopBar
+  heading ("<Page title> · AxonRouter-Go"), reactively on every tab
+  change, so several open dashboard tabs stay distinguishable.
+- The OAuth callback interstitial, which has no pageMeta entry,
+  gets "Completing sign-in · AxonRouter-Go". The static index.html
+  title remains the pre-boot default.
+
+## Verification
+- svelte-check stays at 0 errors / 0 warnings; bun run build green;
+  the served bundle contains the document.title wiring.
+
 ## [v1.9.55] - 2026-11-08
 
 # 1033 — Provider stats: remove the SQL aggregate shortcut that bypassed the census
