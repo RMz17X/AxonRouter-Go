@@ -44,6 +44,10 @@ type axonRecentRequest struct {
 	Provider         string `json:"provider"`
 	PromptTokens     int    `json:"promptTokens"`
 	CompletionTokens int    `json:"completionTokens"`
+	// Tokens is the row total (prompt + completion). The analytics
+	// recent-requests merge compares it to spot the newest request;
+	// without it that pulse compared two absent fields and never fired.
+	Tokens           int    `json:"tokens"`
 	Status           string `json:"status"`
 	Endpoint         string `json:"endpoint"`
 }
@@ -99,6 +103,7 @@ func axonRecentRequests(repo *db.Repo, limit int) ([]axonRecentRequest, error) {
 			Provider:         provider,
 			PromptTokens:     int(promptTok),
 			CompletionTokens: int(complTok),
+			Tokens:           int(promptTok + complTok),
 			Status:           status,
 			Endpoint:         endpoint,
 		})

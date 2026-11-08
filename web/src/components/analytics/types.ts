@@ -46,8 +46,9 @@ export interface RecentRequestItem {
   /** Egress proxy label for the request. No current payload emits it;
    * the recent-requests merge preserves it for a feed that does. */
   proxy?: string
-  /** Total tokens for the request. No current payload emits it; the
-   * top-request pulse in AnalyticsView compares it when present. */
+  /** Total tokens for the request (prompt + completion), emitted by
+   * both recent-requests feeds; the top-request pulse in
+   * AnalyticsView compares it to spot the newest request. */
   tokens?: number
   /** Whether the client asked for a streamed response; only set on live pushes that know it. */
   isStream?: boolean

@@ -314,6 +314,7 @@ func morphRecentRequest(row morphUsageRow) map[string]any {
 		"apiKeyLabel":    "Unknown email",
 		"inputTokens":    row.promptTokens,
 		"outputTokens":   row.completionTok,
+		"tokens":         row.promptTokens + row.completionTok,
 		"credits":        0,
 		"status":         status,
 		"upstreamStatus": nil,

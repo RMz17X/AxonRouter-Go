@@ -2125,5 +2125,17 @@ func isProxyTransportError(err error, statusCode int) bool {
 		strings.Contains(text, "connection reset") ||
 		strings.Contains(text, "i/o timeout") ||
 		strings.Contains(text, "context deadline exceeded") ||
-		strings.Contains(text, "eof")
+		strings.Contains(text, "eof") ||
+		// Mid-stream breaks: the upstream connection died after the
+		// response had committed, so the attempt returns the body-read
+		// error instead of a status. These shapes are the egress leg
+		// dying, exactly what pool fitness exists to punish — before
+		// they were listed here, a proxy that kept snapping streams
+		// (e.g. a 14-in-20s burst through one ISP pool) took no
+		// penalty at all and stayed in rotation. Client-side cancels
+		// ("context canceled") deliberately stay unmatched: the client
+		// leaving says nothing about the pool.
+		strings.Contains(text, "response body closed") ||
+		strings.Contains(text, "stream error") ||
+		strings.Contains(text, "connection closed")
 }
