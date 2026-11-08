@@ -13,8 +13,9 @@ import (
 
 // playground_models.go builds the Playground's model inventory: only what a
 // client request could actually be routed to right now. Combos come first
-// (the same order /v1/models publishes), then one entry per model of every
-// usable connection, grouped client-side by provider + connection.
+// (the same order /v1/models publishes), then one entry per (provider,
+// model) pair offered by the usable connections, grouped client-side by
+// provider + connection.
 //
 // "Usable" mirrors the serving path's own model-independent eligibility —
 // the checks pinnedConnectionIneligible applies before any per-model gate:
@@ -29,8 +30,24 @@ import (
 // A connection's model set is computed by appendConnectionModels — the same
 // per-connection builder /v1/models uses (enabledModels pin, live catalog,
 // static catalog, custom models, disabled-model filtering) — run with a
-// fresh seen-set per connection so each connection is attributed its own
-// full list instead of the first-per-provider dedupe the flat list wants.
+// fresh seen-set per connection.
+//
+// The inventory is then deduped by (provider, model): a model is offered
+// once per provider, attributed to the first eligible connection that
+// publishes it, and at most playgroundProviderConnectionCap connections
+// per provider contribute. The chat dispatch never pins a connection —
+// the serving path picks the account — so per-connection duplicates of
+// the same model add no capability, and at farm scale (tens of thousands
+// of keys on one provider) they exploded the payload to ~314k entries /
+// ~59 MB, which the picker could not load at all. The cap keeps
+// per-account model pins reachable on real fleets (a provider's accounts
+// number in the dozens) while bounding the farm case; 1023.
+
+// playgroundProviderConnectionCap bounds how many connections of one
+// provider contribute their model sets to the inventory (see the header
+// comment). Providers with more eligible connections than the cap are
+// farms of interchangeable keys publishing the provider catalog.
+const playgroundProviderConnectionCap = 100
 
 // PlaygroundModelEntry is one selectable row of the inventory. Model is the
 // wire id a client would send: "provider/model" for provider models, the
@@ -87,6 +104,8 @@ func (h *ChatHandler) playgroundInventory(ctx context.Context) ([]PlaygroundMode
 	nodePrefixes := h.providerNodePrefixMap()
 
 	now := time.Now()
+	seen := make(map[string]bool)
+	contributed := make(map[string]int)
 	for _, conn := range conns {
 		if conn == nil || conn.Provider == "" || conn.IsActive != 1 {
 			continue
@@ -99,10 +118,19 @@ func (h *ChatHandler) playgroundInventory(ctx context.Context) ([]PlaygroundMode
 		if until, ok := db.ConnectionBlockedUntil(conn.Data); ok && until.After(now) {
 			continue
 		}
+		if contributed[conn.Provider] >= playgroundProviderConnectionCap {
+			continue
+		}
+		contributed[conn.Provider]++
 		name := playgroundConnectionName(conn)
 		objs := h.appendConnectionModels(ctx, nil, make(map[string]bool), conn, conn.Provider,
 			customs, aliases, nodePrefixes, isDisabled, nil)
 		for _, obj := range objs {
+			key := conn.Provider + "\x00" + obj.ID
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
 			entries = append(entries, PlaygroundModelEntry{
 				Type:           "model",
 				Provider:       conn.Provider,
