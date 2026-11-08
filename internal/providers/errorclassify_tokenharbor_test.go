@@ -147,4 +147,19 @@ func TestClassifyTokenHarbor_Scenarios(t *testing.T) {
 			t.Errorf("expected 5min cooldown (300000ms), got %dms", cls.CooldownMs)
 		}
 	})
+
+	t.Run("Upstream answered 200 with error (wrapped into 502) correctly extracts rate limit cooldown", func(t *testing.T) {
+		body := `upstream answered 200 with an error: Rate limit reached. You can send your next request in 57 s.`
+		cls, ok := classifyTokenHarbor(http.StatusBadGateway, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if cls.ModelScoped {
+			t.Error("expected ModelScoped to be FALSE for account rate limit")
+		}
+		expectedMs := int((57 + 5) * 1000) // 57s + 5s = 62s
+		if cls.CooldownMs != expectedMs {
+			t.Errorf("expected %dms, got %dms", expectedMs, cls.CooldownMs)
+		}
+	})
 }

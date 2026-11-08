@@ -124,11 +124,11 @@ func classifyTokenHarbor(statusCode int, rawError string, backoffLevel int, prov
 
 	// 3. Hourly Account Rate Limit ("Rate limit reached. You can send your next request in X min Y s.")
 	// Upstream locks this specific key across all free models for ~1 hour.
+	// Can arrive as HTTP 429 or HTTP 200 wrapped into BadGateway by the gateway empty-turn check.
 	// This is ACCOUNT-SCOPED (ModelScoped = false) so router doesn't keep hammering dead key with other models.
-	if statusCode == http.StatusTooManyRequests &&
-		(strings.Contains(lowerError, "rate limit reached") ||
-			strings.Contains(lowerError, "you can send your next request in") ||
-			strings.Contains(lowerError, "per-minute rate limit")) {
+	if strings.Contains(lowerError, "rate limit reached") ||
+		strings.Contains(lowerError, "you can send your next request in") ||
+		strings.Contains(lowerError, "per-minute rate limit") {
 
 		cooldown := TokenHarborAdjustedCooldown(0) // default 70 min floor
 		if dur, ok := ParseTokenHarborRetryDuration(lowerError); ok && dur > 0 {
