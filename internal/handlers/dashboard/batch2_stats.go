@@ -233,45 +233,14 @@ func (h *DashboardHandler) HandleProviderStats(w http.ResponseWriter, r *http.Re
 	}
 	summaryStatsMu.Unlock()
 
-	// High-performance direct SQL aggregate:
-	// Running a GROUP BY in PostgreSQL takes ~20ms instead of transferring 170k rows over TCP.
-	query := `
-		SELECT provider, authType,
-		       COUNT(*) as total,
-		       COUNT(CASE WHEN isActive = 1 THEN 1 END) as connected,
-		       COUNT(CASE WHEN isActive = 0 THEN 1 END) as disabled
-		FROM providerConnections
-		GROUP BY provider, authType
-	`
-	rows, err := h.Repo.QueryContext(r.Context(), query)
-	if err == nil {
-		defer func() { _ = rows.Close() }()
-		stats := make(map[string]map[string]*providerSummaryStat)
-		for rows.Next() {
-			var provider, authType string
-			var total, connected, disabled int
-			if scanErr := rows.Scan(&provider, &authType, &total, &connected, &disabled); scanErr == nil {
-				if _, ok := stats[provider]; !ok {
-					stats[provider] = make(map[string]*providerSummaryStat)
-				}
-				stats[provider][authType] = &providerSummaryStat{
-					Total:       total,
-					Connected:   connected,
-					AllDisabled: total > 0 && disabled == total,
-				}
-			}
-		}
-		if rows.Err() == nil && len(stats) > 0 {
-			summaryStatsMu.Lock()
-			summaryStatsCache = stats
-			summaryStatsExpires = time.Now().Add(10 * time.Minute)
-			summaryStatsMu.Unlock()
-
-			handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"stats": stats})
-			return
-		}
-	}
-
+	// The stats are computed from the connection rows, not a SQL
+	// GROUP BY shortcut: the per-health-state census (and the error /
+	// exhausted verdicts) depend on each row's data blob through
+	// EffectiveStatusWithError, which SQL cannot reproduce. A former
+	// aggregate fast path silently served zeroed error/exhausted and
+	// no states at all. The cost is bounded twice over — this handler
+	// caches for 10 minutes, and GetProviderConnections reads the
+	// Repo's snapshot cache rather than the database per call.
 	conns, err := h.Repo.GetProviderConnections("", false)
 	if err != nil {
 		handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to fetch provider stats"})
