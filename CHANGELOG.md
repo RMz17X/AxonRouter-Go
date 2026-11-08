@@ -1,5 +1,57 @@
 # Changelog
 
+## [v1.9.51] - 2026-11-08
+
+# 1024 — Playground redesigned as a chat console: searchable model modal, live waiting state, safe markdown
+
+## Symptom
+- The Playground read as three stacked setting cards next to a chat
+  box: on a phone the chat sat below a model select, a five-row system
+  prompt, a preset select and the parameters, and the page scrolled
+  instead of the thread.
+- A send showed a bare "…" bubble until the reply finished. First
+  tokens on this gateway routinely take tens of seconds (a combo send
+  measured at 67 s, status 200), so a working chat was
+  indistinguishable from a hung one — the operator reported the chat
+  as not functioning.
+- The model picker was a native select with optgroups (114 entries
+  after fragment 1023) with no search, and assistant replies rendered
+  as raw pre-wrapped text: no code blocks, no structure, no copy.
+
+## Fix (presentation only — every capability of fragment 1008 kept)
+- PlaygroundView is now a full-height console: one toolbar (model
+  picker trigger, a prompt chip naming the layer that will fire —
+  Session prompt / preset name / Standing: <name> / No prompt — a
+  parameters chip, Clear), a one-line served-by note, and the thread
+  filling the rest. Prompt + parameters moved into a single "Session
+  settings" modal; all state, precedence and the send path are
+  unchanged.
+- ModelPicker is a trigger button + searchable modal: groups (Combos
+  first, then providers) filter by model, provider or connection
+  name; the selected model stays checked.
+- ChatThread: document-style rows instead of chat bubbles — user
+  turns in a subtle block, assistant turns in a markdown body rendered
+  by a new XSS-safe mini renderer (markdown.ts escapes the model text
+  first, then rebuilds code fences, inline code, bold/italic,
+  headings, bullet and numbered lists, and blockquotes from its own
+  tags only — model output never reaches {@html} raw). All blocks
+  wrap inside the chat column: code blocks use pre-wrap and long
+  words/URLs break, so nothing overflows the thread sideways. While a reply is pending it shows a pulsing
+  "Waiting for the model… Ns" row driven by a live clock in the view,
+  then a blinking cursor while tokens stream. Completed replies gain
+  a Copy button beside the existing meta line. The empty state offers
+  suggestion chips that fill the composer. The composer auto-grows,
+  and the thread only auto-scrolls while the reader is near the
+  bottom.
+
+## Verification
+- bun run build: OK (bundle numbers in the release notes).
+- The renderer was executed directly on a sample covering bold,
+  inline code, a long-line fenced block, a blockquote, a numbered
+  list and a <script> payload: all formatted as intended and the
+  payload came out escaped.
+- svelte-check (app tsconfig): baseline held for the touched files.
+
 ## [v1.9.50] - 2026-11-08
 
 # 1023 — Playground inventory deduped per (provider, model): the picker loads again at farm scale
