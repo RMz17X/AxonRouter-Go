@@ -1,5 +1,59 @@
 # Changelog
 
+## [v1.9.57] - 2026-11-08
+
+# 1036 — Mid-stream transport breaks now penalize the egress pool
+
+## Problem
+- When an upstream connection dies AFTER a stream has committed —
+  the client already received chunks — the attempt returns the
+  body-read error ("http2: response body closed" and kin) instead
+  of a status. classifyPoolFailure saw those errors, but
+  isProxyTransportError's substring list did not recognize any of
+  them, so the pool whose connection snapped took no fitness
+  penalty and stayed in rotation. Observed in production shape on
+  2026-11-07: 14 stream breaks in ~20 seconds through one ISP pool,
+  zero penalty, recovery only when the pool healed on its own.
+
+## Fix
+- isProxyTransportError additionally matches "response body closed",
+  "stream error", and "connection closed" — the shapes an egress
+  leg dying mid-flight produces. Two consecutive failures now bench
+  the pool through the existing progressive-cooldown machinery, in
+  both the fallback loop and the pinned lane (they share the
+  classifier). "context canceled" deliberately stays unmatched: a
+  client leaving says nothing about the pool.
+
+## Verification
+- A temporary in-package probe exercised the classifier on the new
+  shapes plus the negative cases (client cancel, upstream 429) and
+  passed; the probe file was removed after the run. go build ./...
+  green.
+
+# 1035 — Recent-requests feeds emit the total `tokens` the analytics pulse compares
+
+## Problem
+- AnalyticsView's top-request pulse compares RecentRequestItem.tokens,
+  but neither recent-requests feed emitted a total: the usage-stats
+  feed carried promptTokens/completionTokens only, and the morph feed
+  inputTokens/outputTokens only. The comparison was undefined !==
+  undefined — the pulse could never fire (found during the fragment
+  1032 type cleanup, which documented the field as unemitted).
+
+## Fix
+- axonRecentRequest gains `tokens` (prompt + completion), set at its
+  single construction site; the morph recent-request map gains the
+  same total from its row. The client type comment now states the
+  field is emitted by both feeds.
+- The sibling `proxy` field stays a documented reservation: no
+  history feed carries an egress column, and no recent-requests view
+  renders one (the realtime table's proxy comes from the live
+  request ledger, a different feed).
+
+## Verification
+- go build ./... green; live after deploy: the usage-stats payload's
+  recentRequests items carry "tokens" equal to prompt + completion.
+
 ## [v1.9.56] - 2026-11-08
 
 # 1034 — Per-page browser tab titles
