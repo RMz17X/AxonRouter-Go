@@ -1,5 +1,96 @@
 # Changelog
 
+## [v1.9.54] - 2026-11-08
+
+# 1032 — svelte-check driven to zero: 0 errors, 0 warnings, baseline pinned at 0
+
+## Mandate
+- The owner ordered the dashboard's type debt closed outright:
+  svelte-check at zero errors AND zero warnings (the §6.E ratchet
+  previously pinned 80 errors and tolerated 58 warnings).
+
+## What changed
+- Root causes fixed in the shared types instead of at call sites:
+  FreebuffSessionStatusResponse gains the 'queued' and 'ended'
+  statuses the server actually returns (freebuff_session.go);
+  ConnectionUsageResponse gains the `message` field the usage
+  handlers return; ProviderConnectionLike drops the index signature
+  no helper used, which had made ProviderConnection unassignable to
+  it across the quota views; RecentRequestItem documents the proxy /
+  tokens fields the analytics merge reads.
+- Per-file honest fixes across 33 components: unused imports and
+  dead state removed, labels associated (or group captions changed
+  to spans), lucide `title` props moved to accessible wrappers,
+  ProviderDetailView's pagedConnections declaration moved above the
+  derivations that read it, settings catch fallbacks typed as
+  Settings instead of widening to `Settings | {}`.
+- A bounded set of svelte-ignore comments remains, each for a
+  pattern that is intentional and documented at the site:
+  state_referenced_locally on per-open draft seeds in modals that
+  remount on every open, and the two a11y click codes on modal
+  backdrop catchers whose Escape handling lives on a window listener.
+- web/scripts/svelte-check-baseline.json: totalErrors 80 -> 0 via
+  the ratchet's own --update. The gate now fails on ANY new error.
+
+## Real bugs the cleanup surfaced (fixed here)
+- MediaProviderDetail sent `key` instead of `apiKey` in the
+  create-connection payload; the Go handler reads only `apiKey`, so
+  a connection added from that form was created WITHOUT its API
+  key. The stray `isActive` field went with it.
+- App pageMeta lacked the `keys` and `media-video` entries of
+  Record<ActiveTab, ...>: the TopBar showed no title/description
+  on those tabs.
+
+## Noted, deliberately not changed
+- AnalyticsView's recent-requests merge reads `proxy` and a total
+  `tokens` that no current payload emits (the morph feed carries
+  inputTokens/outputTokens; the stats feed prompt/completion
+  tokens), so the merge's proxy preservation and the top-request
+  pulse never fire today. The fields are documented as such on
+  RecentRequestItem; wiring them to a real payload is a behaviour
+  change for a separate order.
+
+## Verification
+- bun x svelte-check --tsconfig tsconfig.app.json: 0 errors,
+  0 warnings across 3905 files. bun run ratchet:svelte passes with
+  the baseline at 0. bun run build green.
+
+# 1031 — Provider summary stats carry the per-health-state census; the strip's paged fast path reads real counts
+
+## Symptom
+- On providers whose connection list is paged (fragment 1028), the
+  account-status strip took its counts from the summary stats' three
+  derivable buckets only: Active, Error, and a Disabled remainder.
+  Needs-verification, cooldown and locked accounts read 0 and their
+  counts were swept into Disabled — the verification state shipped in
+  v1.9.48 was invisible exactly on the large providers.
+
+## Root cause
+- providerSummaryStat exposed only total / connected / exhausted /
+  error / allDisabled, a coarser classification than the six health
+  states the strip renders, so the fast path had nothing truthful to
+  read for the other buckets.
+
+## Fix
+- internal/handlers/dashboard/batch2_stats.go: providerSummaryStat
+  gains `states`, a per-state census counted in the same pass.
+  healthStateForConnection mirrors deriveConnectionHealth in
+  connectionHealth.ts step for step (verification demand first, then
+  disabled, rate_limited -> cooldown, the error family, any live lock
+  via the existing activeModelLocks/futureTime parsers, else active),
+  reusing providers.EffectiveStatusWithError so the verdict itself is
+  never re-derived.
+- web: ProviderStats and the summary-stats payload type carry the
+  census through getProviderStats (summed across auth types); the
+  strip's fast path fills every bucket from it and keeps the old
+  three-bucket derivation only for payloads that predate the census.
+
+## Verification
+- go build + go vet on the touched packages.
+- Live on staging after deploy: summary stats for a paged provider
+  carry states whose sum equals total, and the strip's buckets match
+  a direct census of the same provider's connections.
+
 ## [v1.9.53] - 2026-11-08
 
 # 1030 — Think-tag filtering and shared error classification (retroactive record)
