@@ -1,5 +1,118 @@
 # Changelog
 
+## [v1.9.53] - 2026-11-08
+
+# 1030 — Think-tag filtering and shared error classification (retroactive record)
+
+> Recorded retroactively at the owner's order: this change shipped inside
+> the v1.9.53 feature commit (89ec6915) without its fragment; this file is
+> the backfilled record, not a new change.
+
+## What landed
+- internal/translator/think_filter.go: ExtractAndStripThink lifts
+  <think>...</think> blocks out of model output into the reasoning
+  channel instead of leaking them into visible content; wired through
+  translator/response.go for streamed and whole responses.
+- internal/providers/errorclassify.go extracts the shared error
+  classification helpers; the TokenHarbor classifier and its tests were
+  reworked on top of it.
+- Combo model picker data (pickerData.ts / pickerExtras.ts /
+  ModelPickerModal) and small App/index.css adjustments ride along.
+
+# 1029 — Full API key modals (retroactive record)
+
+> Recorded retroactively at the owner's order: this change shipped inside
+> the v1.9.53 feature commit (89ec6915) without its fragment; this file is
+> the backfilled record, not a new change.
+
+## What landed
+- API key creation moves out of the Endpoint view into a dedicated
+  CreateApiKeyModal (web/src/components/keys/CreateApiKeyModal.svelte);
+  EndpointView sheds the inline form (-353 lines). ApiKeyPolicyModal is
+  reworked around the same modal kit, and web/src/api/client.ts gains
+  the calls both need.
+- web/scripts/verify_modals.mjs and verify_policy_combo.mjs are the
+  author's own DOM-level checks for the modal flows.
+
+# 1028 — Paged connections on the provider page (retroactive record)
+
+> Recorded retroactively at the owner's order: this change shipped inside
+> the v1.9.53 feature commit (89ec6915) without its fragment; this file is
+> the backfilled record, not a new change.
+
+## What landed
+- The provider detail page no longer loads every connection of a large
+  provider at once: connections are paged (dashboard connections handler
+  + ProviderDetailView), and the account-status strip takes its counts
+  from the cached provider summary stats when the loaded page is only a
+  slice of the provider (stats.total > loaded connections), sampling
+  account names for tooltips from the visible page.
+- ProviderTopologyCard and the realtime view were adjusted to the same
+  paged data flow.
+
+## Known defect (found in review, fixed separately)
+- The stats fast path only fills the Active / Error / Disabled buckets:
+  validation, cooldown and locked counts read 0 on paged providers and
+  the remainder is swept into Disabled. The summary stats payload does
+  not carry a per-health-state census. Fixed by the follow-up change
+  that adds the server-side census to provider summary stats.
+
+# 1027 — Perch provider (retroactive record)
+
+> Recorded retroactively at the owner's order: this change shipped inside
+> the v1.9.53 feature commit (89ec6915) without its fragment; this file is
+> the backfilled record, not a new change.
+
+## What landed
+- New provider "perch": executor internal/proxy/executor/perch.go
+  (turn-ticket + model-call endpoints, Bearer auth), OAuth support in
+  internal/proxy/oauth/perch.go, registry/aliases/models entries, and
+  the provider icon web/public/providers/perch.png.
+- Local harvest artefacts (harvested account JSON, harvest scripts,
+  screenshots) are gitignored so farm credentials can never be
+  committed by accident.
+
+## Verification (at review time)
+- Secret scan over the new files: no hardcoded credentials. Go build
+  green. Live behaviour is the perch line's own staging evidence.
+
+# 1026 — Speculative hedging and model-concurrency handling (retroactive record)
+
+> Recorded retroactively at the owner's order: this change shipped inside
+> the v1.9.53 feature commit (89ec6915) without its fragment; this file is
+> the backfilled record, not a new change.
+
+## What landed
+- Provider strategies gain hedge settings (`hedgeEnabled`, `hedgeDelayMs`,
+  `hedgeMaxAttempts` in internal/db/settings.go).
+- internal/handlers/chat/hedging.go: speculative multi-account racing.
+  Candidates are staggered by the hedge delay (default 120 ms, cap 2);
+  the first candidate to answer HTTP 200 commits its headers and stream
+  to the client through a buffering response writer, and the coordinator
+  cancels every loser immediately. Pinned requests never hedge (the
+  pinned branch returns first), probe contexts never hedge, and session
+  affinity/rotation ordering is applied before candidates are picked.
+- Hedging is ON by default for the dahl provider only (hundreds of farm
+  accounts, fast-moving GPU-slot saturation); every other provider is
+  opt-in via its strategy. The combo path wires the same executor,
+  gated on the leg carrying no pinned connection.
+- Model-concurrency saturation (providers.IsModelConcurrencyError) is
+  now terminal for the account loop: the model is locked on that
+  connection for 30 s, a scoped error is recorded, and retries break
+  instead of walking the whole farm. Dahl additionally records a
+  process-local 30 s cluster block per model (dahl_concurrency.go).
+- Dahl accounts answering 402 / quota-exhausted / invalid-key / 401 are
+  disabled with a stored reason instead of being retried forever.
+- TokenHarbor cooldowns pass through TokenHarborAdjustedCooldown so a
+  parsed "next request in ..." window is no longer applied verbatim.
+
+## Verification (at review time)
+- Code review of hedging.go, fallback.go and the combo wiring: winner
+  commitment is first-bytes only (pre-first-token), losers are
+  context-cancelled, pin semantics preserved. Whether a cancelled loser
+  that already started generating leaves a billable usage row is NOT
+  yet proven — flagged for a live probe.
+
 ## [v1.9.52] - 2026-11-08
 
 # 1025 — Playground fits the shell exactly: the chat thread is the only scroller
