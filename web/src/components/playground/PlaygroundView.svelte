@@ -6,7 +6,7 @@
     type JailbreakModelConfig,
     type PlaygroundModelEntry,
   } from '../../api/client'
-  import Card from '../../lib/ui/Card.svelte'
+  import Modal from '../../lib/ui/Modal.svelte'
   import ModelPicker from './ModelPicker.svelte'
   import PromptPanel from './PromptPanel.svelte'
   import ParamsPanel from './ParamsPanel.svelte'
@@ -29,6 +29,24 @@
   let sending = $state(false)
   let controller: AbortController | null = null
 
+  let settingsOpen = $state(false)
+
+  // Live clock for the waiting indicator: ticks while a send is in
+  // flight so the thread can show how long the model has been thinking
+  // (first tokens are routinely slow on this gateway — a silent wait
+  // reads as a hang).
+  let sendStartedAt = $state(0)
+  let tickNow = $state(0)
+  $effect(() => {
+    if (!sending) return
+    tickNow = Date.now()
+    const iv = setInterval(() => (tickNow = Date.now()), 100)
+    return () => clearInterval(iv)
+  })
+  const elapsed = $derived(
+    sending && sendStartedAt ? Math.max(0, (tickNow - sendStartedAt) / 1000) : 0
+  )
+
   const selectedEntry = $derived(entries.find((e) => e.model === selectedModel))
 
   // The standing Persona binding for the selected model: the Persona tab
@@ -50,6 +68,19 @@
     const preset = presets.find((p) => p.id === standingConfig.presetId)
     return preset?.name || standingConfig.presetId
   })
+
+  // The toolbar's prompt chip names the layer that will actually fire:
+  // session prompt > chosen preset > standing Persona > none.
+  const promptChipLabel = $derived.by(() => {
+    if (systemPrompt.trim()) return 'Session prompt'
+    if (presetId) return presets.find((p) => p.id === presetId)?.name || 'Preset'
+    if (standingPresetName && applyStandingPersona) return `Standing: ${standingPresetName}`
+    return 'No prompt'
+  })
+  const promptChipActive = $derived(promptChipLabel !== 'No prompt')
+  const paramsChipLabel = $derived(
+    `Temp ${temperature.toFixed(1)}${maxTokens.trim() ? ` · Max ${maxTokens.trim()}` : ''}`
+  )
 
   onMount(load)
 
@@ -97,6 +128,7 @@
     messages = [...history, { role: 'assistant', content: '' }]
     const reply = messages[messages.length - 1]
     sending = true
+    sendStartedAt = Date.now()
     controller = new AbortController()
     const started = performance.now()
     const parsedMax = Number(maxTokens)
@@ -161,22 +193,74 @@
   }
 </script>
 
-<div class="flex flex-col gap-4 lg:flex-row lg:items-start">
-  <div class="flex w-full shrink-0 flex-col gap-4 lg:w-80">
-    <Card title="Model" padding="sm">
-      <ModelPicker entries={entries} bind:value={selectedModel} disabled={sending} />
-      {#if loadError}
-        <p class="mt-2 text-xs text-danger">{loadError}</p>
-      {/if}
-      {#if selectedEntry?.type === 'model' && selectedEntry.connectionName}
-        <p class="mt-2 text-xs text-text-subtle">
-          Served by {selectedEntry.provider} — the gateway picks the account by its routing
-          strategy.
-        </p>
-      {/if}
-    </Card>
+<div class="flex h-[calc(100dvh-1.5rem)] flex-col gap-2.5">
+  <div class="flex items-center gap-2">
+    <ModelPicker entries={entries} bind:value={selectedModel} disabled={sending} />
+    <button
+      type="button"
+      onclick={() => (settingsOpen = true)}
+      class="flex shrink-0 items-center gap-1.5 rounded-brand-lg border px-2.5 py-2 text-xs transition-colors {promptChipActive
+        ? 'border-brand-500/50 bg-primary/10 text-primary'
+        : 'border-border bg-surface text-text-muted hover:text-text-main'}"
+      title="Session prompt and Persona preset"
+    >
+      <span class="material-symbols-outlined text-[16px]">edit_note</span>
+      <span class="hidden max-w-44 truncate md:inline">{promptChipLabel}</span>
+    </button>
+    <button
+      type="button"
+      onclick={() => (settingsOpen = true)}
+      class="flex shrink-0 items-center gap-1.5 rounded-brand-lg border border-border bg-surface px-2.5 py-2 text-xs text-text-muted transition-colors hover:text-text-main"
+      title="Sampling parameters"
+    >
+      <span class="material-symbols-outlined text-[16px]">tune</span>
+      <span class="hidden md:inline">{paramsChipLabel}</span>
+    </button>
+    <div class="flex-1"></div>
+    <button
+      type="button"
+      onclick={clear}
+      disabled={sending || messages.length === 0}
+      class="flex shrink-0 items-center gap-1.5 rounded-brand-lg px-2.5 py-2 text-xs text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main disabled:cursor-not-allowed disabled:opacity-40"
+      title="Clear the conversation"
+    >
+      <span class="material-symbols-outlined text-[16px]">delete_sweep</span>
+      <span class="hidden sm:inline">Clear</span>
+    </button>
+  </div>
 
-    <Card title="Prompt" padding="sm">
+  {#if loadError}
+    <p class="text-xs text-danger">{loadError}</p>
+  {:else if selectedEntry?.type === 'model' && selectedEntry.connectionName}
+    <p class="truncate text-xs text-text-subtle">
+      Served by {selectedEntry.provider} — the gateway picks the account by its routing strategy.
+    </p>
+  {/if}
+
+  <div
+    class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-brand-lg border border-border-subtle bg-surface"
+  >
+    <ChatThread
+      {messages}
+      {sending}
+      {elapsed}
+      disabled={entries.length === 0 || !selectedModel}
+      onSend={send}
+      onStop={stop}
+    />
+  </div>
+</div>
+
+<Modal
+  isOpen={settingsOpen}
+  onClose={() => (settingsOpen = false)}
+  title="Session settings"
+  icon="tune"
+  size="lg"
+>
+  <div class="flex max-h-[70vh] flex-col gap-5 overflow-y-auto pr-1">
+    <section class="flex flex-col gap-2">
+      <h3 class="text-xs font-medium uppercase tracking-wide text-text-subtle">Prompt</h3>
       <PromptPanel
         bind:systemPrompt
         {presets}
@@ -184,21 +268,10 @@
         {standingPresetName}
         bind:applyStandingPersona
       />
-    </Card>
-
-    <Card title="Parameters" padding="sm">
+    </section>
+    <section class="flex flex-col gap-2 border-t border-border-subtle pt-4">
+      <h3 class="text-xs font-medium uppercase tracking-wide text-text-subtle">Parameters</h3>
       <ParamsPanel bind:temperature bind:maxTokens />
-    </Card>
+    </section>
   </div>
-
-  <Card class="flex min-w-0 flex-1 flex-col" padding="sm">
-    <ChatThread
-      {messages}
-      {sending}
-      disabled={entries.length === 0 || !selectedModel}
-      onSend={send}
-      onStop={stop}
-      onClear={clear}
-    />
-  </Card>
-</div>
+</Modal>
