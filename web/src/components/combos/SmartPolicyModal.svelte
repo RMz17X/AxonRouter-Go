@@ -130,6 +130,7 @@
           {#if p.id === 'custom' && isSelected}
             <div
               class="mt-3 pl-6 pt-3 border-t border-border/40 flex flex-col gap-2.5"
+              role="presentation"
               onclick={(e) => e.stopPropagation()}
               onkeydown={(e) => e.stopPropagation()}
             >

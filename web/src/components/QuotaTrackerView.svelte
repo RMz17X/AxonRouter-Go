@@ -100,7 +100,6 @@
   let quotaErrors = $state<Record<string, string>>({})
   let autoRefresh = $state(true)
   let hasHydratedAutoRefresh = $state(false)
-  let lastUpdated = $state<Date | null>(null)
   let refreshingAll = $state(false)
   let countdown = $state(60)
   let connectionsLoading = $state(true)
@@ -289,7 +288,7 @@
         setQuotaCache(target.id, quotaEntry)
         if (isFatalDisableMessage(data?.message)) {
           const cur = connections.find((c) => c.id === target.id)
-          if (cur && (cur.isActive === 1 || cur.isActive === true)) {
+          if (cur && cur.isActive === 1) {
             void api.updateConnection(target.id, { isActive: 0 }).catch(() => {})
           }
           connections = connections.map((c) =>
@@ -308,7 +307,7 @@
         quotaErrors = { ...quotaErrors, [target.id]: message || 'Failed to fetch quota' }
         if (isFatalDisableMessage(message)) {
           const cur = connections.find((c) => c.id === target.id)
-          if (cur && (cur.isActive === 1 || cur.isActive === true)) {
+          if (cur && cur.isActive === 1) {
             void api.updateConnection(target.id, { isActive: 0 }).catch(() => {})
           }
           connections = connections.map((c) =>
@@ -318,7 +317,6 @@
       },
       onComplete: () => {
         if (quotaCycleController === controller) quotaCycleController = null
-        lastUpdated = new Date()
         refreshingAll = false
       },
     })
@@ -685,7 +683,7 @@
     ) {
       return false
     }
-    return conn.isActive === 1 || conn.isActive === true
+    return conn.isActive === 1
   }
 
   function getConnectionLabel(conn: ProviderConnectionLike): string | null {
@@ -755,7 +753,7 @@
         setQuotaCache(target.id, quotaEntry)
         if (isFatalDisableMessage(data?.message)) {
           const cur = connections.find((c) => c.id === target.id)
-          if (cur && (cur.isActive === 1 || cur.isActive === true)) {
+          if (cur && cur.isActive === 1) {
             void api.updateConnection(target.id, { isActive: 0 }).catch(() => {})
           }
           connections = connections.map((c) =>
@@ -774,7 +772,7 @@
         quotaErrors = { ...quotaErrors, [target.id]: message || 'Failed to fetch quota' }
         if (isFatalDisableMessage(message)) {
           const cur = connections.find((c) => c.id === target.id)
-          if (cur && (cur.isActive === 1 || cur.isActive === true)) {
+          if (cur && cur.isActive === 1) {
             void api.updateConnection(target.id, { isActive: 0 }).catch(() => {})
           }
           connections = connections.map((c) =>
@@ -787,7 +785,6 @@
 
   async function refreshProvider(connectionId: string, provider: string): Promise<void> {
     await fetchQuota(connectionId, provider, { force: true })
-    lastUpdated = new Date()
   }
 
   async function refreshAll(force = false): Promise<void> {
@@ -1872,7 +1869,7 @@
 {#if autoPingEditing}
   <AutoPingScheduleModal
     open
-    connectionName={autoPingEditing.name}
+    connectionName={autoPingEditing.name ?? undefined}
     reactive={autoPingMaps[autoPingEditing.provider as 'claude' | 'codex']?.[autoPingEditing.id] ===
       true}
     schedule={(autoPingSchedules[autoPingEditing.provider as 'claude' | 'codex']?.[

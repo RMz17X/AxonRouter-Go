@@ -5,8 +5,6 @@
     formatResetTime,
     formatResetTimeDisplay,
     getRemainingPercentage,
-    getStatusColor,
-    getStatusEmoji,
     getTotalCredit,
     isCreditPoolProvider,
     type NormalizedQuota,

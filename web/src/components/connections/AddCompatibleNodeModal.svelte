@@ -328,7 +328,7 @@
     <div class="flex flex-col gap-2 sm:flex-row">
       <Button
         type="button"
-        onclick={handleSubmit}
+        onclick={() => handleSubmit()}
         fullWidth
         disabled={!formName.trim() || !formPrefix.trim() || !formBaseUrl.trim() || submitting}
       >

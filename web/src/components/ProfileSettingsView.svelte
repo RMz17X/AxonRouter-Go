@@ -790,6 +790,9 @@
     </button>
   </div>
 
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- This grid is a layout container, not a control: the handlers are delegated dirty-tracking (handleSettingsInput only marks the form unsaved and deliberately ignores most clicks). Keyboard parity is inherent — keyboard interaction with the controls inside fires the same bubbled input/change/click events. -->
   <div
     class="grid grid-cols-1 lg:grid-cols-2 gap-5"
     oninput={handleSettingsInput}
@@ -1117,8 +1120,9 @@
         <!-- Observability Mode & Retention Controls -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div class="space-y-1">
-            <label class="text-[11px] font-medium text-text-muted">Observability Mode</label>
+            <label for="profile-observability-mode" class="text-[11px] font-medium text-text-muted">Observability Mode</label>
             <select
+              id="profile-observability-mode"
               bind:value={observabilityMode}
               class="w-full rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-xs text-text-main focus:border-brand-500 focus:outline-none"
             >
@@ -1129,8 +1133,9 @@
           </div>
 
           <div class="space-y-1">
-            <label class="text-[11px] font-medium text-text-muted">Diagnostics Retention</label>
+            <label for="profile-diagnostics-retention" class="text-[11px] font-medium text-text-muted">Diagnostics Retention</label>
             <select
+              id="profile-diagnostics-retention"
               bind:value={retentionDays}
               class="w-full rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-xs text-text-main focus:border-brand-500 focus:outline-none"
             >
@@ -1144,8 +1149,9 @@
           </div>
 
           <div class="space-y-1">
-            <label class="text-[11px] font-medium text-text-muted">Max Request Records</label>
+            <label for="profile-max-request-records" class="text-[11px] font-medium text-text-muted">Max Request Records</label>
             <input
+              id="profile-max-request-records"
               type="number"
               bind:value={maxRequestRecords}
               min="500"
@@ -1155,8 +1161,9 @@
           </div>
 
           <div class="space-y-1">
-            <label class="text-[11px] font-medium text-text-muted">Usage Ledger Retention</label>
+            <label for="profile-usage-ledger-retention" class="text-[11px] font-medium text-text-muted">Usage Ledger Retention</label>
             <select
+              id="profile-usage-ledger-retention"
               bind:value={usageHistoryRetentionDays}
               class="w-full rounded-lg border border-border bg-surface-2 px-2.5 py-1.5 text-xs text-text-main focus:border-brand-500 focus:outline-none"
             >
@@ -1606,6 +1613,7 @@
         {#snippet navRow(entry: NavEntry, siblings: NavEntry[])}
           {@const index = siblings.findIndex((candidate) => candidate.id === entry.id)}
           <div
+            role="listitem"
             class="relative flex items-center justify-between gap-3 rounded-md px-1 py-1 {dragZone ===
             'nav' && dragId === entry.id
               ? 'opacity-40'
@@ -1776,6 +1784,7 @@
               {@const grabbable = orderable && !fixed}
               {@const landing = dragTarget?.id === itemId && dragId !== itemId}
               <div
+                role="listitem"
                 class="relative flex items-center justify-between gap-3 rounded-md px-1 py-1 {dragId ===
                 itemId
                   ? 'opacity-40'

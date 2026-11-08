@@ -71,11 +71,14 @@
     onUpdateModels,
   }: Props = $props()
 
+  // svelte-ignore state_referenced_locally — intentional draft seed: CombosView remounts this modal per open via {#key}, so the initial prop read IS the per-open reset.
   let modalName = $state(editingCombo?.name || '')
   let modalNameError = $state('')
   // Seeded once per open: the modal is remounted by the {#key} in CombosView.
+  // svelte-ignore state_referenced_locally — same remount-seed pattern as modalName above.
   let timeoutInput = $state<string | number | null>(String(timeoutMsToSeconds(responseTimeoutMs) || ''))
   let timeoutMs = $derived(secondsToTimeoutMs(timeoutInput))
+  // svelte-ignore state_referenced_locally — same remount-seed pattern as modalName above.
   let graceInput = $state<string | number | null>(graceMsToSeconds(responseGraceMs))
   let graceMs = $derived(graceSecondsToMs(graceInput))
   let graceError = $derived(
@@ -95,6 +98,7 @@
 
   // Smart rules. The modal is remounted per open (the {#key} block in
   // CombosView), so reading the stored list once here is the reset.
+  // svelte-ignore state_referenced_locally — same remount-seed pattern as modalName above.
   let rules = $state<SmartRule[]>(parseSmartRules(editingCombo?.matchRules))
   let rulePreview = $state<ComboRulesPreview | null>(null)
   let rulePreviewError = $state('')
@@ -281,6 +285,13 @@
     }
   }
 
+  // The inline rename input must take focus the moment it appears — the
+  // operator just clicked Edit on that row. An action, not the autofocus
+  // attribute, so the focus lands only when this input mounts.
+  function focusOnMount(node: HTMLInputElement) {
+    node.focus()
+  }
+
   function handleDragStart(e: DragEvent, idx: number) {
     draggedIdx = idx
     if (e.dataTransfer) {
@@ -451,7 +462,7 @@
          reach the mechanism that produced it. -->
     <div>
       <div class="flex items-center justify-between mb-1.5">
-        <label class="text-sm font-medium">Smart rules</label>
+        <span class="text-sm font-medium">Smart rules</span>
         <button
           type="button"
           onclick={addRule}
@@ -626,7 +637,7 @@
     <!-- Models -->
     <div>
       <div class="flex flex-wrap items-center justify-between gap-y-1.5 mb-1.5">
-        <label class="text-sm font-medium">Models</label>
+        <span class="text-sm font-medium">Models</span>
         <div class="flex flex-wrap items-center gap-1.5">
           <!-- Sort: a one-shot reorder of the stored list. The operator picks
                an option, the list is rewritten, and anything can be dragged
@@ -684,10 +695,11 @@
           <p class="text-xs text-text-muted">No models added yet</p>
         </div>
       {:else}
-        <div class="flex flex-col gap-1 max-h-[55vh] overflow-y-auto sm:max-h-[350px]">
+        <div class="flex flex-col gap-1 max-h-[55vh] overflow-y-auto sm:max-h-[350px]" role="list">
           {#each models as model, idx}
             {@const caps = getModelCaps(model)}
             <div
+              role="listitem"
               class="group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 transition-colors {draggedIdx === idx ? 'opacity-40 bg-brand-500/10' : dragOverIdx === idx ? 'border-2 border-brand-500 bg-brand-500/5' : 'bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04]'}"
               draggable="true"
               ondragstart={(e) => handleDragStart(e, idx)}
@@ -700,7 +712,7 @@
               <span class="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{idx + 1}</span>
               {#if editingIdx === idx}
                 <input
-                  autofocus
+                  use:focusOnMount
                   bind:value={editDraft}
                   onblur={() => commitEdit(idx)}
                   onkeydown={(e) => {
@@ -739,10 +751,10 @@
                 </div>
               {/if}
               {#if caps.vision}
-                <Eye class="w-3 h-3 text-blue-500 shrink-0" title="Vision — Supports image input" />
+                <Eye class="w-3 h-3 text-blue-500 shrink-0"><title>Vision — Supports image input</title></Eye>
               {/if}
               {#if caps.reasoning}
-                <Brain class="w-3 h-3 text-amber-500 shrink-0" title="Reasoning — Supports reasoning / thinking" />
+                <Brain class="w-3 h-3 text-amber-500 shrink-0"><title>Reasoning — Supports reasoning / thinking</title></Brain>
               {/if}
               <div class="flex shrink-0 items-center gap-0.5">
                 <button

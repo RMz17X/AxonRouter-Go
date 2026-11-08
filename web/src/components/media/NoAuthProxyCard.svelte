@@ -129,7 +129,7 @@
 
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
-      <label class="text-sm font-medium text-text-main">Proxy</label>
+      <span class="text-sm font-medium text-text-main">Proxy</span>
       <span class="text-xs text-text-muted">Routes through the selected proxy group or type</span>
     </div>
     <div class="flex items-center gap-2 flex-wrap">

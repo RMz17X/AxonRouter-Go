@@ -669,6 +669,9 @@ export interface ConnectionUsageResponse {
   plan?: string
   quotas?: Record<string, ConnectionQuotaInfo> | ConnectionQuotaInfo[]
   error?: string
+  /** Human-readable verdict the usage handlers return alongside the
+   * quotas (e.g. the codex/glm reset endpoints' `message` field). */
+  message?: string | null
 }
 
 // Usage dashboard (Details section): heatmap cells, lifetime cards, node health.
@@ -798,7 +801,7 @@ export interface FreebuffSessionSwitchResponse {
 }
 
 export interface FreebuffSessionStatusResponse {
-  status: 'active' | 'none' | 'unauthorized' | 'banned' | 'country_blocked'
+  status: 'active' | 'queued' | 'ended' | 'none' | 'unauthorized' | 'banned' | 'country_blocked'
   /** Account this report describes — set so the UI can name it. */
   connectionId?: string
   connectionName?: string

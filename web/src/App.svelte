@@ -3,7 +3,6 @@
   import { Loader2 } from 'lucide-svelte'
   import {
     api,
-    getStoredAPIKey,
     onUnauthorized,
     type APIKey,
     type Combo,
@@ -28,7 +27,6 @@
   import MediaWebView from './components/media/MediaWebView.svelte'
   import QuotaTrackerView from './components/QuotaTrackerView.svelte'
   import SkillsView from './components/SkillsView.svelte'
-  import SettingsView from './components/SettingsView.svelte'
   import GuardrailsPanel from './components/security/GuardrailsPanel.svelte'
   import PlaygroundView from './components/playground/PlaygroundView.svelte'
   import PlansView from './components/plans/PlansView.svelte'
@@ -191,7 +189,7 @@
         shouldFetchKeysImmediately
           ? api.getApiKeys().catch(() => [])
           : Promise.resolve(apiKeys.length ? apiKeys : []),
-        api.getSettings().catch(() => ({})),
+        api.getSettings().catch((): Settings => ({})),
       ])
       providerStats = statsRes
       connections = []
@@ -398,6 +396,7 @@
   const pageMeta: Record<ActiveTab, { title: string; description: string }> = {
     login: { title: 'Login', description: 'Authenticate to access AxonRouter-Go' },
     endpoint: { title: 'Endpoint & Key', description: 'API endpoint and key configuration' },
+    keys: { title: 'Endpoint & Key', description: 'API endpoint and key configuration' },
     connections: { title: 'Providers & Endpoints', description: 'Manage your AI provider connections' },
     combos: { title: 'Combo & Routing', description: 'Model combos and failover strategies' },
     // The two moved tabs are sections of the Usage page, so the TopBar keeps
@@ -410,6 +409,7 @@
     'cli-tools': { title: 'CLI Tools', description: 'Configure CLI tools and API keys' },
     'media-embedding': { title: 'Embedding Models', description: 'Vector embeddings and semantic retrieval' },
     'media-image': { title: 'Text to Image', description: 'Image generation and transformation models' },
+    'media-video': { title: 'Text to Video', description: 'Video generation and transformation models' },
     'media-tts': { title: 'Text to Speech', description: 'Voice synthesis and audio generation models' },
     'media-stt': { title: 'Speech to Text', description: 'Audio transcription and speech recognition models' },
     'media-systemone': { title: 'System One', description: 'Structured state evaluation models' },
@@ -431,10 +431,6 @@
     jailbreak: { title: 'Persona', description: 'Per-model system-prompt injection and Gemini safety bypass' },
   }
 
-  function handleOpenNewCombo() {
-    navigate('combos')
-    isCreateComboOpen = true
-  }
   let isUpdateModalOpen = $state(false)
   let systemUpdateInfo = $state<SystemVersionInfo | null>(null)
   let systemVersion = $state(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '')

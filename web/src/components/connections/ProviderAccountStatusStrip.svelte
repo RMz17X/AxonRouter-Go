@@ -40,13 +40,23 @@
     }
 
     if (stats && stats.total > connections.length) {
-      // Fast path: use cached stats directly from providerStats
-      counts.set('active', stats.connected)
-      counts.set('error', stats.errorCount)
-      const disabledCount = stats.allDisabled
-        ? stats.total
-        : Math.max(0, stats.total - stats.connected - stats.errorCount)
-      counts.set('disabled', disabledCount)
+      // Fast path: the loaded page is only a slice of this provider, so
+      // the counts come from the server summary stats. When the payload
+      // carries the per-state census, every bucket reads its own count;
+      // the total/connected/error derivation below is only the fallback
+      // for payloads that predate the census.
+      if (stats.states) {
+        for (const state of STATE_ORDER) {
+          counts.set(state, stats.states[state] ?? 0)
+        }
+      } else {
+        counts.set('active', stats.connected)
+        counts.set('error', stats.errorCount)
+        const disabledCount = stats.allDisabled
+          ? stats.total
+          : Math.max(0, stats.total - stats.connected - stats.errorCount)
+        counts.set('disabled', disabledCount)
+      }
 
       // Sample names from currently visible connections for tooltip
       for (const conn of connections) {

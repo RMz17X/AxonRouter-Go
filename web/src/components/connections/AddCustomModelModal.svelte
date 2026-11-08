@@ -240,7 +240,7 @@
     {/if}
 
     <div>
-      <label class="text-sm font-medium mb-1.5 block">Capabilities</label>
+      <span class="text-sm font-medium mb-1.5 block">Capabilities</span>
       <div class="flex flex-wrap gap-4">
         {#each Object.entries(CAPACITY_META) as [key, meta]}
           <div class="flex items-center gap-2">
@@ -262,7 +262,7 @@
     </div>
 
     <div>
-      <label class="text-sm font-medium mb-1.5 block">Token limits (optional)</label>
+      <span class="text-sm font-medium mb-1.5 block">Token limits (optional)</span>
       <div class="grid gap-3 sm:grid-cols-2">
         <div>
           <label class="text-xs text-text-muted mb-1 block" for="add-custom-model-ctx">Context window</label>

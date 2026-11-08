@@ -45,7 +45,6 @@
     buildAvailableModels,
     fetchProviderModelsData,
     fetchSuggestedModels,
-    getIconPath,
     getProviderStats,
     isChatModel,
     type CustomModelData,
@@ -100,7 +99,6 @@
   import type { ProviderNodeLimitsPatch } from '../../api/client'
   import Badge from '../../lib/ui/Badge.svelte'
   import Toggle from '../../lib/ui/Toggle.svelte'
-  import Button from '../../lib/ui/Button.svelte'
   import { PauseCircle } from 'lucide-svelte'
   import ProviderHeaderOverridesModal from './ProviderHeaderOverridesModal.svelte'
   import EditCompatibleNodeModal from './EditCompatibleNodeModal.svelte'
@@ -252,6 +250,12 @@
     getProviderStats([], providerId, undefined, providerStats)
   )
 
+  // The paged slice is declared before the derivations that read it:
+  // $derived bodies evaluate lazily, so the old order ran, but it read
+  // as a use-before-declaration and the checker rightly flagged it.
+  let pagedConnections = $state<ProviderConnection[]>([])
+  let isLoadingConnections = $state<boolean>(false)
+
   // Filtered connections for this provider, sorted by priority ASC
   let providerConnections = $derived(
     connections.length > 0
@@ -270,8 +274,6 @@
   // Connections pagination
   let connPageSize = $state<number>(10)
   let connPage = $state<number>(1)
-  let pagedConnections = $state<ProviderConnection[]>([])
-  let isLoadingConnections = $state<boolean>(false)
 
   let connTotalPages = $derived(
     Math.max(1, Math.ceil(totalConnectionsCount / connPageSize))
@@ -921,7 +923,7 @@
     const q = proxyPoolSearch.trim().toLowerCase()
     if (!q) return proxyPools
     return proxyPools.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.proxyUrl.toLowerCase().includes(q)
+      (p) => p.name.toLowerCase().includes(q) || (p.proxyUrl ?? '').toLowerCase().includes(q)
     )
   })
 
@@ -978,7 +980,6 @@
     }
     return providerConnections.find((c) => c.isActive === 1) ?? providerConnections[0]
   })
-  let freebuffConnection = $derived(targetFreebuffConn)
   let freebuffSession = $state<FreebuffSessionStatusResponse | null>(null)
   let isLoadingSession = $state(false)
   let isAuthorizingFreebuff = $state(false)
@@ -986,7 +987,7 @@
   let currentFreebuffInit = $state<{
     fingerprintId: string
     fingerprintHash: string
-    expiresAt: number
+    expiresAt: number | string
     loginUrl: string
   } | null>(null)
 
@@ -1112,7 +1113,7 @@
     try {
       const [modelsData, settingsData, poolsData, aliasesData, capsData] = await Promise.all([
         fetchProviderModelsData(providerId, storageAlias),
-        api.getSettings().catch(() => ({})),
+        api.getSettings().catch((): Settings => ({})),
         api.getProxyPools().catch(() => []),
         api.getModelAliases().catch(() => ({ aliases: {} })),
         // The caps endpoint answers for compatible nodes too: a node with
@@ -4214,7 +4215,7 @@
             lastErr.toLowerCase().includes('invalid_grant') ||
             lastErr.toLowerCase().includes('token refresh rejected')}
           {@const priorityNum = conn.priority ?? globalIdx + 1}
-          {@const isConnActive = (conn.isActive === 1 || conn.isActive === true) && conn.testStatus !== 'disabled' && !isFatalDisabledErr}
+          {@const isConnActive = ((conn.isActive as number | boolean) === 1 || (conn.isActive as number | boolean) === true) && conn.testStatus !== 'disabled' && !isFatalDisabledErr}
           {@const cooldownInfo = getCooldownInfo(conn)}
           {@const health = connectionHealthById.get(conn.id)}
           <!-- badgeFor owns the precedence between the live probe and the
@@ -5321,7 +5322,7 @@
           isLoading={isLoadingSession}
           expiresInMin={sessionExpiresInMin}
           onRefresh={loadFreebuffSession}
-          models={visibleModels.map((m) => ({ id: m.id, name: m.name }))}
+          models={visibleModels.map((m) => ({ id: m.id, name: m.name ?? m.id }))}
           onSwitch={switchFreebuffModel}
           connections={providerConnections.map((c) => {
             const specific = c.providerSpecificData as Record<string, any> | undefined

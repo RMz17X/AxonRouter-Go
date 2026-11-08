@@ -10,7 +10,7 @@
   import { isNavEntryHidden } from '../../lib/navVisibility.svelte'
   import { pushEscapeHandler } from '../../lib/ui/escapeStack'
   import ModelPickerModal from '../combos/ModelPickerModal.svelte'
-  import { Check, Copy, Download, Layers, Loader2, Plus, X } from 'lucide-svelte'
+  import { Download, Layers, Loader2, Plus, X } from 'lucide-svelte'
 
   interface Props {
     isOpen: boolean
@@ -28,7 +28,6 @@
   let name = $state('')
   let planId = $state('')
   let plans = $state<Plan[]>([])
-  let isLoadingPlans = $state(false)
   let plansHidden = $derived(isNavEntryHidden('plans'))
 
   let rpm = $state(0)
@@ -75,14 +74,11 @@
   })
 
   async function loadPlans() {
-    isLoadingPlans = true
     try {
       const res = await api.getPlans()
       plans = res.plans ?? []
     } catch {
       plans = []
-    } finally {
-      isLoadingPlans = false
     }
   }
 
@@ -572,7 +568,7 @@
                 rows={6}
                 placeholder={'office | m-abc-123\nlaptop\n| m-def-456'}
                 class="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border font-code text-xs text-text-main placeholder:text-text-subtle focus:outline-none focus:border-brand-500 resize-y"
-              />
+              ></textarea>
               <p class="text-[11px] text-text-subtle">
                 Both halves are optional. A blank name becomes <span class="font-code">Key N</span>.
               </p>

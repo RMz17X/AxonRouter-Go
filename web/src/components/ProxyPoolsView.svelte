@@ -292,8 +292,13 @@
   )
 
   $effect(() => {
-    // Reset to page 1 whenever filter or sort changes
-    const _ = statusFilter + sortOption + groupFilter + typeFilter + searchQuery
+    // Reset to page 1 whenever filter or sort changes (the bare reads
+    // below are what $effect tracks — they must stay as plain reads)
+    statusFilter
+    sortOption
+    groupFilter
+    typeFilter
+    searchQuery
     currentPage = 1
   })
 

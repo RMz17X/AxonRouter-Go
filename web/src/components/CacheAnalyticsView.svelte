@@ -452,6 +452,8 @@
             {@const isHovered = hoveredTrendPoint === pt}
             <div
               class="flex-1 min-w-[22px] h-full flex flex-col justify-end items-center group relative cursor-pointer"
+              role="img"
+              aria-label="{pt.timestamp.replace('T', ' ').replace(':00:00Z', ':00')}: {pt.requests} requests, {pt.cachedRequests} cached, {pt.cachedTokens.toLocaleString()} cached tokens"
               onmouseenter={() => (hoveredTrendPoint = pt)}
               onmouseleave={() => (hoveredTrendPoint = null)}
             >

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import type { ActiveRequestItem } from './types'
   import ProviderArtwork from '../providers/ProviderArtwork.svelte'
-  import { getAnimationLevel } from '../../lib/displayPrefs'
+  import { getAnimationLevel, type AnimationLevel } from '../../lib/displayPrefs'
   import {
     createTopologySlotAllocator,
     topologyRingRadii,
@@ -59,7 +59,7 @@
   let containerEl = $state<HTMLDivElement | null>(null)
   let containerWidth = $state(800)
   let containerHeight = $state(480)
-  let animLevel = $state<'default' | 'minimal' | 'off'>('default')
+  let animLevel = $state<AnimationLevel>('default')
 
   // Zoom & Pan transforms
   let zoom = $state(0.85)

@@ -74,7 +74,7 @@
                       {pool.isActive ? 'active' : 'inactive'}
                     </Badge>
                     {#if pool.group}
-                      <Badge variant="secondary" size="sm">
+                      <Badge variant="default" size="sm">
                         <span class="material-symbols-outlined text-[13px] mr-1">folder</span>
                         {pool.group}
                       </Badge>

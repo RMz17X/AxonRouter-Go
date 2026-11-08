@@ -76,10 +76,14 @@
     </span>
   {/if}
   {#if vision}
-    <Eye class={isAdded ? 'w-3 h-3 text-white/90 shrink-0' : 'w-3 h-3 text-blue-500 shrink-0'} title="Vision — Supports image input" />
+    <span class="inline-flex shrink-0" title="Vision — Supports image input">
+      <Eye class={isAdded ? 'w-3 h-3 text-white/90 shrink-0' : 'w-3 h-3 text-blue-500 shrink-0'} />
+    </span>
   {/if}
   {#if reasoning}
-    <Brain class={isAdded ? 'w-3 h-3 text-white/90 shrink-0' : 'w-3 h-3 text-amber-500 shrink-0'} title="Reasoning / Thinking" />
+    <span class="inline-flex shrink-0" title="Reasoning / Thinking">
+      <Brain class={isAdded ? 'w-3 h-3 text-white/90 shrink-0' : 'w-3 h-3 text-amber-500 shrink-0'} />
+    </span>
   {/if}
   {#if deprecated}
     <span

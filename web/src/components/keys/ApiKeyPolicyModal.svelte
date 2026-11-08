@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type APIKey, type APIKeyPolicy, type Plan } from '../../api/client'
-  import { Layers, Loader2, Save, Trash2, X } from 'lucide-svelte'
+  import { Layers, Loader2, Save, X } from 'lucide-svelte'
   import { isNavEntryHidden } from '../../lib/navVisibility.svelte'
   import { pushEscapeHandler } from '../../lib/ui/escapeStack'
   import ModelPickerModal from '../combos/ModelPickerModal.svelte'
@@ -15,22 +15,30 @@
 
   // 0 means unlimited everywhere, so the initial value of an unset column is
   // 0 rather than blank: the operator sees "no limit" without guessing.
+  // svelte-ignore state_referenced_locally
   let rpm = $state(apiKey.rateLimitRpm ?? 0)
   // Tokens are managed in unit M (Millions of tokens) for intuitive input.
+  // svelte-ignore state_referenced_locally
   let tpmM = $state(apiKey.rateLimitTpm ? Number((apiKey.rateLimitTpm / 1_000_000).toFixed(4)) : 0)
+  // svelte-ignore state_referenced_locally
   let concurrency = $state(apiKey.rateLimitConcurrency ?? 0)
   // The lifetime budget in M (Millions of tokens).
+  // svelte-ignore state_referenced_locally
   let tokenQuotaM = $state(apiKey.tokenQuota ? Number((apiKey.tokenQuota / 1_000_000).toFixed(4)) : 0)
+  // svelte-ignore state_referenced_locally
   let queueTimeoutMs = $state(apiKey.queueTimeoutMs ?? 0)
 
   // expiresAt is stored as RFC3339. The input is a plain datetime-local because
   // the browser needs a local time and the server needs UTC; convert at the edge
   // instead of asking the operator to type a timezone.
+  // svelte-ignore state_referenced_locally
   let expiresLocal = $state(toLocalInput(apiKey.expiresAt))
+  // svelte-ignore state_referenced_locally
   let metadata = $state(apiKey.metadata ?? '')
   // Renaming lives here rather than in the table's row menu: the issue asked
   // for one dialog per key that edits the name and shows the policy, so
   // splitting it across two dialogs would undo that.
+  // svelte-ignore state_referenced_locally
   let name = $state(apiKey.name ?? '')
   let models = $state<string[]>([])
   let modelDraft = $state('')
@@ -44,6 +52,7 @@
   let hasLoadedModels = $state(false)
   // F-3 plan assignment. The plan is part of this same policy, so it is loaded
   // on open next to the allowlist rather than behind a second dialog.
+  // svelte-ignore state_referenced_locally
   let planId = $state(apiKey.planId ?? '')
   let plans = $state<Plan[]>([])
   let isLoadingPlans = $state(false)

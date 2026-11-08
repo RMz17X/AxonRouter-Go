@@ -388,6 +388,8 @@
           {@const isHovered = hoveredTrendHour === b}
           <div
             class="flex-1 min-w-[22px] h-full flex flex-col justify-end items-center group relative cursor-pointer"
+            role="img"
+            aria-label="{b.hour.replace('T', ' ').replace(':00:00Z', ':00')}: {b.count} runs, {b.tokensSaved.toLocaleString()} tokens saved"
             onmouseenter={() => (hoveredTrendHour = b)}
             onmouseleave={() => (hoveredTrendHour = null)}
           >

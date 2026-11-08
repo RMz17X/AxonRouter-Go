@@ -43,6 +43,12 @@ export interface RecentRequestItem {
   apiKey?: string
   /** Connection/account display value, resolved like the request-details rows. */
   account?: string
+  /** Egress proxy label for the request. No current payload emits it;
+   * the recent-requests merge preserves it for a feed that does. */
+  proxy?: string
+  /** Total tokens for the request. No current payload emits it; the
+   * top-request pulse in AnalyticsView compares it when present. */
+  tokens?: number
   /** Whether the client asked for a streamed response; only set on live pushes that know it. */
   isStream?: boolean
   /** How long the request took, for completed requests only. */

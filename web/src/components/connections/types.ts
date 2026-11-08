@@ -27,6 +27,11 @@ export interface ProviderStats {
   allDisabled: boolean
   latestError?: string | null
   connections: ProviderConnection[]
+  /** Per-health-state census from the server summary stats (keys are
+   * ConnectionHealthState values). Present whenever the summary stats
+   * payload carries it; the account-status strip's paged fast path
+   * reads its counts from here. */
+  states?: Record<string, number>
 }
 
 export interface ModelItem {
@@ -117,7 +122,7 @@ export function getProviderStats(
   connections: ProviderConnection[],
   providerId: string,
   authTypes?: string[],
-  summaryStats?: Record<string, Record<string, { total?: number; connected?: number; error?: number; allDisabled?: boolean; lastError?: string }>>
+  summaryStats?: Record<string, Record<string, { total?: number; connected?: number; error?: number; allDisabled?: boolean; lastError?: string; states?: Record<string, number> }>>
 ): ProviderStats {
   if (summaryStats && Object.keys(summaryStats).length > 0) {
     const provStats = summaryStats[providerId]
@@ -136,6 +141,7 @@ export function getProviderStats(
     let errorCount = 0
     let allDisabled = true
     let hasEntries = false
+    let states: Record<string, number> | undefined
 
     for (const [aType, stat] of Object.entries(provStats)) {
       if (authTypes && authTypes.length > 0 && !authTypes.includes(aType)) {
@@ -148,6 +154,12 @@ export function getProviderStats(
       if (!stat.allDisabled && (stat.connected || 0) > 0) {
         allDisabled = false
       }
+      if (stat.states) {
+        states = states ?? {}
+        for (const [state, count] of Object.entries(stat.states)) {
+          states[state] = (states[state] || 0) + (count || 0)
+        }
+      }
     }
     if (hasEntries) {
       return {
@@ -157,6 +169,7 @@ export function getProviderStats(
         allDisabled: total > 0 ? allDisabled : false,
         latestError: undefined,
         connections: [],
+        states,
       }
     }
     return {

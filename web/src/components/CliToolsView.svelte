@@ -1,25 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import {
-    AlertCircle,
     Check,
-    Code2,
     Copy,
     ExternalLink,
-    FolderKanban,
-    HelpCircle,
     Key,
-    Layers,
-    Loader2,
     RefreshCw,
     Search,
-    Shield,
     Terminal,
-    Wrench,
-    X,
-    Zap
+    X
   } from 'lucide-svelte'
-  import Card from '../lib/ui/Card.svelte'
   import { copyToClipboard } from '../lib/clipboard'
   import { api, type APIKey } from '../api/client'
   import HermesToolCard from './cli-tools/HermesToolCard.svelte'
@@ -30,10 +20,7 @@
     onRefresh?: () => void
   }
 
-  let {
-    apiKeys = [],
-    onRefresh
-  }: Props = $props()
+  let { apiKeys = [] }: Props = $props()
 
   let statuses = $state<Record<string, { installed?: boolean; version?: string | null; has9Router?: boolean } | null>>({})
   let isLoading = $state(true)
@@ -141,7 +128,15 @@
     defaultKey?: string
   }
 
-  let toolsCatalog: ToolItem[] = $derived.by(() => [
+  // Identity helper whose only job is its parameter type: passing the
+  // catalog literal as an argument gives every entry direct contextual
+  // typing against ToolItem. Inferred straight from the $derived.by
+  // callback instead, TS first synthesizes one merged element type for
+  // the whole literal, and the per-entry envVars shapes (each carrying
+  // only its own tool's keys) fail against Record<string, string>.
+  const asToolItems = (items: ToolItem[]): ToolItem[] => items
+
+  let toolsCatalog: ToolItem[] = $derived.by<ToolItem[]>(() => asToolItems([
     {
       id: 'claude',
       name: 'Claude Code',
@@ -587,7 +582,7 @@
         `Verify connection with: codewhale check`,
       ],
     },
-  ])
+  ]))
   let filteredTools = $derived(
     toolsCatalog.filter((tool) => {
       const matchCategory = activeCategory === 'all' || tool.category === activeCategory

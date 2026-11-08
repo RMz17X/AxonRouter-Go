@@ -72,10 +72,14 @@
   // Seeded once per mount from the stored values, with the same defaults the Go
   // side applies so an empty schedule opens on a usable form rather than zeros.
   let mode = $state<Mode>(
+    // svelte-ignore state_referenced_locally
     schedule?.enabled === true ? 'schedule' : reactive === true ? 'reset' : 'off'
   )
+  // svelte-ignore state_referenced_locally
   let anchor = $state(schedule?.anchor || PING_SCHEDULE_DEFAULTS.anchor)
+  // svelte-ignore state_referenced_locally
   let windowHours = $state(String(schedule?.windowHours ?? PING_SCHEDULE_DEFAULTS.windowHours))
+  // svelte-ignore state_referenced_locally
   let slotsPerDay = $state(String(schedule?.slotsPerDay ?? PING_SCHEDULE_DEFAULTS.slotsPerDay))
 
   const parsedWindow = $derived(Number(windowHours))

@@ -7,7 +7,6 @@
     getComboModels,
     INHERIT_STRATEGY,
     parseCapacityAdapterSettings,
-    resolveComboStrategy,
     updateComboStrategy,
     updateFirstTokenGrace,
     updateFirstTokenTimeout,

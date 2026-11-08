@@ -35,6 +35,14 @@ type providerSummaryStat struct {
 	Error       int  `json:"error"`
 	AllDisabled bool `json:"allDisabled"`
 	LastErrorAt any  `json:"lastErrorAt"`
+	// States is the per-health-state census (active / error / cooldown /
+	// locked / disabled / validation) computed with the exact derivation
+	// the dashboard strip applies per row — healthStateForConnection
+	// mirrors deriveConnectionHealth in connectionHealth.ts. The strip's
+	// paged fast path reads these counts; without them the buckets it
+	// cannot derive from total/connected/error read 0 on any provider
+	// whose connections are paged.
+	States map[string]int `json:"states"`
 }
 
 var badTestStatuses = map[string]bool{
@@ -109,6 +117,41 @@ func classifyConnection(c *models.ProviderConnection, now time.Time) connClass {
 	}
 }
 
+// healthStateForConnection resolves one connection's dashboard health
+// state with the exact derivation the client applies per row in
+// deriveConnectionHealth (web/src/components/connections/
+// connectionHealth.ts): a verification demand wins over the disabled
+// toggle, then the throttle verdict, then the error family, then any
+// live lock, else active. Keeping the two derivations in lockstep is
+// what lets the strip's paged fast path trust these counts.
+func healthStateForConnection(c *models.ProviderConnection, data map[string]any, now time.Time) string {
+	lastError := lastErrorText(data)
+	effective := providers.EffectiveStatusWithError(c.IsActive, dataStr(data, "testStatus"), providers.HasActiveCooldown(c.Data), lastError)
+	lowerErr := strings.ToLower(lastError)
+	if dataStr(data, "verificationUrl") != "" ||
+		(effective == "disabled" && (strings.Contains(lowerErr, "validation_required") || strings.Contains(lowerErr, "verify your account"))) {
+		return "validation"
+	}
+	switch effective {
+	case "disabled":
+		return "disabled"
+	case "rate_limited":
+		return "cooldown"
+	case "error", "unavailable", "quota_exhausted", "expired":
+		return "error"
+	}
+	if len(activeModelLocks(data, now)) > 0 {
+		return "locked"
+	}
+	if _, ok := futureTime(data, "rateLimitedUntil", now); ok {
+		return "locked"
+	}
+	if _, ok := futureTime(data, "oauthLockedUntil", now); ok {
+		return "locked"
+	}
+	return "active"
+}
+
 func computeProviderSummaryStats(conns []*models.ProviderConnection) map[string]map[string]*providerSummaryStat {
 	now := time.Now()
 	stats := map[string]map[string]*providerSummaryStat{}
@@ -132,6 +175,10 @@ func computeProviderSummaryStats(conns []*models.ProviderConnection) map[string]
 		}
 		stat.Total++
 		data := connDataMap(c)
+		if stat.States == nil {
+			stat.States = map[string]int{}
+		}
+		stat.States[healthStateForConnection(c, data, now)]++
 		if t, ok := dataTimeField(data, "lastErrorAt"); ok {
 			if cur, seen := lastErrAt[c.Provider][c.AuthType]; !seen || t.After(cur) {
 				lastErrAt[c.Provider][c.AuthType] = t

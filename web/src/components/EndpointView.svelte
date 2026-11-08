@@ -1160,6 +1160,7 @@
          Settings modal's Global tab. They are questions about the tunnels as a
          pair, so they are asked once, in one place, rather than twice on a card
          that only one of the two tunnels owns. -->
+    </div>
   </Card>
 
   <!-- BOTTOM SECTION: API Keys. The key list lives here (issue #199) so the
@@ -1246,6 +1247,9 @@
        panel and compares the event target against itself, so a click that
        starts inside the panel — a Toggle, a select, a drag that ends on the
        backdrop — does not close the modal on its way out. -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- Backdrop click-catcher only; Escape for this dialog is handled by the window keydown listener in onMount (the backdrop never receives focus, so a key handler here could never fire). -->
   <div
     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
     onclick={(e) => {
@@ -1665,10 +1669,6 @@
                     : 'The hostname you routed to this tunnel in Cloudflare Zero Trust. It must be listed as a Public Hostname on the tunnel, and its DNS must resolve through Cloudflare.'}
                 </p>
               </div>
-            {#if tunnelMode === 'named'}
-
-            {/if}
-
               <div class="space-y-1.5">
                 <label for="tunnel-token" class="text-xs font-semibold text-text-main">Tunnel Token</label>
                 <div class="flex items-center gap-2">
@@ -2074,6 +2074,9 @@
 {/if}
 <!-- MODAL: Disable Cloudflare Tunnel -->
 {#if showDisableTunnelModal}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- Backdrop click-catcher only; Escape for this dialog is handled by the window keydown listener in onMount (the backdrop never receives focus, so a key handler here could never fire). -->
   <div
     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
     onclick={(e) => {
@@ -2116,6 +2119,9 @@
 {/if}
 <!-- MODAL: Disable Tailscale -->
 {#if showDisableTailscaleModal}
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- Backdrop click-catcher only; Escape for this dialog is handled by the window keydown listener in onMount (the backdrop never receives focus, so a key handler here could never fire). -->
   <div
     class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
     onclick={(e) => {

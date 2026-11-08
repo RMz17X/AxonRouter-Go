@@ -328,6 +328,7 @@
 <!-- Donate Modal -->
 {#if isDonateOpen}
   <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <!-- svelte-ignore a11y_click_events_have_key_events — backdrop click-catcher only; the dialog's Escape handling lives on the <svelte:window> handler above (the backdrop itself never receives focus, so a key handler here could never fire). -->
     <div
       class="absolute inset-0 bg-black/60"
       onclick={() => (isDonateOpen = false)}

@@ -74,15 +74,19 @@
   // field actually opened with — save compares against that rather than
   // re-deriving the mask from live store state, which would go stale the
   // moment masking is toggled elsewhere while this modal is open.
+  // svelte-ignore state_referenced_locally — seeded once per open by design (see above)
   let originalName = $state(connection.name || '')
+  // svelte-ignore state_referenced_locally — seeded once per open by design (see above)
   let seededName = $state(formatEmailLabel(connection.name || '', $emailPrivacy))
   let name = $state(seededName)
+  // svelte-ignore state_referenced_locally — seeded once per open by design (see above)
   let priority = $state<number>(connection.priority ?? 1)
   // The value the priority field was seeded with. Saving sends priority only
   // when the field actually changed: a NULL-priority row has no number of its
   // own, so seeding the input with 1 and always sending it turned a plain
   // rename into an assignment of rank 1, colliding with whichever row already
   // held it.
+  // svelte-ignore state_referenced_locally — seeded once per open by design (see above)
   let seededPriority = $state<number>(connection.priority ?? 1)
   let testStatus = $state<TestStatus>(null)
   let testError = $state<string | null>(null)
