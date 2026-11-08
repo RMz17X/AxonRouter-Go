@@ -160,22 +160,52 @@
       unusedPill !== 'off',
   )
 
+  // Pagination: client-side slicing to keep DOM lightweight on large key counts.
+  let page = $state<number>(1)
+  let pageSize = $state<number>(20)
+  const totalPages = $derived(Math.max(1, Math.ceil(visibleKeys.length / pageSize)))
+  const pagedKeys = $derived(
+    visibleKeys.slice((page - 1) * pageSize, page * pageSize),
+  )
+
+  $effect(() => {
+    void searchTerm
+    void activePill
+    void requestsPill
+    void tokensPill
+    void unusedPill
+    void sortKey
+    page = 1
+  })
+
+  $effect(() => {
+    if (page > totalPages) {
+      page = totalPages
+    }
+  })
+
+  const isPageAllSelected = $derived(
+    pagedKeys.length > 0 && pagedKeys.every((k) => selectedIds.includes(k.id)),
+  )
+
+  function toggleSelectAllPage() {
+    const pageIds = pagedKeys.map((k) => k.id)
+    if (isPageAllSelected) {
+      selectedIds = selectedIds.filter((id) => !pageIds.includes(id))
+    } else {
+      const set = new Set(selectedIds)
+      for (const id of pageIds) set.add(id)
+      selectedIds = Array.from(set)
+    }
+  }
 
   // The width of the widest token chip, so every row's chip is the same size.
   //
-  // Without this, revealing a key makes its row's chip wider than the others —
-  // the plaintext is longer than the mask — and the eye and copy buttons slide
-  // right as the text grows. An operator reaching for copy on the row below
-  // hits it in a different place than the row above, and the column stops
-  // reading as one thing.
-  //
-  // The width is measured from the longest value any row can show, which is the
-  // plaintext rather than the mask: a chip sized to the mask would still jump
-  // the first time anything is revealed. The two buttons and the chip's own
-  // padding are added because they occupy the same box as the text.
+  // Sized against pagedKeys rather than the full list so computing width stays
+  // O(pageSize) rather than O(N) over tens of thousands of keys.
   const tokenChipWidth = $derived.by(() => {
     let longest = 0
-    for (const k of visibleKeys) {
+    for (const k of pagedKeys) {
       const raw = secretOf(k) || k.keyDisplay || ''
       if (raw.length > longest) longest = raw.length
     }
@@ -939,7 +969,7 @@
       </div>
     {:else}
     <ul class="md:hidden grid grid-cols-1 gap-3">
-      {#each visibleKeys as k (k.id)}
+      {#each pagedKeys as k (k.id)}
         {@const active = isActive(k)}
         {@const expanded = expandedIds.has(k.id)}
         <li class="rounded-xl border border-border bg-surface-2/40 overflow-hidden {active ? '' : 'opacity-70'}">
@@ -1029,12 +1059,9 @@
             <th class="w-8 py-2.5 pl-3">
               <input
                 type="checkbox"
-                checked={selectedIds.length > 0 && selectedIds.length === visibleKeys.length}
-                aria-label="Select all keys"
-                onchange={() => {
-                  selectedIds =
-                    selectedIds.length === visibleKeys.length ? [] : visibleKeys.map((k) => k.id)
-                }}
+                checked={isPageAllSelected}
+                aria-label="Select all keys on this page"
+                onchange={toggleSelectAllPage}
                 class="size-3.5 rounded border-border/60 accent-[var(--primary)] cursor-pointer"
               />
             </th>
@@ -1046,7 +1073,7 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-border/40">
-          {#each visibleKeys as k (k.id)}
+          {#each pagedKeys as k (k.id)}
             {@const active = isActive(k)}
             <tr class="align-top transition hover:bg-surface-2/40 {active ? '' : 'opacity-70'}">
               <td class="py-3 pl-3">
@@ -1085,6 +1112,49 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Pagination Controls -->
+    {#if totalPages > 1 || visibleKeys.length > 10}
+      <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3 text-xs text-text-muted">
+        <div class="flex items-center gap-2">
+          <span>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, visibleKeys.length)} of {visibleKeys.length} keys</span>
+          <select
+            value={pageSize}
+            onchange={(e) => {
+              pageSize = Number((e.target as HTMLSelectElement).value)
+              page = 1
+            }}
+            class="rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-text-main cursor-pointer"
+          >
+            <option value={10}>10 / page</option>
+            <option value={20}>20 / page</option>
+            <option value={50}>50 / page</option>
+            <option value={100}>100 / page</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onclick={() => page--}
+            class="inline-flex items-center justify-center rounded border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-main hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-40 transition-colors cursor-pointer"
+          >
+            Previous
+          </button>
+          <span class="px-2 py-1 font-medium text-text-main">
+            {page} / {totalPages}
+          </span>
+          <button
+            type="button"
+            disabled={page >= totalPages}
+            onclick={() => page++}
+            class="inline-flex items-center justify-center rounded border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-main hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-40 transition-colors cursor-pointer"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    {/if}
     {/if}
   {/if}
 </Card>
