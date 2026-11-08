@@ -379,7 +379,18 @@ func storedDisabledMessage(raw map[string]any) (string, bool) {
 	}
 	status, _ := raw["status"].(string)
 	testStatus, _ := raw["testStatus"].(string)
-	if !strings.EqualFold(status, "disabled") && !strings.EqualFold(testStatus, "disabled") {
+	// A validation_required verdict is NOT terminal: the operator clears
+	// it by verifying the account upstream, and a probe is how that gets
+	// proven — so it never counts as a stored disabled verdict, even
+	// though the row also carries testStatus "disabled". The terminal
+	// verdict is the status field: both disable writers
+	// (DisableConnectionWithReason, the probe persister's fatal branches)
+	// set status "disabled"; testStatus alone only counts for legacy
+	// rows that predate the status field.
+	if strings.EqualFold(status, "validation_required") {
+		return "", false
+	}
+	if !strings.EqualFold(status, "disabled") && !(status == "" && strings.EqualFold(testStatus, "disabled")) {
 		return "", false
 	}
 	msg := lastErrorText(raw)
@@ -1066,8 +1077,19 @@ func (h *DashboardHandler) persistProbeResult(conn *models.ProviderConnection, r
 	if _, disabled := storedDisabledMessage(raw); disabled {
 		return
 	}
+	// A validation-flagged connection that probes valid again has been
+	// verified by the operator upstream: clear the flag and reactivate
+	// (the "verified" transition) instead of leaving the row parked.
+	incomingStatus, _ := raw["status"].(string)
+	wasValidation := strings.EqualFold(incomingStatus, "validation_required")
 	if out.valid {
 		raw["testStatus"] = "active"
+		if wasValidation {
+			delete(raw, "status")
+			delete(raw, "verificationUrl")
+			delete(raw, "validationMessage")
+			delete(raw, "validationAt")
+		}
 		if out.message != "" {
 			// Soft success (e.g. grok-cli 402): keep the connection active and
 			// surface the message as a warning, like upstream.
@@ -1148,4 +1170,7 @@ func (h *DashboardHandler) persistProbeResult(conn *models.ProviderConnection, r
 		return
 	}
 	_ = h.Repo.UpdateConnectionData(conn.ID, string(encoded))
+	if wasValidation && out.valid {
+		_ = h.Repo.SetConnectionStatus(conn.ID, true)
+	}
 }

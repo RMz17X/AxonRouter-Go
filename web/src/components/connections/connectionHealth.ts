@@ -17,7 +17,7 @@ import type { ModelAvailabilityEntry, ProviderConnection } from '../../api/clien
  * that predates the field (or emitted it malformed).
  */
 
-export type ConnectionHealthState = 'active' | 'error' | 'cooldown' | 'locked' | 'disabled'
+export type ConnectionHealthState = 'active' | 'error' | 'cooldown' | 'locked' | 'disabled' | 'validation'
 
 export interface ConnectionLockInfo {
   /** Locked model id, or "__all" for an account-wide park. */
@@ -35,6 +35,8 @@ export interface ConnectionHealth {
   lastError: string
   /** Disabled because the upstream disabled the account (ToS / fatal). */
   tosDisabled: boolean
+  /** Google's verification page for a validation-flagged account ('' otherwise). */
+  verificationUrl: string
 }
 
 const KNOWN_EFFECTIVE_STATUSES = new Set([
@@ -54,6 +56,12 @@ const ERROR_STATUSES = new Set(['error', 'unavailable', 'quota_exhausted', 'expi
 // isFatalAccountDisableError list in the dashboard connections handler);
 // the ToS subset decides the "disabled · ToS" label.
 const TOS_DISABLE_MARKERS = ['terms of service', 'tos_violation', 'account disabled', 'disabled in this account']
+
+// Markers of Google's account-verification demand (mirrors the backend's
+// isValidationReq checks): the account is parked until the operator
+// verifies it upstream, which is a different, recoverable state from a
+// terminal disable — so it gets its own health state.
+const VALIDATION_MARKERS = ['validation_required', 'verify your account']
 
 function parseTimeMs(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
@@ -136,18 +144,28 @@ export function deriveConnectionHealth(
   const locks = mergeLocks(censusLocks(censusEntries, now), payloadLocks(conn, now))
   const lastError = typeof conn.lastError === 'string' ? conn.lastError : ''
 
+  const verificationUrl = typeof conn.verificationUrl === 'string' ? conn.verificationUrl : ''
+  const needsVerification =
+    verificationUrl !== '' ||
+    (effectiveStatus === 'disabled' && VALIDATION_MARKERS.some((marker) => lastError.toLowerCase().includes(marker)))
+
   // Precedence mirrors EffectiveStatusWithError: the disabled toggle wins,
   // then the throttle verdict, then the error family. A connection whose
   // locks did not change its verdict (a parked model on an otherwise
-  // healthy account) reads as locked rather than active.
+  // healthy account) reads as locked rather than active. The one
+  // deliberate deviation: a validation-flagged connection reads as
+  // "validation", not "disabled" — it is parked too, but the operator's
+  // next action (verify upstream, then recheck) differs from a terminal
+  // disable, and the row carries the verification link.
   let state: ConnectionHealthState
-  if (effectiveStatus === 'disabled') state = 'disabled'
+  if (needsVerification) state = 'validation'
+  else if (effectiveStatus === 'disabled') state = 'disabled'
   else if (effectiveStatus === 'rate_limited') state = 'cooldown'
   else if (ERROR_STATUSES.has(effectiveStatus)) state = 'error'
   else if (locks.length > 0) state = 'locked'
   else state = 'active'
 
-  return { state, effectiveStatus, locks, lastError, tosDisabled: state === 'disabled' && isTosDisabled(conn) }
+  return { state, effectiveStatus, locks, lastError, tosDisabled: state === 'disabled' && isTosDisabled(conn), verificationUrl }
 }
 
 /** Group census rows by connection id (all providers; callers filter). */

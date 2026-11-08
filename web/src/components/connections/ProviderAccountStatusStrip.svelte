@@ -19,7 +19,7 @@
     names: string[]
   }
 
-  const STATE_ORDER: ConnectionHealthState[] = ['active', 'error', 'cooldown', 'locked', 'disabled']
+  const STATE_ORDER: ConnectionHealthState[] = ['active', 'validation', 'error', 'cooldown', 'locked', 'disabled']
 
   function displayName(conn: ProviderConnection): string {
     return formatEmailLabel(conn.name || conn.email || conn.id, $emailPrivacy)
@@ -38,6 +38,11 @@
         label: 'Active',
         chipClass: 'bg-green-500/10 text-green-600 dark:text-green-400',
         dotClass: 'bg-green-500',
+      },
+      validation: {
+        label: 'Needs verification',
+        chipClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/30',
+        icon: 'gpp_maybe',
       },
       error: {
         label: 'Error',

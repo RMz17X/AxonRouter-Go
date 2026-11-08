@@ -1441,6 +1441,25 @@
     }
   }
 
+  // Verification recheck: probe one validation-flagged account again.
+  // If Google accepts it (the operator verified upstream), the backend
+  // clears the flag and reactivates the account; if not, the refreshed
+  // row keeps the "needs verification" badge. Either way the refreshed
+  // payload is the verdict.
+  let recheckingId = $state<string | null>(null)
+
+  async function recheckVerification(conn: ProviderConnection) {
+    recheckingId = conn.id
+    try {
+      await api.testConnection(conn.id)
+    } catch {
+      // The refreshed row state carries the outcome.
+    } finally {
+      recheckingId = null
+      onRefresh()
+    }
+  }
+
   function stopOneByOneTest() {
     if (!isTestingOneByOne) return
     isStopTesting = true
@@ -4203,7 +4222,47 @@
                       <p class="truncate text-xs text-text-muted">{formatEmailLabel(secondaryConnLabel(conn), $emailPrivacy)}</p>
                     {/if}
                     <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-                      {#if !isConnActive || conn.testStatus === 'disabled' || isFatalDisabledErr}
+                      {#if health?.state === 'validation'}
+                        <!-- Verification-required: the account is parked
+                             until the operator verifies it at Google and
+                             rechecks. The badge names the state, Verify
+                             opens Google's page (manual click), Recheck
+                             re-probes — a pass clears the flag and
+                             reactivates the account. -->
+                        <span
+                          class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                          title={lastErr || 'Google requires account verification before this account can serve again'}
+                        >
+                          <span class="material-symbols-outlined text-[12px]">gpp_maybe</span>
+                          needs verification
+                        </span>
+                        {#if health.verificationUrl}
+                          <a
+                            href={health.verificationUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            title="Open Google's verification page for this account"
+                          >
+                            verify
+                            <span class="material-symbols-outlined text-[11px]">open_in_new</span>
+                          </a>
+                        {/if}
+                        <button
+                          type="button"
+                          onclick={() => recheckVerification(conn)}
+                          disabled={recheckingId === conn.id}
+                          class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-surface-2 text-text-main hover:bg-surface-3 transition-colors disabled:opacity-50 cursor-pointer"
+                          title="Re-probe this account: if Google accepts it again, the flag clears and the account reactivates"
+                        >
+                          {#if recheckingId === conn.id}
+                            <span class="material-symbols-outlined text-[11px] animate-spin">progress_activity</span>
+                          {:else}
+                            <span class="material-symbols-outlined text-[11px]">fact_check</span>
+                          {/if}
+                          recheck
+                        </button>
+                      {:else if !isConnActive || conn.testStatus === 'disabled' || isFatalDisabledErr}
                         <span
                           class="inline-flex items-center gap-1.5 rounded-full font-semibold bg-surface-3 text-text-muted px-2 py-0.5 text-[10px]"
                           title={conn.disabledReason ? `disabled: ${conn.disabledReason}` : lastErr ? `disabled: ${lastErr}` : 'Connection is disabled'}
