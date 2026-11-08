@@ -1,5 +1,56 @@
 # Changelog
 
+## [v1.9.46] - 2026-11-08
+
+# 1019 — Apply Proxy binds the provider once; per-account marks are custom-only
+
+## Symptom
+
+- The provider page's Apply Proxy modal applied a uniform choice (a
+  proxy group, a proxy type, one pool, or None) by writing that value
+  into EVERY connection of the provider, one sequential update request
+  per connection. On tokenharbor (31,456 connections) the operator
+  watched it grind through rows one by one; a partial run left 2,231
+  connections stamped `group:cloudflare` before it was abandoned.
+
+## Root cause
+
+- The modal was an upstream port whose bulk apply ignored the
+  provider-level binding this gateway already has: the provider
+  strategy (`providerStrategies[<provider>]`), which accounts inherit
+  dynamically per request via `applyProviderProxyPool`. Stamping every
+  account duplicated that default 31k times — and worse, an explicit
+  per-account binding outranks the provider lock, so every stamped
+  account was frozen to that day's choice, immune to later
+  provider-level changes.
+
+## Fix
+
+- `handleApplyProxyPool` in ProviderDetailView now routes uniform
+  choices to the provider strategy as ONE settings write: a group or
+  type goes through the existing Proxy Lock write
+  (`applyProxyGroupLock`); a single pool goes through the new
+  `applyProviderProxyPool`, which stores the bare pool id in the
+  strategy's `proxyPoolId` (the resolver returns it verbatim and the
+  serving path resolves that one pool) with no `proxyGroup` mirror;
+  None clears the provider binding. Accounts without a custom mark go
+  direct; custom per-account marks are untouched and keep winning.
+- Only the one-to-one rotation still stamps per connection —
+  distributing accounts across pools is a per-account marking by
+  definition — and the modal copy says so.
+- The lock state, label and row badges learned the pool form of the
+  binding: a bare strategy `proxyPoolId` surfaces as
+  `lockedProxyPoolId` ("Pool <name>" in the lock label, "Pool: <name>
+  (auto)" in `proxyBadgeInfo` inherit badges) instead of being read as
+  a group selector or shown as no binding.
+- Deliberate divergence from upstream behaviour, recorded per repo
+  rules: upstream stamps all connections; this gateway binds the
+  provider once.
+- Data cleanup on staging (not code): the 2,231 partial-run
+  `group:cloudflare` stamps on tokenharbor connections were removed;
+  they duplicated the provider's existing cloudflare binding, so
+  routing is unchanged and those accounts inherit again.
+
 ## [v1.9.45] - 2026-11-08
 
 # 1018 — Pinned-connection failures now penalize proxy pool fitness
