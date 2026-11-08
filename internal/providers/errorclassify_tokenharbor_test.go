@@ -136,4 +136,15 @@ func TestClassifyTokenHarbor_Scenarios(t *testing.T) {
 			t.Errorf("expected 15s cooldown, got %dms", cls.CooldownMs)
 		}
 	})
+
+	t.Run("Upstream server_busy under heavy load gives 5min account cooldown", func(t *testing.T) {
+		body := `{"error":{"message":"Token Harbor is under heavy load. Requests from this account are being slowed down for a few minutes; please retry shortly.","type":"rate_limit_error","code":"server_busy"}}`
+		cls, ok := classifyTokenHarbor(http.StatusTooManyRequests, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if cls.CooldownMs != 5*60*1000 {
+			t.Errorf("expected 5min cooldown (300000ms), got %dms", cls.CooldownMs)
+		}
+	})
 }

@@ -138,10 +138,13 @@ var ErrorRules = []ErrorRule{
 	// the extracted error text always carries the "(code 11158)" suffix.
 	{Text: "11158", CooldownMs: 0, ModelScoped: true, RequireStatus: http.StatusBadRequest},
 
-	// Dahl inference cluster queue capacity: temporary GPU concurrency saturation,
-	// not an account quota issue. Pause this model for 30s so router skips it.
+	// Dahl / TokenHarbor inference cluster queue capacity: temporary GPU concurrency saturation,
+	// not an account quota issue. Pause this model so router skips it.
 	{Text: "model_concurrency", CooldownMs: 30000, ModelScoped: true},
 	{Text: "concurrency capacity", CooldownMs: 30000, ModelScoped: true},
+	{Text: "server_busy", CooldownMs: 60000, ModelScoped: true},
+	{Text: "service_busy", CooldownMs: 60000, ModelScoped: true},
+	{Text: "under heavy load", CooldownMs: 60000, ModelScoped: true},
 
 	// Unsupported vision / image input format on text-only models (e.g. Dahl/MiniMax 400 "unsupported value \"image_url\"")
 	{Text: "unsupported value \"image_url\"", CooldownMs: 0, ModelScoped: true},
@@ -496,15 +499,18 @@ func IsModelFitError(statusCode int, body []byte) bool {
 }
 
 // IsModelConcurrencyError reports whether an upstream failure is a cluster-wide
-// model concurrency limit (e.g. Dahl "model_concurrency"), meaning every connection
+// model concurrency limit (e.g. Dahl "model_concurrency" or TokenHarbor "server_busy"), meaning every connection
 // on this provider will fail for this model. Combos should break to the next model
 // immediately instead of exhausting connection retries.
 func IsModelConcurrencyError(statusCode int, body []byte) bool {
-	if statusCode != http.StatusTooManyRequests || len(body) == 0 {
+	if (statusCode != http.StatusTooManyRequests && statusCode != http.StatusServiceUnavailable) || len(body) == 0 {
 		return false
 	}
 	text := strings.ToLower(string(body))
-	return strings.Contains(text, "model_concurrency")
+	return strings.Contains(text, "model_concurrency") ||
+		strings.Contains(text, "server_busy") ||
+		strings.Contains(text, "service_busy") ||
+		strings.Contains(text, "under heavy load")
 }
 
 // IsUnsupportedMediaError reports whether an upstream rejected the request due to

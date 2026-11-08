@@ -15,6 +15,7 @@ var (
 	tokenharborCapacityRegex    = regexp.MustCompile(`(?i)(?:model\s+is\s+at\s+capacity|at\s+capacity\s+for\s+your\s+account|retry\s+in\s+about)`)
 	tokenharborRetryAboutRe     = regexp.MustCompile(`(?i)retry\s+in\s+about\s+(\d+)\s*sec`)
 	tokenharborEgressIpRegex    = regexp.MustCompile(`(?i)(?:sharing\s+this\s+network\s+address|many\s+free\s+accounts|too\s+many\s+requests\s+from\s+(?:this|your)\s+(?:ip|network))`)
+	tokenharborServerBusyRegex  = regexp.MustCompile(`(?i)(?:under\s+heavy\s+load|server_busy|service_busy|slowed\s+down\s+for\s+a\s+few\s+minutes)`)
 )
 
 // ParseTokenHarborRetryDuration extracts cooldown duration from TokenHarbor error messages.
@@ -107,6 +108,17 @@ func classifyTokenHarbor(statusCode int, rawError string, backoffLevel int, prov
 			CooldownMs:      int(cooldownMs),
 			NewBackoffLevel: backoffLevel,
 			ModelScoped:     true, // LOCK MODEL ONLY!
+		}, true
+	}
+
+	// 2b. Upstream Server Busy / Heavy Load ("Token Harbor is under heavy load ... code server_busy")
+	// The upstream cluster is saturated. Lock account for 5 minutes (so it rests without killing the pool).
+	if (statusCode == http.StatusTooManyRequests || statusCode == http.StatusServiceUnavailable) && tokenharborServerBusyRegex.MatchString(lowerError) {
+		return ErrorClassification{
+			ShouldFallback:  true,
+			CooldownMs:      5 * 60 * 1000, // 5 minutes cooldown for the account
+			NewBackoffLevel: backoffLevel,
+			ModelScoped:     false,
 		}, true
 	}
 

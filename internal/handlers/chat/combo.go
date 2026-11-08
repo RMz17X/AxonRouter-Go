@@ -1789,8 +1789,12 @@ func entryExcludes(excludeIDs, tried []string) []string {
 // attempts that actually reach the upstream count — a connection
 // skipped because it is already locked was never dialled.
 func comboMemberAttemptCap(provider string) int {
-	if providers.IsCodebuddyFamilyProvider(providers.ResolveAlias(provider)) {
+	resolved := providers.ResolveAlias(provider)
+	if providers.IsCodebuddyFamilyProvider(resolved) {
 		return 1
+	}
+	if resolved == "tokenharbor" {
+		return 2
 	}
 	return 10
 }

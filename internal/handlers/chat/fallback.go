@@ -222,6 +222,11 @@ func (h *ChatHandler) handleAccountFallback(
 	// of burning a healthy account.
 	excludedPools := map[string]bool{}
 	var lastErr error
+	attemptsSent := 0
+	maxAccountAttempts := 10
+	if providers.ResolveAlias(provider) == "tokenharbor" {
+		maxAccountAttempts = 2
+	}
 	for _, c := range allConns {
 		if slices.Contains(excludeIDs, c.ID) {
 			continue
@@ -277,6 +282,12 @@ func (h *ChatHandler) handleAccountFallback(
 					}
 				}
 			}
+		}
+		attemptsSent++
+		if attemptsSent >= maxAccountAttempts {
+			log.WarnCtx(attemptCtx, "fallback", "max account attempts reached for provider",
+				"provider", provider, "model", model, "attempts", attemptsSent)
+			break
 		}
 		// A node-state refusal (contract ended, lifetime quota spent) answers 403, which
 		// is a retryable status, so without this it would fall into the generic branch
