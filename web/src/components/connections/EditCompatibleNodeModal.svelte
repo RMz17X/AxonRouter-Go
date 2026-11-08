@@ -4,9 +4,10 @@
   import Button from '../../lib/ui/Button.svelte'
   import Input from '../../lib/ui/Input.svelte'
   import Modal from '../../lib/ui/Modal.svelte'
-  import { api, type ProviderNode, type ProviderNodeLimits, type ProviderNodeLimitsPatch } from '../../api/client'
+  import { api, type ProviderNode, type ProviderNodeLimits, type ProviderNodeLimitsPatch, type ErrorPolicy } from '../../api/client'
   import { nodeFormSeed } from './nodeFormSeed'
   import ProviderNodeLimitsField from './ProviderNodeLimitsField.svelte'
+  import ProviderNodeErrorPolicyField from './ProviderNodeErrorPolicyField.svelte'
   import { nodeLimitsDraftOf, nodeLimitsPatchOf, type NodeLimitsDraft } from '../../lib/node-limits'
 
   interface Props {
@@ -22,6 +23,7 @@
       urlSuffix: string
       /** The policy to store; the parent writes it once the node id is final. */
       limits: ProviderNodeLimitsPatch
+      errorPolicy?: ErrorPolicy
     }) => Promise<void> | void
     /** Called with the stored policy after a token-count reset, so the page updates. */
     onLimitsSaved?: (limits: ProviderNodeLimits) => void
@@ -41,6 +43,7 @@
   let saving = $state(false)
   let limitsDraft = $state<NodeLimitsDraft>(nodeLimitsDraftOf(null))
   let limitsError = $state('')
+  let errorPolicyDraft = $state<ErrorPolicy | null>(null)
   // A reset answers with the fresh policy before the page's poll does, so show that
   // instead of mutating the `node` prop.
   let limitsAfterReset = $state<ProviderNodeLimits | null>(null)
@@ -84,6 +87,7 @@
     limitsDraft = nodeLimitsDraftOf(node.limits ?? null)
     limitsError = ''
     limitsAfterReset = null
+    errorPolicyDraft = node.errorPolicy ? JSON.parse(JSON.stringify(node.errorPolicy)) : null
   })
 
   let saveDisabled = $derived(
@@ -120,6 +124,7 @@
         baseUrl: string
         urlSuffix: string
         limits: ProviderNodeLimitsPatch
+        errorPolicy?: ErrorPolicy
       } = {
         name: formName.trim(),
         prefix: formPrefix.trim(),
@@ -131,6 +136,7 @@
         // holds, is how an edit would leave the policy on an id that no longer
         // exists — the node would come back unlimited.
         limits: nodeLimitsPatchOf(limitsDraft),
+        errorPolicy: errorPolicyDraft || undefined,
       }
       if (!isAnthropic) payload.apiType = formApiType
       await onSave(payload)
@@ -226,6 +232,10 @@
         limitsAfterReset = limits
         onLimitsSaved?.(limits)
       }}
+    />
+    <ProviderNodeErrorPolicyField
+      policy={errorPolicyDraft}
+      onChange={(p) => (errorPolicyDraft = p)}
     />
     {#if limitsError}
       <p class="text-xs text-red-500" role="alert">{limitsError}</p>

@@ -180,3 +180,53 @@ func TestClassifyUnsupportedImageUrl(t *testing.T) {
 		t.Errorf("expected 0ms cooldown (no lock), got %dms", res.CooldownMs)
 	}
 }
+
+func TestClassifyErrorWithPolicy(t *testing.T) {
+	policy := &ErrorPolicy{
+		Rules: []CustomErrorRule{
+			{
+				Status:      401,
+				Text:        "invalid_api_key",
+				Action:      "deactivate_key",
+				Description: "Deactivate expired/revoked key",
+			},
+			{
+				Status:      402,
+				Text:        "insufficient_balance",
+				Action:      "exhaust_account",
+				CooldownSec: 86400,
+				Description: "Zero trial balance",
+			},
+			{
+				Status:      429,
+				Action:      "cooldown",
+				CooldownSec: 15,
+				Description: "Fast cooldown",
+			},
+		},
+	}
+
+	// 1. Match 401 with text -> DeactivateKey
+	cls401 := ClassifyErrorWithPolicy(401, "upstream returned: invalid_api_key provided", 0, "openai-compatible-chat-apodex", policy)
+	if !cls401.ShouldFallback || !cls401.DeactivateKey {
+		t.Errorf("expected DeactivateKey=true on 401 invalid_api_key, got %+v", cls401)
+	}
+
+	// 2. Match 402 with text -> Exhausted with 86400s (86400000ms)
+	cls402 := ClassifyErrorWithPolicy(402, `{"error":{"message":"insufficient_balance"}}`, 0, "openai-compatible-chat-gonka24", policy)
+	if !cls402.ShouldFallback || !cls402.Exhausted || cls402.CooldownMs != 86400*1000 {
+		t.Errorf("expected Exhausted=true CooldownMs=86400000 on 402, got %+v", cls402)
+	}
+
+	// 3. Match 429 without text -> custom cooldown 15s (15000ms)
+	cls429 := ClassifyErrorWithPolicy(429, "rate limit exceeded", 0, "openai-compatible-chat-test", policy)
+	if !cls429.ShouldFallback || cls429.CooldownMs != 15000 {
+		t.Errorf("expected CooldownMs=15000 on 429, got %+v", cls429)
+	}
+
+	// 4. No policy match (500) -> falls back to standard classification (30s cooldown)
+	cls500 := ClassifyErrorWithPolicy(500, "internal server error", 0, "openai-compatible-chat-test", policy)
+	if !cls500.ShouldFallback || cls500.CooldownMs != 30000 {
+		t.Errorf("expected standard fallback on 500, got %+v", cls500)
+	}
+}

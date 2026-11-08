@@ -1136,7 +1136,7 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 							log.Warn("combo", "model cluster concurrency saturated, next member",
 								"provider", modelInfo.Provider, "model", modelInfo.Model)
 							if modelInfo.Provider == "dahl" {
-								RecordDahlModelConcurrencyBlocked(modelInfo.Model, 30*time.Second)
+								RecordDahlModelConcurrencyBlocked(modelInfo.Model, 10*time.Second)
 							}
 							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, ue)
 							retry.note(ue)
@@ -1616,7 +1616,7 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 							log.Warn("combo", "model cluster concurrency saturated, next member",
 								"provider", modelInfo.Provider, "model", modelInfo.Model)
 							if modelInfo.Provider == "dahl" {
-								RecordDahlModelConcurrencyBlocked(modelInfo.Model, 30*time.Second)
+								RecordDahlModelConcurrencyBlocked(modelInfo.Model, 10*time.Second)
 							}
 							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, ue)
 							retry.note(ue)
@@ -1866,7 +1866,21 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 		return
 	}
 
-	cls := providers.ClassifyErrorForProvider(ue.StatusCode, errText, currentLevel, provider)
+	var nodePolicy *providers.ErrorPolicy
+	if h.Repo != nil && provider != "" {
+		if _, nodeData, err := h.Repo.GetProviderNodeByID(provider); err == nil && nodeData != nil {
+			nodePolicy = nodeData.ErrorPolicy
+		}
+	}
+	cls := providers.ClassifyErrorWithPolicy(ue.StatusCode, errText, currentLevel, provider, nodePolicy)
+	if cls.DeactivateKey {
+		if h.Repo != nil {
+			_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, "Disabled by provider error policy: "+errText)
+		}
+		h.getSessionAffinity().EvictConnection(connID)
+		*excludeIDs = append(*excludeIDs, connID)
+		return
+	}
 	// Upstream parity (checkFallbackError): request-scoped 4xx (400/404/405/
 	// 409/422/...) must not lock the account — the bug is in the request,
 	// not the credential. Only lock when ShouldFallback is set.

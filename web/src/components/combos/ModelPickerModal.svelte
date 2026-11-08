@@ -88,14 +88,14 @@
       modelCaps: fetchedExtras.modelCaps,
       connectedProviders: fetchedExtras.connectedProviders,
       providerStats: fetchedExtras.providerStats,
-    })
+    }, target)
   )
   let filteredCombos = $derived(
     resolveFilteredCombos(combos, currentComboName, searchQuery, target)
   )
   let filteredGroups = $derived(resolveFilteredGroups(groups, searchQuery, target))
 
-  let activeFilter = $state<'all' | 'connected' | 'vision' | 'reasoning'>('all')
+  let activeFilter = $state<'all' | 'connected' | 'vision' | 'reasoning' | 'decision'>('all')
 
   let displayGroups = $derived.by(() => {
     let grps = filteredGroups
@@ -113,6 +113,13 @@
         .map((g) => ({
           ...g,
           models: g.models.filter((m) => m.caps.reasoning),
+        }))
+        .filter((g) => g.models.length > 0)
+    } else if (activeFilter === 'decision') {
+      grps = grps
+        .map((g) => ({
+          ...g,
+          models: g.models.filter((m) => m.caps.decision),
         }))
         .filter((g) => g.models.length > 0)
     }
@@ -254,13 +261,22 @@
           >
             Reasoning
           </button>
+          <button
+            type="button"
+            onclick={() => (activeFilter = 'decision')}
+            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'decision'
+              ? 'bg-brand-500 text-white font-medium shadow-xs'
+              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+          >
+            Decision
+          </button>
         </div>
       </div>
 
       <!-- Categories & Models List -->
       <div class="min-h-0 flex-1 overflow-y-auto space-y-3 custom-scrollbar">
         <!-- Combos section - always first (if filter allows) -->
-        {#if filteredCombos.length > 0 && activeFilter !== 'vision' && activeFilter !== 'reasoning'}
+        {#if filteredCombos.length > 0 && activeFilter !== 'vision' && activeFilter !== 'reasoning' && activeFilter !== 'decision'}
           <div>
             <div class="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5 z-10">
               <span class="text-xs font-medium text-brand-500">Combos</span>
@@ -312,6 +328,7 @@
                   isAdded={addedModelValues.includes(model.value)}
                   vision={model.caps.vision}
                   reasoning={model.caps.reasoning}
+                  decision={model.caps.decision}
                   deprecated={model.deprecated}
                   credit={model.credit}
                   free={model.free}
@@ -322,7 +339,7 @@
           </div>
         {/each}
 
-        {#if (filteredCombos.length === 0 || activeFilter === 'vision' || activeFilter === 'reasoning') && displayGroups.length === 0}
+        {#if (filteredCombos.length === 0 || activeFilter === 'vision' || activeFilter === 'reasoning' || activeFilter === 'decision') && displayGroups.length === 0}
           <div class="text-center py-4 text-text-muted">
             <Search class="w-6 h-6 mx-auto mb-1 opacity-50" />
             <p class="text-xs">No models found</p>

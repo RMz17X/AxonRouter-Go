@@ -256,6 +256,7 @@ var ProviderModels = map[string][]string{
 	"vertex":               {"gemini-4-argon", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash", "veo-3.1-generate-preview", "veo-3.1-fast-generate-preview", "veo-3.0-generate-001", "veo-2.0-generate-001"},
 	"vertex-partner":       {"deepseek-ai/deepseek-v3.2-maas", "qwen/qwen3-next-80b-a3b-thinking-maas", "qwen/qwen3-next-80b-a3b-instruct-maas", "zai-org/glm-5-maas"},
 	"volcengine-ark":       {"Doubao-Seed-2.0-Code", "Doubao-Seed-2.0-pro", "Doubao-Seed-2.0-lite", "Doubao-Seed-Code", "DeepSeek-V4-Flash", "DeepSeek-V4-Pro", "GLM-5.1", "MiniMax-M2.7", "Kimi-K2.6"},
+	"liquid":               {"lfm2.5-24b-a2b", "lfm3-1.7b", "lfm3-vl-2b", "d1", "d1.1", "d1-ultra"},
 	"v1m":                  {"rev-latest", "v1m-decision-engine"},
 	"voyage":               {"voyage-3-large", "voyage-3.5", "voyage-3.5-lite", "voyage-code-3", "voyage-finance-2", "voyage-law-2", "voyage-multilingual-2"},
 	"voyage-ai":            {"voyage-3-large", "voyage-3.5", "voyage-3.5-lite", "voyage-code-3", "voyage-finance-2", "voyage-law-2", "voyage-multilingual-2"},
@@ -721,6 +722,11 @@ var ProviderModelKinds = map[string]map[string]string{
 		"text-embedding-bge-m3":   "embedding",
 		"text-embedding-qwen3-8b": "embedding",
 		"venice-sd35":             "image",
+	},
+	"liquid": {
+		"d1":       "systemone",
+		"d1.1":     "systemone",
+		"d1-ultra": "systemone",
 	},
 	"v1m": {
 		"rev-latest":          "systemone",

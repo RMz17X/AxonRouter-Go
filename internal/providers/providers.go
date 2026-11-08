@@ -414,6 +414,14 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthScheme:   "bearer",
 		SystemoneURL: "https://v1m.ir/v1/systemone",
 	},
+	// Liquid AI — Liquid Foundation Models (LFM) via OpenAI-compatible chat
+	// completions and System One decision engine (d1 models) via /v1/systemone.
+	"liquid": {
+		BaseURL:      "https://api.liquid.ai/openai/v1/chat/completions",
+		AuthHeader:   "Authorization",
+		AuthScheme:   "bearer",
+		SystemoneURL: "https://api.liquid.ai/decisions/v1/systemone",
+	},
 	"anthropic": {
 		BaseURL:    "https://api.anthropic.com/v1/messages",
 		AuthHeader: "x-api-key",

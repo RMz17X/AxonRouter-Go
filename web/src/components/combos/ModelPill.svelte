@@ -10,6 +10,7 @@
      *  change to all ~1000 pills at once. */
     vision?: boolean
     reasoning?: boolean
+    decision?: boolean
     /** One handler for the whole list, so a pill is never handed a fresh
      *  closure per render pass. */
     onToggle: (value: string) => void
@@ -31,6 +32,7 @@
     isAdded,
     vision = false,
     reasoning = false,
+    decision = false,
     onToggle,
     deprecated = false,
     credit,
@@ -83,6 +85,11 @@
   {#if reasoning}
     <span class="inline-flex shrink-0" title="Reasoning / Thinking">
       <Brain class={isAdded ? 'w-3 h-3 text-white/90 shrink-0' : 'w-3 h-3 text-amber-500 shrink-0'} />
+    </span>
+  {/if}
+  {#if decision}
+    <span class="inline-flex shrink-0" title="Decision / System One model">
+      <span class="material-symbols-outlined text-[13px] {isAdded ? 'text-white/90' : 'text-emerald-500'} leading-none shrink-0">psychology</span>
     </span>
   {/if}
   {#if deprecated}

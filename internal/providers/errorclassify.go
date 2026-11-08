@@ -508,14 +508,20 @@ func IsModelConcurrencyError(statusCode int, body []byte) bool {
 }
 
 // IsUnsupportedMediaError reports whether an upstream rejected the request due to
-// an unsupported media/vision block (e.g. "unsupported value \"image_url\"").
+// an unsupported media/vision block (e.g. "unsupported value \"image_url\"" or "model does not support images").
 // Combos can failover to a vision-capable candidate.
 func IsUnsupportedMediaError(statusCode int, body []byte) bool {
 	if statusCode != http.StatusBadRequest || len(body) == 0 {
 		return false
 	}
 	text := strings.ToLower(string(body))
-	return strings.Contains(text, "image_url") && (strings.Contains(text, "unsupported") || strings.Contains(text, "not supported"))
+	if strings.Contains(text, "image_url") && (strings.Contains(text, "unsupported") || strings.Contains(text, "not supported")) {
+		return true
+	}
+	if strings.Contains(text, "does not support image") || strings.Contains(text, "not support image") || strings.Contains(text, "unsupported media") {
+		return true
+	}
+	return false
 }
 
 // GetQuotaCooldown calculates exponential backoff cooldown for rate limits.
@@ -548,6 +554,91 @@ type ErrorClassification struct {
 	// lockAll: false): consumers lock the model and must not write an
 	// account lock for it.
 	ModelScoped bool
+	// DeactivateKey marks the API key as permanently revoked/invalidated,
+	// signalling callers to disable the connection from active routing.
+	DeactivateKey bool
+}
+
+// CustomErrorRule defines a per-provider custom error matching rule.
+type CustomErrorRule struct {
+	Status      int    `json:"status,omitempty"`      // HTTP status code to match (0 matches any)
+	Text        string `json:"text,omitempty"`        // Substring to match in error body (case-insensitive)
+	Action      string `json:"action"`                // "deactivate_key", "exhaust_account", "cooldown", "model_lock", "request_level"
+	CooldownSec int    `json:"cooldownSec,omitempty"` // Cooldown duration in seconds
+	Description string `json:"description,omitempty"`
+}
+
+// ErrorPolicy holds custom per-node error and cooldown rules.
+type ErrorPolicy struct {
+	Rules []CustomErrorRule `json:"rules,omitempty"`
+}
+
+// ClassifyErrorWithPolicy classifies an error checking custom provider policy rules first.
+// If no custom rule matches, it falls through to ClassifyErrorForProvider.
+func ClassifyErrorWithPolicy(statusCode int, errorText string, backoffLevel int, provider string, policy *ErrorPolicy) ErrorClassification {
+	if policy != nil && len(policy.Rules) > 0 {
+		lowerError := ""
+		if errorText != "" {
+			lowerError = strings.ToLower(errorText)
+		}
+		for _, rule := range policy.Rules {
+			statusMatch := rule.Status == 0 || rule.Status == statusCode
+			textMatch := rule.Text == "" || (lowerError != "" && strings.Contains(lowerError, strings.ToLower(rule.Text)))
+			if statusMatch && textMatch {
+				cooldownMs := rule.CooldownSec * 1000
+				switch strings.ToLower(rule.Action) {
+				case "deactivate_key":
+					return ErrorClassification{
+						ShouldFallback:  true,
+						DeactivateKey:   true,
+						CooldownMs:      0,
+						NewBackoffLevel: backoffLevel,
+					}
+				case "exhaust_account":
+					if cooldownMs == 0 {
+						cooldownMs = cooldownMonthlyExhausted
+					}
+					return ErrorClassification{
+						ShouldFallback:  true,
+						Exhausted:       true,
+						CooldownMs:      cooldownMs,
+						NewBackoffLevel: backoffLevel,
+					}
+				case "model_lock":
+					if cooldownMs == 0 {
+						cooldownMs = 30000
+					}
+					return ErrorClassification{
+						ShouldFallback:  true,
+						ModelScoped:     true,
+						CooldownMs:      cooldownMs,
+						NewBackoffLevel: backoffLevel,
+					}
+				case "request_level":
+					return ErrorClassification{
+						ShouldFallback:  false,
+						CooldownMs:      0,
+						NewBackoffLevel: backoffLevel,
+					}
+				case "cooldown":
+					if cooldownMs == 0 {
+						newLevel := min(backoffLevel+1, BackoffConfig.MaxLevel)
+						return ErrorClassification{
+							ShouldFallback:  true,
+							CooldownMs:      GetQuotaCooldown(newLevel),
+							NewBackoffLevel: newLevel,
+						}
+					}
+					return ErrorClassification{
+						ShouldFallback:  true,
+						CooldownMs:      cooldownMs,
+						NewBackoffLevel: backoffLevel,
+					}
+				}
+			}
+		}
+	}
+	return ClassifyErrorForProvider(statusCode, errorText, backoffLevel, provider)
 }
 
 // ClassifyError classifies an upstream error by matching text and status against ErrorRules.

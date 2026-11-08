@@ -96,7 +96,7 @@
   import { deriveProxyGroups, deriveProxyTypes, normalizeProxyTarget, parseProxyTargetParts, splitProxyTarget } from '../../lib/proxyBindings'
   import AddCustomModelModal from './AddCustomModelModal.svelte'
   import { nodeLimitsDraftOf, nodeLimitsSummary, nodeLimitsUsageSummary } from '../../lib/node-limits'
-  import type { ProviderNodeLimitsPatch } from '../../api/client'
+  import type { ProviderNodeLimitsPatch, ErrorPolicy } from '../../api/client'
   import Badge from '../../lib/ui/Badge.svelte'
   import Toggle from '../../lib/ui/Toggle.svelte'
   import { PauseCircle } from 'lucide-svelte'
@@ -2836,6 +2836,7 @@
     baseUrl: string
     urlSuffix: string
     limits: ProviderNodeLimitsPatch
+    errorPolicy?: ErrorPolicy
   }) {
     if (!selectedNode) return
     const previousId = selectedNode.id
@@ -2845,7 +2846,8 @@
         prefix: data.prefix,
         ...(selectedNode.type === 'openai-compatible' && data.apiType ? { apiType: data.apiType } : {}),
         baseUrl: data.baseUrl,
-        urlSuffix: data.urlSuffix || undefined
+        urlSuffix: data.urlSuffix || undefined,
+        errorPolicy: data.errorPolicy,
       })
       // The id the server answered with, which differs from the one we sent when the
       // URL suffix changed. The policy is written against that id: the limits columns

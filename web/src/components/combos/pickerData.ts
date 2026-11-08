@@ -11,8 +11,11 @@ const MEDIA_KINDS: Record<string, true> = {
   video: true,
 }
 
-function isChatModel(m: unknown): boolean {
+function isChatModel(m: unknown, target?: string): boolean {
   const kind = getModelKind(m)
+  if (target === 'router' && (kind === 'systemone' || kind === 'decision')) {
+    return true
+  }
   if (!kind || kind === 'llm' || kind === 'chat') {
     const obj = typeof m === 'object' && m !== null ? (m as { kind?: string; type?: string }) : null
     return !(obj?.kind && MEDIA_KINDS[obj.kind]) && !(obj?.type && MEDIA_KINDS[obj.type])
@@ -24,7 +27,7 @@ export interface PickerModel {
   id: string
   name: string
   value: string
-  caps: { vision: boolean; audioInput: boolean; reasoning: boolean }
+  caps: { vision: boolean; audioInput: boolean; reasoning: boolean; decision?: boolean }
   /** True when the gateway confirmed this model is gone upstream. */
   deprecated?: boolean
   /** Per-request credit price from the server caps (CodeBuddy family);
@@ -73,7 +76,8 @@ function creditFields(
 export function resolveModelPickerGroups(
   connections: ProviderConnection[] = [],
   providerNodes: ProviderNode[] = [],
-  extras: PickerExtras = {}
+  extras: PickerExtras = {},
+  target?: string
 ): PickerGroup[] {
   // Upstream parity (page.js fetchData + ModelSelectModal.js groupedModels):
   // `activeProviders` holds ALL connections (no isActive filter) — every
@@ -124,7 +128,7 @@ export function resolveModelPickerGroups(
 
   // 1. Catalog providers (active connections or noAuth)
   for (const catItem of PROVIDER_CATALOG) {
-    if (!isChatProvider(catItem)) {
+    if (!isChatProvider(catItem) && !(target === 'router' && catItem.serviceKinds?.includes('systemone'))) {
       continue
     }
     const isConnected =
@@ -178,7 +182,7 @@ export function resolveModelPickerGroups(
 
 
     for (const m of rawModels || []) {
-      if (!m.id || seenModelIds.has(m.id) || !isChatModel(m)) continue
+      if (!m.id || seenModelIds.has(m.id) || !isChatModel(m, target)) continue
       seenModelIds.add(m.id)
       models.push({
         id: m.id,

@@ -25,9 +25,9 @@ import (
 // place, so a broken router model can never take the combo down.
 
 const (
-	// smartRouterDefaultModel is the free OpenCode System One model upstream
-	// defaults to when a combo configures none.
-	smartRouterDefaultModel = "oc/jev-1.13-free"
+	// smartRouterDefaultModel is the fallback System One model when a combo
+	// does not explicitly configure a routerModel.
+	smartRouterDefaultModel = "liquid/d1"
 	// smartRouterTimeout bounds one evaluation; past it the strategy falls
 	// back to the combo's own ordering rather than stalling the turn.
 	smartRouterTimeout = 8 * time.Second
@@ -153,17 +153,47 @@ func truncateSmartState(text string) string {
 	return text
 }
 
-// buildSmartCriteria mirrors upstream buildChoiceCriteria: the combo's model
-// ids are the choice keys, with null descriptions so System One leans on its
-// own knowledge of the models.
-func buildSmartCriteria(models []string) map[string]any {
-	criteria := make(map[string]any, len(models))
-	for _, m := range models {
-		if trimmed := strings.TrimSpace(m); trimmed != "" {
-			criteria[trimmed] = nil
-		}
+// describeModelForRouting derives capability-aware description criteria for a model
+// so that any configured System One router model (Liquid d1, d1.1, d1-ultra, or
+// future decision providers) has discriminative context to select the best match.
+func describeModelForRouting(modelStr string) string {
+	parts := strings.SplitN(modelStr, "/", 2)
+	provider := ""
+	model := modelStr
+	if len(parts) == 2 {
+		provider = parts[0]
+		model = parts[1]
 	}
-	return criteria
+
+	caps := providers.GetCapabilitiesForModel(provider, model)
+	mLower := strings.ToLower(model)
+
+	if caps.Reasoning || strings.Contains(mLower, "r1") || strings.Contains(mLower, "o1") || strings.Contains(mLower, "o3") || strings.Contains(mLower, "reasoning") || strings.Contains(mLower, "24b") || strings.Contains(mLower, "opus") || strings.Contains(mLower, "sonnet") {
+		return "Advanced reasoning model suited for complex algorithms, deep logic, multi-step problem solving, math, system architecture, and hard tasks."
+	}
+	if caps.Vision {
+		return "Multimodal vision model capable of processing images, diagrams, charts, and visual content."
+	}
+	if strings.Contains(mLower, "flash") || strings.Contains(mLower, "mini") || strings.Contains(mLower, "1.7b") || strings.Contains(mLower, "8b") || strings.Contains(mLower, "haiku") || strings.Contains(mLower, "nano") || strings.Contains(mLower, "small") || strings.Contains(mLower, "lite") || strings.Contains(mLower, "fast") {
+		return "Fast, cost-efficient, and lightweight model best suited for straightforward requests, simple syntax, one-liners, basic scripts, and quick tasks."
+	}
+	return "Standard language model suited for general text generation, basic coding, conversation, and general knowledge."
+}
+
+// buildSmartCriteria derives the choices list and capability-informed criteria map
+// for System One routing evaluations.
+func buildSmartCriteria(models []string) (map[string]any, []string) {
+	criteria := make(map[string]any, len(models))
+	choices := make([]string, 0, len(models))
+	for _, m := range models {
+		trimmed := strings.TrimSpace(m)
+		if trimmed == "" {
+			continue
+		}
+		choices = append(choices, trimmed)
+		criteria[trimmed] = describeModelForRouting(trimmed)
+	}
+	return criteria, choices
 }
 
 // parseSmartRouteAnswer reads the upstream answers.route object. A missing or
@@ -380,11 +410,11 @@ func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, model
 	if state == "" {
 		return nil
 	}
-	criteria := buildSmartCriteria(models)
+	criteria, choices := buildSmartCriteria(models)
 	if len(criteria) == 0 {
 		return nil
 	}
-	choice, err := h.querySystemOneRouter(ctx, target, state, criteria)
+	choice, err := h.querySystemOneRouter(ctx, target, state, criteria, choices)
 	if err != nil || choice == nil {
 		return nil
 	}
@@ -393,7 +423,7 @@ func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, model
 
 // querySystemOneRouter performs the evaluation call against the router
 // model's provider, using the same URL rules as the /v1/systemone lane.
-func (h *ChatHandler) querySystemOneRouter(ctx context.Context, targetModel, state string, criteria map[string]any) (*smartChoice, error) {
+func (h *ChatHandler) querySystemOneRouter(ctx context.Context, targetModel, state string, criteria map[string]any, choices []string) (*smartChoice, error) {
 	modelInfo, err := h.resolveModel(targetModel)
 	if err != nil || modelInfo == nil {
 		log.Warn("combo", "smart-router: unrecognized router model", "model", targetModel)
@@ -433,6 +463,7 @@ func (h *ChatHandler) querySystemOneRouter(ctx context.Context, targetModel, sta
 			"route": map[string]any{
 				"type":         "choice",
 				"instructions": "Which of these configured models is the most appropriate for this request?",
+				"choices":      choices,
 				"criteria":     criteria,
 			},
 		},

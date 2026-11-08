@@ -379,6 +379,9 @@ var modelCapabilities = map[string]Capabilities{
 	"kimi-for-coding-highspeed": {Vision: true, VideoInput: true, Reasoning: true, Tools: true, ThinkingFormat: "kimi", ThinkingCanDisable: new(false)},
 	"kimi-k2.7-code":            {Vision: true, VideoInput: true, Reasoning: true, Tools: true, ThinkingFormat: "kimi", ThinkingCanDisable: new(false)},
 	"kimi-k2.7-code-highspeed":  {Vision: true, VideoInput: true, Reasoning: true, Tools: true, ThinkingFormat: "kimi", ThinkingCanDisable: new(false)},
+	"lfm2.5-24b-a2b":            {Reasoning: true, Tools: true, ContextWindow: 32768, MaxOutput: 8192},
+	"lfm3-1.7b":                 {Tools: true, ContextWindow: 32768, MaxOutput: 4096},
+	"lfm3-vl-2b":                {Vision: true, Tools: true, ContextWindow: 131072, MaxOutput: 4096},
 }
 
 // codexExtendedContextWindow is the context window the codex registry

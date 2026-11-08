@@ -94,8 +94,8 @@ func TestShouldHedgeProvider_DefaultDahl(t *testing.T) {
 	if !enabled {
 		t.Error("expected dahl to have hedging enabled by default")
 	}
-	if delay != 120*time.Millisecond {
-		t.Errorf("expected default 120ms delay, got %v", delay)
+	if delay != 80*time.Millisecond {
+		t.Errorf("expected default 80ms delay, got %v", delay)
 	}
 	if maxAttempts != 2 {
 		t.Errorf("expected default 2 max attempts, got %d", maxAttempts)

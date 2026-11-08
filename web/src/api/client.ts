@@ -550,6 +550,18 @@ export interface ValidateProviderResult {
   error?: string
 }
 
+export interface CustomErrorRule {
+  status?: number
+  text?: string
+  action: 'deactivate_key' | 'exhaust_account' | 'cooldown' | 'model_lock' | 'request_level'
+  cooldownSec?: number
+  description?: string
+}
+
+export interface ErrorPolicy {
+  rules: CustomErrorRule[]
+}
+
 export interface ProviderNode {
   id: string
   type: string
@@ -564,6 +576,7 @@ export interface ProviderNode {
   urlSuffix?: string
   /** True when the id tail is the random fallback rather than a chosen value. */
   urlSuffixGenerated?: boolean
+  errorPolicy?: ErrorPolicy
   createdAt?: string
   updatedAt?: string
   /**
@@ -1524,6 +1537,7 @@ export const api = {
     type?: string
     /** Replaces the random uuid in the provider id. Omit to keep it generated. */
     urlSuffix?: string
+    errorPolicy?: ErrorPolicy
   }) => {
     const res = await request<{ node: ProviderNode }>('/api/provider-nodes', {
       method: 'POST',
@@ -1546,7 +1560,14 @@ export const api = {
    */
   updateProviderNode: (
     id: string,
-    payload: { name: string; prefix: string; apiType?: string; baseUrl: string; urlSuffix?: string }
+    payload: {
+      name: string
+      prefix: string
+      apiType?: string
+      baseUrl: string
+      urlSuffix?: string
+      errorPolicy?: ErrorPolicy
+    }
   ) =>
     request<{ node: ProviderNode }>(`/api/provider-nodes/${encodeURIComponent(id)}`, {
       method: 'PUT',

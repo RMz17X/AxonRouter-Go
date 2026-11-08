@@ -167,3 +167,68 @@ func TestVisionUnsupportedClassifiesAsModelFit(t *testing.T) {
 		t.Fatalf("unrelated 400 classified as model fit")
 	}
 }
+
+func TestStripLegacyMediaForModel_TextModelStrips(t *testing.T) {
+	body := []byte(`{
+		"messages": [
+			{"role": "user", "content": [
+				{"type": "text", "text": "here is an image"},
+				{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+			]},
+			{"role": "assistant", "content": "I see it"},
+			{"role": "user", "content": "now write a poem"}
+		]
+	}`)
+
+	// Dahl GLM-5.3-Flash is text-only: history image must be stripped
+	cleaned := StripLegacyMediaForModel(body, "dahl", "zai-org/GLM-5.3-Flash")
+	s := string(cleaned)
+	if strings.Contains(s, "image_url") {
+		t.Fatalf("image_url was not stripped for non-vision model dahl/zai-org/GLM-5.3-Flash: %s", s)
+	}
+	if !strings.Contains(s, legacyMediaPlaceholder) {
+		t.Fatalf("placeholder missing in stripped body: %s", s)
+	}
+	if !strings.Contains(s, "now write a poem") {
+		t.Fatalf("trailing turn lost: %s", s)
+	}
+}
+
+func TestStripLegacyMediaForModel_VisionModelPreserves(t *testing.T) {
+	body := []byte(`{
+		"messages": [
+			{"role": "user", "content": [
+				{"type": "text", "text": "here is an image"},
+				{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+			]},
+			{"role": "assistant", "content": "I see it"},
+			{"role": "user", "content": "now write a poem"}
+		]
+	}`)
+
+	// gpt-4o has vision: history image must be kept intact
+	cleaned := StripLegacyMediaForModel(body, "openai", "gpt-4o")
+	if string(cleaned) != string(body) {
+		t.Fatalf("body modified for vision model openai/gpt-4o: %s", string(cleaned))
+	}
+}
+
+func TestStripLegacyMediaForModel_TrailingImageUntouched(t *testing.T) {
+	body := []byte(`{
+		"messages": [
+			{"role": "user", "content": "hello"},
+			{"role": "assistant", "content": "hi"},
+			{"role": "user", "content": [
+				{"type": "text", "text": "what is this?"},
+				{"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+			]}
+		]
+	}`)
+
+	// Trailing turn image is the actual current question: must not be stripped
+	cleaned := StripLegacyMediaForModel(body, "dahl", "zai-org/GLM-5.3-Flash")
+	if string(cleaned) != string(body) {
+		t.Fatalf("trailing-run media was stripped: %s", string(cleaned))
+	}
+}
+

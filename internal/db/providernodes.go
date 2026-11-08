@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/models"
+	"axonrouter/proxy/internal/providers"
 )
 
 // providerNodeColumns is the shared column list for every providerNodes read.
@@ -20,9 +21,10 @@ func scanProviderNode(scan func(dest ...any) error, node *models.ProviderNode) e
 
 // ProviderNodeData holds parsed fields from the providerNodes.data JSON blob.
 type ProviderNodeData struct {
-	Prefix  string `json:"prefix"`
-	APIType string `json:"apiType"`
-	BaseURL string `json:"baseUrl"`
+	Prefix      string                 `json:"prefix"`
+	APIType     string                 `json:"apiType"`
+	BaseURL     string                 `json:"baseUrl"`
+	ErrorPolicy *providers.ErrorPolicy `json:"errorPolicy,omitempty"`
 }
 
 // parseProviderNodeData extracts the JSON-encoded data field from a providerNode row.

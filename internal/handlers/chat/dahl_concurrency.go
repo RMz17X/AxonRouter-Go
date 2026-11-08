@@ -11,13 +11,13 @@ var (
 )
 
 // RecordDahlModelConcurrencyBlocked records that a Dahl model is saturated across
-// the provider cluster, cooling it down for the specified duration (default 30s).
+// the provider cluster, cooling it down for the specified duration (default 10s).
 func RecordDahlModelConcurrencyBlocked(model string, duration time.Duration) {
 	if model == "" {
 		return
 	}
 	if duration <= 0 {
-		duration = 30 * time.Second
+		duration = 10 * time.Second
 	}
 	canonical := canonicalLockModel("dahl", model)
 	until := time.Now().Add(duration)

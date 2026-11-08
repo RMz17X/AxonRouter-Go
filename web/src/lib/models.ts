@@ -135,6 +135,7 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "vertex": "vx",
   "vertex-partner": "vxp",
   "volcengine-ark": "ark",
+  "liquid": "liquid",
   "v1m": "v1m",
   "voyage-ai": "voyage",
   "windsurf": "windsurf",
@@ -5535,6 +5536,42 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "Kimi-K2.6"
     }
   ],
+  "liquid": [
+    {
+      "id": "lfm2.5-24b-a2b",
+      "name": "LFM 2.5 24B (Reasoning)",
+      "thinking": true,
+      "capabilities": ["llm", "reasoning"]
+    },
+    {
+      "id": "lfm3-1.7b",
+      "name": "LFM 3 1.7B",
+      "capabilities": ["llm"]
+    },
+    {
+      "id": "lfm3-vl-2b",
+      "name": "LFM 3 VL 2B (Vision)",
+      "capabilities": ["llm", "vision"]
+    },
+    {
+      "id": "d1",
+      "name": "d1 (System One Decision)",
+      "kind": "systemone",
+      "capabilities": ["systemone"]
+    },
+    {
+      "id": "d1.1",
+      "name": "d1.1 (System One Decision)",
+      "kind": "systemone",
+      "capabilities": ["systemone"]
+    },
+    {
+      "id": "d1-ultra",
+      "name": "d1-ultra (System One Decision)",
+      "kind": "systemone",
+      "capabilities": ["systemone"]
+    }
+  ],
   "v1m": [
     {
       "id": "rev-latest",
@@ -7561,7 +7598,7 @@ export function getModelKind(m: unknown, fallback = "llm"): string {
   return fallback;
 }
 
-export function getModelCaps(modelId: string, modelObj?: unknown): { vision: boolean; audioInput: boolean; reasoning: boolean } {
+export function getModelCaps(modelId: string, modelObj?: unknown): { vision: boolean; audioInput: boolean; reasoning: boolean; decision: boolean } {
   const idLower = (modelId || "").toLowerCase();
   const obj = modelObj && typeof modelObj === "object" ? (modelObj as Record<string, unknown>) : null;
   const nameLower = typeof obj?.name === "string" ? obj.name.toLowerCase() : "";
@@ -7661,6 +7698,16 @@ export function getModelCaps(modelId: string, modelObj?: unknown): { vision: boo
     reasoning = false;
   }
 
+  let decision =
+    kind === "systemone" ||
+    type === "systemone" ||
+    caps.includes("systemone") ||
+    caps.includes("decision") ||
+    idLower === "d1" ||
+    idLower.startsWith("d1.") ||
+    idLower.startsWith("d1-") ||
+    idLower.includes("systemone");
+
   // Explicit capability flags saved from the Add Custom Model modal
   // (upstream `caps` object) override the id/name heuristics above.
   const objCaps = obj?.caps && typeof obj.caps === "object" ? (obj.caps as Record<string, unknown>) : null;
@@ -7671,6 +7718,8 @@ export function getModelCaps(modelId: string, modelObj?: unknown): { vision: boo
     if (objCaps.audioInput === false) audioInput = false;
     if (objCaps.reasoning === true) reasoning = true;
     if (objCaps.reasoning === false) reasoning = false;
+    if (objCaps.decision === true) decision = true;
+    if (objCaps.decision === false) decision = false;
   }
-  return { vision, audioInput, reasoning };
+  return { vision, audioInput, reasoning, decision };
 }

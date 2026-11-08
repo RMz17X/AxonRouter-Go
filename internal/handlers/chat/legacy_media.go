@@ -54,6 +54,41 @@ var legacyMediaBlockTypes = map[string]bool{
 	"input_file":  true,
 }
 
+// StripLegacyMediaForModel strips unservable legacy media from earlier turns if
+// the target model does not satisfy the hard media capabilities required by the request history.
+func StripLegacyMediaForModel(body []byte, provider, model string) []byte {
+	entry := model
+	if provider != "" && !strings.HasPrefix(model, provider+"/") {
+		entry = provider + "/" + model
+	}
+	return StripLegacyMediaForEntry(body, entry)
+}
+
+// StripLegacyMediaForEntry strips unservable legacy media from earlier turns if
+// the target model entry does not satisfy the hard media capabilities required by the request history.
+func StripLegacyMediaForEntry(body []byte, entry string) []byte {
+	var req map[string]any
+	if err := json.Unmarshal(body, &req); err != nil {
+		return body
+	}
+	history := detectHistoryMediaCaps(req)
+	if len(history) == 0 {
+		return body
+	}
+	hard := requiredHardCaps(history)
+	if len(hard) == 0 || modelSatisfiesHard(entry, hard) {
+		return body
+	}
+	if stripLegacyMediaInRequest(req) {
+		if out, err := json.Marshal(req); err == nil {
+			log.Info("chat", "legacy media stripped for candidate model",
+				"model", entry, "caps", keysString(history))
+			return out
+		}
+	}
+	return body
+}
+
 // maybeStripLegacyMediaBytes is maybeStripLegacyMedia for a raw body. The
 // input is returned untouched unless a strip actually changed something.
 func maybeStripLegacyMediaBytes(body []byte, candidates []string) []byte {

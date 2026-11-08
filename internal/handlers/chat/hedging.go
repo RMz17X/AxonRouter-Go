@@ -182,6 +182,7 @@ func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay 
 	// Speculative hedging enables hitting a freed concurrency slot without stalling the client.
 	if provider == "dahl" {
 		enabled = true
+		delay = 80 * time.Millisecond
 	}
 
 	if h.Repo != nil {

@@ -21,12 +21,13 @@ import (
 
 // ProviderNodeResponse is the JSON representation of a provider node with unpacked data fields.
 type ProviderNodeResponse struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Name    string `json:"name"`
-	Prefix  string `json:"prefix,omitempty"`
-	APIType string `json:"apiType,omitempty"`
-	BaseURL string `json:"baseUrl,omitempty"`
+	ID          string                 `json:"id"`
+	Type        string                 `json:"type"`
+	Name        string                 `json:"name"`
+	Prefix      string                 `json:"prefix,omitempty"`
+	APIType     string                 `json:"apiType,omitempty"`
+	BaseURL     string                 `json:"baseUrl,omitempty"`
+	ErrorPolicy *providers.ErrorPolicy `json:"errorPolicy,omitempty"`
 	// URLSuffix is the custom tail of the provider id, without the
 	// "openai-compatible-chat-" literal in front of it. It is empty for a node
 	// created before the field existed, whose id ends in a random uuid the
@@ -95,14 +96,16 @@ func (h *DashboardHandler) HandleGetProviderNodes(w http.ResponseWriter, r *http
 
 		if n.Data != "" {
 			var dataObj struct {
-				Prefix  string `json:"prefix"`
-				APIType string `json:"apiType"`
-				BaseURL string `json:"baseUrl"`
+				Prefix      string                 `json:"prefix"`
+				APIType     string                 `json:"apiType"`
+				BaseURL     string                 `json:"baseUrl"`
+				ErrorPolicy *providers.ErrorPolicy `json:"errorPolicy,omitempty"`
 			}
 			if err := json.Unmarshal([]byte(n.Data), &dataObj); err == nil {
 				item.Prefix = dataObj.Prefix
 				item.APIType = dataObj.APIType
 				item.BaseURL = dataObj.BaseURL
+				item.ErrorPolicy = dataObj.ErrorPolicy
 			}
 		}
 
@@ -129,12 +132,13 @@ func (h *DashboardHandler) HandleCreateProviderNode(w http.ResponseWriter, r *ht
 	defer r.Body.Close()
 
 	var req struct {
-		Name      string `json:"name"`
-		Prefix    string `json:"prefix"`
-		APIType   string `json:"apiType"`
-		BaseURL   string `json:"baseUrl"`
-		Type      string `json:"type"`
-		URLSuffix string `json:"urlSuffix"`
+		Name        string                 `json:"name"`
+		Prefix      string                 `json:"prefix"`
+		APIType     string                 `json:"apiType"`
+		BaseURL     string                 `json:"baseUrl"`
+		Type        string                 `json:"type"`
+		URLSuffix   string                 `json:"urlSuffix"`
+		ErrorPolicy *providers.ErrorPolicy `json:"errorPolicy,omitempty"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid JSON")
@@ -211,11 +215,15 @@ func (h *DashboardHandler) HandleCreateProviderNode(w http.ResponseWriter, r *ht
 		return
 	}
 
-	dataBytes, _ := json.Marshal(map[string]string{
+	dataMap := map[string]any{
 		"prefix":  req.Prefix,
 		"apiType": apiType,
 		"baseUrl": req.BaseURL,
-	})
+	}
+	if req.ErrorPolicy != nil && len(req.ErrorPolicy.Rules) > 0 {
+		dataMap["errorPolicy"] = req.ErrorPolicy
+	}
+	dataBytes, _ := json.Marshal(dataMap)
 
 	node, err := h.Repo.CreateProviderNode(id, nodeType, req.Name, string(dataBytes))
 	if err != nil {
@@ -231,6 +239,7 @@ func (h *DashboardHandler) HandleCreateProviderNode(w http.ResponseWriter, r *ht
 			Prefix:             req.Prefix,
 			APIType:            apiType,
 			BaseURL:            req.BaseURL,
+			ErrorPolicy:        req.ErrorPolicy,
 			URLSuffix:          suffix,
 			URLSuffixGenerated: suffix == "",
 			CreatedAt:          node.CreatedAt,
@@ -263,11 +272,12 @@ func (h *DashboardHandler) HandleUpdateProviderNode(w http.ResponseWriter, r *ht
 	}
 	defer r.Body.Close()
 	var req struct {
-		Name      string `json:"name"`
-		Prefix    string `json:"prefix"`
-		APIType   string `json:"apiType"`
-		BaseURL   string `json:"baseUrl"`
-		URLSuffix string `json:"urlSuffix"`
+		Name        string                 `json:"name"`
+		Prefix      string                 `json:"prefix"`
+		APIType     string                 `json:"apiType"`
+		BaseURL     string                 `json:"baseUrl"`
+		URLSuffix   string                 `json:"urlSuffix"`
+		ErrorPolicy *providers.ErrorPolicy `json:"errorPolicy,omitempty"`
 	}
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -351,11 +361,19 @@ func (h *DashboardHandler) HandleUpdateProviderNode(w http.ResponseWriter, r *ht
 		return
 	}
 
-	dataBytes, _ := json.Marshal(map[string]string{
+	dataMap := map[string]any{
 		"prefix":  prefix,
 		"apiType": apiType,
 		"baseUrl": baseURL,
-	})
+	}
+	effectivePolicy := req.ErrorPolicy
+	if effectivePolicy == nil && nodeData != nil && nodeData.ErrorPolicy != nil {
+		effectivePolicy = nodeData.ErrorPolicy
+	}
+	if effectivePolicy != nil && len(effectivePolicy.Rules) > 0 {
+		dataMap["errorPolicy"] = effectivePolicy
+	}
+	dataBytes, _ := json.Marshal(dataMap)
 	updated, err := h.Repo.UpdateProviderNode(renamedID, name, string(dataBytes))
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
@@ -370,6 +388,7 @@ func (h *DashboardHandler) HandleUpdateProviderNode(w http.ResponseWriter, r *ht
 			Prefix:             prefix,
 			APIType:            apiType,
 			BaseURL:            baseURL,
+			ErrorPolicy:        effectivePolicy,
 			URLSuffix:          suffix,
 			URLSuffixGenerated: suffix == "",
 			CreatedAt:          updated.CreatedAt,

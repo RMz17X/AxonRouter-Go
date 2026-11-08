@@ -486,6 +486,8 @@ func validateProviderKey(ctx context.Context, provider string, cfg providers.Pro
 			return validateOutcome{supported: true, message: fmt.Sprintf("Runcrate API error (%d)", status)}
 		}
 		return validateOutcome{valid: true, supported: true}
+	case "liquid":
+		return validateLiquid(ctx, apiKey)
 	case "v1m":
 		return validateV1M(ctx, apiKey)
 	case "commandcode":
@@ -660,6 +662,22 @@ func validateV1M(ctx context.Context, apiKey string) validateOutcome {
 		valid:     status != http.StatusUnauthorized && status != http.StatusForbidden,
 		supported: true,
 	}
+}
+
+func validateLiquid(ctx context.Context, apiKey string) validateOutcome {
+	status, _, err := validateProbeDo(ctx, http.MethodGet, "https://api.liquid.ai/openai/v1/models", map[string]string{
+		"Authorization": "Bearer " + apiKey,
+	}, nil)
+	if err != nil {
+		return validateOutcome{supported: true, message: err.Error()}
+	}
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return validateOutcome{supported: true, message: "Invalid API key"}
+	}
+	if status < 200 || status >= 300 {
+		return validateOutcome{supported: true, message: fmt.Sprintf("Liquid API error (%d)", status)}
+	}
+	return validateOutcome{valid: true, supported: true}
 }
 
 func validateAzure(ctx context.Context, apiKey string, psd map[string]any) validateOutcome {

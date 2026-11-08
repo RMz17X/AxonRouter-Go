@@ -242,7 +242,7 @@
               title="Pick the System One model that decides model routing"
             >
               <span class="material-symbols-outlined text-[13px]">psychology</span>
-              <span class="truncate">{routerModel || 'Auto — oc/jev-1.13-free'}</span>
+              <span class="truncate">{routerModel || 'Auto — liquid/d1'}</span>
             </button>
             <button
               type="button"

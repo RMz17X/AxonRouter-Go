@@ -1729,6 +1729,23 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Website:      "https://www.trae.ai",
 		Notice:       &Notice{SignupURL: "https://www.trae.ai"},
 	},
+	"liquid": {
+		ID:           "liquid",
+		Name:         "Liquid AI",
+		Alias:        "liquid",
+		Category:     CategoryAPIKey,
+		AuthType:     "apikey",
+		Color:        "#00D2B4",
+		Icon:         "psychology",
+		Priority:     40,
+		ServiceKinds: []string{"llm", "systemone"},
+		Website:      "https://liquid.ai",
+		Notice: &Notice{
+			Text:      "Liquid Foundation Models (LFM) with native reasoning & multimodal support, plus System One calibrated decision models.",
+			APIKeyURL: "https://console.liquid.ai/api-keys",
+			SignupURL: "https://console.liquid.ai/sign-up",
+		},
+	},
 	"v1m": {
 		ID:           "v1m",
 		Name:         "v1m (System One)",

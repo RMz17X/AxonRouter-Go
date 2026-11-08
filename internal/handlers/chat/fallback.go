@@ -314,6 +314,7 @@ func (h *ChatHandler) handleAccountFallback(
 				"conn", connObj.ID, "provider", provider, "model", model)
 			cooldownSec := 30
 			if provider == "dahl" {
+				cooldownSec = 10
 				RecordDahlModelConcurrencyBlocked(model, time.Duration(cooldownSec)*time.Second)
 			}
 			lockKey := canonicalLockModel(provider, model)
@@ -353,7 +354,13 @@ func (h *ChatHandler) handleAccountFallback(
 			currentBackoffLevel := h.Repo.GetConnectionBackoffLevel(connObj.ID)
 			// Classify error to get dynamic cooldown; provider-scoped rules
 			// key off the canonical provider the request routed to.
-			classification := providers.ClassifyErrorForProvider(ue.StatusCode, errorText, currentBackoffLevel, provider)
+			var nodePolicy *providers.ErrorPolicy
+			if h.Repo != nil && provider != "" {
+				if _, nodeData, err := h.Repo.GetProviderNodeByID(provider); err == nil && nodeData != nil {
+					nodePolicy = nodeData.ErrorPolicy
+				}
+			}
+			classification := providers.ClassifyErrorWithPolicy(ue.StatusCode, errorText, currentBackoffLevel, provider, nodePolicy)
 			if !classification.ShouldFallback {
 				// Request-level refusal (upstream shouldFallback: false —
 				// a safety review, a content filter): the request is at
@@ -400,7 +407,12 @@ func (h *ChatHandler) handleAccountFallback(
 			}, connIdentityKV(connObj)...)...)
 
 			errLower := strings.ToLower(errorText)
-			if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
+			if classification.DeactivateKey {
+				if h.Repo != nil {
+					_ = h.Repo.DisableConnectionWithReason(connObj.ID, ue.StatusCode, "Disabled by provider error policy: "+errorText)
+				}
+				h.getSessionAffinity().EvictConnection(connObj.ID)
+			} else if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
 				valURL := extractGoogleValidationURL(ue.Body)
 				if valURL == "" {
 					valURL = "https://antigravity.google"
@@ -789,6 +801,10 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	if compressDurMs <= 0 {
 		compressDurMs = 1
 	}
+
+	// Strip unservable legacy media from earlier turns if this specific candidate cannot serve it.
+	pipedBody = StripLegacyMediaForModel(pipedBody, provider, model)
+
 	var claudeToolMap map[string]string
 	if upstreamClaude {
 		if !claudeNative {

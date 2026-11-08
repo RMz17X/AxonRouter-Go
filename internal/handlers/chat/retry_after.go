@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/constants"
+	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/providers"
 	"axonrouter/proxy/internal/translator"
 )
@@ -215,6 +216,21 @@ func (p *passRetry) wait() time.Duration {
 // reset instant would send clients into a retry loop against a quota with no
 // known end.
 func (p *passRetry) writeError(cw *committedResponseWriter, lastErr *upstreamError) {
+	if lastErr == nil {
+		handlerutil.WriteJSONError(cw, http.StatusBadGateway, "upstream error")
+		return
+	}
+
+	var rawRetryAfter string
+	if lastErr.Header != nil {
+		rawRetryAfter = lastErr.Header.Get("Retry-After")
+	}
+	if rawRetryAfter == "" && p.earliest > 0 {
+		rawRetryAfter = strconv.Itoa(max(ceilSeconds(p.earliest), 1))
+	}
+
+	masked := MaskClientFacingError(lastErr.StatusCode, lastErr.Body, rawRetryAfter, true)
+
 	// A client that asked for a stream must be answered with one. The body is
 	// the same JSON either way; what changes is the envelope. Writing the bare
 	// document under a text/event-stream Content-Type leaves the client with no
@@ -223,11 +239,14 @@ func (p *passRetry) writeError(cw *committedResponseWriter, lastErr *upstreamErr
 	// and code never reach it.
 	if cw.stream {
 		cw.Header().Set(constants.HeaderContentType, constants.ContentTypeEventStream)
+		if masked.RetryAfter != "" {
+			cw.Header().Set("Retry-After", masked.RetryAfter)
+		}
 		if cw.responsesClient {
 			var errBody struct {
 				Error map[string]any `json:"error"`
 			}
-			if err := json.Unmarshal(lastErr.Body, &errBody); err == nil && errBody.Error != nil {
+			if err := json.Unmarshal(masked.Body, &errBody); err == nil && errBody.Error != nil {
 				if code, _ := errBody.Error["code"].(string); code == "context_length_exceeded" {
 					cw.WriteHeader(http.StatusOK)
 					_, _ = cw.Write([]byte(translator.FormatResponsesFailedSSE(errBody.Error)))
@@ -238,8 +257,8 @@ func (p *passRetry) writeError(cw *committedResponseWriter, lastErr *upstreamErr
 				}
 			}
 		}
-		cw.WriteHeader(lastErr.StatusCode)
-		frame := append([]byte("data: "), lastErr.Body...)
+		cw.WriteHeader(masked.StatusCode)
+		frame := append([]byte("data: "), masked.Body...)
 		frame = append(frame, '\n', '\n')
 		_, _ = cw.Write(frame)
 		_, _ = cw.Write([]byte("data: [DONE]\n\n"))
@@ -252,31 +271,11 @@ func (p *passRetry) writeError(cw *committedResponseWriter, lastErr *upstreamErr
 	// too. The upstream content type is not trusted here: a 429 served as
 	// text/html is what makes an SDK report a parse crash instead of a quota.
 	cw.Header().Set(constants.HeaderContentType, constants.ContentTypeJSON)
-	if p.earliest > 0 {
-		sec := max(ceilSeconds(p.earliest), 1)
-		cw.Header().Set("Retry-After", strconv.Itoa(sec))
-		retryAt := time.Now().UTC().Add(p.earliest)
-		retryHuman := formatRetryAfter(retryAt.Format(time.RFC3339))
-		var errBody map[string]any
-		if err := json.Unmarshal(lastErr.Body, &errBody); err == nil {
-			if errObj, ok := errBody["error"].(map[string]any); ok {
-				if msg, _ := errObj["message"].(string); msg != "" {
-					errObj["message"] = msg + " (" + retryHuman + ")"
-					// The instant has to travel as data, not only as prose:
-					// only a human reads "reset after 2m 30s", and a client
-					// that never surfaces the header has nothing else left.
-					errObj["reset_at"] = retryAt.Format(time.RFC3339)
-					errObj["retry_after"] = sec
-					updated, _ := json.Marshal(errBody)
-					cw.WriteHeader(lastErr.StatusCode)
-					cw.Write(updated)
-					return
-				}
-			}
-		}
+	if masked.RetryAfter != "" {
+		cw.Header().Set("Retry-After", masked.RetryAfter)
 	}
-	cw.WriteHeader(lastErr.StatusCode)
-	cw.Write(lastErr.Body)
+	cw.WriteHeader(masked.StatusCode)
+	cw.Write(masked.Body)
 }
 
 // retryAfterWait reports how long the upstream asked the client to wait before
