@@ -1,5 +1,32 @@
 # Changelog
 
+## [v1.9.58] - 2026-11-08
+
+# 1037 — Fragment 1035 completed: the stats feed's own RecentRequest shape gains `tokens`
+
+## What 1035 missed
+- Fragment 1035 added the total to axonRecentRequest (the
+  active-requests feed) and to the morph feed, but the payload
+  AnalyticsView actually merges — GET /api/usage/stats — builds its
+  recentRequests from a third shape, usagetracker.RecentRequest,
+  which had no total either. Live read-back after v1.9.57 showed
+  "tokens" still absent there.
+
+## Fix
+- usagetracker.RecentRequest gains `tokens` (prompt + completion),
+  set at both of its construction sites: recentFromHistoryRow (the
+  tracker's history-fed recent stream) and the stats handler's
+  deduped history seed.
+- Precision on 1035's proxy note: RecentRequest DOES carry a proxy
+  field, populated on the live/detail side (the request ledger
+  knows the egress); the history-seeded rows leave it empty because
+  usageHistory stores no egress column. The client merge's
+  preservation is therefore correct as written.
+
+## Verification
+- go build ./... green; live after deploy: /api/usage/stats
+  recentRequests items carry "tokens" equal to prompt + completion.
+
 ## [v1.9.57] - 2026-11-08
 
 # 1036 — Mid-stream transport breaks now penalize the egress pool
