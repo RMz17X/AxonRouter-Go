@@ -31,6 +31,30 @@
 
   let settingsOpen = $state(false)
 
+  // Fit the shell exactly: the view must fill <main>'s content box so
+  // the page itself never scrolls — the chat thread is the only
+  // scroller. The shell's TopBar sits above <main>, so a viewport calc
+  // overshoots by its height; measure the real box instead (and lock
+  // main's own scrolling while mounted, restored on the way out).
+  let rootEl = $state<HTMLDivElement | null>(null)
+  let viewH = $state(0)
+  $effect(() => {
+    const main = rootEl?.closest('main')
+    if (!main) return
+    const prevOverflow = main.style.overflow
+    main.style.overflow = 'hidden'
+    const update = () => {
+      viewH = Math.max(0, main.clientHeight - 24)
+    }
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(main)
+    return () => {
+      ro.disconnect()
+      main.style.overflow = prevOverflow
+    }
+  })
+
   // Live clock for the waiting indicator: ticks while a send is in
   // flight so the thread can show how long the model has been thinking
   // (first tokens are routinely slow on this gateway — a silent wait
@@ -193,7 +217,11 @@
   }
 </script>
 
-<div class="flex h-[calc(100dvh-1.5rem)] flex-col gap-2.5">
+<div
+  bind:this={rootEl}
+  class="flex flex-col gap-2.5"
+  style:height={viewH ? `${viewH}px` : 'calc(100dvh - 6rem)'}
+>
   <div class="flex items-center gap-2">
     <ModelPicker entries={entries} bind:value={selectedModel} disabled={sending} />
     <button
