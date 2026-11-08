@@ -661,6 +661,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 				Provider:         rh.Provider,
 				PromptTokens:     int(promptTok),
 				CompletionTokens: int(complTok),
+				Tokens:           int(promptTok + complTok),
 				CachedTokens:     cachedTok,
 				Status:           status,
 				Endpoint:         rh.Endpoint,

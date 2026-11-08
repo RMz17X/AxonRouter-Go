@@ -50,6 +50,9 @@ type RecentRequest struct {
 	Provider         string `json:"provider"`
 	PromptTokens     int    `json:"promptTokens"`
 	CompletionTokens int    `json:"completionTokens"`
+	// Tokens is the row total (prompt + completion): the analytics
+	// recent-requests merge compares it to spot the newest request.
+	Tokens           int    `json:"tokens"`
 	CachedTokens     int    `json:"cachedTokens"`
 	Status           string `json:"status"`
 	RequestedModel   string `json:"requestedModel,omitempty"`
@@ -580,6 +583,7 @@ func recentFromHistoryRow(rh db.UsageHistoryRow) RecentRequest {
 		Provider:         rh.Provider,
 		PromptTokens:     int(promptTok),
 		CompletionTokens: int(complTok),
+		Tokens:           int(promptTok + complTok),
 		CachedTokens:     cached,
 		Status:           status,
 		Endpoint:         rh.Endpoint,
