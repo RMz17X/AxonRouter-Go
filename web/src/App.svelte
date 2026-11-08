@@ -431,6 +431,15 @@
     jailbreak: { title: 'Persona', description: 'Per-model system-prompt injection and Gemini safety bypass' },
   }
 
+  // The browser tab carries the page's own title, so several open
+  // dashboard tabs stay distinguishable; the OAuth interstitial has
+  // no pageMeta entry and gets its own.
+  $effect(() => {
+    document.title = isOAuthCallback
+      ? 'Completing sign-in · AxonRouter-Go'
+      : `${pageMeta[activeTab].title} · AxonRouter-Go`
+  })
+
   let isUpdateModalOpen = $state(false)
   let systemUpdateInfo = $state<SystemVersionInfo | null>(null)
   let systemVersion = $state(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '')
