@@ -66,6 +66,23 @@ func applyComboStrategies(s *SettingsData, raw map[string]any) {
 			}
 			entry.FallbackCombos = combos
 		}
+		for _, tier := range []struct {
+			key string
+			dst *[]string
+		}{
+			{"easyModels", &entry.EasyModels},
+			{"hardModels", &entry.HardModels},
+		} {
+			if list, ok := vm[tier.key].([]any); ok {
+				var models []string
+				for _, item := range list {
+					if str, ok := item.(string); ok && str != "" {
+						models = append(models, str)
+					}
+				}
+				*tier.dst = models
+			}
+		}
 		s.ComboStrategies[k] = entry
 	}
 }

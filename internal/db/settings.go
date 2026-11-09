@@ -36,6 +36,16 @@ type ComboStrategy struct {
 	// RouterModel overrides the System One model that evaluates the route
 	// (default oc/jev-1.13-free).
 	RouterModel string `json:"routerModel,omitempty"`
+	// EasyModels and HardModels are the operator's explicit difficulty
+	// tiers (upstream comboStrategies[name] easyModels/hardModels, saved
+	// by the dashboard's Smart Routing section). A listed model overrides
+	// the name/capability heuristics when the System One criteria are
+	// built: an easy-listed model is always described as the fast,
+	// lightweight tier and a hard-listed one as the advanced reasoning
+	// tier, so the router's easy/hard split follows the operator's lists
+	// rather than a model's name.
+	EasyModels []string `json:"easyModels,omitempty"`
+	HardModels []string `json:"hardModels,omitempty"`
 	// RespectStoredOrder skips the rotation strategy and walks the combo's
 	// stored model list in order, so the ordering the operator arranged in the
 	// editor is the fallback chain the gateway tries. It does NOT skip

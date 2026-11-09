@@ -222,7 +222,7 @@ func TestResolveSmartChoice(t *testing.T) {
 
 		choice := h.resolveSmartChoice(context.Background(),
 			[]byte(`{"messages":[{"role":"user","content":"write sql"}]}`),
-			[]string{"p/glm", "p/deepseek"}, "")
+			[]string{"p/glm", "p/deepseek"}, db.ComboStrategy{})
 		if choice == nil || choice.Choice != "p/deepseek" {
 			t.Fatalf("unexpected choice %+v", choice)
 		}
@@ -234,7 +234,7 @@ func TestResolveSmartChoice(t *testing.T) {
 		}))
 		defer upstream.Close()
 		h := newSmartRouterHandler(t, upstream)
-		if choice := h.resolveSmartChoice(context.Background(), []byte(`{"prompt":"x"}`), []string{"a", "b"}, ""); choice != nil {
+		if choice := h.resolveSmartChoice(context.Background(), []byte(`{"prompt":"x"}`), []string{"a", "b"}, db.ComboStrategy{}); choice != nil {
 			t.Fatalf("expected fail-open nil, got %+v", choice)
 		}
 	})
@@ -245,7 +245,7 @@ func TestResolveSmartChoice(t *testing.T) {
 		}))
 		defer upstream.Close()
 		h := newSmartRouterHandler(t, upstream)
-		if choice := h.resolveSmartChoice(context.Background(), []byte(`{}`), []string{"a", "b"}, ""); choice != nil {
+		if choice := h.resolveSmartChoice(context.Background(), []byte(`{}`), []string{"a", "b"}, db.ComboStrategy{}); choice != nil {
 			t.Fatalf("expected nil, got %+v", choice)
 		}
 	})
@@ -256,7 +256,7 @@ func TestResolveSmartChoice(t *testing.T) {
 		}))
 		defer upstream.Close()
 		h := newSmartRouterHandler(t, upstream)
-		if choice := h.resolveSmartChoice(context.Background(), []byte(`{"prompt":"x"}`), []string{"only"}, ""); choice != nil {
+		if choice := h.resolveSmartChoice(context.Background(), []byte(`{"prompt":"x"}`), []string{"only"}, db.ComboStrategy{}); choice != nil {
 			t.Fatalf("expected nil, got %+v", choice)
 		}
 	})

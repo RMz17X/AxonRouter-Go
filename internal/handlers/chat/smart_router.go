@@ -153,6 +153,16 @@ func truncateSmartState(text string) string {
 	return text
 }
 
+const (
+	// smartHardCriteria describes the hard tier to the System One router:
+	// models the operator listed in the combo's hardModels, plus any model
+	// the capability heuristics identify as a reasoning model.
+	smartHardCriteria = "Advanced reasoning model suited for complex algorithms, deep logic, multi-step problem solving, math, system architecture, and hard tasks."
+	// smartEasyCriteria describes the easy tier: models the operator
+	// listed in easyModels, plus name-heuristic lightweight models.
+	smartEasyCriteria = "Fast, cost-efficient, and lightweight model best suited for straightforward requests, simple syntax, one-liners, basic scripts, and quick tasks."
+)
+
 // describeModelForRouting derives capability-aware description criteria for a model
 // so that any configured System One router model (Liquid d1, d1.1, d1-ultra, or
 // future decision providers) has discriminative context to select the best match.
@@ -169,20 +179,35 @@ func describeModelForRouting(modelStr string) string {
 	mLower := strings.ToLower(model)
 
 	if caps.Reasoning || strings.Contains(mLower, "r1") || strings.Contains(mLower, "o1") || strings.Contains(mLower, "o3") || strings.Contains(mLower, "reasoning") || strings.Contains(mLower, "24b") || strings.Contains(mLower, "opus") || strings.Contains(mLower, "sonnet") {
-		return "Advanced reasoning model suited for complex algorithms, deep logic, multi-step problem solving, math, system architecture, and hard tasks."
+		return smartHardCriteria
 	}
 	if caps.Vision {
 		return "Multimodal vision model capable of processing images, diagrams, charts, and visual content."
 	}
 	if strings.Contains(mLower, "flash") || strings.Contains(mLower, "mini") || strings.Contains(mLower, "1.7b") || strings.Contains(mLower, "8b") || strings.Contains(mLower, "haiku") || strings.Contains(mLower, "nano") || strings.Contains(mLower, "small") || strings.Contains(mLower, "lite") || strings.Contains(mLower, "fast") {
-		return "Fast, cost-efficient, and lightweight model best suited for straightforward requests, simple syntax, one-liners, basic scripts, and quick tasks."
+		return smartEasyCriteria
 	}
 	return "Standard language model suited for general text generation, basic coding, conversation, and general knowledge."
 }
 
 // buildSmartCriteria derives the choices list and capability-informed criteria map
-// for System One routing evaluations.
-func buildSmartCriteria(models []string) (map[string]any, []string) {
+// for System One routing evaluations. A model the operator listed in the
+// combo's easyModels or hardModels takes that tier's criteria verbatim —
+// the explicit lists win over the name/capability heuristics, so a strong
+// model with an unassuming name (or a fast one with a grand name) is
+// described the way the operator classified it. Hard wins when a model is
+// somehow listed in both.
+func buildSmartCriteria(models []string, easyModels, hardModels []string) (map[string]any, []string) {
+	tierOf := func(list []string) map[string]bool {
+		set := make(map[string]bool, len(list))
+		for _, m := range list {
+			if trimmed := strings.TrimSpace(m); trimmed != "" {
+				set[trimmed] = true
+			}
+		}
+		return set
+	}
+	easySet, hardSet := tierOf(easyModels), tierOf(hardModels)
 	criteria := make(map[string]any, len(models))
 	choices := make([]string, 0, len(models))
 	for _, m := range models {
@@ -191,7 +216,14 @@ func buildSmartCriteria(models []string) (map[string]any, []string) {
 			continue
 		}
 		choices = append(choices, trimmed)
-		criteria[trimmed] = describeModelForRouting(trimmed)
+		switch {
+		case hardSet[trimmed]:
+			criteria[trimmed] = smartHardCriteria
+		case easySet[trimmed]:
+			criteria[trimmed] = smartEasyCriteria
+		default:
+			criteria[trimmed] = describeModelForRouting(trimmed)
+		}
 	}
 	return criteria, choices
 }
@@ -398,11 +430,11 @@ func smartSwitchThreshold(cfg db.ComboStrategy) float64 {
 // (missing credentials, timeout, unparseable answer) returns nil and the
 // strategy falls back to the combo's own ordering. Port of upstream
 // resolveSmartChoice.
-func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, models []string, routerModel string) *smartChoice {
+func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, models []string, cfg db.ComboStrategy) *smartChoice {
 	if len(models) <= 1 {
 		return nil
 	}
-	target := strings.TrimSpace(routerModel)
+	target := strings.TrimSpace(cfg.RouterModel)
 	if target == "" {
 		target = smartRouterDefaultModel
 	}
@@ -410,7 +442,7 @@ func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, model
 	if state == "" {
 		return nil
 	}
-	criteria, choices := buildSmartCriteria(models)
+	criteria, choices := buildSmartCriteria(models, cfg.EasyModels, cfg.HardModels)
 	if len(criteria) == 0 {
 		return nil
 	}
@@ -565,7 +597,7 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 
 	if activeModel != "" {
 		// Smart Switch: re-evaluate, and switch only above the floor.
-		if choice := h.resolveSmartChoice(ctx, body, models, cfg.RouterModel); choice != nil {
+		if choice := h.resolveSmartChoice(ctx, body, models, cfg); choice != nil {
 			conf := -1.0
 			if choice.Confidence != nil {
 				conf = *choice.Confidence
@@ -582,7 +614,7 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 	}
 
 	// Turn 1 or per-turn: evaluate and order by the choice.
-	choice := h.resolveSmartChoice(ctx, body, models, cfg.RouterModel)
+	choice := h.resolveSmartChoice(ctx, body, models, cfg)
 	if choice == nil || !containsString(models, choice.Choice) {
 		log.Info("combo", "smart-router no decision, fallback to order", "combo", comboName)
 		return ctx, models
