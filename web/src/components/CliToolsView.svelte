@@ -5,14 +5,15 @@
     Copy,
     ExternalLink,
     Key,
+    ListFilter,
     RefreshCw,
     Search,
     Terminal,
     X
   } from 'lucide-svelte'
   import { copyToClipboard } from '../lib/clipboard'
-  import { parseCustomModelsResponse } from '../lib/customModels'
-  import { api, type APIKey } from '../api/client'
+  import { api, type APIKey, type Combo, type ProviderConnection } from '../api/client'
+  import ModelPickerModal from './combos/ModelPickerModal.svelte'
   import HermesToolCard from './cli-tools/HermesToolCard.svelte'
   import HostSetupCommand from './cli-tools/HostSetupCommand.svelte'
 
@@ -45,7 +46,6 @@
       localOrigin = window.location.origin
     }
     loadStatuses()
-    loadModelSuggestions()
   })
 
   // What the guide cards paste. With no key on the instance the snippet still
@@ -98,42 +98,36 @@
     amp: [],
   }
 
-  // Names the model-mapping fields suggest: every combo, persona, custom
-  // model and chat model this gateway can serve. Suggestions only — the
-  // fields stay free-text, so a custom model name always works, and tools
-  // like Claude Code take one custom name per tier (model/sonnet/opus/
-  // haiku/fable), not a single global model.
-  let modelSuggestions = $state<string[]>([])
-  async function loadModelSuggestions() {
-    const names = new Set<string>()
-    const add = (v?: string | null) => {
-      if (v) names.add(v)
+  // Model fields open the same picker the combo editor uses (reused as-is,
+  // PersonaModal pattern): combos stay pickable as entries alongside the
+  // per-connection models. The fields themselves stay free-text — a custom
+  // model name can always be typed instead of picked, and tools like Claude
+  // Code take one name per tier (model/sonnet/opus/haiku/fable), not a
+  // single global model. Connections + combos load lazily on first open.
+  let pickerField = $state<string | null>(null)
+  let pickerConnections = $state<ProviderConnection[]>([])
+  let pickerCombos = $state<Combo[]>([])
+  let pickerLoaded = $state(false)
+  $effect(() => {
+    if (pickerField && !pickerLoaded) {
+      pickerLoaded = true
+      void (async () => {
+        try {
+          pickerConnections = await api.getConnections()
+        } catch {
+          /* picker still offers combos/customs without connections */
+        }
+        try {
+          pickerCombos = await api.getCombos()
+        } catch {
+          /* best-effort */
+        }
+      })()
     }
-    try {
-      for (const c of (await api.getCombos()) ?? []) add(c.name)
-    } catch {
-      /* suggestions are best-effort */
-    }
-    try {
-      const { personas } = await api.listPersonas()
-      for (const p of personas ?? []) add(p.name)
-    } catch {
-      /* best-effort */
-    }
-    try {
-      for (const e of parseCustomModelsResponse(await api.getCustomModels())) add(e.id)
-    } catch {
-      /* best-effort */
-    }
-    try {
-      const { meta } = await api.getModelMeta()
-      for (const [id, m] of Object.entries(meta ?? {})) {
-        if (!m.kind || m.kind === 'llm' || m.kind === 'chat') add(id)
-      }
-    } catch {
-      /* best-effort */
-    }
-    modelSuggestions = [...names].sort((a, b) => a.localeCompare(b))
+  })
+  function pickModel(value: string) {
+    if (pickerField) mapping = { ...mapping, [pickerField]: value }
+    pickerField = null
   }
   let setupKeyId = $state('')
   let mapping = $state<Record<string, string>>({})
@@ -865,7 +859,9 @@
 <!-- MODAL: Tool Configuration Detail -->
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === 'Escape') selectedTool = null
+    // The model picker registers its own Escape handler on the shared stack;
+    // while it is open, Escape must close the picker alone, not this modal.
+    if (e.key === 'Escape' && pickerField === null) selectedTool = null
   }}
 />
 {#if selectedTool}
@@ -963,26 +959,32 @@
               {#each setupFields as field (field.key)}
                 <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
                   <span class="text-xs font-semibold text-text-main sm:w-32 sm:text-right">{field.label}</span>
-                  <input
-                    type="text"
-                    value={mapping[field.key] ?? ''}
-                    oninput={(e) => (mapping = { ...mapping, [field.key]: e.currentTarget.value })}
-                    placeholder={field.placeholder}
-                    list={field.model ? 'cli-tool-model-names' : undefined}
-                    autocomplete="off"
-                    spellcheck="false"
-                    class="flex-1 min-w-0 h-8 px-2 rounded bg-surface border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-brand-500/50"
-                  />
+                  <div class="flex flex-1 min-w-0 gap-1.5">
+                    <input
+                      type="text"
+                      value={mapping[field.key] ?? ''}
+                      oninput={(e) => (mapping = { ...mapping, [field.key]: e.currentTarget.value })}
+                      placeholder={field.placeholder}
+                      autocomplete="off"
+                      spellcheck="false"
+                      class="flex-1 min-w-0 h-8 px-2 rounded bg-surface border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+                    />
+                    {#if field.model}
+                      <button
+                        type="button"
+                        onclick={() => (pickerField = field.key)}
+                        class="h-8 px-2.5 rounded bg-surface border border-border text-xs font-semibold text-text-main hover:border-brand-500/50 transition cursor-pointer shrink-0 inline-flex items-center gap-1"
+                      >
+                        <ListFilter class="w-3.5 h-3.5" />
+                        <span>Pick</span>
+                      </button>
+                    {/if}
+                  </div>
                 </div>
               {/each}
-              <datalist id="cli-tool-model-names">
-                {#each modelSuggestions as name (name)}
-                  <option value={name}></option>
-                {/each}
-              </datalist>
               {#if setupFields.some((f) => f.model)}
                 <p class="text-[11px] text-text-subtle leading-relaxed">
-                  Pick any model, combo or persona this gateway serves — or type a custom model name. Each field maps independently, so tiers can point at different models.
+                  Use Pick to choose any model or combo this gateway serves — or type a custom model name. Each field maps independently, so tiers can point at different models.
                 </p>
               {/if}
             </div>
@@ -1115,4 +1117,16 @@
       </div>
     </div>
   </div>
+
+  <!-- The combo editor's model picker, reused as-is: 'combo' keeps combos
+       pickable as entries alongside the per-connection models. -->
+  <ModelPickerModal
+    isOpen={pickerField !== null}
+    target="combo"
+    connections={pickerConnections}
+    combos={pickerCombos}
+    addedModelValues={pickerField ? [mapping[pickerField] ?? ''] : []}
+    onSelect={pickModel}
+    onClose={() => (pickerField = null)}
+  />
 {/if}
