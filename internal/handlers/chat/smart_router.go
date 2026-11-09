@@ -156,7 +156,14 @@ func truncateSmartState(text string) string {
 // describeModelForRouting derives capability-aware description criteria for a model
 // so that any configured System One router model (Liquid d1, d1.1, d1-ultra, or
 // future decision providers) has discriminative context to select the best match.
-func describeModelForRouting(modelStr string) string {
+func describeModelForRouting(modelStr string, isEasy, isHard bool) string {
+	if isHard {
+		return "Advanced reasoning model (Hard tier) designated for deep reasoning, complex logic, multi-step problem solving, math, system architecture, and hard tasks."
+	}
+	if isEasy {
+		return "Fast, cost-efficient, and lightweight model (Easy tier) designated for straightforward requests, simple syntax, one-liners, basic scripts, and quick tasks."
+	}
+
 	parts := strings.SplitN(modelStr, "/", 2)
 	provider := ""
 	model := modelStr
@@ -182,7 +189,16 @@ func describeModelForRouting(modelStr string) string {
 
 // buildSmartCriteria derives the choices list and capability-informed criteria map
 // for System One routing evaluations.
-func buildSmartCriteria(models []string) (map[string]any, []string) {
+func buildSmartCriteria(models []string, easyModels, hardModels []string) (map[string]any, []string) {
+	easySet := make(map[string]bool, len(easyModels))
+	for _, em := range easyModels {
+		easySet[strings.TrimSpace(em)] = true
+	}
+	hardSet := make(map[string]bool, len(hardModels))
+	for _, hm := range hardModels {
+		hardSet[strings.TrimSpace(hm)] = true
+	}
+
 	criteria := make(map[string]any, len(models))
 	choices := make([]string, 0, len(models))
 	for _, m := range models {
@@ -191,7 +207,7 @@ func buildSmartCriteria(models []string) (map[string]any, []string) {
 			continue
 		}
 		choices = append(choices, trimmed)
-		criteria[trimmed] = describeModelForRouting(trimmed)
+		criteria[trimmed] = describeModelForRouting(trimmed, easySet[trimmed], hardSet[trimmed])
 	}
 	return criteria, choices
 }
@@ -398,11 +414,11 @@ func smartSwitchThreshold(cfg db.ComboStrategy) float64 {
 // (missing credentials, timeout, unparseable answer) returns nil and the
 // strategy falls back to the combo's own ordering. Port of upstream
 // resolveSmartChoice.
-func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, models []string, routerModel string) *smartChoice {
+func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, models []string, cfg db.ComboStrategy) *smartChoice {
 	if len(models) <= 1 {
 		return nil
 	}
-	target := strings.TrimSpace(routerModel)
+	target := strings.TrimSpace(cfg.RouterModel)
 	if target == "" {
 		target = smartRouterDefaultModel
 	}
@@ -410,7 +426,7 @@ func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, model
 	if state == "" {
 		return nil
 	}
-	criteria, choices := buildSmartCriteria(models)
+	criteria, choices := buildSmartCriteria(models, cfg.EasyModels, cfg.HardModels)
 	if len(criteria) == 0 {
 		return nil
 	}
@@ -565,7 +581,7 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 
 	if activeModel != "" {
 		// Smart Switch: re-evaluate, and switch only above the floor.
-		if choice := h.resolveSmartChoice(ctx, body, models, cfg.RouterModel); choice != nil {
+		if choice := h.resolveSmartChoice(ctx, body, models, cfg); choice != nil {
 			conf := -1.0
 			if choice.Confidence != nil {
 				conf = *choice.Confidence
@@ -582,7 +598,7 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 	}
 
 	// Turn 1 or per-turn: evaluate and order by the choice.
-	choice := h.resolveSmartChoice(ctx, body, models, cfg.RouterModel)
+	choice := h.resolveSmartChoice(ctx, body, models, cfg)
 	if choice == nil || !containsString(models, choice.Choice) {
 		log.Info("combo", "smart-router no decision, fallback to order", "combo", comboName)
 		return ctx, models

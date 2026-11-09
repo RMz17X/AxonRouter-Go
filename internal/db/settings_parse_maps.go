@@ -51,6 +51,24 @@ func applyComboStrategies(s *SettingsData, raw map[string]any) {
 			entry.ConfidenceThreshold = &ct
 		}
 		entry.RouterModel = handlerutil.GetString(vm, "routerModel")
+		if em, ok := vm["easyModels"].([]any); ok {
+			var easy []string
+			for _, item := range em {
+				if str, ok := item.(string); ok && str != "" {
+					easy = append(easy, str)
+				}
+			}
+			entry.EasyModels = easy
+		}
+		if hm, ok := vm["hardModels"].([]any); ok {
+			var hard []string
+			for _, item := range hm {
+				if str, ok := item.(string); ok && str != "" {
+					hard = append(hard, str)
+				}
+			}
+			entry.HardModels = hard
+		}
 		// An absent flag reads as false, which is the behaviour every
 		// combo had before the flag existed: rotation stays on unless
 		// the operator turned it off for this combo.

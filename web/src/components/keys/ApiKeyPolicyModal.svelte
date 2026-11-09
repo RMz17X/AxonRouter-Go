@@ -198,9 +198,16 @@
   })
 </script>
 
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-  <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-surface-2 border border-border shadow-2xl">
-    <div class="sticky top-0 bg-surface-2 border-b border-border px-6 py-4 flex items-center justify-between z-10">
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+  onclick={(e) => {
+    if (e.target === e.currentTarget && !isSaving) onClose()
+  }}
+>
+  <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-surface border border-border shadow-2xl">
+    <div class="sticky top-0 bg-surface border-b border-border px-6 py-4 flex items-center justify-between z-10">
       <div class="min-w-0">
         <h2 class="font-headline text-sm font-bold text-text-main truncate">
           Policy — {apiKey.name || apiKey.keyDisplay || apiKey.key}

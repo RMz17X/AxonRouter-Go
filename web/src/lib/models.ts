@@ -7700,12 +7700,18 @@ export function getModelCaps(modelId: string, modelObj?: unknown): { vision: boo
 
   let decision =
     kind === "systemone" ||
+    kind === "decision" ||
     type === "systemone" ||
+    type === "decision" ||
     caps.includes("systemone") ||
     caps.includes("decision") ||
     idLower === "d1" ||
     idLower.startsWith("d1.") ||
     idLower.startsWith("d1-") ||
+    idLower.includes("/d1") ||
+    idLower.includes("jev-1.13") ||
+    idLower.includes("rev-latest") ||
+    idLower.includes("decision-engine") ||
     idLower.includes("systemone");
 
   // Explicit capability flags saved from the Add Custom Model modal

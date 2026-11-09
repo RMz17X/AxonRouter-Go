@@ -20,7 +20,7 @@
 
   interface Props {
     isOpen: boolean
-    target: 'combo' | 'vision' | 'audio' | 'judge' | 'router' | 'api-key' | 'models'
+    target: 'combo' | 'combo-easy' | 'combo-hard' | 'vision' | 'audio' | 'judge' | 'router' | 'api-key' | 'models'
     connections?: ProviderConnection[]
     combos?: Combo[]
     providerNodes?: ProviderNode[]
@@ -60,6 +60,15 @@
   $effect(() => {
     if (isOpen) {
       searchQuery = ''
+      if (target === 'router') {
+        activeFilter = 'decision'
+      } else if (target === 'vision') {
+        activeFilter = 'vision'
+      } else if (target === 'combo-hard') {
+        activeFilter = 'reasoning'
+      } else {
+        activeFilter = 'all'
+      }
       // Upstream parity (ComboFormModal fetchModalData): aliases drive
       // passthrough + custom-node rows; customs/disabled complete the merge.
       // One batch, one write: three chained fetches each published their own
@@ -172,9 +181,13 @@
                   ? 'Select Judge Model'
                   : target === 'router'
                     ? 'Select System One Router'
-                    : target === 'api-key' || target === 'models'
-                      ? 'Select Allowed Models'
-                      : 'Add Model to Combo'}
+                    : target === 'combo-easy'
+                      ? 'Add Model to Easy Pool (⚡ Simple / Fast)'
+                      : target === 'combo-hard'
+                        ? 'Add Model to Hard Pool (🧠 Reasoning / Complex)'
+                        : target === 'api-key' || target === 'models'
+                          ? 'Select Allowed Models'
+                          : 'Add Model to Combo'}
           </h2>
         </div>
         <button

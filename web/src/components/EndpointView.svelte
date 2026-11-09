@@ -22,7 +22,7 @@
   import Menu from '../lib/ui/Menu.svelte'
   import MenuItem from '../lib/ui/MenuItem.svelte'
   import { copyToClipboard } from '../lib/clipboard'
-  import type { Snippet } from 'svelte'
+  import { notifications } from '../lib/notifications'
   import ApiKeysTable from './keys/ApiKeysTable.svelte'
   import CreateApiKeyModal from './keys/CreateApiKeyModal.svelte'
   import { api, type APIKey, type Settings, type TunnelStatusResponse } from '../api/client'
@@ -300,6 +300,12 @@
       tunnelRotatedAt = status.tunnel.rotatedAt || ''
       tunnelConnectionState = status.tunnel.state || ''
       currentTunnelMode = status.tunnel.mode || 'quick'
+      if (!showTunnelSettingsModal) {
+        const syncedMode = status.tunnel.mode
+        if (syncedMode === 'quick' || syncedMode === 'named' || syncedMode === 'auto') {
+          tunnelMode = syncedMode
+        }
+      }
       // Seed the mapping-service field with what the gateway is actually using.
       // An empty field reads as "nothing configured", which sends the operator
       // looking for a default they cannot see — and the placeholder alone does
@@ -373,7 +379,8 @@
     // decided against it without reaching for the pointer.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (showTunnelSettingsModal) showTunnelSettingsModal = false
+      if (newlyCreatedKey) newlyCreatedKey = null
+      else if (showTunnelSettingsModal) showTunnelSettingsModal = false
       else if (showDisableTunnelModal) showDisableTunnelModal = false
       else if (showDisableTailscaleModal) showDisableTailscaleModal = false
     }
@@ -409,9 +416,16 @@
     }
   })
 
-  function copy(text: string, id: string) {
-    copyToClipboard(text)
+  async function copy(text: string, id: string, notifyToast = false) {
+    const ok = await copyToClipboard(text)
+    if (!ok) {
+      notifications.error('Clipboard access was blocked by the browser.')
+      return
+    }
     copiedId = id
+    if (notifyToast) {
+      notifications.success('Copied to clipboard')
+    }
     setTimeout(() => {
       if (copiedId === id) copiedId = null
     }, 2000)
@@ -425,7 +439,7 @@
       onRefresh?.()
     } catch (err) {
       requireApiKey = !value
-      alert(`Failed to update requireApiKey: ${err instanceof Error ? err.message : String(err)}`)
+      notifications.error(`Failed to update requireApiKey: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -437,7 +451,7 @@
       onRefresh?.()
     } catch (err) {
       tunnelDashboardAccess = !value
-      alert(`Failed to update tunnelDashboardAccess: ${err instanceof Error ? err.message : String(err)}`)
+      notifications.error(`Failed to update tunnelDashboardAccess: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -506,7 +520,7 @@
       await api.updateSettings({ tunnelWatchdogEnabled: value })
     } catch (err) {
       tunnelWatchdogEnabled = !value
-      alert(`Failed to update Cloudflare auto-reconnect: ${err instanceof Error ? err.message : String(err)}`)
+      notifications.error(`Failed to update Cloudflare auto-reconnect: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -531,6 +545,14 @@
   function openTunnelSettings(tab: 'global' | 'cloudflare' | 'tailscale' = 'cloudflare') {
     tunnelSettingsTab = tab
     showTunnelSettingsModal = true
+    if (tab === 'tailscale' && tailscaleInstalled === null) {
+      api
+        .checkTailscale()
+        .then((c) => {
+          tailscaleInstalled = !!c.installed
+        })
+        .catch(() => {})
+    }
   }
 
   // Pick a method. Only the fields that belong to the previous method are
@@ -556,7 +578,7 @@
       await api.updateSettings({ tailscaleWatchdogEnabled: value })
     } catch (err) {
       tailscaleWatchdogEnabled = !value
-      alert(`Failed to update Tailscale auto-reconnect: ${err instanceof Error ? err.message : String(err)}`)
+      notifications.error(`Failed to update Tailscale auto-reconnect: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -571,7 +593,7 @@
       onRefresh?.()
     } catch (err) {
       hideUnusedTunnel = !value
-      alert(`Failed to update hide unused tunnel: ${err instanceof Error ? err.message : String(err)}`)
+      notifications.error(`Failed to update hide unused tunnel: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
   // Reset the mapping service to the default. Clearing the setting on the server
@@ -586,7 +608,7 @@
       await api.updateSettings({ tunnelWorkerUrl: '' })
       workerUrlSaved = true
     } catch (err) {
-      alert(`Failed to reset mapping service: ${err instanceof Error ? err.message : String(err)}`)
+      notifications.error(`Failed to reset mapping service: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       isSavingWorkerUrl = false
     }
@@ -624,7 +646,7 @@
       await api.updateSettings({ tunnelWorkerUrl: next })
       workerUrlSaved = true
     } catch (err) {
-      alert(`Failed to update mapping service: ${err instanceof Error ? err.message : String(err)}`)
+      notifications.error(`Failed to update mapping service: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       isSavingWorkerUrl = false
     }
@@ -653,6 +675,11 @@
   // looking at the change they made, so a second modal only adds a layer
   // between them and the button they need.
   async function doStartTunnel() {
+    if (isLoginUnsafe) {
+      tunnelError = `Security required: ${unsafeReason}`
+      notifications.error(tunnelError)
+      return
+    }
     isTunnelLoading = true
     tunnelStatusText = 'Creating tunnel...'
     tunnelError = null
@@ -820,31 +847,19 @@
 </script>
 
 {#snippet endpointBox(o: {
+  kind: 'local' | 'tunnel' | 'tailscale'
   label: string
   labelClass?: string
   active: boolean
   menuLabel: string
   urlValue: string
   revealed: boolean
-  children: Snippet
+  copyId: string
+  onToggleReveal: () => void
+  onCopy: () => void
 })}
   <!-- One endpoint row: label bar with its action, then the URL beneath it,
-       inside a single rounded box.
-
-       The three rows on this card (Local, Tunnel, Tailscale) are the same
-       control with different contents, so they share this snippet. Before it
-       existed, Local was one box while Tunnel and Tailscale were a coloured bar
-       plus a separate input with its own border — three rows that read as three
-       different components.
-
-       The URL line is the address and nothing else. Show/hide and copy moved to
-       the overflow menu, so the input keeps the full width of the box — on a
-       phone, two icon buttons beside it cost a third of the row and truncated
-       the address it exists to show.
-
-       A row with no URL yet shows its status text in the same slot, so the box
-       keeps its height instead of collapsing and reflowing the card when a
-       tunnel comes up. -->
+       inside a single rounded box. -->
   <div class="rounded-lg bg-surface-2 border border-border overflow-hidden">
     <div class="relative flex items-center gap-2 h-9 px-2">
       <span class="w-1.5 h-1.5 rounded-full shrink-0 {o.active ? 'bg-success' : 'bg-text-subtle'}"></span>
@@ -856,26 +871,49 @@
         {o.label}
       </span>
       <div class="relative z-10 w-9 shrink-0">
-        {@render o.children()}
+        {#if o.kind === 'local'}
+          {@render localMenu()}
+        {:else if o.kind === 'tunnel'}
+          {@render tunnelMenu()}
+        {:else}
+          {@render tailscaleMenu()}
+        {/if}
       </div>
     </div>
     {#if o.urlValue}
-      <!-- The URL, and nothing beside it. Show/hide and copy live in the row's
-           overflow menu, beside the other verbs that act on this endpoint. Two
-           icon buttons on the URL line also cost the input a third of its width
-           on a phone, which truncated the very address the row exists to show.
-
-           The mask is all-or-nothing: a partial mask kept the hostname visible,
-           and the hostname is the one part of a tunnel URL that is not already
-           on screen. The label above names the endpoint, so nothing needs
-           guessing from a half-shown string. -->
-      <div class="border-t border-border-subtle px-3">
+      <div class="flex items-center gap-1 border-t border-border-subtle pl-3 pr-1.5 py-1">
         <input
           type="text"
           value={o.revealed ? `${o.urlValue}/v1` : maskUrl(`${o.urlValue}/v1`)}
           readonly
-          class="w-full min-w-0 font-mono text-sm bg-transparent border-0 rounded-none py-1.5 text-text-main selection:bg-brand-500/30 focus:outline-none"
+          class="flex-1 min-w-0 font-mono text-sm bg-transparent border-0 rounded-none py-0.5 text-text-main selection:bg-brand-500/30 focus:outline-none"
         />
+        <button
+          type="button"
+          onclick={o.onToggleReveal}
+          class="shrink-0 p-1 rounded-md text-text-muted hover:text-text-main hover:bg-surface-3 transition-colors cursor-pointer"
+          aria-label={o.revealed ? `Hide ${o.label} URL` : `Show ${o.label} URL`}
+          title={o.revealed ? 'Hide URL' : 'Show URL'}
+        >
+          {#if o.revealed}
+            <EyeOff class="w-3.5 h-3.5" />
+          {:else}
+            <Eye class="w-3.5 h-3.5" />
+          {/if}
+        </button>
+        <button
+          type="button"
+          onclick={o.onCopy}
+          class="shrink-0 p-1 rounded-md text-text-muted hover:text-brand-500 hover:bg-surface-3 transition-colors cursor-pointer"
+          aria-label={`Copy ${o.label} URL`}
+          title="Copy URL"
+        >
+          {#if copiedId === o.copyId}
+            <Check class="w-3.5 h-3.5 text-success" />
+          {:else}
+            <Copy class="w-3.5 h-3.5" />
+          {/if}
+        </button>
       </div>
     {:else}
       <div class="flex items-center gap-2 border-t border-border-subtle px-3 py-1.5 text-[11px] text-text-muted">
@@ -906,14 +944,6 @@
 {/snippet}
 
 {#snippet localMenu()}
-  <!-- Local now renders through the same Menu as Tunnel and Tailscale.
-       It used to be a bare copy button, on the reasoning that a one-item menu
-       costs a click to reach the same action. But Local is the only row whose
-       URL is shown in full with no way to hide it, so the button left the
-       address on screen permanently — and three rows carrying two different
-       action controls read as three different components rather than one list.
-       The menu also gives Local somewhere to put the mask toggle the other two
-       already had. -->
   <Menu label="Local actions" hideLabel iconOnly align="right" minWidth="12rem">
     <MenuItem
       label={showLocalUrl ? 'Hide URL' : 'Show URL'}
@@ -922,12 +952,7 @@
       pressed={showLocalUrl}
       onSelect={() => (showLocalUrl = !showLocalUrl)}
     />
-    <MenuItem label="Copy URL" icon="content_copy" onSelect={() => copy(localEndpoint, 'local_url')} />
-    <!-- Local is the only row that is not a tunnel, so it has no tunnel of its
-         own to configure — but it is the row an operator lands on first, and
-         the Global tab is where both tunnels' behaviour and dashboard access
-         live. Without this entry the only way in was the gear on a row that
-         might not be connected at all. -->
+    <MenuItem label="Copy URL" icon="content_copy" onSelect={() => copy(localEndpoint, 'local_url', true)} />
     <MenuItem label="Settings" icon="tune" onSelect={() => openTunnelSettings('global')} />
   </Menu>
 {/snippet}
@@ -945,16 +970,10 @@
       <MenuItem
         label="Copy URL"
         icon="content_copy"
-        onSelect={() => copy(`${publicUrl || tunnelUrl}/v1`, 'tunnel_url')}
+        onSelect={() => copy(`${publicUrl || tunnelUrl}/v1`, 'tunnel_url', true)}
       />
     {/if}
     {#if tunnelEnabled}
-      <!-- Always enabled. It used to be gated on tunnelConfigChanged, on the
-           theory that a restart with nothing to apply would tear down a healthy
-           tunnel for no reason. But restarting is itself a reason: an operator
-           whose tunnel is answering slowly, or who just wants a clean connector,
-           has no change to make and no way to say so. The gate turned a
-           legitimate action into a dead menu item labelled "no changes". -->
       <MenuItem label="Restart" icon="restart_alt" onSelect={doStartTunnel} />
       <MenuItem label="Settings" icon="tune" onSelect={() => openTunnelSettings('cloudflare')} />
       <div class="my-1 border-t border-border-subtle" role="separator"></div>
@@ -966,6 +985,7 @@
       />
     {:else}
       <MenuItem label="Enable" icon="shield" onSelect={doStartTunnel} />
+      <MenuItem label="Settings" icon="tune" onSelect={() => openTunnelSettings('cloudflare')} />
     {/if}
   </Menu>
 {/snippet}
@@ -983,7 +1003,7 @@
       <MenuItem
         label="Copy URL"
         icon="content_copy"
-        onSelect={() => copy(`${tailscaleUrl}/v1`, 'ts_url')}
+        onSelect={() => copy(`${tailscaleUrl}/v1`, 'ts_url', true)}
       />
     {/if}
     {#if tailscaleEnabled}
@@ -998,6 +1018,7 @@
       />
     {:else}
       <MenuItem label="Enable" icon="shield" onSelect={handleTailscaleClick} />
+      <MenuItem label="Settings" icon="tune" onSelect={() => openTunnelSettings('tailscale')} />
     {/if}
   </Menu>
 {/snippet}
@@ -1015,63 +1036,44 @@
         </h2>
         <p class="text-xs text-text-muted">Direct, secure connection points to your local AI router</p>
       </div>
+      <button
+        type="button"
+        onclick={() => openTunnelSettings('global')}
+        class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 text-xs font-medium text-text-muted hover:text-text-main transition cursor-pointer shrink-0"
+        title="Tunnel & Exposure Settings"
+      >
+        <SettingsIcon class="w-3.5 h-3.5" />
+        <span class="hidden sm:inline">Tunnel Settings</span>
+      </button>
     </div>
 
-    <!-- min-w-0 is load-bearing: inside the card's block flow this column would
-         otherwise size to its widest child, and the endpoint row below measures
-         itself against that inflated width instead of the card's. Without it the
-         input collapses to ~190px on a narrow viewport while the card still has
-         room to spare. -->
     <div class="flex flex-col gap-3 min-w-0">
-    <!-- Local Endpoint Field. Same box as Tunnel and Tailscale below: a label
-         bar with its action, then the URL on the line beneath it, inside one
-         rounded rectangle.
-
-         Local was the shape the other two were brought to. Its URL is stable,
-         so there is no state dot — but it now carries the same menu as the
-         other two, including the mask toggle. -->
     {@render endpointBox({
+      kind: 'local',
       label: 'Local',
       active: true,
       menuLabel: 'Local actions',
       urlValue: localOrigin,
       revealed: showLocalUrl,
-      children: localMenu,
+      copyId: 'local_url',
+      onToggleReveal: () => (showLocalUrl = !showLocalUrl),
+      onCopy: () => copy(localEndpoint, 'local_url'),
     })}
 
-      <!-- Tunnel (Cloudflare) and Tailscale (Serve / Funnel).
-           Both render through endpointBox, the same snippet Local uses, so all
-           three rows are one visual control: a label bar with its action
-           button, and the URL on the line beneath it inside the same rounded
-           box.
-
-           They used to be laid out differently from Local — a coloured bar for
-           the label, then a separate input with its own border and background,
-           and four icon buttons squeezed beside the URL on desktop. The result
-           was three rows that looked like three different components. Sharing
-           the snippet makes the difference between them what it actually is:
-           which endpoint it is, and what state it is in.
-
-           The state colour moves to the label text and a dot rather than
-           filling the whole bar. A filled bar made a running tunnel look like a
-           selected row, and it was the only row on the card carrying a
-           background — so the card read as three zones instead of one list. -->
       {#if showTunnelRow}
         {@render endpointBox({
+          kind: 'tunnel',
           label: 'Tunnel',
           active: tunnelRunning && !!tunnelUrl,
           menuLabel: 'Tunnel actions',
           urlValue: publicUrl || tunnelUrl,
           revealed: showTunnelUrl,
-          children: tunnelMenu,
+          copyId: 'tunnel_url',
+          onToggleReveal: () => (showTunnelUrl = !showTunnelUrl),
+          onCopy: () => copy(`${publicUrl || tunnelUrl}/v1`, 'tunnel_url'),
         })}
 
         {#if tunnelRotation}
-          <!-- A quick tunnel's hostname changes on every reconnect. The stable
-               alias absorbs it, so the only thing that breaks is an address the
-               operator copied by hand earlier — and nothing else on this card
-               would say so. This is that notice, shown only when the URL actually
-               changed rather than on every poll. -->
           <div class="rounded-lg border border-warning/30 bg-warning/10 p-2.5 space-y-1.5">
             <p class="text-xs font-semibold text-text-main">Tunnel URL changed</p>
             <p class="text-[11px] text-text-muted leading-relaxed">
@@ -1086,13 +1088,16 @@
 
       {#if showTailscaleRow}
         {@render endpointBox({
+          kind: 'tailscale',
           label: 'Tailscale',
           labelClass: 'text-indigo-400',
           active: tailscaleRunning && !!tailscaleUrl,
           menuLabel: 'Tailscale actions',
           urlValue: tailscaleUrl,
           revealed: showTailscaleUrl,
-          children: tailscaleMenu,
+          copyId: 'ts_url',
+          onToggleReveal: () => (showTailscaleUrl = !showTailscaleUrl),
+          onCopy: () => copy(`${tailscaleUrl}/v1`, 'ts_url'),
         })}
       {/if}
     <!-- Pre-enable security gate banner (upstream isLoginUnsafe) -->
@@ -1184,10 +1189,25 @@
 />
 
 {#if newlyCreatedKey}
-  <div class="fixed inset-0 z-\[100\] flex items-center justify-center bg-black/75 p-4">
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) newlyCreatedKey = null
+    }}
+  >
     <div class="w-full max-w-md p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-4">
       <div class="flex items-center justify-between pb-3 border-b border-border">
         <h3 class="text-base font-bold text-text-main">API Key Created</h3>
+        <button
+          type="button"
+          onclick={() => (newlyCreatedKey = null)}
+          class="text-text-muted hover:text-text-main cursor-pointer"
+          aria-label="Close"
+        >
+          <X class="w-4 h-4" />
+        </button>
       </div>
 
       <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 space-y-1 text-amber-700 dark:text-amber-300">
@@ -1305,7 +1325,7 @@
             type="button"
             role="tab"
             aria-selected={tunnelSettingsTab === 'tailscale'}
-            onclick={() => (tunnelSettingsTab = 'tailscale')}
+            onclick={() => openTunnelSettings('tailscale')}
             class="flex-1 py-2 px-3 rounded-t-lg text-xs font-semibold transition cursor-pointer border-b-2 {tunnelSettingsTab ===
             'tailscale'
               ? 'border-indigo-500 text-indigo-400'
@@ -2053,15 +2073,9 @@
             Disable Tailscale
           </button>
         {:else}
-          <!-- Calls startTailscale directly rather than opening the old
-               connect modal. That modal's Connect button was gated on
-               tailscaleInstalled, which is null until a check has run — so the
-               modal opened with its explanatory text and no way to proceed.
-               startTailscale is what the endpoint row already uses, and it
-               handles the not-installed and needs-login cases itself. -->
           <button
             type="button"
-            onclick={startTailscale}
+            onclick={handleTailscaleClick}
             disabled={isTailscaleLoading}
             class="w-full py-2 px-4 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >

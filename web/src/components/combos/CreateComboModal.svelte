@@ -3,11 +3,16 @@
     ArrowDown,
     ArrowUp,
     Brain,
+    Cpu,
     Eye,
     GripVertical,
     Layers,
     Plus,
-    X
+    RotateCcw,
+    Sparkles,
+    Wand2,
+    X,
+    Zap
   } from 'lucide-svelte'
   import type { Combo, ComboRulesPreview, SmartRule } from '../../api/client'
   import { api } from '../../api/client'
@@ -25,10 +30,13 @@
     RESPONSE_TIMEOUT_HELP,
     secondsToTimeoutMs,
     timeoutMsToSeconds,
+    comboStrategyOptions,
     parseSmartRules,
     SMART_RULE_MODES,
     smartRuleSummary,
-    sortComboMembers
+    sortComboMembers,
+    isLikelyEasyModel,
+    isLikelyHardModel,
   } from './types'
   import type { ComboSortKey, ModelMetaMap } from './types'
 
@@ -36,6 +44,13 @@
     isOpen: boolean
     editingCombo: Combo | null
     models: string[]
+    initialStrategy?: string
+    /** Smart Router pools. Controlled by the parent so there is ONE source of
+     *  truth for the Easy/Hard assignment, not a copy inside this modal. */
+    easyModels?: string[]
+    hardModels?: string[]
+    routerModel?: string
+    globalStrategy?: string
     isSaving?: boolean
     /** Server-side refusal (e.g. the name collides with a combo, alias or
      * custom model id). Shown inline so a 409 is never a silent no-op. */
@@ -51,16 +66,31 @@
       models: string[],
       matchRules: SmartRule[],
       timeoutMs: number,
-      graceMs: number | undefined
+      graceMs: number | undefined,
+      strategy: string,
+      smartCfg?: {
+        easyModels?: string[]
+        hardModels?: string[]
+        routerModel?: string
+      }
     ) => Promise<void> | void
-    onOpenModelPicker: () => void
+    onOpenModelPicker: (target?: 'combo' | 'combo-easy' | 'combo-hard') => void
     onUpdateModels: (models: string[]) => void
+    onUpdateEasyModels?: (models: string[]) => void
+    onUpdateHardModels?: (models: string[]) => void
+    onUpdateRouterModel?: (router: string) => void
+    onOpenSmartPolicy?: () => void
   }
 
   let {
     isOpen,
     editingCombo,
     models,
+    initialStrategy = 'fallback',
+    easyModels = [],
+    hardModels = [],
+    routerModel = '',
+    globalStrategy = 'first-model',
     isSaving = false,
     saveError = '',
     responseTimeoutMs = 0,
@@ -69,11 +99,96 @@
     onSave,
     onOpenModelPicker,
     onUpdateModels,
+    onUpdateEasyModels,
+    onUpdateHardModels,
+    onUpdateRouterModel,
+    onOpenSmartPolicy,
   }: Props = $props()
+
+  const ROUTER_PRESETS = [
+    { id: '', label: 'Auto (liquid/d1)' },
+    { id: 'liquid/d1', label: 'Liquid d1 (Fast Decision)' },
+    { id: 'liquid/d1.1', label: 'Liquid d1.1' },
+    { id: 'liquid/d1-ultra', label: 'Liquid d1-ultra' },
+    { id: 'oc/jev-1.13-free', label: 'OpenCode jev-1.13-free' },
+    { id: 'v1m/rev-latest', label: 'v1m Rev Latest' },
+  ]
 
   // svelte-ignore state_referenced_locally — intentional draft seed: CombosView remounts this modal per open via {#key}, so the initial prop read IS the per-open reset.
   let modalName = $state(editingCombo?.name || '')
   let modalNameError = $state('')
+  // svelte-ignore state_referenced_locally — same remount-seed pattern as modalName above.
+  let selectedStrategy = $state(initialStrategy || 'fallback')
+  let strategyOptions = $derived(comboStrategyOptions(globalStrategy))
+  function autoDetectPools() {
+    const newEasy: string[] = []
+    const newHard: string[] = []
+    for (const m of models) {
+      if (isLikelyEasyModel(m)) {
+        newEasy.push(m)
+      } else if (isLikelyHardModel(m)) {
+        newHard.push(m)
+      } else {
+        newEasy.push(m)
+      }
+    }
+    onUpdateEasyModels?.(newEasy)
+    onUpdateHardModels?.(newHard)
+  }
+
+  function clearPools() {
+    onUpdateEasyModels?.([])
+    onUpdateHardModels?.([])
+  }
+
+  function moveToHard(model: string) {
+    const nextEasy = easyModels.filter((m) => m !== model)
+    const nextHard = hardModels.includes(model) ? hardModels : [...hardModels, model]
+    onUpdateEasyModels?.(nextEasy)
+    onUpdateHardModels?.(nextHard)
+  }
+
+  function moveToEasy(model: string) {
+    const nextHard = hardModels.filter((m) => m !== model)
+    const nextEasy = easyModels.includes(model) ? easyModels : [...easyModels, model]
+    onUpdateHardModels?.(nextHard)
+    onUpdateEasyModels?.(nextEasy)
+  }
+
+  function removeEasyModel(model: string) {
+    onUpdateEasyModels?.(easyModels.filter((m) => m !== model))
+    onUpdateModels(models.filter((m) => m !== model))
+  }
+
+  function removeHardModel(model: string) {
+    onUpdateHardModels?.(hardModels.filter((m) => m !== model))
+    onUpdateModels(models.filter((m) => m !== model))
+  }
+
+  function moveEasyOrder(idx: number, delta: number) {
+    const arr = [...easyModels]
+    const target = idx + delta
+    if (target < 0 || target >= arr.length) return
+    const temp = arr[idx]
+    arr[idx] = arr[target]
+    arr[target] = temp
+    onUpdateEasyModels?.(arr)
+  }
+
+  function moveHardOrder(idx: number, delta: number) {
+    const arr = [...hardModels]
+    const target = idx + delta
+    if (target < 0 || target >= arr.length) return
+    const temp = arr[idx]
+    arr[idx] = arr[target]
+    arr[target] = temp
+    onUpdateHardModels?.(arr)
+  }
+
+  let unassignedModels = $derived(
+    models.filter((m) => !easyModels.includes(m) && !hardModels.includes(m))
+  )
+  let autoCount = $derived(unassignedModels.length)
   // Seeded once per open: the modal is remounted by the {#key} in CombosView.
   // svelte-ignore state_referenced_locally — same remount-seed pattern as modalName above.
   let timeoutInput = $state<string | number | null>(String(timeoutMsToSeconds(responseTimeoutMs) || ''))
@@ -351,7 +466,24 @@
   function handleSave() {
     if (!validateModalName(modalName)) return
     if (timeoutMs === null || graceMs === null) return
-    onSave(modalName.trim(), models, rules, timeoutMs, graceMs)
+    const finalModels = selectedStrategy === 'smart'
+      ? Array.from(new Set([...easyModels, ...hardModels, ...models]))
+      : models
+    onSave(
+      modalName.trim(),
+      finalModels,
+      rules,
+      timeoutMs,
+      graceMs,
+      selectedStrategy,
+      selectedStrategy === 'smart'
+        ? {
+            easyModels: easyModels.length > 0 ? easyModels : [],
+            hardModels: hardModels.length > 0 ? hardModels : [],
+            routerModel: routerModel.trim() || undefined,
+          }
+        : undefined
+    )
   }
 
   function moveModel(idx: number, delta: number) {
@@ -389,20 +521,79 @@
   {isOpen}
   onClose={onClose}
   title={editingCombo ? 'Edit Combo' : 'Create Combo'}
-  size="lg"
+  size="5xl"
 >
   <div class="flex flex-col gap-3">
-    <!-- Name -->
-    <div>
-      <Input
-        label="Combo Name"
-        bind:value={modalName}
-        placeholder="my-combo"
-        error={modalNameError}
-      />
-      <p class="text-[10px] text-text-muted mt-0.5">
-        Only letters, numbers, -, _ and . allowed
-      </p>
+    <!-- Row: Name & Strategy -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">
+      <div>
+        <Input
+          label="Combo Name"
+          bind:value={modalName}
+          placeholder="my-combo"
+          error={modalNameError}
+        />
+        <p class="text-[10px] text-text-muted mt-0.5">
+          Only letters, numbers, -, _ and . allowed
+        </p>
+      </div>
+
+      <div class="flex flex-col">
+        <label for="combo-strategy-select" class="text-xs font-medium text-text-main mb-1.5 flex items-center justify-between">
+          <span>Routing Strategy</span>
+          {#if selectedStrategy === 'smart' && onOpenSmartPolicy}
+            <button
+              type="button"
+              onclick={onOpenSmartPolicy}
+              class="inline-flex items-center gap-1 text-[11px] font-medium text-brand-500 hover:underline cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-[13px]">tune</span>
+              <span>Configure Pools & Router</span>
+            </button>
+          {/if}
+        </label>
+        <select
+          id="combo-strategy-select"
+          bind:value={selectedStrategy}
+          class="w-full bg-surface-2 border border-border rounded-lg px-2.5 py-2 text-xs text-text-main focus:outline-none focus:border-brand-500 cursor-pointer font-body"
+        >
+          {#each strategyOptions as strategy (strategy.value)}
+            <option value={strategy.value}>{strategy.label}</option>
+          {/each}
+        </select>
+        <p class="text-[10px] text-text-muted mt-1">
+          {#if selectedStrategy === 'smart'}
+            ⚡ <span class="text-emerald-600 dark:text-emerald-400 font-medium">Smart Router active:</span> uses System One to route requests to Easy or Hard pool.
+          {:else if selectedStrategy === 'fallback'}
+            Try models in top-to-bottom sequence until one succeeds.
+          {:else if selectedStrategy === 'round-robin'}
+            Distribute incoming traffic across models in turn.
+          {:else if selectedStrategy === 'sticky'}
+            Pin sessions to the same model until quota or failure.
+          {:else if selectedStrategy === 'fusion'}
+            Run multi-model query panel and fuse answers with judge.
+          {:else}
+            Standard combo routing rule.
+          {/if}
+        </p>
+        {#if selectedStrategy === 'smart'}
+          <div class="mt-2 flex flex-wrap items-center justify-between gap-1.5 p-2 rounded-lg bg-brand-500/5 border border-brand-500/20 text-xs">
+            <div class="flex items-center gap-1.5 text-text-muted">
+              <Cpu class="w-3.5 h-3.5 text-brand-500 shrink-0" />
+              <span class="font-medium text-text-main">Decision Router:</span>
+              <select
+                value={routerModel}
+                onchange={(e) => onUpdateRouterModel?.(e.currentTarget.value)}
+                class="bg-surface border border-border rounded px-2 py-0.5 text-xs text-text-main focus:outline-none focus:border-brand-500 cursor-pointer"
+              >
+                {#each ROUTER_PRESETS as r}
+                  <option value={r.id}>{r.label}</option>
+                {/each}
+              </select>
+            </div>
+          </div>
+        {/if}
+      </div>
     </div>
 
     <!-- Model response timeout: a failover control, so it sits right under the
@@ -689,6 +880,48 @@
         </div>
       </div>
 
+      {#if selectedStrategy === 'smart'}
+        <div class="mb-2 p-2 rounded-lg border border-brand-500/25 bg-brand-500/5 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-semibold text-text-main flex items-center gap-1">
+              <Zap class="w-3.5 h-3.5 text-amber-500" />
+              <span>Smart Pools:</span>
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium text-[11px]">
+              <Zap class="w-3 h-3" />
+              <span>{easyModels.length} Easy</span>
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-400 font-medium text-[11px]">
+              <Brain class="w-3 h-3" />
+              <span>{hardModels.length} Hard</span>
+            </span>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-border bg-surface-2 text-text-muted text-[11px]">
+              <span>{autoCount} Auto</span>
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onclick={autoDetectPools}
+              class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded bg-brand-500/10 text-brand-500 border border-brand-500/20 hover:bg-brand-500/20 transition-colors cursor-pointer"
+              title="Auto-classify models based on keywords (flash/mini -> Easy, reasoning/large -> Hard)"
+            >
+              <Wand2 class="w-3 h-3" />
+              <span>Auto-Detect</span>
+            </button>
+            <button
+              type="button"
+              onclick={clearPools}
+              class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded bg-surface-2 text-text-muted hover:text-text-main border border-border hover:bg-surface-3 transition-colors cursor-pointer"
+              title="Reset all models to Auto"
+            >
+              <RotateCcw class="w-2.5 h-2.5" />
+              <span>Reset</span>
+            </button>
+          </div>
+        </div>
+      {/if}
+
       {#if models.length === 0}
         <div class="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
           <Layers class="w-6 h-6 text-text-muted mx-auto mb-1 opacity-50" />
@@ -755,6 +988,51 @@
               {/if}
               {#if caps.reasoning}
                 <Brain class="w-3 h-3 text-amber-500 shrink-0"><title>Reasoning — Supports reasoning / thinking</title></Brain>
+              {/if}
+              {#if selectedStrategy === 'smart'}
+                {@const isEasy = easyModels.includes(model)}
+                {@const isHard = hardModels.includes(model)}
+                {@const isAuto = !isEasy && !isHard}
+                <div class="inline-flex rounded border border-border bg-surface-2/60 p-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onclick={() => toggleModelTier(model, 'easy')}
+                    class={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                      isEasy
+                        ? 'bg-emerald-500 text-white shadow-xs'
+                        : 'text-text-muted hover:text-text-main'
+                    }`}
+                    title="Assign to Easy Pool (fast, lightweight, cheap)"
+                  >
+                    <Zap class="w-2.5 h-2.5" />
+                    <span>Easy</span>
+                  </button>
+                  <button
+                    type="button"
+                    onclick={() => toggleModelTier(model, 'hard')}
+                    class={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                      isHard
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'text-text-muted hover:text-text-main'
+                    }`}
+                    title="Assign to Hard Pool (deep logic, reasoning, math)"
+                  >
+                    <Brain class="w-2.5 h-2.5" />
+                    <span>Hard</span>
+                  </button>
+                  <button
+                    type="button"
+                    onclick={() => toggleModelTier(model, 'auto')}
+                    class={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                      isAuto
+                        ? 'bg-surface border border-border text-text-main shadow-xs'
+                        : 'text-text-muted hover:text-text-main'
+                    }`}
+                    title="Auto-detect tier via heuristics"
+                  >
+                    <span>Auto</span>
+                  </button>
+                </div>
               {/if}
               <div class="flex shrink-0 items-center gap-0.5">
                 <button

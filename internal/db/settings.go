@@ -36,6 +36,10 @@ type ComboStrategy struct {
 	// RouterModel overrides the System One model that evaluates the route
 	// (default oc/jev-1.13-free).
 	RouterModel string `json:"routerModel,omitempty"`
+	// EasyModels explicitly designates models in this combo as fast/lightweight (Easy tier).
+	EasyModels []string `json:"easyModels,omitempty"`
+	// HardModels explicitly designates models in this combo as complex/reasoning (Hard tier).
+	HardModels []string `json:"hardModels,omitempty"`
 	// RespectStoredOrder skips the rotation strategy and walks the combo's
 	// stored model list in order, so the ordering the operator arranged in the
 	// editor is the fallback chain the gateway tries. It does NOT skip
@@ -367,6 +371,15 @@ func cloneComboStrategies(m map[string]ComboStrategy) map[string]ComboStrategy {
 	}
 	out := make(map[string]ComboStrategy, len(m))
 	for k, v := range m {
+		if v.EasyModels != nil {
+			v.EasyModels = append([]string(nil), v.EasyModels...)
+		}
+		if v.HardModels != nil {
+			v.HardModels = append([]string(nil), v.HardModels...)
+		}
+		if v.FallbackCombos != nil {
+			v.FallbackCombos = append([]string(nil), v.FallbackCombos...)
+		}
 		out[k] = v
 	}
 	return out

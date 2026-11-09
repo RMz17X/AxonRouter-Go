@@ -133,6 +133,29 @@ func TestSmartSwitchThreshold(t *testing.T) {
 	}
 }
 
+func TestBuildSmartCriteria(t *testing.T) {
+	models := []string{"m/easy-1", "m/hard-1", "m/auto-standard"}
+	easy := []string{"m/easy-1"}
+	hard := []string{"m/hard-1"}
+
+	criteria, choices := buildSmartCriteria(models, easy, hard)
+	if len(choices) != 3 {
+		t.Fatalf("expected 3 choices, got %d", len(choices))
+	}
+	descEasy, ok := criteria["m/easy-1"].(string)
+	if !ok || !strings.Contains(descEasy, "Easy tier") {
+		t.Errorf("expected Easy tier criteria, got %q", descEasy)
+	}
+	descHard, ok := criteria["m/hard-1"].(string)
+	if !ok || !strings.Contains(descHard, "Hard tier") {
+		t.Errorf("expected Hard tier criteria, got %q", descHard)
+	}
+	descAuto, ok := criteria["m/auto-standard"].(string)
+	if !ok || !strings.Contains(descAuto, "Standard language model") {
+		t.Errorf("expected standard fallback criteria, got %q", descAuto)
+	}
+}
+
 func TestSmartStickyStore(t *testing.T) {
 	h := &ChatHandler{}
 	models := []string{"m1", "m2"}
@@ -222,7 +245,7 @@ func TestResolveSmartChoice(t *testing.T) {
 
 		choice := h.resolveSmartChoice(context.Background(),
 			[]byte(`{"messages":[{"role":"user","content":"write sql"}]}`),
-			[]string{"p/glm", "p/deepseek"}, "")
+			[]string{"p/glm", "p/deepseek"}, db.ComboStrategy{})
 		if choice == nil || choice.Choice != "p/deepseek" {
 			t.Fatalf("unexpected choice %+v", choice)
 		}
@@ -234,7 +257,7 @@ func TestResolveSmartChoice(t *testing.T) {
 		}))
 		defer upstream.Close()
 		h := newSmartRouterHandler(t, upstream)
-		if choice := h.resolveSmartChoice(context.Background(), []byte(`{"prompt":"x"}`), []string{"a", "b"}, ""); choice != nil {
+		if choice := h.resolveSmartChoice(context.Background(), []byte(`{"prompt":"x"}`), []string{"a", "b"}, db.ComboStrategy{}); choice != nil {
 			t.Fatalf("expected fail-open nil, got %+v", choice)
 		}
 	})
@@ -245,7 +268,7 @@ func TestResolveSmartChoice(t *testing.T) {
 		}))
 		defer upstream.Close()
 		h := newSmartRouterHandler(t, upstream)
-		if choice := h.resolveSmartChoice(context.Background(), []byte(`{}`), []string{"a", "b"}, ""); choice != nil {
+		if choice := h.resolveSmartChoice(context.Background(), []byte(`{}`), []string{"a", "b"}, db.ComboStrategy{}); choice != nil {
 			t.Fatalf("expected nil, got %+v", choice)
 		}
 	})
@@ -256,7 +279,7 @@ func TestResolveSmartChoice(t *testing.T) {
 		}))
 		defer upstream.Close()
 		h := newSmartRouterHandler(t, upstream)
-		if choice := h.resolveSmartChoice(context.Background(), []byte(`{"prompt":"x"}`), []string{"only"}, ""); choice != nil {
+		if choice := h.resolveSmartChoice(context.Background(), []byte(`{"prompt":"x"}`), []string{"only"}, db.ComboStrategy{}); choice != nil {
 			t.Fatalf("expected nil, got %+v", choice)
 		}
 	})

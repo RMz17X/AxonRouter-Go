@@ -11,6 +11,10 @@ export interface ComboStrategyInfo {
   confidenceThreshold?: number
   /** System One model that evaluates the route; empty means the free default. */
   routerModel?: string
+  /** Explicit model IDs classified into the Easy / Fast pool. */
+  easyModels?: string[]
+  /** Explicit model IDs classified into the Hard / Reasoning pool. */
+  hardModels?: string[]
   /**
    * Milliseconds from candidate start to first usable response; 0/absent
    * disables. Never applied to the last candidate in the chain.
@@ -646,6 +650,36 @@ export function isAutoMember(combo: Combo, model: string): boolean {
   return Array.isArray(combo.autoMembers) && combo.autoMembers.includes(model)
 }
 
+export function isLikelyEasyModel(model: string): boolean {
+  const m = model.toLowerCase()
+  return (
+    m.includes('flash') ||
+    m.includes('mini') ||
+    m.includes('haiku') ||
+    m.includes('nano') ||
+    m.includes('small') ||
+    m.includes('lite') ||
+    m.includes('fast') ||
+    m.includes('8b') ||
+    m.includes('1.7b') ||
+    m.includes('free')
+  )
+}
+
+export function isLikelyHardModel(model: string): boolean {
+  const m = model.toLowerCase()
+  return (
+    hasReasoning(model) ||
+    m.includes('opus') ||
+    m.includes('sonnet') ||
+    m.includes('24b') ||
+    m.includes('70b') ||
+    m.includes('max') ||
+    m.includes('ultra') ||
+    m.includes('codestral')
+  )
+}
+
 /**
  * Merge a Smart Router policy patch into `settings.comboStrategies`. The
  * policy carries its own stickiness: per-turn is the one policy without a
@@ -655,10 +689,29 @@ export function isAutoMember(combo: Combo, model: string): boolean {
 export function updateSmartPolicy(
   currentStrategies: Record<string, ComboStrategyInfo>,
   comboName: string,
-  cfg: { smartPolicy: string; sessionSticky: boolean; confidenceThreshold: number }
+  cfg: {
+    smartPolicy: string
+    sessionSticky: boolean
+    confidenceThreshold: number
+    routerModel?: string
+    easyModels?: string[]
+    hardModels?: string[]
+  }
 ): Record<string, ComboStrategyInfo> {
   const updated = { ...currentStrategies }
-  updated[comboName] = { ...(updated[comboName] || {}), ...cfg }
+  const existing = updated[comboName] || {}
+  const next: ComboStrategyInfo = { ...existing, ...cfg }
+  if (cfg.routerModel !== undefined) {
+    if (cfg.routerModel.trim()) next.routerModel = cfg.routerModel.trim()
+    else delete next.routerModel
+  }
+  if (cfg.easyModels !== undefined) {
+    next.easyModels = cfg.easyModels
+  }
+  if (cfg.hardModels !== undefined) {
+    next.hardModels = cfg.hardModels
+  }
+  updated[comboName] = next
   return updated
 }
 

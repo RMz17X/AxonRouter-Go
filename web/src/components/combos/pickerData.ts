@@ -13,8 +13,11 @@ const MEDIA_KINDS: Record<string, true> = {
 
 function isChatModel(m: unknown, target?: string): boolean {
   const kind = getModelKind(m)
-  if (target === 'router' && (kind === 'systemone' || kind === 'decision')) {
-    return true
+  if (target === 'router') {
+    if (kind === 'systemone' || kind === 'decision') return true
+    const modelId = typeof m === 'object' && m && 'id' in m ? String((m as { id: unknown }).id) : ''
+    const caps = getModelCaps(modelId, m)
+    return Boolean(caps.decision)
   }
   if (!kind || kind === 'llm' || kind === 'chat') {
     const obj = typeof m === 'object' && m !== null ? (m as { kind?: string; type?: string }) : null
@@ -330,7 +333,7 @@ export function resolveFilteredCombos(
   searchQuery: string,
   target: string
 ): Combo[] {
-  if (target === 'vision' || target === 'audio') {
+  if (target === 'vision' || target === 'audio' || target === 'router') {
     return []
   }
 
@@ -373,11 +376,13 @@ export function resolveFilteredGroups(
     .map((group) => {
       let models = group.models
 
-      // Filter by input-modality capability (vision / audio) matching upstream ModelSelectModal capFilter
+      // Filter by input-modality capability (vision / audio / router) matching upstream ModelSelectModal capFilter
       if (target === 'vision') {
         models = models.filter((m) => m.caps.vision)
       } else if (target === 'audio') {
         models = models.filter((m) => m.caps.audioInput)
+      } else if (target === 'router') {
+        models = models.filter((m) => m.caps.decision)
       }
 
       if (models.length === 0) return null

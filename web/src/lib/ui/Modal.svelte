@@ -19,7 +19,7 @@
     onClose?: () => void
     title?: string
     icon?: string
-    size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | 'full'
+    size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | 'full'
     closeOnOverlay?: boolean
     showTrafficLights?: boolean
     class?: string
@@ -34,6 +34,8 @@
     xl: 'max-w-xl',
     '2xl': 'max-w-2xl',
     '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
+    '5xl': 'max-w-5xl',
     full: 'max-w-4xl'
   }
 
