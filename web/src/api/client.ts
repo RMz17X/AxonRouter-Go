@@ -1058,9 +1058,11 @@ export interface JailbreakKeyword {
   mode?: string
 }
 
-/** One model's binding: whether injection is armed and which preset it uses. */
-export interface JailbreakModelConfig {
-  enabled: boolean
+/** One Persona virtual model: a minted name routing to a target — a
+ * model id or a combo name — and always injecting the named preset. */
+export interface PersonaDef {
+  name: string
+  target: string
   presetId: string
 }
 
@@ -1119,7 +1121,7 @@ export interface JailbreakImportResult {
 /** Why one model id resolved (or did not resolve) to a preset. */
 export interface JailbreakMatch {
   injected: boolean
-  /** global-exclude | exact-binding | keyword | preset-exclude | no-match */
+  /** global-exclude | keyword | preset-exclude | no-match */
   reason: string
   presetId?: string
   presetName?: string
@@ -2703,7 +2705,17 @@ export const api = {
     request<{ success: boolean }>(`/api/jailbreak/presets/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     }),
-  listJailbreakModels: () => request<Record<string, JailbreakModelConfig>>('/api/jailbreak/models'),
+  listPersonas: () => request<{ personas: PersonaDef[] }>('/api/jailbreak/personas'),
+  savePersona: (persona: PersonaDef) =>
+    request<{ success: boolean; persona: PersonaDef }>('/api/jailbreak/personas', {
+      method: 'PUT',
+      body: JSON.stringify(persona),
+    }),
+  deletePersona: (name: string) =>
+    request<{ success: boolean }>('/api/jailbreak/personas', {
+      method: 'DELETE',
+      body: JSON.stringify({ name }),
+    }),
   // Playground: model inventory from active connections, and a streaming
   // chat that rides the serving path. The stream is read by the caller, so
   // this returns the raw response (plus the request id the gateway echoes
@@ -2725,16 +2737,6 @@ export const api = {
     if (!res.ok) throw new ApiError(await responseErrorMessage(res), res.status)
     return { response: res, requestId: res.headers.get('x-request-id') || '' }
   },
-  setJailbreakModel: (id: string, presetId: string, enabled: boolean) =>
-    request<{ success: boolean }>('/api/jailbreak/models', {
-      method: 'PUT',
-      body: JSON.stringify({ id, presetId, enabled }),
-    }),
-  deleteJailbreakModel: (id: string) =>
-    request<{ ok: boolean; id: string }>('/api/jailbreak/models', {
-      method: 'DELETE',
-      body: JSON.stringify({ id }),
-    }),
   getJailbreakExcludes: () => request<JailbreakExcludes>('/api/jailbreak/excludes'),
   saveJailbreakExcludes: (excludes: JailbreakKeyword[]) =>
     request<JailbreakExcludes>('/api/jailbreak/excludes', {

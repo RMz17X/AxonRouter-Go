@@ -335,6 +335,18 @@ func (h *ChatHandler) resolveModel(modelStr string) (*ModelInfo, error) {
 		}
 	}
 
+	// 2b. Persona virtual model: a bare name owned by Persona resolves to
+	// its configured target — a model id or a combo name — by re-entering
+	// resolution with the target. Persona names are unique across the
+	// catalog, aliases and combos (enforced at creation), and the target
+	// may not itself be a persona, so this hop runs at most once and can
+	// never shadow a real name.
+	if h.Repo != nil {
+		if persona, err := h.Repo.GetPersona(modelStr); err == nil && persona != nil && persona.Target != "" {
+			return h.resolveModel(persona.Target)
+		}
+	}
+
 	// 3. Check if it's a combo name
 	if h.Repo != nil {
 		combo, err := h.Repo.GetComboByName(modelStr)

@@ -18,7 +18,9 @@ import (
 	"axonrouter/proxy/internal/handlerutil"
 )
 
-// Jailbreak management: agent prompt presets library, plus per-model preset binding.
+// Jailbreak management: the agent prompt preset library. Named prompts
+// are served through Persona virtual models (persona_handler.go);
+// keyword rules inside a preset can still arm it on matching model ids.
 // Injection is opt-in, default off.
 
 func (h *DashboardHandler) HandleGetJailbreak(w http.ResponseWriter, r *http.Request) {
@@ -168,61 +170,6 @@ func (h *DashboardHandler) HandlePutJailbreakExcludes(w http.ResponseWriter, r *
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "excludes": excludes})
-}
-
-func (h *DashboardHandler) HandleListJailbreakModels(w http.ResponseWriter, r *http.Request) {
-	configs, err := h.Repo.ListJailbreakModelConfigs()
-	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	handlerutil.WriteJSON(w, http.StatusOK, configs)
-}
-
-func (h *DashboardHandler) HandleSetJailbreakModel(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 4*1024))
-	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	// The id travels in the body rather than the path on purpose: model ids
-	// contain "/" and ":" ("tkh/mimo-v2.6-flash:free"), and chi hands back the
-	// still-encoded segment for those, so a path parameter silently stored a key
-	// that never matched the real id again — the toggle looked on, then came
-	// back off after a reload.
-	var req struct {
-		ID       string `json:"id"`
-		Enabled  *bool  `json:"enabled"`
-		PresetID string `json:"presetId"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if req.ID == "" || len(req.ID) > 300 {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid model id")
-		return
-	}
-	enabled := false
-	if req.Enabled != nil {
-		enabled = *req.Enabled
-	} else if req.PresetID != "" {
-		enabled = req.PresetID != "off" && req.PresetID != "none"
-	}
-	presetID := req.PresetID
-	if enabled && (presetID == "" || presetID == "on") {
-		presetID = "default"
-	}
-	if err := h.Repo.SetJailbreakModelPreset(req.ID, presetID, enabled); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"ok":       true,
-		"id":       req.ID,
-		"enabled":  enabled,
-		"presetId": presetID,
-	})
 }
 
 func slugify(s string) string {
@@ -469,32 +416,3 @@ func (h *DashboardHandler) HandleJailbreakModelCatalog(w http.ResponseWriter, r 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"models": ids})
 }
 
-// HandleDeleteJailbreakModel removes one binding outright.
-// DELETE /api/jailbreak/models with {"id":"providerx/deepseek-4-pro"}.
-//
-// The id travels in the body rather than the path for the same reason
-// HandleSetJailbreakModel does it: model ids contain "/" and ":", and a chi
-// path parameter hands those back still-encoded.
-func (h *DashboardHandler) HandleDeleteJailbreakModel(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 4*1024))
-	if err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	var req struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if strings.TrimSpace(req.ID) == "" || len(req.ID) > 300 {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "invalid model id")
-		return
-	}
-	if err := h.Repo.DeleteJailbreakModel(req.ID); err != nil {
-		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "id": req.ID})
-}

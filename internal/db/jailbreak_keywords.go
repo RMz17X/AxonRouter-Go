@@ -31,14 +31,16 @@ import (
 //
 // Precedence when several rules match one request, highest first:
 //
-//  1. an exact model/combo binding — the pre-keyword behaviour, unchanged.
-//     An exact binding stays authoritative even when its preset prompt is
-//     empty: binding a model to an empty preset means "inject nothing here".
+//  1. the global exclude list — a match means no injection at all.
 //  2. a keyword on the id the client sent, before a keyword on a forwarded
 //     leg id — the request's primary id outranks what it resolves to.
 //  3. among keyword hits on the same id, the longest keyword wins; a length
 //     tie goes to the lowest preset id, so the answer never depends on map
 //     iteration order.
+//
+// (The per-model exact bindings that once outranked keywords were retired
+// in favour of Persona virtual models — named prompts now live on their
+// own names, resolved before this resolver is consulted; see persona.go.)
 //
 // Keyword rules live inside the preset, so deleting a preset removes its rules
 // with it, and the resolution snapshot is rebuilt after any jailbreak write.
@@ -205,32 +207,10 @@ type jailbreakRuleset struct {
 func (r *Repo) ResolveJailbreakDoc(ids ...string) (*JailbreakDoc, error) {
 	rs := r.jailbreakRuleset()
 
-	// The global exclude list is absolute: it outranks every preset and every
-	// exact binding, so it is the operator's "never these models" switch.
+	// The global exclude list is absolute: it outranks every preset, so
+	// it is the operator's "never these models" switch.
 	if rs.excluded("", ids) {
 		return nil, nil
-	}
-
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		cfg, ok := rs.exact[id]
-		if !ok || !cfg.Enabled {
-			continue
-		}
-		presetID := cfg.PresetID
-		if presetID == "" {
-			presetID = jailbreakDocKey
-		}
-		doc, ok := rs.presets[presetID]
-		if !ok {
-			continue // orphan binding: the preset is gone, keep looking
-		}
-		if rs.excluded(presetID, ids) {
-			return nil, nil // this preset denies the request
-		}
-		return doc, nil // authoritative, even when the preset prompt is empty
 	}
 
 	best := -1
@@ -505,40 +485,6 @@ func (r *Repo) ExplainJailbreakDoc(ids ...string) (*JailbreakMatch, error) {
 			Detail:   "A global exclude rule matches this id, so no preset is ever injected.",
 		}, nil
 	}
-	for _, id := range ids {
-		if id == "" {
-			continue
-		}
-		cfg, ok := rs.exact[id]
-		if !ok || !cfg.Enabled {
-			continue
-		}
-		presetID := cfg.PresetID
-		if presetID == "" {
-			presetID = jailbreakDocKey
-		}
-		doc, ok := rs.presets[presetID]
-		if !ok {
-			continue // orphan binding: the preset is gone, keep looking
-		}
-		if rs.excluded(presetID, ids) {
-			return &JailbreakMatch{
-				Injected:  false,
-				Reason:    "preset-exclude",
-				PresetID:  presetID,
-				MatchedID: id,
-				Detail:    "An exact binding matched, but that preset's own exclude list denies this id.",
-			}, nil
-		}
-		return &JailbreakMatch{
-			Injected:   true,
-			Reason:     "exact-binding",
-			PresetID:   presetID,
-			PresetName: doc.Name,
-			MatchedID:  id,
-			Detail:     "An exact binding on this id wins over every keyword rule.",
-		}, nil
-	}
 	best := -1
 	bestID := ""
 	for _, id := range ids {
@@ -562,7 +508,7 @@ func (r *Repo) ExplainJailbreakDoc(ids ...string) (*JailbreakMatch, error) {
 		return &JailbreakMatch{
 			Injected: false,
 			Reason:   "no-match",
-			Detail:   "No preset keyword or exact binding covers this id.",
+			Detail:   "No preset keyword covers this id.",
 		}, nil
 	}
 	presetID := rs.rules[best].presetID

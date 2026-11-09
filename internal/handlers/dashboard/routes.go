@@ -182,17 +182,17 @@ func RegisterRoutes(r chi.Router, h *DashboardHandler) {
 		r.Delete("/guardrails/policies/{id}", h.HandleDeleteGuardrailPolicy)
 		r.Get("/guardrails/logs", h.HandleListGuardrailLogs)
 
-		// Jailbreak: agent prompt presets library; per-model preset binding.
+		// Jailbreak: agent prompt presets library; Persona virtual models.
 		r.Get("/jailbreak", h.HandleGetJailbreak)
 		r.Put("/jailbreak", h.HandlePutJailbreak)
 		r.Get("/jailbreak/presets", h.HandleListJailbreakPresets)
 		r.Put("/jailbreak/presets", h.HandlePutJailbreakPreset)
 		r.Delete("/jailbreak/presets/{id}", h.HandleDeleteJailbreakPreset)
 		r.Post("/jailbreak/presets/{id}/duplicate", h.HandleDuplicateJailbreakPreset)
-		r.Get("/jailbreak/models", h.HandleListJailbreakModels)
 		r.Get("/jailbreak/models/catalog", h.HandleJailbreakModelCatalog)
-		r.Put("/jailbreak/models", h.HandleSetJailbreakModel)
-		r.Delete("/jailbreak/models", h.HandleDeleteJailbreakModel)
+		r.Get("/jailbreak/personas", h.HandleListPersonas)
+		r.Put("/jailbreak/personas", h.HandleSavePersona)
+		r.Delete("/jailbreak/personas", h.HandleDeletePersona)
 		r.Get("/jailbreak/excludes", h.HandleGetJailbreakExcludes)
 		r.Put("/jailbreak/excludes", h.HandlePutJailbreakExcludes)
 		r.Post("/jailbreak/import", h.HandleImportJailbreak)

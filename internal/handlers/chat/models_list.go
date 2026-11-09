@@ -379,6 +379,11 @@ func (h *ChatHandler) buildModelsListResult(ctx context.Context, mode ModelsList
 	usable := h.connectedProviderIDs(allConns)
 
 	data := h.buildModelsListForMode(ctx, mode, allConns, activeConns, usable)
+	// Persona virtual models ride the finished list: each persona borrows
+	// its target's published entry (capabilities, limits) under its own
+	// name, so a client picking the persona sees the shape it would get
+	// from the target itself.
+	data = h.appendPersonas(data)
 	return ModelsListResult{Models: data, Mode: modelsListModeString(mode), Connections: activeCount}
 }
 
@@ -1168,6 +1173,47 @@ func foldTokenMinimum(currentWindow, currentMax, candidateWindow, candidateMax i
 		currentMax = candidateMax
 	}
 	return currentWindow, currentMax
+}
+
+// appendPersonas publishes Persona virtual models on the finished list.
+// Each persona clones its target's entry — capabilities and token limits
+// included — under the persona's own name with owned_by "persona"; a
+// persona whose target is not itself listed (an inactive provider, say)
+// still publishes, as a bare entry, because the name must stay routable
+// and discoverable. A name already on the list wins: persona names are
+// collision-checked at creation, so a clash means the catalog changed
+// underneath a stored persona, and the real entry must not be masked.
+func (h *ChatHandler) appendPersonas(data []ModelInfoObject) []ModelInfoObject {
+	if h.Repo == nil {
+		return data
+	}
+	personas, err := h.Repo.ListPersonas()
+	if err != nil || len(personas) == 0 {
+		return data
+	}
+	byID := make(map[string]ModelInfoObject, len(data))
+	for _, m := range data {
+		if _, ok := byID[m.ID]; !ok {
+			byID[m.ID] = m
+		}
+	}
+	for _, p := range personas {
+		if p == nil || p.Name == "" {
+			continue
+		}
+		if _, taken := byID[p.Name]; taken {
+			continue
+		}
+		entry, ok := byID[p.Target]
+		if !ok {
+			entry = ModelInfoObject{Object: "model"}
+		}
+		entry.ID = p.Name
+		entry.OwnedBy = "persona"
+		data = append(data, entry)
+		byID[p.Name] = entry
+	}
+	return data
 }
 
 // appendCombos lists combo names with the union of their leaf capabilities,

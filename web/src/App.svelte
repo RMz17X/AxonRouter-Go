@@ -428,7 +428,7 @@
       description: 'Chat with models on your active connections, through the real serving path',
     },
     plans: { title: 'Plans', description: 'Per-key quota plans and policy resolution' },
-    jailbreak: { title: 'Persona', description: 'Per-model system-prompt injection and Gemini safety bypass' },
+    jailbreak: { title: 'Persona', description: 'Named system prompts on model names of their own, plus keyword-armed presets' },
   }
 
   // The browser tab carries the page's own title, so several open

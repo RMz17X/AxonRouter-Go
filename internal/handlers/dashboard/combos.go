@@ -100,6 +100,12 @@ func (h *DashboardHandler) HandleCreateCombo(w http.ResponseWriter, r *http.Requ
 		writePlainError(w, http.StatusBadRequest, "Combo name already exists")
 		return
 	}
+	// Persona virtual models share the bare-name namespace with combos:
+	// a combo may not take a name a persona already owns.
+	if persona, err := h.Repo.GetPersona(req.Name); err == nil && persona != nil {
+		writePlainError(w, http.StatusBadRequest, "Name is used by a Persona model")
+		return
+	}
 	if req.ID == "" {
 		req.ID = uuid.New().String()
 	}
@@ -197,6 +203,14 @@ func (h *DashboardHandler) HandleUpdateCombo(w http.ResponseWriter, r *http.Requ
 	name := req.Name
 	if name == "" {
 		name = existing.Name
+	}
+	// Renaming a combo onto a Persona virtual model's name would fork
+	// the bare-name namespace; refuse it like a duplicate combo name.
+	if name != existing.Name {
+		if persona, err := h.Repo.GetPersona(name); err == nil && persona != nil {
+			writePlainError(w, http.StatusBadRequest, "Name is used by a Persona model")
+			return
+		}
 	}
 	kind := req.Kind
 	if kind == "" && existing.Kind != nil {

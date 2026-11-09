@@ -3,7 +3,7 @@
   import {
     api,
     type JailbreakDoc,
-    type JailbreakModelConfig,
+    type JailbreakMatch,
     type PlaygroundModelEntry,
   } from '../../api/client'
   import Modal from '../../lib/ui/Modal.svelte'
@@ -15,7 +15,7 @@
 
   let entries = $state<PlaygroundModelEntry[]>([])
   let presets = $state<JailbreakDoc[]>([])
-  let modelConfigs = $state<Record<string, JailbreakModelConfig>>({})
+  let standingMatch = $state<JailbreakMatch | null>(null)
   let loadError = $state('')
 
   let selectedModel = $state('')
@@ -73,24 +73,30 @@
 
   const selectedEntry = $derived(entries.find((e) => e.model === selectedModel))
 
-  // The standing Persona binding for the selected model: the Persona tab
-  // keys its map by the id the operator bound (wire id or bare model), so
-  // try the wire id first, then the bare segment.
-  const standingConfig = $derived.by<JailbreakModelConfig | null>(() => {
-    if (!selectedModel) return null
-    const bare = selectedModel.includes('/')
-      ? selectedModel.slice(selectedModel.lastIndexOf('/') + 1)
-      : ''
-    for (const key of [selectedModel, bare]) {
-      const cfg = key ? modelConfigs[key] : undefined
-      if (cfg?.enabled && cfg.presetId) return cfg
+  // The standing Persona resolution for the selected model, asked from
+  // the same resolver the serving path uses (keyword rules + excludes),
+  // refreshed whenever the selection changes. A failed lookup is
+  // cosmetic: the chip simply reads as no standing prompt.
+  let standingSeq = 0
+  $effect(() => {
+    const model = selectedModel
+    const seq = ++standingSeq
+    if (!model) {
+      standingMatch = null
+      return
     }
-    return null
+    api
+      .explainJailbreak(model)
+      .then((m) => {
+        if (seq === standingSeq) standingMatch = m
+      })
+      .catch(() => {
+        if (seq === standingSeq) standingMatch = null
+      })
   })
   const standingPresetName = $derived.by<string | null>(() => {
-    if (!standingConfig) return null
-    const preset = presets.find((p) => p.id === standingConfig.presetId)
-    return preset?.name || standingConfig.presetId
+    if (!standingMatch?.injected) return null
+    return standingMatch.presetName || standingMatch.presetId || null
   })
 
   // The toolbar's prompt chip names the layer that will actually fire:
@@ -110,10 +116,9 @@
 
   async function load() {
     loadError = ''
-    const [modelsRes, presetsRes, configsRes] = await Promise.allSettled([
+    const [modelsRes, presetsRes] = await Promise.allSettled([
       api.getPlaygroundModels(),
       api.listJailbreakPresets(),
-      api.listJailbreakModels(),
     ])
     if (modelsRes.status === 'fulfilled') {
       entries = modelsRes.value
@@ -123,9 +128,6 @@
     }
     if (presetsRes.status === 'fulfilled') {
       presets = presetsRes.value.filter((p) => p.id)
-    }
-    if (configsRes.status === 'fulfilled') {
-      modelConfigs = configsRes.value
     }
   }
 

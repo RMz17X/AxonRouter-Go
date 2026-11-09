@@ -1,25 +1,25 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, type Combo, type JailbreakDoc, type JailbreakKeyword, type JailbreakModelConfig } from '../api/client'
+  import { api, type Combo, type JailbreakDoc, type JailbreakKeyword, type PersonaDef } from '../api/client'
   import Button from '../lib/ui/Button.svelte'
   import Card from '../lib/ui/Card.svelte'
-  import BindingList from './persona/BindingList.svelte'
-  import BindModal from './persona/BindModal.svelte'
   import GlobalExcludes from './persona/GlobalExcludes.svelte'
+  import PersonaList from './persona/PersonaList.svelte'
+  import PersonaModal from './persona/PersonaModal.svelte'
   import PresetEditor from './persona/PresetEditor.svelte'
   import PresetGrid from './persona/PresetGrid.svelte'
   import TestMatchModal from './persona/TestMatchModal.svelte'
   import type { PersonaSegment } from './persona/types'
 
-  // Library + bindings data, loaded once and reloaded after every mutation.
+  // Library + persona models data, loaded once and reloaded after every mutation.
   let presets = $state<JailbreakDoc[]>([])
-  let models = $state<Record<string, JailbreakModelConfig>>({})
+  let personas = $state<PersonaDef[]>([])
   let presetUsage = $state<Record<string, number>>({})
   let globalExcludes = $state<JailbreakKeyword[]>([])
   let comboNames = $state<Set<string>>(new Set())
   let loading = $state(false)
-  // Cross-cutting failures (load, duplicate, toggle) land here; per-list
-  // batch results stay inside their segment.
+  // Cross-cutting failures (load, duplicate) land here; per-list results
+  // stay inside their segment.
   let pageStatus = $state('')
 
   let segment = $state<PersonaSegment>('presets')
@@ -28,34 +28,32 @@
   // internal state always starts from the props it is handed.
   let editorOpen = $state(false)
   let editorPreset = $state<JailbreakDoc | null>(null)
-  let bindOpen = $state(false)
-  let bindEdit = $state<{ id: string; cfg: JailbreakModelConfig } | null>(null)
+  let personaOpen = $state(false)
+  let personaEdit = $state<PersonaDef | null>(null)
   let testMatchOpen = $state(false)
 
-  let armedCount = $derived(Object.values(models).filter((c) => c.enabled).length)
-  let bindingCount = $derived(Object.keys(models).length)
   let totalInjections = $derived(Object.values(presetUsage).reduce((a, b) => a + b, 0))
 
   onMount(load)
   async function load() {
     loading = true
     try {
-      const [presetList, modelMap, excludeList] = await Promise.all([
+      const [presetList, personaRes, excludeList] = await Promise.all([
         api.listJailbreakPresets(),
-        api.listJailbreakModels(),
+        api.listPersonas(),
         api.getJailbreakExcludes(),
       ])
       presets = Array.isArray(presetList) ? presetList : []
-      models = modelMap || {}
+      personas = personaRes?.personas || []
       globalExcludes = excludeList?.excludes || []
-      // #5 Per-preset hit counters. A failure here is cosmetic, so it is
+      // Per-preset hit counters. A failure here is cosmetic, so it is
       // swallowed: the preset list still renders without the counts.
       try {
         const usageRes = await api.getJailbreakUsage()
         presetUsage = usageRes?.usage || {}
       } catch {}
-      // Combo names feed the MODEL/COMBO chip on binding rows. Cosmetic as
-      // well: without them every row simply reads MODEL.
+      // Combo names feed the MODEL/COMBO chip on persona rows. Cosmetic
+      // as well: without them every target simply reads MODEL.
       try {
         const combos = await api.getCombos()
         comboNames = new Set(combos.map((c: Combo) => c.name).filter(Boolean))
@@ -78,13 +76,13 @@
     editorPreset = preset
     editorOpen = true
   }
-  function openBind() {
-    bindEdit = null
-    bindOpen = true
+  function openPersonaCreate() {
+    personaEdit = null
+    personaOpen = true
   }
-  function openBindingEdit(id: string, cfg: JailbreakModelConfig) {
-    bindEdit = { id, cfg }
-    bindOpen = true
+  function openPersonaEdit(persona: PersonaDef) {
+    personaEdit = persona
+    personaOpen = true
   }
 </script>
 
@@ -97,7 +95,7 @@
       <div class="min-w-0 space-y-1">
         <h2 class="text-sm font-bold text-text-main">Persona</h2>
         <p class="text-xs text-text-muted">
-          System prompts injected ahead of a model's own instructions — armed per model, provider, or combo.
+          System prompts with model names of their own — mint a name, pick the model or combo it runs on, and the preset is always injected.
         </p>
       </div>
       <div class="flex items-center gap-6">
@@ -106,10 +104,8 @@
           <div class="mt-0.5 text-sm font-semibold text-text-main">{presets.length}</div>
         </div>
         <div>
-          <div class="font-code text-[10px] tracking-wider text-text-subtle uppercase">Bindings armed</div>
-          <div class="mt-0.5 text-sm font-semibold text-text-main">
-            {armedCount} <span class="font-normal text-text-subtle">/ {bindingCount}</span>
-          </div>
+          <div class="font-code text-[10px] tracking-wider text-text-subtle uppercase">Persona models</div>
+          <div class="mt-0.5 text-sm font-semibold text-text-main">{personas.length}</div>
         </div>
         <div>
           <div class="font-code text-[10px] tracking-wider text-text-subtle uppercase">Injections</div>
@@ -138,14 +134,14 @@
       <button
         type="button"
         role="tab"
-        aria-selected={segment === 'bindings'}
-        onclick={() => (segment = 'bindings')}
-        class="flex items-center gap-1.5 rounded-brand px-3 py-1.5 text-xs font-medium transition-colors {segment === 'bindings'
+        aria-selected={segment === 'personas'}
+        onclick={() => (segment = 'personas')}
+        class="flex items-center gap-1.5 rounded-brand px-3 py-1.5 text-xs font-medium transition-colors {segment === 'personas'
           ? 'border border-brand-500 bg-brand-500/10 text-text-main'
           : 'border border-transparent text-text-muted hover:text-text-main'}"
       >
-        Bindings
-        <span class="rounded-full border border-border-subtle bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">{bindingCount}</span>
+        Persona models
+        <span class="rounded-full border border-border-subtle bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">{personas.length}</span>
       </button>
     </div>
     <div class="flex flex-wrap items-center gap-2">
@@ -154,7 +150,7 @@
         <Button variant="outline" size="sm" onclick={() => (testMatchOpen = true)} icon="troubleshoot">Test match</Button>
         <Button variant="primary" size="sm" onclick={openCreate} icon="note_add">New preset</Button>
       {:else}
-        <Button variant="primary" size="sm" onclick={openBind} icon="add">Add binding</Button>
+        <Button variant="primary" size="sm" onclick={openPersonaCreate} icon="add">New persona model</Button>
       {/if}
     </div>
   </div>
@@ -162,12 +158,12 @@
   {#if pageStatus}<p class="text-xs text-error">{pageStatus}</p>{/if}
 
   {#if segment === 'presets'}
-    <PresetGrid {presets} {presetUsage} onEdit={openEdit} onNew={openCreate} onChanged={load} onError={(m) => (pageStatus = m)} />
-  {:else}
     <div class="space-y-5">
-      <BindingList {models} {presets} {comboNames} onAdd={openBind} onEdit={openBindingEdit} onChanged={load} onError={(m) => (pageStatus = m)} />
+      <PresetGrid {presets} {presetUsage} onEdit={openEdit} onNew={openCreate} onChanged={load} onError={(m) => (pageStatus = m)} />
       <GlobalExcludes bind:excludes={globalExcludes} />
     </div>
+  {:else}
+    <PersonaList {personas} {presets} {comboNames} onAdd={openPersonaCreate} onEdit={openPersonaEdit} onChanged={load} onError={(m) => (pageStatus = m)} />
   {/if}
 
   <!-- How it works: read-once reference, so it carries the lightest
@@ -181,41 +177,45 @@
       </summary>
       <div class="space-y-3 pt-3 text-xs leading-relaxed text-text-muted">
         <p>
-          This feature prepends a <span class="text-text-main">system prompt</span> ahead of the original content for the models, providers, or combos you choose.
-          Injection is <span class="text-text-main">opt-in</span> and off by default: a model is never injected just because it exists, only because you armed it.
+          A <span class="text-text-main">persona model</span> is a model name you mint yourself. It runs
+          one target — a real model or a whole combo — chosen in the picker, and it always injects its
+          preset ahead of the conversation. Clients call the persona name exactly like a model, and it
+          appears in the model list next to the real ones.
+        </p>
+        <p>
+          The name must be <span class="text-text-main">different from every existing name</span> — no
+          real model, combo, or alias may share it. That is the whole design: a prompt is never armed
+          on a name that already means something else, so the traffic that gets the prompt is exactly
+          the traffic that asked for the persona.
         </p>
         <p>
           A persona is simply a system prompt of your own — nothing about the mechanism limits what it
           may say. Because it is prepended ahead of the model's original instructions, it is also the
           usual way to apply <span class="text-text-main">jailbreak prompting</span>: a persona that
           reframes the assistant's role, drops its refusals, or replaces its rules entirely is written
-          here and armed exactly like any other. The gateway does not judge the content, it only
-          delivers it to the models you chose.
+          here and served exactly like any other. The gateway does not judge the content, it only
+          delivers it to the callers of that name.
         </p>
         <div class="space-y-1.5">
-          <div class="text-[11px] font-semibold tracking-wide text-text-subtle uppercase">Three ways to arm a preset</div>
+          <div class="text-[11px] font-semibold tracking-wide text-text-subtle uppercase">Two ways a preset fires</div>
           <ul class="space-y-1.5 pl-4">
             <li class="flex gap-2">
               <span class="shrink-0 text-brand-500">1.</span>
-              <span><span class="text-text-main">Exact binding</span> — bind one id to one preset. The precise tool: use it when one id needs a different preset from the rest of its family, or when a whole combo should be armed regardless of its legs.</span>
+              <span><span class="text-text-main">Persona model</span> — the explicit path: the client sends the persona's own name, the gateway runs its target and injects its preset. Nothing else is consulted for that request — no keyword rule stacks on top.</span>
             </li>
             <li class="flex gap-2">
               <span class="shrink-0 text-brand-500">2.</span>
-              <span><span class="text-text-main">Keyword (include)</span> — one rule covers every model id that matches, across providers and combo legs. Three modes: <span class="font-code">word</span> (whole token, default), <span class="font-code">partial</span> (substring), <span class="font-code">regex</span> (RE2).</span>
-            </li>
-            <li class="flex gap-2">
-              <span class="shrink-0 text-brand-500">3.</span>
-              <span><span class="text-text-main">Excludes (deny)</span> — two deny lists: per preset (a model matching a keyword still never gets this preset) and global (never injected at all, outranking everything).</span>
+              <span><span class="text-text-main">Keyword (include)</span> — a rule inside a preset covers every real model id that matches, across providers and combo legs. Three modes: <span class="font-code">word</span> (whole token, default), <span class="font-code">partial</span> (substring), <span class="font-code">regex</span> (RE2).</span>
             </li>
           </ul>
         </div>
         <div class="space-y-1.5">
           <div class="text-[11px] font-semibold tracking-wide text-text-subtle uppercase">Precedence</div>
           <ol class="list-decimal space-y-1 pl-4">
-            <li>Global exclude list — a match means no injection, whatever anything else says.</li>
-            <li>Exact binding on the id the client sent.</li>
+            <li>Persona model — a request to a persona name gets that persona's preset, full stop.</li>
+            <li>Global exclude list — a match means no keyword injection, whatever anything else says.</li>
             <li>Exclude of the winning preset.</li>
-            <li>Keyword on the primary id, before a keyword on a forwarded leg.</li>
+            <li>Keyword on the id the client sent, before a keyword on a forwarded leg.</li>
             <li>Among keyword hits on the same id, the longest wins; a tie goes to the lowest preset id.</li>
           </ol>
         </div>
@@ -228,9 +228,8 @@
         <div class="space-y-1.5">
           <div class="text-[11px] font-semibold tracking-wide text-text-subtle uppercase">Checking without guessing</div>
           <ul class="space-y-1 pl-4">
-            <li class="flex gap-2"><span class="shrink-0 text-brand-500">•</span><span><span class="text-text-main">Test match</span> — type an id and the page answers which preset wins and why (exact-binding, keyword, global-exclude, preset-exclude, or no-match), plus a preview of the final payload.</span></li>
-            <li class="flex gap-2"><span class="shrink-0 text-brand-500">•</span><span><span class="text-text-main">Add</span> — one modal, two tabs: <span class="text-text-muted">Single</span> types one id by hand, <span class="text-text-muted">Bulk</span> picks many ids straight from the live catalog (1500+ models) and binds them all to one preset.</span></li>
-            <li class="flex gap-2"><span class="shrink-0 text-brand-500">•</span><span><span class="text-text-main">Usage stats</span> — every preset shows how many times it actually injected.</span></li>
+            <li class="flex gap-2"><span class="shrink-0 text-brand-500">•</span><span><span class="text-text-main">Test match</span> — type an id and the page answers which preset a keyword rule would inject for it and why (keyword, global-exclude, preset-exclude, or no-match), plus a preview of the final payload.</span></li>
+            <li class="flex gap-2"><span class="shrink-0 text-brand-500">•</span><span><span class="text-text-main">Usage stats</span> — every preset shows how many times it actually injected, persona traffic included.</span></li>
           </ul>
         </div>
         <p class="text-[11px] text-text-subtle">
@@ -244,8 +243,8 @@
 {#if editorOpen}
   <PresetEditor editing={editorPreset} onClose={() => (editorOpen = false)} onSaved={load} />
 {/if}
-{#if bindOpen}
-  <BindModal {presets} editTarget={bindEdit} onClose={() => (bindOpen = false)} onSaved={load} />
+{#if personaOpen}
+  <PersonaModal {presets} editTarget={personaEdit} {comboNames} onClose={() => (personaOpen = false)} onSaved={load} />
 {/if}
 {#if testMatchOpen}
   <TestMatchModal onClose={() => (testMatchOpen = false)} />

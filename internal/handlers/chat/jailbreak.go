@@ -51,6 +51,23 @@ func (h *ChatHandler) applyJailbreak(ctx context.Context, body map[string]any, r
 		}
 		return h.applyJailbreakDoc(ctx, body, ov.doc, requestedModel)
 	}
+	// A Persona virtual model carries exactly one preset, chosen when the
+	// persona was minted; it replaces the standing resolver outright, the
+	// same way the playground override does, so the two never stack and
+	// the persona's target legs never re-arm a keyword preset underneath
+	// it. A persona whose preset was deleted injects nothing.
+	if h.Repo != nil {
+		if persona, err := h.Repo.GetPersona(requestedModel); err == nil && persona != nil {
+			if persona.PresetID == "" {
+				return ctx
+			}
+			doc, err := h.Repo.GetJailbreakPreset(persona.PresetID)
+			if err != nil || doc == nil || !doc.HasContent() {
+				return ctx
+			}
+			return h.applyJailbreakDoc(ctx, body, doc, requestedModel)
+		}
+	}
 	doc := h.resolveJailbreak(append([]string{requestedModel}, legIDs...)...)
 	if doc == nil {
 		return ctx

@@ -21,7 +21,7 @@ export interface PresetFormState {
   order: number
 }
 
-export type PersonaSegment = 'presets' | 'bindings'
+export type PersonaSegment = 'presets' | 'personas'
 
 export function emptyPresetForm(): PresetFormState {
   return {

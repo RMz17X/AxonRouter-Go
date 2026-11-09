@@ -433,7 +433,7 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	// Compression Analytics
 	r.Get("/api/analytics/compression", dashH.HandleGetCompressionAnalytics)
 
-	// Jailbreak: agent prompt presets + per-model binding. Registered here and in
+	// Jailbreak: agent prompt presets + Persona virtual models. Registered here and in
 	// dashboard.RegisterRoutes (a tests-only table); a route added there alone
 	// 404s on the real server — the same trap as the per-node limits pair.
 	r.Get("/api/jailbreak", dashH.HandleGetJailbreak)
@@ -442,10 +442,10 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	r.Put("/api/jailbreak/presets", dashH.HandlePutJailbreakPreset)
 	r.Delete("/api/jailbreak/presets/{id}", dashH.HandleDeleteJailbreakPreset)
 	r.Post("/api/jailbreak/presets/{id}/duplicate", dashH.HandleDuplicateJailbreakPreset)
-	r.Get("/api/jailbreak/models", dashH.HandleListJailbreakModels)
 	r.Get("/api/jailbreak/models/catalog", dashH.HandleJailbreakModelCatalog)
-	r.Put("/api/jailbreak/models", dashH.HandleSetJailbreakModel)
-	r.Delete("/api/jailbreak/models", dashH.HandleDeleteJailbreakModel)
+	r.Get("/api/jailbreak/personas", dashH.HandleListPersonas)
+	r.Put("/api/jailbreak/personas", dashH.HandleSavePersona)
+	r.Delete("/api/jailbreak/personas", dashH.HandleDeletePersona)
 	r.Get("/api/jailbreak/excludes", dashH.HandleGetJailbreakExcludes)
 	r.Put("/api/jailbreak/excludes", dashH.HandlePutJailbreakExcludes)
 	r.Post("/api/jailbreak/import", dashH.HandleImportJailbreak)
