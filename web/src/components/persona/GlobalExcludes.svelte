@@ -50,8 +50,8 @@
     </div>
   </div>
   <p class="pt-2 text-xs text-text-subtle">
-    A model id matching one of these rules is never injected, whatever any preset or exact binding
-    says. Use it for the handful of models that must stay untouched.
+    A model id matching one of these rules is never injected by a keyword rule, whatever any
+    preset says. Use it for the handful of models that must stay untouched.
   </p>
   <div class="pt-3">
     <KeywordRules label="Excluded models" rules={excludes} onchange={(next) => (excludes = next)} />

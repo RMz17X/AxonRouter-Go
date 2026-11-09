@@ -186,15 +186,17 @@ func isJailbreakDelimiter(c byte) bool {
 	return strings.IndexByte(jailbreakDelimiters, c) >= 0
 }
 
-// jailbreakRuleset is the whole jailbreak configuration in one immutable
-// snapshot: exact bindings, presets by id, the flattened include rules, and
-// the exclude rules — global and per preset.
+// jailbreakRuleset is the whole standing jailbreak configuration in one
+// immutable snapshot: presets by id, the flattened include rules, and the
+// exclude rules — global and per preset. (The exact map keeps the retired
+// binding rows readable for the data helpers; the resolver no longer
+// consults it.)
 type jailbreakRuleset struct {
 	exact   map[string]JailbreakModelConfig
 	presets map[string]*JailbreakDoc
 	rules   []jailbreakKeywordRule // include rules, ordered by preset id
 	// excludes apply to every preset. A match here means no injection at all,
-	// whatever an exact binding or a keyword says.
+	// whatever any keyword rule says.
 	excludes []jailbreakKeywordRule
 	// presetExcludes are the per-preset deny lists, keyed by preset id.
 	presetExcludes map[string][]jailbreakKeywordRule
@@ -410,7 +412,7 @@ func (r *Repo) buildJailbreakRuleset() (*jailbreakRuleset, error) {
 }
 
 // GetJailbreakExcludes returns the global exclude list: model ids matching one
-// of these rules are never injected, whatever any preset or exact binding
+// of these rules are never injected by a keyword rule, whatever any preset
 // says. An empty list means nothing is excluded.
 func (r *Repo) GetJailbreakExcludes() ([]JailbreakKeyword, error) {
 	var raw string
@@ -459,8 +461,8 @@ func (r *Repo) SaveJailbreakExcludes(rules []JailbreakKeyword) error {
 type JailbreakMatch struct {
 	// Injected is the final verdict: true when a prompt is prepended.
 	Injected bool `json:"injected"`
-	// Reason names the winning rule: "global-exclude", "exact-binding",
-	// "keyword", "preset-exclude", or "no-match".
+	// Reason names the winning rule: "global-exclude", "keyword",
+	// "preset-exclude", or "no-match".
 	Reason string `json:"reason"`
 	// PresetID and PresetName identify the winning preset, when there is one.
 	PresetID   string `json:"presetId,omitempty"`

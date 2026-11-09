@@ -10,12 +10,14 @@
     editTarget: PersonaDef | null
     /** Known combo names, for the MODEL/COMBO chip on the picked target. */
     comboNames: Set<string>
+    /** The page's combo list, shared so the picker does not refetch it. */
+    combos: Combo[]
     onClose: () => void
     /** Reload presets + personas after a successful save. */
     onSaved: () => Promise<void> | void
   }
 
-  let { presets, editTarget, comboNames, onClose, onSaved }: Props = $props()
+  let { presets, editTarget, comboNames, combos, onClose, onSaved }: Props = $props()
 
   function errorMessage(e: unknown): string {
     return e instanceof Error ? e.message : String(e)
@@ -37,10 +39,13 @@
 
   // Target picker: the Combos flow's picker, reused as-is — target
   // 'combo' keeps combos pickable as entries alongside per-connection
-  // models. Its inventory loads lazily on first open.
+  // models. The page's combo list is shared via props; connections (and
+  // combos, only if the page's fetch came back empty) load lazily on
+  // first open.
   let showTargetPicker = $state(false)
   let pickerConnections = $state<ProviderConnection[]>([])
-  let pickerCombos = $state<Combo[]>([])
+  let fetchedCombos = $state<Combo[]>([])
+  let pickerCombos = $derived(combos.length > 0 ? combos : fetchedCombos)
   let pickerLoaded = $state(false)
   $effect(() => {
     if (showTargetPicker && !pickerLoaded) {
@@ -49,9 +54,11 @@
         try {
           pickerConnections = await api.getConnections()
         } catch {}
-        try {
-          pickerCombos = await api.getCombos()
-        } catch {}
+        if (combos.length === 0) {
+          try {
+            fetchedCombos = await api.getCombos()
+          } catch {}
+        }
       })()
     }
   })

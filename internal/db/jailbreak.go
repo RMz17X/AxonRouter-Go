@@ -85,7 +85,7 @@ const (
 	jailbreakDocPrefix   = "doc:"
 	jailbreakModelPrefix = "model:"
 	// jailbreakExcludeKey holds the global exclude list, which denies every
-	// preset and every exact binding.
+	// preset on the keyword path.
 	jailbreakExcludeKey = "exclude"
 )
 

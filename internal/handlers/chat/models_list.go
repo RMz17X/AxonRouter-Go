@@ -1177,7 +1177,8 @@ func foldTokenMinimum(currentWindow, currentMax, candidateWindow, candidateMax i
 
 // appendPersonas publishes Persona virtual models on the finished list.
 // Each persona clones its target's entry — capabilities and token limits
-// included — under the persona's own name with owned_by "persona"; a
+// included — under the persona's own name with owned_by
+// "Axonrouter_Unrestricted" (combos publish as "AxonRouter"); a
 // persona whose target is not itself listed (an inactive provider, say)
 // still publishes, as a bare entry, because the name must stay routable
 // and discoverable. A name already on the list wins: persona names are
@@ -1209,7 +1210,7 @@ func (h *ChatHandler) appendPersonas(data []ModelInfoObject) []ModelInfoObject {
 			entry = ModelInfoObject{Object: "model"}
 		}
 		entry.ID = p.Name
-		entry.OwnedBy = "persona"
+		entry.OwnedBy = "Axonrouter_Unrestricted"
 		data = append(data, entry)
 		byID[p.Name] = entry
 	}
@@ -1315,7 +1316,7 @@ func (h *ChatHandler) appendCombosFiltered(data []ModelInfoObject, seen map[stri
 			data = append(data, ModelInfoObject{
 				ID:      combo.Name,
 				Object:  "model",
-				OwnedBy: "combo",
+				OwnedBy: "AxonRouter",
 				Kind:    comboKind,
 			})
 			continue
@@ -1324,7 +1325,7 @@ func (h *ChatHandler) appendCombosFiltered(data []ModelInfoObject, seen map[stri
 		entry := ModelInfoObject{
 			ID:      combo.Name,
 			Object:  "model",
-			OwnedBy: "combo",
+			OwnedBy: "AxonRouter",
 		}
 		if kinds != nil && comboKind != "llm" {
 			entry.Kind = comboKind

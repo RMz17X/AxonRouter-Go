@@ -16,7 +16,8 @@
   let personas = $state<PersonaDef[]>([])
   let presetUsage = $state<Record<string, number>>({})
   let globalExcludes = $state<JailbreakKeyword[]>([])
-  let comboNames = $state<Set<string>>(new Set())
+  let combos = $state<Combo[]>([])
+  let comboNames = $derived(new Set(combos.map((c: Combo) => c.name).filter(Boolean)))
   let loading = $state(false)
   // Cross-cutting failures (load, duplicate) land here; per-list results
   // stay inside their segment.
@@ -52,11 +53,12 @@
         const usageRes = await api.getJailbreakUsage()
         presetUsage = usageRes?.usage || {}
       } catch {}
-      // Combo names feed the MODEL/COMBO chip on persona rows. Cosmetic
-      // as well: without them every target simply reads MODEL.
+      // Combos feed the MODEL/COMBO chip on persona rows (via the derived
+      // name set) and the persona modal's target picker, so the page and
+      // the modal share one fetch. A failure is cosmetic for the chips:
+      // without the list every target simply reads MODEL.
       try {
-        const combos = await api.getCombos()
-        comboNames = new Set(combos.map((c: Combo) => c.name).filter(Boolean))
+        combos = await api.getCombos()
       } catch {}
     } catch (e) {
       pageStatus = 'Load failed: ' + errorMessage(e)
@@ -244,7 +246,7 @@
   <PresetEditor editing={editorPreset} onClose={() => (editorOpen = false)} onSaved={load} />
 {/if}
 {#if personaOpen}
-  <PersonaModal {presets} editTarget={personaEdit} {comboNames} onClose={() => (personaOpen = false)} onSaved={load} />
+  <PersonaModal {presets} editTarget={personaEdit} {comboNames} {combos} onClose={() => (personaOpen = false)} onSaved={load} />
 {/if}
 {#if testMatchOpen}
   <TestMatchModal onClose={() => (testMatchOpen = false)} />

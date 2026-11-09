@@ -2773,8 +2773,6 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ order }),
     }),
-  getJailbreakModelCatalog: () =>
-    request<{ models: string[] }>('/api/jailbreak/models/catalog'),
   getJailbreakUsage: () =>
     request<{ usage: Record<string, number> }>('/api/jailbreak/usage'),
   explainJailbreak: (id: string) =>

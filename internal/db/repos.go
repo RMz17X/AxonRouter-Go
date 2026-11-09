@@ -24,8 +24,8 @@ type Repo struct {
 	// package state because the answer belongs to one database: two Repos over
 	// different handles would otherwise read each other's pool list.
 	activePoolIDs atomic.Value // *[]string
-	// jbRules caches the resolved jailbreak configuration (exact bindings,
-	// presets, keyword and exclude rules) as one immutable snapshot, so a
+	// jbRules caches the resolved jailbreak configuration (presets,
+	// keyword and exclude rules) as one immutable snapshot, so a
 	// request resolves injection without querying or compiling anything.
 	// Every jailbreak write stores nil to invalidate it. Like activePoolIDs
 	// it lives on the Repo because the answer belongs to one database.
@@ -33,6 +33,14 @@ type Repo struct {
 	// jbBuild serialises snapshot rebuilds so concurrent first requests after
 	// a write build it once.
 	jbBuild sync.Mutex
+	// personaSnap caches the Persona virtual-model definitions the same
+	// way jbRules caches the jailbreak configuration: the serving path
+	// asks "is this name a persona?" on every request and every attempt,
+	// so the answer must come from memory, not a kv query. Every persona
+	// write invalidates it.
+	personaSnap atomic.Value // *personaSnapshot
+	// personaBuild serialises persona snapshot rebuilds.
+	personaBuild sync.Mutex
 	// settingsCache holds the parsed settings row. It lives on the Repo for
 	// the same reason activePoolIDs does: the answer belongs to one database.
 	settingsCache atomic.Pointer[cachedSettings]
