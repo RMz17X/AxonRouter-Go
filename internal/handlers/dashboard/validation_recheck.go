@@ -61,11 +61,14 @@ func validationURLFromBody(body []byte) string {
 // The account is temporarily reactivated so the pinned lane will serve
 // it (a probe is never redirected to another account, so the verdict
 // belongs to this connection alone). A passing ping leaves it
-// released. A failing one re-parks it with the freshest verdict: a
-// generate refusal carries the current message and a fresh
-// account-specific verification URL, whose token the stored Verify
-// link then carries; any other failure (transport, timeout) keeps the
-// previously stored verdict rather than overwriting it with noise.
+// released. A failing ping that still carries the verification gate
+// re-parks it with the freshest verdict: the refusal carries the
+// current message and a fresh account-specific verification URL,
+// whose token the stored Verify link then carries. A failing ping
+// where Google answered with anything else (e.g. quota) proves the
+// gate itself is gone and also releases — only a ping with no
+// upstream answer at all (transport, timeout) keeps the previously
+// stored verdict rather than overwriting it with noise.
 func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *models.ProviderConnection, data map[string]any) bool {
 	if conn == nil || data == nil || h.Chat == nil {
 		return false
@@ -102,9 +105,11 @@ func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *mode
 	message := origMessage
 	verifyURL := origURL
 	var ue *proxy.UpstreamError
+	stillValidation := false
 	if errors.As(pingErr, &ue) && ue != nil {
 		lower := strings.ToLower(string(ue.Body))
 		if strings.Contains(lower, "validation_required") || strings.Contains(lower, "verify your account") {
+			stillValidation = true
 			var doc map[string]any
 			if err := json.Unmarshal(ue.Body, &doc); err == nil {
 				if msg := extractGoogleErrorMessage(doc); msg != "" {
@@ -115,6 +120,23 @@ func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *mode
 				verifyURL = u
 			}
 		}
+	}
+	if ue != nil && len(ue.Body) > 0 && !stillValidation {
+		// Google answered the generate with a refusal that is NOT the
+		// verification gate (e.g. 429 quota exhausted — the request
+		// passed the gate and hit quota instead). The validation
+		// verdict this row is parked on is therefore stale: the gate
+		// is gone (the owner proves it by completing the scan
+		// verification in Google's page, after which the account's
+		// existing token serves again with no fresh sign-in). Release
+		// the account — the temporary release above already left the
+		// row clean and active; ordinary quota/cooldown machinery
+		// handles the refusal that remains. A ping that produced no
+		// upstream answer at all (transport, timeout) is no verdict
+		// and still re-parks below.
+		log.Info("usage", "validation recheck: upstream answered without the verification gate, account released",
+			"provider", conn.Provider, "conn", conn.ID, "upstream_status", ue.StatusCode)
+		return true
 	}
 	if verifyURL == origURL {
 		// The ping's own chat-lane classifier may already have stored a
