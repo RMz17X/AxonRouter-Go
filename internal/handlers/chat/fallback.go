@@ -668,6 +668,38 @@ func servesClaudeMessages(provider string, cfg *providers.ProviderConfig) bool {
 	return cfg != nil && cfg.Format == providers.FormatClaude
 }
 
+// isOpenAIChatBody reports whether a request body is in the OpenAI Chat
+// Completions shape rather than the Claude Messages shape. The discriminators
+// cannot appear in a genuine Claude request: assistant messages carry
+// tool_calls, tool results arrive as role:"tool" messages, and tools are
+// declared as {type:"function", function:{...}}.
+func isOpenAIChatBody(body []byte) bool {
+	var probe struct {
+		Messages []map[string]any `json:"messages"`
+		Tools    []map[string]any `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return false
+	}
+	for _, m := range probe.Messages {
+		if _, ok := m["tool_calls"]; ok {
+			return true
+		}
+		if m["role"] == "tool" {
+			return true
+		}
+	}
+	for _, t := range probe.Tools {
+		if _, ok := t["function"]; ok {
+			return true
+		}
+		if t["type"] == "function" {
+			return true
+		}
+	}
+	return false
+}
+
 func appendBetaQuery(u string) string {
 	if strings.Contains(u, "beta=true") {
 		return u
@@ -840,10 +872,14 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 
 	var claudeToolMap map[string]string
 	if upstreamClaude {
-		if !claudeNative {
+		if !claudeNative || isOpenAIChatBody(pipedBody) {
 			// Raw OpenAI-format body would be invalid at the Messages API:
 			// convert to a spec-compliant Claude payload (top-level system,
 			// tools, merged roles) — what the dashboard does server-side.
+			// claudeNative describes the CLIENT's endpoint, not the body in
+			// hand: a combo whose earlier members needed the OpenAI working
+			// body hands this attempt an OpenAI-shaped body even for a
+			// /v1/messages client, so the body's own shape decides too.
 			pipedBody = executor.EnsureClaudeMessagesFor(pipedBody, provider, model)
 		}
 		// The OpenAI→Claude conversion merges turns, so a client body whose
