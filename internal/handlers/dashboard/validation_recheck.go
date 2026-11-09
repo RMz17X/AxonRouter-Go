@@ -116,6 +116,20 @@ func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *mode
 			}
 		}
 	}
+	if verifyURL == origURL {
+		// The ping's own chat-lane classifier may already have stored a
+		// fresher URL from the same refusal (its token is newer than the
+		// one this recheck started with); keep the freshest of the two
+		// rather than overwriting it with the stale one.
+		if fresh, ferr := h.Repo.GetProviderConnectionByID(conn.ID); ferr == nil && fresh != nil && fresh.Data != "" {
+			var fd map[string]any
+			if err := json.Unmarshal([]byte(fresh.Data), &fd); err == nil && fd != nil {
+				if u, _ := fd["verificationUrl"].(string); u != "" {
+					verifyURL = u
+				}
+			}
+		}
+	}
 	if verifyURL == "" {
 		verifyURL = "https://antigravity.google"
 	}

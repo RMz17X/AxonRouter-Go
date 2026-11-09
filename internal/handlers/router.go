@@ -273,6 +273,13 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 		// Same instance as the resilience panel reads: the data plane owns the
 		// layer it consults on every request.
 		dashH.Resilience = chatH.Resilience
+		// The dashboard's generate-backed paths dispatch through the chat
+		// handler: the playground, and the validation recheck whose release
+		// verdict is a real pinned generate. SetupRoutes wired its own
+		// table's handler; this table — the one the server router actually
+		// mounts behind dashboard auth — was left with a nil Chat, so the
+		// recheck silently refused every release (fragment 1049).
+		dashH.Chat = chatH
 	}
 	ssoH := sso.NewHandler(repo)
 
