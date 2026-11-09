@@ -1674,26 +1674,6 @@
                   >
                 </button>
 
-                <!-- Check verification (validation-flagged accounts only) -->
-                {#if isValidationFlagged(conn) && !isActiveConn(conn)}
-                  <button
-                    type="button"
-                    onclick={() => checkVerification(conn)}
-                    disabled={rowBusy || checkingVerificationId === conn.id}
-                    aria-label="Check verification"
-                    title="Check verification — re-probe this account: if Google accepts it again, the flag clears and the account reactivates"
-                    class="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main disabled:opacity-50 cursor-pointer"
-                  >
-                    <span
-                      class="material-symbols-outlined text-[18px] {checkingVerificationId ===
-                      conn.id
-                        ? 'animate-spin'
-                        : ''}"
-                      >{checkingVerificationId === conn.id ? 'progress_activity' : 'fact_check'}</span
-                    >
-                  </button>
-                {/if}
-
                 <!-- Reset cooldown -->
                 {#if isActiveConn(conn)}
                   <button
@@ -1753,6 +1733,52 @@
 
           <!-- Card body: quota rows -->
           <div class="px-2 py-1.5">
+            {#if isValidationFlagged(conn)}
+              <!-- Verification strip: shown for every flagged card,
+              independent of which body branch renders below (quota
+              rows included). The control is the check itself until a
+              test mints a fresh URL, then it swaps to that link —
+              the same shape as the provider detail row. -->
+              <div
+                class="mb-1.5 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2"
+              >
+                <span
+                  class="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400"
+                >
+                  <span class="material-symbols-outlined text-[14px]">gpp_maybe</span>
+                  needs verification
+                </span>
+                {#if freshVerifyUrlByConn[conn.id]}
+                  <a
+                    href={freshVerifyUrlByConn[conn.id]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                  >
+                    <span>Verifikasi Akun</span>
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
+                {:else}
+                  <button
+                    type="button"
+                    onclick={() => checkVerification(conn)}
+                    disabled={checkingVerificationId === conn.id}
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <span>Verifikasi Akun</span>
+                    <span
+                      class="material-symbols-outlined text-sm {checkingVerificationId ===
+                      conn.id
+                        ? 'animate-spin'
+                        : ''}"
+                      >{checkingVerificationId === conn.id
+                        ? 'progress_activity'
+                        : 'fact_check'}</span
+                    >
+                  </button>
+                {/if}
+              </div>
+            {/if}
             {#if isLoading}
               <div class="py-5 text-center text-text-muted">
                 <span class="material-symbols-outlined text-[28px] animate-spin">
@@ -1773,27 +1799,6 @@
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
                 {/if}
-                {#if freshVerifyUrlByConn[conn.id]}
-                  <a
-                    href={freshVerifyUrlByConn[conn.id]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
-                  >
-                    <span>Verifikasi Akun</span>
-                    <span class="material-symbols-outlined text-sm">open_in_new</span>
-                  </a>
-                {:else if isValidationFlagged(conn)}
-                  <button
-                    type="button"
-                    onclick={() => checkVerification(conn)}
-                    disabled={checkingVerificationId === conn.id}
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    <span>Verifikasi Akun</span>
-                    <span class="material-symbols-outlined text-sm">fact_check</span>
-                  </button>
-                {/if}
               </div>
             {:else if quota?.message}
               <div class="py-4 text-center flex flex-col items-center gap-2">
@@ -1808,27 +1813,6 @@
                     <span>Kunjungi Form Appeal (ToS)</span>
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
-                {/if}
-                {#if freshVerifyUrlByConn[conn.id]}
-                  <a
-                    href={freshVerifyUrlByConn[conn.id]}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
-                  >
-                    <span>Verifikasi Akun</span>
-                    <span class="material-symbols-outlined text-sm">open_in_new</span>
-                  </a>
-                {:else if isValidationFlagged(conn)}
-                  <button
-                    type="button"
-                    onclick={() => checkVerification(conn)}
-                    disabled={checkingVerificationId === conn.id}
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
-                  >
-                    <span>Verifikasi Akun</span>
-                    <span class="material-symbols-outlined text-sm">fact_check</span>
-                  </button>
                 {/if}
               </div>
             {:else}
