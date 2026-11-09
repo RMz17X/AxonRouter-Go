@@ -1,5 +1,19 @@
 # Changelog
 
+## [v1.9.73] - 2026-11-09
+
+## Antigravity verification: the Verifikasi button test-calls the completion API (v1.9.73)
+
+- **Owner's spec (2026-11-09):** "verifikasi button itu langsung test call api completion. kalo gagal masih kena verif update url verifikasi nya" — the Verifikasi button must fire a real completion test for the account, and when the test still hits the verification gate, the verification URL must be updated from that test.
+- **Backend already implements both halves** (`recheckValidationFlag`, v1.9.63/64): the verdict is a real pinned generate through the chat lane — a pass releases the account; a still-flagged failure re-parks it with the fresh `validation_url` extracted from that error's own body (`validationURLFromBody`; the plt token rotates per error, so the freshest always wins).
+- **Change (UI wiring only):** the flagged row's primary action is now that test call, labelled **verifikasi** (spinner while running, row refresh on completion so the error panel's "Buka Verifikasi" link carries the URL the test just minted). The separate duplicate "recheck" button in the same state is removed — one action, the owner's name for it. The bare verification link remains only as "Buka Verifikasi" in the error panel.
+- **Verification:** build + svelte-check gates at release; staging /api/version read-back after deploy.
+
+## Antigravity verification panel: drop the scan note (v1.9.73)
+
+- **Owner's call (2026-11-09):** the muted scan-hint line added in v1.9.72 is not needed — remove it.
+- **Change:** the error panel for a validation-flagged connection is back to the bare minimum: the label plus the single "Buka Verifikasi" action (the account's own verification URL). No explanatory copy anywhere in the verification UI.
+
 ## [v1.9.72] - 2026-11-09
 
 ## Antigravity verification: the scan verifies, not a sign-in — bundled button reverted (v1.9.72)
