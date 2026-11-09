@@ -3,6 +3,8 @@ package translator
 import (
 	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/thinking"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"fmt"
@@ -477,6 +479,44 @@ func TranslateClaudeToOpenAI(claudeBody []byte) ([]byte, error) {
 	return out, nil
 }
 
+// cleanClaudeToolID returns a tool id the Messages API accepts
+// (^[a-zA-Z0-9_-]+$), deterministically derived from the id the client
+// sent, so a tool_use and its tool_result always rewrite identically
+// without shared state.
+//
+// Two foreign shapes show up in mixed-provider histories. Ids minted on
+// the Gemini lane carry the thought signature as a "__ts__<sig>"
+// transport suffix (see geminiCleanToolCallID): the suffix is base64
+// and fails the charset, and strict upstreams (MiniMax is the proven
+// case) refuse the whole request over it — "tool result's tool id(...)
+// not found". The clean base id is what the Gemini lane itself uses,
+// and the signature stays recoverable from the thought-signature store
+// by that base id, so stripping the suffix loses nothing. Any other
+// non-conforming (or empty) id gets the same sha rewrite the
+// OpenAI→Claude converter's sanitizeToolUseID applies, so both lanes
+// present one id space to every member of a combo.
+func cleanClaudeToolID(id string) string {
+	clean := id
+	if ts := strings.LastIndex(clean, "__ts__"); ts != -1 {
+		clean = clean[:ts]
+	}
+	if clean != "" && claudeToolIDValid(clean) {
+		return clean
+	}
+	sum := sha256.Sum256([]byte(id))
+	return "toolu_" + hex.EncodeToString(sum[:])[:24]
+}
+
+func claudeToolIDValid(id string) bool {
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return len(id) > 0
+}
+
 // sanitizeClaudeToolDefs repairs the tools array of a Claude-format
 // request in place and reports whether it changed anything.
 //
@@ -566,6 +606,45 @@ func SanitizeClaudePassthrough(body []byte, intentionalPrefill bool) []byte {
 			normalizeMessageContent(msgMap)
 			if dropForeignMessageKeys(msgMap) {
 				changed = true
+			}
+		}
+	}
+
+	// Normalize tool ids (see cleanClaudeToolID): ids minted on another
+	// provider's lane ride the client's history verbatim, and a strict
+	// Claude-format upstream refuses the whole request over a single
+	// non-conforming one. Runs before the server_tool_use pass, whose
+	// own id rule is separate (srvtoolu_ ids are already conforming,
+	// so they pass through this rewrite unchanged).
+	for _, mRaw := range messagesRaw {
+		msgMap, ok := mRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		blocks, ok := msgMap["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, bRaw := range blocks {
+			block, ok := bRaw.(map[string]any)
+			if !ok {
+				continue
+			}
+			switch block["type"] {
+			case "tool_use":
+				if id, isStr := block["id"].(string); isStr {
+					if clean := cleanClaudeToolID(id); clean != id {
+						block["id"] = clean
+						changed = true
+					}
+				}
+			case "tool_result":
+				if id, isStr := block["tool_use_id"].(string); isStr {
+					if clean := cleanClaudeToolID(id); clean != id {
+						block["tool_use_id"] = clean
+						changed = true
+					}
+				}
 			}
 		}
 	}

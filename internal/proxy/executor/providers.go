@@ -1361,8 +1361,14 @@ func convertOpenAIMessagesToClaude(messages []any) (systemText string, claudeMes
 						name, _ = fn["name"].(string)
 						if argsStr, ok := fn["arguments"].(string); ok && strings.TrimSpace(argsStr) != "" {
 							var parsed any
-							if err := json.Unmarshal([]byte(argsStr), &parsed); err == nil && parsed != nil {
-								inputMap = parsed
+							// Only a JSON object is a valid tool_use
+							// input; a scalar parse (or a failed one)
+							// keeps the empty-object default, or strict
+							// Claude upstreams refuse the whole request.
+							if err := json.Unmarshal([]byte(argsStr), &parsed); err == nil {
+								if _, isObj := parsed.(map[string]any); isObj {
+									inputMap = parsed
+								}
 							}
 						}
 					}
