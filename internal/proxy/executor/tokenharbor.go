@@ -7,7 +7,11 @@ import (
 
 // ForwardTokenHarbor handles requests to TokenHarbor (tokenharbor.ai).
 // It ensures stream_options are properly set for SSE streaming and delegates
-// to standard OpenAI transport without speculative hedging (to prevent burning accounts).
+// to standard OpenAI transport. Hedging lives in the chat handler, which
+// races hedged waves of TokenHarbor candidates under an admission budget
+// (see hedging.go): the free-tier GPU queue is global per model and a
+// single ticket waits silently, so the client rides the fastest of many
+// tickets and the ~30K-account pool absorbs the spent attempts.
 func ForwardTokenHarbor(w http.ResponseWriter, req *Request) error {
 	if req.IsStream {
 		req.Body = ensureTokenHarborStreamOptions(req.Body)

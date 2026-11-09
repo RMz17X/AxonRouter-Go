@@ -908,7 +908,7 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 							candidateCtx = h.applyJailbreak(candidateCtx, upstreamBody, comboName, jailbreakLegIDs(modelInfo.Provider, modelInfo.Model)...)
 							if upstreamJSON, err := json.Marshal(upstreamBody, json.Deterministic(true)); err == nil {
 								targetWriter := candidateWriter
-								fwdErr := h.executeHedged(candidateCtx, targetWriter, modelInfo.Provider, modelInfo.Model, comboName, comboName, upstreamJSON, isStream, translateResponse, forwardEndpoint(ctx, "/v1/chat/completions"), candidates, hedgeDelay, maxAttempts)
+								fwdErr := h.executeHedged(candidateCtx, targetWriter, modelInfo.Provider, modelInfo.Model, comboName, comboName, upstreamJSON, isStream, translateResponse, forwardEndpoint(ctx, "/v1/chat/completions"), candidates, hedgeDelay, maxAttempts, h.hedgeAdmissionTimeout(modelInfo.Provider))
 								if fwdErr == nil {
 									return
 								}
@@ -1426,7 +1426,7 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 							candidateCtx = h.applyJailbreak(candidateCtx, entryBody, comboName, jailbreakLegIDs(modelInfo.Provider, modelInfo.Model)...)
 							if upstreamJSON, err := json.Marshal(entryBody, json.Deterministic(true)); err == nil {
 								targetWriter := candidateWriter
-								fwdErr := h.executeHedged(candidateCtx, targetWriter, modelInfo.Provider, modelInfo.Model, comboName, comboName, upstreamJSON, isStream, !translator.IsResponsesClient(ctx), forwardEndpoint(ctx, "/v1/v1/messages"), candidates, hedgeDelay, maxAttempts)
+								fwdErr := h.executeHedged(candidateCtx, targetWriter, modelInfo.Provider, modelInfo.Model, comboName, comboName, upstreamJSON, isStream, !translator.IsResponsesClient(ctx), forwardEndpoint(ctx, "/v1/v1/messages"), candidates, hedgeDelay, maxAttempts, h.hedgeAdmissionTimeout(modelInfo.Provider))
 								if fwdErr == nil {
 									return
 								}

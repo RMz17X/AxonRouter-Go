@@ -47,6 +47,15 @@ func (hw *hedgedResponseWriter) WriteHeader(statusCode int) {
 		return
 	}
 	hw.statusCode = statusCode
+	if statusCode == http.StatusOK && hw.coord.commitOnWrite {
+		// Queue-bound providers (TokenHarbor) send response headers long
+		// before the first token — headers arrive in a ~60s admission
+		// tick while content can lag another minute or never come
+		// (measured 2026-11-09). Headers are not admission there: record
+		// the status and let the first body Write claim the win, so the
+		// client rides the first ticket that actually produces output.
+		return
+	}
 	if statusCode == http.StatusOK {
 		if hw.coord.claimWin(hw.candidateIdx) {
 			hw.isWinner = true
@@ -120,13 +129,21 @@ type hedgeCoordinator struct {
 	cancels     []context.CancelFunc
 	wonChan     chan struct{}
 	claimedOnce atomic.Bool
+	// commitOnWrite defers the win from response headers to the first
+	// body bytes (see hedgedResponseWriter.WriteHeader).
+	commitOnWrite bool
 }
 
 func newHedgeCoordinator(n int) *hedgeCoordinator {
+	return newHedgeCoordinatorMode(n, false)
+}
+
+func newHedgeCoordinatorMode(n int, commitOnWrite bool) *hedgeCoordinator {
 	return &hedgeCoordinator{
-		winner:  -1,
-		cancels: make([]context.CancelFunc, n),
-		wonChan: make(chan struct{}),
+		winner:        -1,
+		cancels:       make([]context.CancelFunc, n),
+		wonChan:       make(chan struct{}),
+		commitOnWrite: commitOnWrite,
 	}
 }
 
@@ -172,6 +189,40 @@ type hedgeCandidateResult struct {
 	duration time.Duration
 }
 
+// admissionTimeoutError marks a hedged request whose admission budget ran
+// out before any candidate committed. It unwraps to the client-facing
+// upstreamError (429, which the error masker turns into a retryable 503),
+// so callers can distinguish "the client must retry now" from an ordinary
+// fast candidate failure via isAdmissionTimeout.
+type admissionTimeoutError struct {
+	ue *upstreamError
+}
+
+func (e *admissionTimeoutError) Error() string { return e.ue.Error() }
+func (e *admissionTimeoutError) Unwrap() error { return e.ue }
+
+func isAdmissionTimeout(err error) bool {
+	var ate *admissionTimeoutError
+	return errors.As(err, &ate)
+}
+
+// hedgeAdmissionTimeout returns how long a hedged request may wait for a
+// first candidate to commit before the gateway gives the client a
+// retryable verdict instead of silence. Zero disables the budget (the
+// standing behaviour for providers without a queue-bound pool).
+//
+// TokenHarbor's free tier is one global GPU queue per model: candidates
+// are admitted slowly and silently, so the budget is a stall budget on
+// the admission phase only — 60s without a winner means this draw is
+// dead and the client retries with fresh tickets. It never applies after
+// a winner commits; a flowing stream runs to completion.
+func (h *ChatHandler) hedgeAdmissionTimeout(provider string) time.Duration {
+	if providers.ResolveAlias(provider) == "tokenharbor" {
+		return 60 * time.Second
+	}
+	return 0
+}
+
 // shouldHedgeProvider returns whether speculative multi-account hedging should be
 // used for the given provider, along with the delay between candidates and attempt cap.
 func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay time.Duration, maxAttempts int) {
@@ -183,6 +234,20 @@ func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay 
 	if provider == "dahl" {
 		enabled = true
 		delay = 80 * time.Millisecond
+	}
+
+	// TokenHarbor free models sit behind one global GPU queue per model:
+	// a single ticket waits silently for tens of seconds and often never
+	// lands, while a ladder of tickets across keys puts one of them at
+	// the front far sooner (measured 2026-11-09: hedged TTFT 6–35s, 3/3,
+	// vs the sequential path's 2/5 with a >150s hang). The pool is ~30K
+	// accounts, so tickets are ammunition, not a scarce resource: 8
+	// candidates staggered 2s apart, first commit wins. Owner directive:
+	// client feel is the only metric; backend 429s are free collateral.
+	if providers.ResolveAlias(provider) == "tokenharbor" {
+		enabled = true
+		delay = 2 * time.Second
+		maxAttempts = 8
 	}
 
 	if h.Repo != nil {
@@ -246,6 +311,7 @@ func (h *ChatHandler) executeHedged(
 	candidates []*ProviderConnection,
 	hedgeDelay time.Duration,
 	maxAttempts int,
+	admissionTimeout time.Duration,
 ) error {
 	if len(candidates) == 0 {
 		return fmt.Errorf("no active connections for hedged provider: %s", provider)
@@ -256,7 +322,9 @@ func (h *ChatHandler) executeHedged(
 
 	numCandidates := len(candidates)
 	resultsChan := make(chan hedgeCandidateResult, numCandidates)
-	coord := newHedgeCoordinator(numCandidates)
+	// An admission budget implies a queue-bound provider whose headers
+	// precede output by a wide, useless margin: commit on first write.
+	coord := newHedgeCoordinatorMode(numCandidates, admissionTimeout > 0)
 
 	rootCtx, rootCancel := context.WithCancel(ctx)
 	defer rootCancel()
@@ -317,6 +385,19 @@ func (h *ChatHandler) executeHedged(
 
 	timer := time.NewTimer(hedgeDelay)
 	defer timer.Stop()
+
+	// Admission budget: while no candidate has committed, total silence
+	// is a stall. When the budget dies the whole hedge is cancelled and
+	// the client gets a retryable verdict (see admissionTimeoutError)
+	// instead of an open-ended hang. The budget disarms the moment a
+	// winner commits — a flowing stream is never cut by it.
+	var admissionTimer *time.Timer
+	var admissionC <-chan time.Time
+	if admissionTimeout > 0 {
+		admissionTimer = time.NewTimer(admissionTimeout)
+		admissionC = admissionTimer.C
+		defer admissionTimer.Stop()
+	}
 
 	var lastErr error
 	for {
@@ -379,6 +460,18 @@ func (h *ChatHandler) executeHedged(
 				return lastErr
 			}
 
+		case <-admissionC:
+			if coord.getWinner() != -1 {
+				// Raced with a win: the budget no longer applies.
+				admissionC = nil
+				continue
+			}
+			rootCancel()
+			return &admissionTimeoutError{ue: &upstreamError{
+				StatusCode: http.StatusTooManyRequests,
+				Body:       []byte(`{"error":{"message":"Upstream admission timed out: no candidate produced output within the admission budget, please retry","type":"server_error","code":"upstream_unavailable"}}`),
+			}}
+
 		case <-timer.C:
 			// Candidate is taking longer than hedgeDelay: fire speculative hedge in parallel
 			if coord.getWinner() == -1 && nextToLaunch < numCandidates {
@@ -389,6 +482,90 @@ func (h *ChatHandler) executeHedged(
 				activeRunning++
 				timer.Reset(hedgeDelay)
 			}
+		}
+	}
+}
+
+// executeHedgedWaves runs hedged waves over the provider's connections
+// until one candidate commits, the candidate pool is walked, or the
+// provider's shared admission budget runs out. A wave whose candidates
+// all fail fast (instant 429s from a saturated queue) is followed
+// immediately by the next wave of fresh connections — the tickets are
+// ammunition — while a wave of silently queued candidates consumes the
+// admission budget and ends the request with a retryable verdict.
+// Used for TokenHarbor, whose free-tier queue makes a single sequential
+// draw both slow and unreliable.
+func (h *ChatHandler) executeHedgedWaves(
+	ctx context.Context,
+	w http.ResponseWriter,
+	provider string,
+	model string,
+	requestedModel string,
+	comboName string,
+	body []byte,
+	isStream bool,
+	translateResponse bool,
+	endpoint string,
+	allConns []*ProviderConnection,
+	hedgeDelay time.Duration,
+	maxAttempts int,
+) error {
+	budget := h.hedgeAdmissionTimeout(provider)
+	var deadline time.Time
+	if budget > 0 {
+		deadline = time.Now().Add(budget)
+	}
+	tried := make(map[string]bool, len(allConns))
+	var lastErr error
+	for wave := 0; ; wave++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		remaining := make([]*ProviderConnection, 0, len(allConns))
+		for _, c := range allConns {
+			if c != nil && !tried[c.ID] {
+				remaining = append(remaining, c)
+			}
+		}
+		candidates := h.pickHedgeCandidates(remaining, provider, model, maxAttempts)
+		if len(candidates) == 0 {
+			return lastErr
+		}
+		for _, c := range candidates {
+			tried[c.ID] = true
+		}
+		var waveTimeout time.Duration
+		if budget > 0 {
+			waveTimeout = time.Until(deadline)
+			if waveTimeout <= 0 {
+				return &admissionTimeoutError{ue: &upstreamError{
+					StatusCode: http.StatusTooManyRequests,
+					Body:       []byte(`{"error":{"message":"Upstream admission timed out: no candidate produced output within the admission budget, please retry","type":"server_error","code":"upstream_unavailable"}}`),
+				}}
+			}
+		}
+		log.InfoCtx(ctx, "hedging", "hedged wave dispatch",
+			"provider", provider, "model", model, "wave", wave, "candidates", len(candidates))
+		err := h.executeHedged(ctx, w, provider, model, requestedModel, comboName, body, isStream, translateResponse, endpoint, candidates, hedgeDelay, maxAttempts, waveTimeout)
+		if err == nil {
+			return nil
+		}
+		if isAdmissionTimeout(err) {
+			return err
+		}
+		// Identical-failure classes: every remaining candidate would
+		// fail the same way, so stop instead of walking the pool.
+		var ue *upstreamError
+		if errors.As(err, &ue) && (providers.IsModelFitError(ue.StatusCode, ue.Body) ||
+			providers.IsUnsupportedMediaError(ue.StatusCode, ue.Body) ||
+			providers.IsModelConcurrencyError(ue.StatusCode, ue.Body)) {
+			return err
+		}
+		lastErr = err
+		if budget <= 0 {
+			// No admission budget: a single wave is the whole policy
+			// (the standing behaviour for every other provider).
+			return lastErr
 		}
 	}
 }

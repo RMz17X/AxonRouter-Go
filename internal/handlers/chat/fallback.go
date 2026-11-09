@@ -202,10 +202,28 @@ func (h *ChatHandler) handleAccountFallback(
 	}
 
 	if shouldHedge, hedgeDelay, maxAttempts := h.shouldHedgeProvider(provider); shouldHedge && len(allConns) > 1 && !handlerutil.IsProbeContext(ctx) {
+		if providers.ResolveAlias(provider) == "tokenharbor" {
+			// TokenHarbor runs on hedged waves under one admission
+			// budget: success and a budget verdict are final here; any
+			// other wave error falls through to the sequential loop
+			// below so the standing bookkeeping still runs.
+			waveErr := h.executeHedgedWaves(ctx, w, provider, model, "", "", body, isStream, translateResponse, endpoint, allConns, hedgeDelay, maxAttempts)
+			if waveErr == nil {
+				return nil
+			}
+			if isAdmissionTimeout(waveErr) {
+				return waveErr
+			}
+			var wue *upstreamError
+			if errors.As(waveErr, &wue) && providers.IsModelConcurrencyError(wue.StatusCode, wue.Body) {
+				return waveErr
+			}
+			log.WarnCtx(ctx, "hedging", "tokenharbor waves exhausted, falling back to sequential attempts", "provider", provider, "model", model, "err", waveErr)
+		}
 		candidates := h.pickHedgeCandidates(allConns, provider, model, maxAttempts)
 		if len(candidates) > 1 {
 			log.InfoCtx(ctx, "hedging", "dispatching hedged request", "provider", provider, "model", model, "candidates", len(candidates), "delay", hedgeDelay)
-			hedgeErr := h.executeHedged(ctx, w, provider, model, "", "", body, isStream, translateResponse, endpoint, candidates, hedgeDelay, maxAttempts)
+			hedgeErr := h.executeHedged(ctx, w, provider, model, "", "", body, isStream, translateResponse, endpoint, candidates, hedgeDelay, maxAttempts, h.hedgeAdmissionTimeout(provider))
 			if hedgeErr == nil {
 				return nil
 			}
