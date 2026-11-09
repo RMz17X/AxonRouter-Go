@@ -466,6 +466,11 @@ var ModelFitErrorPatterns = []string{
 	"not support image",
 	"image input not supported",
 	"images are not supported",
+	// Gemini rejecting the wildcard-mime fileData part the translator
+	// builds for a remote image URL ("Unsupported mime type: image/*
+	// in contents.file_data"): a property of the payload, identical on
+	// every account, so it belongs with the other payload rejections.
+	"unsupported mime type",
 }
 
 // ModelFitStatusCodes are the statuses an upstream uses to reject an oversized

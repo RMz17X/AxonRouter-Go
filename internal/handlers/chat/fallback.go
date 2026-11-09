@@ -925,6 +925,19 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// Strip unservable legacy media from earlier turns if this specific candidate cannot serve it.
 	pipedBody = StripLegacyMediaForModel(pipedBody, provider, model)
 
+	// G11: a target whose wire format cannot fetch a remote image would
+	// receive the URL as a dead reference — the Gemini translator turns
+	// it into a fileData part with a wildcard "image/*" mime type that
+	// Google rejects, and MiniMax's gateway refuses remote URLs
+	// outright. The rewrite has to happen HERE, while the body is still
+	// in the client's own shape: the prefetch scanner matches
+	// client-shaped image parts, and after the translations below the
+	// parts wear the target's wire shape and the scan finds nothing
+	// (this call used to sit at the end of the pipeline, where it was
+	// a no-op for exactly the targets it exists for). Fail-open: any
+	// refusal leaves the body as-is.
+	pipedBody = prefetchImagesForTarget(ctx, provider, model, providerCfg, pipedBody)
+
 	var claudeToolMap map[string]string
 	if upstreamClaude {
 		if !claudeNative || isOpenAIChatBody(pipedBody) {
@@ -1068,11 +1081,8 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		}
 	}
 
-	// G11: a target whose wire format cannot fetch a remote image would receive
-	// the URL as a dead string. Done here rather than inside a translator
-	// because this is the one place that knows both the target provider and the
-	// client's own body shape. Fail-open: any refusal leaves the body as-is.
-	pipedBody = prefetchImagesForTarget(ctx, provider, model, providerCfg, pipedBody)
+	// (The remote-image prefetch runs earlier in this pipeline, before
+	// translation — see the G11 note above StripLegacyMediaForModel.)
 
 	// Codex Fast intent: the account's stored preference is the fallback, and a
 	// body that carries its own intent wins. Applied after every body rewrite
