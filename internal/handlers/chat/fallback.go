@@ -353,6 +353,20 @@ func (h *ChatHandler) handleAccountFallback(
 			lastErr = ue
 			break
 		}
+		if ue != nil && (providers.IsUnsupportedMediaError(ue.StatusCode, ue.Body) || providers.IsModelFitError(ue.StatusCode, ue.Body)) {
+			// The model cannot take this payload — media it does not
+			// accept, or a prompt shape/size it rejects. Every other
+			// account of this provider answers identically, so rotating
+			// accounts only burns the pool (a vision request to a
+			// text-only model used to try every account before
+			// failing). The account is healthy: nothing is locked, and
+			// the error returns at once so a combo can advance to a
+			// member that can serve the request.
+			log.WarnCtx(attemptCtx, "fallback", "model cannot serve this payload, breaking account retries",
+				"conn", connObj.ID, "provider", provider, "model", model)
+			lastErr = ue
+			break
+		}
 		if errors.As(lastErr, &ue) && providers.RetryableStatusCodes[ue.StatusCode] {
 			if handlerutil.IsProbeContext(ctx) {
 				excludeIDs = append(excludeIDs, connObj.ID)
