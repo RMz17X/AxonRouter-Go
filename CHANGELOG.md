@@ -1,5 +1,15 @@
 # Changelog
 
+## [v1.9.69] - 2026-11-09
+
+## Antigravity verification: sequenced verify flow, matching how it works in the real client (v1.9.69)
+
+- **Symptom:** v1.9.68 framed verification as "re-login" and removed the verification URL from the error panel. The owner corrected this: in Antigravity the gate is lifted by the verification page alone ("verifikasi doang"), not by a login ceremony — and he is right about the page. What the day's evidence proves is WHY the same page never worked from the dashboard.
+- **Evidence (2026-11-09, after the owner's browser completions on jayawijayaa116 and anaking966):** `loadCodeAssist` with `mode=FULL_ELIGIBILITY_CHECK` — Google's own full eligibility verdict, all modes — still returns free-tier in `ineligibleTiers` with reasonCode `VALIDATION_REQUIRED` for both accounts, and generate still refuses 403. The browser completions never registered at all. His own symptom names the reason: the first click answers "anda tidak login" (you are not signed in) — the verification page binds to the browser session that is signed in as that account, which is exactly the context Antigravity provides (the user is signed in there) and a bare dashboard click does not. The retry shows a success page for an unbound flow and changes nothing server-side.
+- **Fix:** the verification action is sequenced, mirroring the real client's context. Row button renamed "verifikasi" (step 1: this provider's OAuth sign-in for the account; the v1.9.68 exchange-side reactivation still applies). The error panel now offers both steps explicitly — "1. Login Ulang" and "2. Buka Verifikasi" (the stored fresh URL, new tab) — with one line of copy explaining the session binding, so both steps happen in one sitting in the same browser.
+- **Deliberate divergence:** the JS router still presents the bare verification URL alone (the flow proven not to register); recorded here per repo rule.
+- **Verification:** pending the owner's one sequenced pass on a flagged account; server-side read-back (FULL_ELIGIBILITY_CHECK + pinned generate) will confirm whether the flag lifts. Build + svelte-check gates at release.
+
 ## [v1.9.68] - 2026-11-09
 
 ### Verification is a re-login: flagged Antigravity accounts reactivate through the OAuth sign-in, not the bare error URL
