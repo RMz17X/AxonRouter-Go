@@ -1822,12 +1822,8 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 	errText := extractErrorText(ue.Body)
 	errLower := strings.ToLower(errText)
 	if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
-		valURL := extractGoogleValidationURL(ue.Body)
-		if valURL == "" {
-			valURL = "https://antigravity.google"
-		}
 		if h.Repo != nil {
-			_ = h.Repo.SetConnectionVerificationRequired(connID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
+			_ = h.Repo.SetConnectionVerificationRequired(connID, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
 		}
 		h.getSessionAffinity().EvictConnection(connID)
 		*excludeIDs = append(*excludeIDs, connID)

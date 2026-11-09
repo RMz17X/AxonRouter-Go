@@ -142,15 +142,20 @@ func (r *Repo) DisableConnectionWithReason(id string, status int, reason string)
 	return nil
 }
 
-// SetConnectionVerificationRequired stores verificationUrl and disables the connection
-// so traffic rotates to other accounts while giving the operator a manual link to verify.
-func (r *Repo) SetConnectionVerificationRequired(connID, verificationURL, errText string) error {
+// SetConnectionVerificationRequired flags the connection as
+// verification-gated and disables it so traffic rotates to other
+// accounts. Only the flag is stored — never the verification URL: the
+// link's plt token is minted per refusal and only resolves while the
+// operator's browser holds a live sign-in session for the account, so
+// a stored copy is a dead letter by the time it is clicked. The fresh
+// URL travels in the test response that minted it and is shown in the
+// UI at that moment (fragment 1061). Any legacy stored URL is removed.
+func (r *Repo) SetConnectionVerificationRequired(connID, errText string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	lastError, err := json.Marshal(map[string]any{
-		"status":          403,
-		"message":         errText,
-		"verificationUrl": verificationURL,
-		"timestamp":       now,
+		"status":    403,
+		"message":   errText,
+		"timestamp": now,
 	})
 	if err != nil {
 		return err
@@ -158,15 +163,14 @@ func (r *Repo) SetConnectionVerificationRequired(connID, verificationURL, errTex
 	_, err = r.Exec(
 		`UPDATE providerConnections
 		 SET isActive = 0,
-		     data = `+jsonSetExpr("data",
-			jsonSetPairAt(jsonStringParam(), "verificationUrl"),
+		     data = (`+jsonSetExpr("data",
 			jsonSetPairAt(jsonDocParam(), "lastError"),
 			jsonSetPairAt(jsonStringLiteral("validation_required"), "status"),
 			jsonSetPairAt(jsonStringLiteral("disabled"), "testStatus"),
-		)+`,
+		)+`) - 'verificationUrl',
 		     updatedAt = ?
 		 WHERE id = ?`,
-		verificationURL, string(lastError), now, connID,
+		string(lastError), now, connID,
 	)
 	if err != nil {
 		return fmt.Errorf("set connection verification required %s: %w", connID, err)

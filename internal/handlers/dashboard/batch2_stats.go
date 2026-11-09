@@ -128,7 +128,7 @@ func healthStateForConnection(c *models.ProviderConnection, data map[string]any,
 	lastError := lastErrorText(data)
 	effective := providers.EffectiveStatusWithError(c.IsActive, dataStr(data, "testStatus"), providers.HasActiveCooldown(c.Data), lastError)
 	lowerErr := strings.ToLower(lastError)
-	if dataStr(data, "verificationUrl") != "" ||
+	if strings.EqualFold(dataStr(data, "status"), "validation_required") ||
 		(effective == "disabled" && (strings.Contains(lowerErr, "validation_required") || strings.Contains(lowerErr, "verify your account"))) {
 		return "validation"
 	}

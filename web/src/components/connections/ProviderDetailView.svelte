@@ -736,6 +736,20 @@
   // Antigravity (fragment 982): the PKCE verifier stays server-side; the
   // modal only keeps the state the authorize step minted.
   let antigravityState = $state('')
+  // Antigravity verification step (fragment 1061): when the test that
+  // follows a completed exchange finds the account verification-gated,
+  // the modal stays open on the fresh verification URL that test just
+  // minted (never stored — it is only worth clicking while this
+  // browser's sign-in session is warm). Check re-runs the test; a pass
+  // closes the modal, a still-gated verdict replaces the URL with the
+  // newer one from that test.
+  let pendingVerification = $state<{ connectionId: string; url: string } | null>(null)
+  let copiedVerifyUrl = $state(false)
+  let isCheckingVerification = $state(false)
+  // Fresh verification URLs minted by a row's Verifikasi test, keyed by
+  // connection id (fragment 1061): shown in the row's error panel until
+  // the next test replaces them or the account releases.
+  let freshVerifyUrls = $state<Record<string, string>>({})
   let pkceCodeVerifier = $state('')
   let pkceState = $state('')
   let pkceRedirectUri = $state('')
@@ -1493,22 +1507,64 @@
     }
   }
 
-  // Verification recheck: probe one validation-flagged account again.
-  // If Google accepts it (the operator verified upstream), the backend
-  // clears the flag and reactivates the account; if not, the refreshed
-  // row keeps the "needs verification" badge. Either way the refreshed
-  // payload is the verdict.
+  // Verifikasi: test-call the chat API for one validation-flagged
+  // account. If the gate is gone, the backend enables the account in
+  // the same call; if it is still gated, the response carries the
+  // verification URL that test just minted — kept here (never stored
+  // server-side) and shown in the row's error panel for an immediate
+  // click. Either way the refreshed row state carries the rest of the
+  // verdict.
   let recheckingId = $state<string | null>(null)
 
   async function recheckVerification(conn: ProviderConnection) {
     recheckingId = conn.id
     try {
-      await api.testConnection(conn.id)
+      const res = await api.testConnection(conn.id)
+      if (res?.verificationUrl) {
+        freshVerifyUrls = { ...freshVerifyUrls, [conn.id]: res.verificationUrl }
+      } else if (res?.valid) {
+        const next = { ...freshVerifyUrls }
+        delete next[conn.id]
+        freshVerifyUrls = next
+      }
     } catch {
       // The refreshed row state carries the outcome.
     } finally {
       recheckingId = null
       onRefresh()
+    }
+  }
+
+  function copyVerifyUrl() {
+    if (!pendingVerification) return
+    copyToClipboard(pendingVerification.url)
+    copiedVerifyUrl = true
+    setTimeout(() => (copiedVerifyUrl = false), 2000)
+  }
+
+  // The modal's Check: re-run the connection test for the account the
+  // exchange just created/re-connected. A pass closes the modal; a
+  // still-gated verdict swaps in the URL the new test minted.
+  async function checkPendingVerification() {
+    if (!pendingVerification || isCheckingVerification) return
+    isCheckingVerification = true
+    oauthError = null
+    try {
+      const res = await api.testConnection(pendingVerification.connectionId)
+      if (res?.valid) {
+        pendingVerification = null
+        showOAuthModal = false
+        onRefresh()
+      } else if (res?.verificationUrl) {
+        pendingVerification = { connectionId: pendingVerification.connectionId, url: res.verificationUrl }
+        copiedVerifyUrl = false
+      } else if (res?.error) {
+        oauthError = res.error
+      }
+    } catch (err) {
+      oauthError = err instanceof Error ? err.message : String(err)
+    } finally {
+      isCheckingVerification = false
     }
   }
 
@@ -1891,6 +1947,8 @@
     callbackInput = ''
     copiedAuthUrl = false
     antigravityState = ''
+    pendingVerification = null
+    copiedVerifyUrl = false
     try {
       // agy-style flow (fragment 982): Google's own page shows the code;
       // the user pastes it into the modal. Only the state is kept here —
@@ -2681,7 +2739,28 @@
       if (res?.success === false || (res as { error?: string })?.error) {
         oauthError = (res as { error?: string })?.error || 'Authorization failed'
       } else {
-        showOAuthModal = false
+        // Decide serve-ability right here, while this browser's
+        // sign-in session is still warm (fragment 1061): the test
+        // test-calls the chat API, and a verification-gated verdict
+        // keeps the modal open on the fresh verification URL that
+        // test minted — the only moment that URL is worth clicking.
+        const connId = res?.connection?.id || ''
+        let gated = false
+        if (connId) {
+          try {
+            const t = await api.testConnection(connId)
+            if (t?.verificationUrl) {
+              pendingVerification = { connectionId: connId, url: t.verificationUrl }
+              copiedVerifyUrl = false
+              gated = true
+            }
+          } catch {
+            // A failed test leaves the row to speak for itself.
+          }
+        }
+        if (!gated) {
+          showOAuthModal = false
+        }
         onRefresh()
       }
     } catch (err) {
@@ -4302,24 +4381,19 @@
                     <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                       {#if health?.state === 'validation'}
                         <!-- Verification-required (first-use account).
-                             The owner's spec (2026-11-09): the Verifikasi
-                             button directly test-calls the completion API
-                             for this account; if the test still fails
-                             with the verification gate, the stored
-                             verification URL is updated from that test's
-                             own error. Both halves already live in the
-                             backend (recheckValidationFlag: a real
-                             pinned generate decides release, and a
-                             still-flagged failure re-parks with the
-                             fresh validation_url extracted from the
-                             error body — the plt token rotates per
-                             error, so the freshest always wins). The
-                             row's refresh then shows the updated link
-                             in the error panel ("Buka Verifikasi").
-                             No sign-in-based action: the owner falsified
-                             that empirically ("verifikasi = login ulang
-                             itu salah besar") — what verifies is the
-                             scan step in Google's own page. -->
+                             The owner's spec (2026-11-09, fragment 1061):
+                             the Verifikasi button test-calls the chat API
+                             for this account. If the gate is gone, the
+                             account is enabled in the same call; if it is
+                             still gated, the response carries the
+                             verification URL that test just minted and
+                             the error panel shows it ("Buka Verifikasi")
+                             for an immediate click. The URL is never
+                             stored: minted per refusal, it only resolves
+                             while a live sign-in session for the account
+                             exists in the browser. What verifies is the
+                             scan step in Google's own page — no
+                             sign-in-based action anywhere. -->
                         <span
                           class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
                           title={lastErr || 'Google requires account verification before this account can serve again'}
@@ -4332,7 +4406,7 @@
                           onclick={() => recheckVerification(conn)}
                           disabled={recheckingId === conn.id}
                           class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 cursor-pointer"
-                          title="Test-call the completion API for this account now: if Google accepts it, the account reactivates; if it is still verification-gated, the Buka Verifikasi link is refreshed with the newest URL from that test"
+                          title="Test-call the chat API for this account now: if the verification gate is gone, the account is enabled; if it is still gated, the error panel shows the fresh verification URL from this test"
                         >
                           {#if recheckingId === conn.id}
                             <span class="material-symbols-outlined text-[11px] animate-spin">progress_activity</span>
@@ -4527,7 +4601,7 @@
                       {/if}
                     </div>
                     <!-- Error message block -->
-                    {#if lastErr && lastErr !== 'Provider test not supported' && (status?.state === 'failed' || conn.testStatus === 'failed' || conn.testStatus === 'error' || conn.testStatus === 'unavailable' || !isConnActive || connBadge === 'error' || lastErr.toLowerCase().includes('terms of service') || lastErr.toLowerCase().includes('disabled in this account') || lastErr.toLowerCase().includes('account disabled') || lastErr.toLowerCase().includes('tos_violation') || lastErr.toLowerCase().includes('validation_required') || lastErr.toLowerCase().includes('verify your account') || Boolean(conn.verificationUrl))}
+                    {#if lastErr && lastErr !== 'Provider test not supported' && (status?.state === 'failed' || conn.testStatus === 'failed' || conn.testStatus === 'error' || conn.testStatus === 'unavailable' || !isConnActive || connBadge === 'error' || lastErr.toLowerCase().includes('terms of service') || lastErr.toLowerCase().includes('disabled in this account') || lastErr.toLowerCase().includes('account disabled') || lastErr.toLowerCase().includes('tos_violation') || lastErr.toLowerCase().includes('validation_required') || lastErr.toLowerCase().includes('verify your account') || Boolean(freshVerifyUrls[conn.id]))}
                       <div class="mt-1.5 flex flex-col gap-1.5 text-xs text-red-500 bg-red-500/10 px-2.5 py-1.5 rounded-md border border-red-500/20 max-w-full">
                         <div class="flex items-start gap-1.5">
                           <span class="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
@@ -4552,11 +4626,11 @@
                             </a>
                           </div>
                         {/if}
-                        {#if conn.verificationUrl}
+                        {#if freshVerifyUrls[conn.id]}
                           <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
                             <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
                             <a
-                              href={conn.verificationUrl}
+                              href={freshVerifyUrls[conn.id]}
                               target="_blank"
                               rel="noreferrer"
                               class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
@@ -6058,6 +6132,37 @@
         </div>
         {/if}
 
+        {#if pendingVerification}
+          <div>
+            <p class="text-sm font-medium mb-1">Step 3: Verify this account</p>
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <input
+                readonly
+                value={pendingVerification.url}
+                class="min-w-0 flex-1 px-2.5 h-8 text-xs border border-border rounded-md bg-background text-text-muted select-all font-mono"
+              />
+              <div class="grid grid-cols-2 gap-2 sm:contents">
+                <button
+                  type="button"
+                  onclick={() => window.open(pendingVerification?.url, '_blank')}
+                  class="flex h-8 items-center justify-center gap-1 px-3 text-xs font-semibold whitespace-nowrap rounded-md border border-border bg-surface-2 hover:bg-surface-3 text-text-main cursor-pointer"
+                >
+                  <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  Open
+                </button>
+                <button
+                  type="button"
+                  onclick={copyVerifyUrl}
+                  class="flex h-8 items-center justify-center gap-1 px-3 text-xs font-semibold whitespace-nowrap rounded-md border border-border bg-surface-2 hover:bg-surface-3 text-text-main cursor-pointer"
+                >
+                  <span class="material-symbols-outlined text-sm">{copiedVerifyUrl ? 'check' : 'content_copy'}</span>
+                  {copiedVerifyUrl ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+          </div>
+        {/if}
+
         {#if oauthError}
           <p class="text-xs text-red-500">{oauthError}</p>
         {/if}
@@ -6066,21 +6171,24 @@
           <button
             type="button"
             onclick={() => {
-              if (deviceUserCode) {
+              if (pendingVerification) {
+                checkPendingVerification()
+              } else if (deviceUserCode) {
                 pollDeviceOnce()
               } else {
                 submitManualCallback()
               }
             }}
-            disabled={isConnecting || isPollingDevice}
+            disabled={isConnecting || isPollingDevice || isCheckingVerification}
             class="flex-1 h-8 text-xs font-semibold rounded-[8px] bg-brand-500 hover:bg-brand-600 text-white shadow-sm disabled:opacity-50 cursor-pointer"
           >
-            {isConnecting || isPollingDevice ? 'Checking…' : deviceUserCode ? 'Check now' : providerId === 'freebuff' ? 'Check & Connect' : 'Connect'}
+            {isConnecting || isPollingDevice || isCheckingVerification ? 'Checking…' : pendingVerification ? 'Check' : deviceUserCode ? 'Check now' : providerId === 'freebuff' ? 'Check & Connect' : 'Connect'}
           </button>
           <button
             type="button"
             onclick={() => {
               showOAuthModal = false
+              pendingVerification = null
               stopDevicePoll()
               if (freebuffPollTimer) {
                 clearInterval(freebuffPollTimer)

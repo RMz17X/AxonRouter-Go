@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"axonrouter/proxy/internal/proxy"
 	"axonrouter/proxy/internal/proxy/executor"
 	"axonrouter/proxy/internal/proxy/oauth"
+	"axonrouter/proxy/internal/schedule"
 )
 
 // Port of upstream src/app/api/providers/[id]/test/testUtils.js: a real probe
@@ -94,11 +96,15 @@ type connectionProbeData struct {
 
 // probeOutcome is one connection-test result. valid=false + message mirrors
 // upstream's {valid, error}; tokens is set when a refresh happened.
+// verificationUrl carries a just-minted Antigravity verification link
+// from the test's own generate refusal — response-only, never stored
+// (fragment 1061).
 type probeOutcome struct {
-	valid     bool
-	message   string
-	refreshed bool
-	tokens    *oauth.TokenResult
+	valid           bool
+	message         string
+	refreshed       bool
+	tokens          *oauth.TokenResult
+	verificationUrl string
 }
 
 // connectionProbeDo performs the outbound request of a connection test.
@@ -349,6 +355,9 @@ func (h *DashboardHandler) HandleTestConnection(w http.ResponseWriter, r *http.R
 	if out.message != "" {
 		payload["error"] = out.message
 	}
+	if out.verificationUrl != "" {
+		payload["verificationUrl"] = out.verificationUrl
+	}
 	handlerutil.WriteJSON(w, http.StatusOK, payload)
 }
 
@@ -420,15 +429,22 @@ func (h *DashboardHandler) testSingleConnection(ctx context.Context, conn *model
 		return h.probeAPIKeyConnection(ctx, conn, data, raw, client)
 	}
 	out := h.probeOAuthConnection(ctx, conn, data, client)
-	// A validation-flagged Antigravity account needs a stronger verdict
-	// than the account probe's: loadCodeAssist accepts accounts the
-	// generate surface still refuses, so a "valid" here would release
-	// an account that cannot serve and watch the next quota read park
-	// it again. Decide the release on a real generate instead; on
-	// failure the caller persists the refreshed stored verdict.
-	if out.valid && conn != nil && conn.Provider == "antigravity" {
+	// An Antigravity account needs a stronger verdict than the account
+	// probe's: loadCodeAssist accepts accounts the generate surface
+	// still refuses with VALIDATION_REQUIRED, so a "valid" here would
+	// bless an account that cannot serve. The Verify/test action is a
+	// test against the chat API itself (fragment 1061): a real pinned
+	// generate decides. For a validation-flagged row the recheck owns
+	// the verdict (temporary release, release-or-repark); for a fresh
+	// or healthy row a single ping exposes a gate the light probe
+	// cannot see — e.g. a just-connected account that was born gated.
+	// Either way, a still-gated verdict returns the refusal's fresh
+	// verification URL in the response (never stored), and a verdict
+	// without the gate leaves the account enabled.
+	if out.valid && conn != nil && conn.Provider == "antigravity" && h.Chat != nil {
 		if status, _ := raw["status"].(string); strings.EqualFold(status, "validation_required") {
-			if !h.recheckValidationFlag(ctx, conn, raw) {
+			released, freshURL := h.recheckValidationFlag(ctx, conn, raw)
+			if !released {
 				if fresh, ferr := h.Repo.GetProviderConnectionByID(conn.ID); ferr == nil && fresh != nil && fresh.Data != "" {
 					var fd map[string]any
 					if err := json.Unmarshal([]byte(fresh.Data), &fd); err == nil && fd != nil {
@@ -444,7 +460,28 @@ func (h *DashboardHandler) testSingleConnection(ctx context.Context, conn *model
 				if msg == "" {
 					msg = "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED"
 				}
-				return probeOutcome{message: msg}
+				return probeOutcome{message: msg, verificationUrl: freshURL}
+			}
+		} else if conn.AuthType == "oauth" {
+			if pingErr := schedule.PingConnection(ctx, h.Chat, conn.Provider, conn.ID); pingErr != nil {
+				var ue *proxy.UpstreamError
+				if errors.As(pingErr, &ue) && ue != nil && len(ue.Body) > 0 {
+					lower := strings.ToLower(string(ue.Body))
+					if strings.Contains(lower, "validation_required") || strings.Contains(lower, "verify your account") {
+						msg := "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED"
+						var doc map[string]any
+						if err := json.Unmarshal(ue.Body, &doc); err == nil {
+							if m := extractGoogleErrorMessage(doc); m != "" {
+								msg = m
+							}
+						}
+						return probeOutcome{message: msg, verificationUrl: validationURLFromBody(ue.Body)}
+					}
+				}
+				// Any other ping outcome (quota, transport) is not a
+				// connection failure: the account probe already proved
+				// the credentials, and quota/cooldown machinery owns
+				// those states.
 			}
 		}
 	}
@@ -1160,9 +1197,9 @@ func (h *DashboardHandler) persistProbeResult(conn *models.ProviderConnection, r
 		} else if isValidationReq {
 			raw["status"] = "validation_required"
 			raw["testStatus"] = "disabled"
-			if v, _ := raw["verificationUrl"].(string); v == "" {
-				raw["verificationUrl"] = "https://antigravity.google"
-			}
+			// Flag only (fragment 1061): the verification URL is never
+			// stored — it rides the test response that minted it.
+			delete(raw, "verificationUrl")
 			conn.IsActive = 0
 			_ = h.Repo.SetConnectionStatus(conn.ID, false)
 		} else if isDeadAuth {

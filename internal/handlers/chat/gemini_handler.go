@@ -201,12 +201,8 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 				errText := string(uErr.Body)
 				lower := strings.ToLower(errText)
 				if strings.Contains(lower, "validation_required") || strings.Contains(lower, "verify your account") {
-					valURL := extractGoogleValidationURL(uErr.Body)
-					if valURL == "" {
-						valURL = "https://antigravity.google"
-					}
 					if connectionID != "" && h.Repo != nil {
-						_ = h.Repo.SetConnectionVerificationRequired(connectionID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
+						_ = h.Repo.SetConnectionVerificationRequired(connectionID, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
 					}
 				} else if providers.LooksLikeToSDisabled(uErr.StatusCode, errText) || strings.Contains(lower, "terms of service") || strings.Contains(lower, "tos_violation") || strings.Contains(lower, "disabled in this account") {
 					if connectionID != "" && h.Repo != nil {

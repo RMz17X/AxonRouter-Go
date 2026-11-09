@@ -909,20 +909,34 @@
     }
   }
 
-  // Verification check (operator request): re-probe one validation-flagged
-  // account from its tracker row. If Google accepts it again (the operator
-  // verified upstream), the backend clears the flag and reactivates the
-  // account; the forced quota re-read then shows the live quota table
-  // instead of the stored verdict. The usage read now runs the same check
-  // on its own for flagged accounts, so this button is the explicit,
-  // immediate form of that system check.
+  // Verification check (operator request): test-call the chat API for
+  // one validation-flagged account from its tracker row. If the gate is
+  // gone, the backend enables the account in the same call and the
+  // forced quota re-read shows the live quota table; if it is still
+  // gated, the response's freshly minted verification URL is kept here
+  // (never stored server-side, fragment 1061) and the row swaps its
+  // "Verifikasi Akun" button for that link. The usage read runs the
+  // same release check on its own for flagged accounts, so this button
+  // is the explicit, immediate form of that system check.
   let checkingVerificationId = $state<string | null>(null)
+  let freshVerifyUrlByConn = $state<Record<string, string>>({})
+
+  function isValidationFlagged(conn: ProviderConnection): boolean {
+    return typeof conn.status === 'string' && conn.status.toLowerCase() === 'validation_required'
+  }
 
   async function checkVerification(conn: ProviderConnection): Promise<void> {
     if (checkingVerificationId) return
     checkingVerificationId = conn.id
     try {
-      await api.testConnection(conn.id)
+      const res = await api.testConnection(conn.id)
+      if (res?.verificationUrl) {
+        freshVerifyUrlByConn = { ...freshVerifyUrlByConn, [conn.id]: res.verificationUrl }
+      } else if (res?.valid) {
+        const next = { ...freshVerifyUrlByConn }
+        delete next[conn.id]
+        freshVerifyUrlByConn = next
+      }
     } catch {
       // The refreshed row state carries the outcome.
     } finally {
@@ -1640,7 +1654,7 @@
                 </button>
 
                 <!-- Check verification (validation-flagged accounts only) -->
-                {#if conn.verificationUrl && !isActiveConn(conn)}
+                {#if isValidationFlagged(conn) && !isActiveConn(conn)}
                   <button
                     type="button"
                     onclick={() => checkVerification(conn)}
@@ -1738,9 +1752,9 @@
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
                 {/if}
-                {#if conn.verificationUrl}
+                {#if freshVerifyUrlByConn[conn.id]}
                   <a
-                    href={conn.verificationUrl}
+                    href={freshVerifyUrlByConn[conn.id]}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
@@ -1748,6 +1762,16 @@
                     <span>Verifikasi Akun</span>
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
+                {:else if isValidationFlagged(conn)}
+                  <button
+                    type="button"
+                    onclick={() => checkVerification(conn)}
+                    disabled={checkingVerificationId === conn.id}
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <span>Verifikasi Akun</span>
+                    <span class="material-symbols-outlined text-sm">fact_check</span>
+                  </button>
                 {/if}
               </div>
             {:else if quota?.message}
@@ -1764,9 +1788,9 @@
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
                 {/if}
-                {#if conn.verificationUrl}
+                {#if freshVerifyUrlByConn[conn.id]}
                   <a
-                    href={conn.verificationUrl}
+                    href={freshVerifyUrlByConn[conn.id]}
                     target="_blank"
                     rel="noopener noreferrer"
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
@@ -1774,6 +1798,16 @@
                     <span>Verifikasi Akun</span>
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
+                {:else if isValidationFlagged(conn)}
+                  <button
+                    type="button"
+                    onclick={() => checkVerification(conn)}
+                    disabled={checkingVerificationId === conn.id}
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <span>Verifikasi Akun</span>
+                    <span class="material-symbols-outlined text-sm">fact_check</span>
+                  </button>
                 {/if}
               </div>
             {:else}

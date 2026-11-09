@@ -61,20 +61,22 @@ func validationURLFromBody(body []byte) string {
 // The account is temporarily reactivated so the pinned lane will serve
 // it (a probe is never redirected to another account, so the verdict
 // belongs to this connection alone). A passing ping leaves it
-// released. A failing ping that still carries the verification gate
-// re-parks it with the freshest verdict: the refusal carries the
-// current message and a fresh account-specific verification URL,
-// whose token the stored Verify link then carries. A failing ping
-// where Google answered with anything else (e.g. quota) proves the
-// gate itself is gone and also releases — only a ping with no
-// upstream answer at all (transport, timeout) keeps the previously
-// stored verdict rather than overwriting it with noise.
-func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *models.ProviderConnection, data map[string]any) bool {
+// released. A failing ping where Google answered with anything else
+// (e.g. quota) proves the gate itself is gone and also releases — the
+// operator's click on Check therefore enables the account in the same
+// click once the gate is gone. A failing ping that still carries the
+// verification gate re-parks the account (flag only) and returns the
+// refusal's fresh verification URL: the URL is never stored (fragment
+// 1061) — it travels back in the test response so the UI can show it
+// at the moment it was minted, while the operator's sign-in session
+// can still resolve it. Only a ping with no upstream answer at all
+// (transport, timeout) keeps the previously stored verdict rather than
+// overwriting it with noise.
+func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *models.ProviderConnection, data map[string]any) (bool, string) {
 	if conn == nil || data == nil || h.Chat == nil {
-		return false
+		return false, ""
 	}
 	origMessage := lastErrorText(data)
-	origURL, _ := data["verificationUrl"].(string)
 
 	// Temporary release: the same field clearing the verified
 	// transition performs, so the pinned probe lane treats the account
@@ -99,11 +101,11 @@ func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *mode
 	if pingErr == nil {
 		log.Info("usage", "validation recheck passed generate probe: account released",
 			"provider", conn.Provider, "conn", conn.ID)
-		return true
+		return true, ""
 	}
 
 	message := origMessage
-	verifyURL := origURL
+	verifyURL := ""
 	var ue *proxy.UpstreamError
 	stillValidation := false
 	if errors.As(pingErr, &ue) && ue != nil {
@@ -116,9 +118,7 @@ func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *mode
 					message = msg
 				}
 			}
-			if u := validationURLFromBody(ue.Body); u != "" {
-				verifyURL = u
-			}
+			verifyURL = validationURLFromBody(ue.Body)
 		}
 	}
 	if ue != nil && len(ue.Body) > 0 && !stillValidation {
@@ -136,30 +136,13 @@ func (h *DashboardHandler) recheckValidationFlag(ctx context.Context, conn *mode
 		// and still re-parks below.
 		log.Info("usage", "validation recheck: upstream answered without the verification gate, account released",
 			"provider", conn.Provider, "conn", conn.ID, "upstream_status", ue.StatusCode)
-		return true
-	}
-	if verifyURL == origURL {
-		// The ping's own chat-lane classifier may already have stored a
-		// fresher URL from the same refusal (its token is newer than the
-		// one this recheck started with); keep the freshest of the two
-		// rather than overwriting it with the stale one.
-		if fresh, ferr := h.Repo.GetProviderConnectionByID(conn.ID); ferr == nil && fresh != nil && fresh.Data != "" {
-			var fd map[string]any
-			if err := json.Unmarshal([]byte(fresh.Data), &fd); err == nil && fd != nil {
-				if u, _ := fd["verificationUrl"].(string); u != "" {
-					verifyURL = u
-				}
-			}
-		}
-	}
-	if verifyURL == "" {
-		verifyURL = "https://antigravity.google"
+		return true, ""
 	}
 	if message == "" {
 		message = "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED"
 	}
-	_ = h.Repo.SetConnectionVerificationRequired(conn.ID, verifyURL, message)
+	_ = h.Repo.SetConnectionVerificationRequired(conn.ID, message)
 	log.Info("usage", "validation recheck failed generate probe: account stays parked",
 		"provider", conn.Provider, "conn", conn.ID)
-	return false
+	return false, verifyURL
 }

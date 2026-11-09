@@ -442,12 +442,8 @@ func (h *ChatHandler) handleAccountFallback(
 				}
 				h.getSessionAffinity().EvictConnection(connObj.ID)
 			} else if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
-				valURL := extractGoogleValidationURL(ue.Body)
-				if valURL == "" {
-					valURL = "https://antigravity.google"
-				}
 				if h.Repo != nil {
-					_ = h.Repo.SetConnectionVerificationRequired(connObj.ID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
+					_ = h.Repo.SetConnectionVerificationRequired(connObj.ID, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
 				}
 				h.getSessionAffinity().EvictConnection(connObj.ID)
 			} else if strings.Contains(errLower, "no project id") {

@@ -267,31 +267,30 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 		return
 	}
 
-	// reactivated reports that this exchange was the verification
-	// ceremony for a validation-flagged connection (see the UPDATE
-	// branch): the flag clears and the connection goes active again.
-	reactivated := false
+	// wasValidationFlagged marks a re-connect of a validation-flagged
+	// connection. A sign-in does NOT lift the gate (falsified live
+	// 2026-11-09: a fresh sign-in changed nothing; what verifies is
+	// the scan step in Google's verification page, and the page only
+	// resolves while the browser holds a live sign-in session for the
+	// account). The exchange therefore preserves the flag and the
+	// parked state verbatim in the rebuilt blob; the verdict belongs
+	// to the connection test the dashboard runs immediately after the
+	// exchange — it test-calls the chat API, and only its answer may
+	// release the account or surface a freshly minted verification
+	// URL (fragment 1061). Other disabled states (manual, ToS) are
+	// likewise untouched by a re-login.
+	wasValidationFlagged := false
 	if h.Repo != nil && h.Repo.RawDB() != nil {
 		var existingDataStr string
 		err := h.Repo.QueryRow("SELECT data FROM providerConnections WHERE id = ?", connID).Scan(&existingDataStr)
 		if err == nil && existingDataStr != "" {
 			var existingData map[string]any
 			if err := json.Unmarshal([]byte(existingDataStr), &existingData); err == nil {
-				// A completed sign-in IS Google's account verification
-				// for a first-use Antigravity account: in agy the same
-				// sign-in is what lifts the VALIDATION_REQUIRED gate,
-				// account-wide. The bare validation_url from an API
-				// error, opened outside a sign-in, never registers (it
-				// errors in the browser and the gate stays). So when the
-				// connection being re-logged-in is validation-flagged,
-				// the rebuilt blob (which already omits status /
-				// verificationUrl / lastError) goes back ACTIVE. If
-				// Google still refuses the account afterwards, the
-				// serving-path classifiers re-flag it on the next
-				// refusal — the state stays honest either way. Other
-				// disabled states (manual, ToS) are NOT reactivated by
-				// a re-login.
-				reactivated = existingData["status"] == "validation_required"
+				if st, ok := existingData["status"].(string); ok && strings.EqualFold(st, "validation_required") {
+					wasValidationFlagged = true
+					dataMap["status"] = "validation_required"
+					dataMap["testStatus"] = "disabled"
+				}
 				if tokenData.RefreshToken == "" {
 					if rt, ok := existingData["refreshToken"].(string); ok && rt != "" {
 						dataMap["refreshToken"] = rt
@@ -319,9 +318,9 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 				dataMap["providerSpecificData"] = psd
 			}
 			dataBytes, _ = json.Marshal(dataMap)
-			if reactivated {
+			if wasValidationFlagged {
 				_, err = h.Repo.Exec(
-					"UPDATE providerConnections SET name = ?, data = ?, isActive = 1, updatedAt = ? WHERE id = ?",
+					"UPDATE providerConnections SET name = ?, data = ?, isActive = 0, updatedAt = ? WHERE id = ?",
 					connName, string(dataBytes), now, connID,
 				)
 			} else {
@@ -355,8 +354,8 @@ func (h *OAuthHandler) HandleAntigravityExchange(w http.ResponseWriter, r *http.
 	}
 
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
-		"success":     true,
-		"reactivated": reactivated,
+		"success":            true,
+		"validationRequired": wasValidationFlagged,
 		"connection": map[string]any{
 			"id":          connID,
 			"provider":    "antigravity",
