@@ -112,6 +112,45 @@ func requestIDDetailField(ctx context.Context) map[string]any {
 	return nil
 }
 
+// dailyErrorFoldSeen remembers which requests already folded a daily
+// error delta in this process. LogFailure runs once per failed ATTEMPT,
+// but the daily aggregate's errors counter is read as failed REQUESTS:
+// without the guard, a request that tried five accounts folded five
+// errors. The first failure of a request folds; its later attempts do
+// not. Entries expire once the request is long finished, and the map
+// is swept lazily when it grows past a size cap.
+var dailyErrorFoldSeen struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+}
+
+const dailyErrorFoldTTL = 15 * time.Minute
+
+func firstDailyErrorFold(reqID string) bool {
+	if reqID == "" {
+		// No request identity to dedupe on: fold as before.
+		return true
+	}
+	now := time.Now()
+	dailyErrorFoldSeen.mu.Lock()
+	defer dailyErrorFoldSeen.mu.Unlock()
+	if dailyErrorFoldSeen.seen == nil {
+		dailyErrorFoldSeen.seen = map[string]time.Time{}
+	}
+	if len(dailyErrorFoldSeen.seen) > 8192 {
+		for k, t := range dailyErrorFoldSeen.seen {
+			if now.Sub(t) > dailyErrorFoldTTL {
+				delete(dailyErrorFoldSeen.seen, k)
+			}
+		}
+	}
+	if t, ok := dailyErrorFoldSeen.seen[reqID]; ok && now.Sub(t) < dailyErrorFoldTTL {
+		return false
+	}
+	dailyErrorFoldSeen.seen[reqID] = now
+	return true
+}
+
 func (h *ChatHandler) LogFailure(
 	ctx context.Context,
 	info *UsageLogInfo,
@@ -265,7 +304,7 @@ func (h *ChatHandler) LogFailure(
 			},
 		})
 	}
-	if !isProxyBlocked && status != "canceled" {
+	if !isProxyBlocked && status != "canceled" && firstDailyErrorFold(middleware.GetRequestIDFromContext(ctx)) {
 		accumulateDailyUsage(failureRepo, dailyUsageDelta{
 			provider:     failureProvider,
 			model:        failureModel,

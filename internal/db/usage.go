@@ -960,9 +960,24 @@ func (r *Repo) GetRequestDetailByID(id string) (string, error) {
 }
 
 // GetRequestDetailsErrorCountSince returns the count of failed requests recorded in requestDetails since cutoff.
+//
+// requestDetails holds one diagnostic row per failed ATTEMPT (LogFailure),
+// so a row count would report one failed request once per account it
+// tried — and a request that eventually succeeded still leaves error
+// rows behind for its losing attempts. The count therefore groups rows
+// by the request they belong to (the middleware request id in the
+// payload, falling back to the row id for rows that predate it) and
+// counts a group as failed only when no row of it succeeded.
 func (r *Repo) GetRequestDetailsErrorCountSince(ctx context.Context, since string) (int, error) {
 	var count int
-	err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM requestDetails WHERE status = 'error' AND timestamp >= ?`, since).Scan(&count)
+	err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+		SELECT COALESCE(NULLIF(data->>'reqId', ''), id) AS req_key,
+			BOOL_OR(status = 'error') AS has_error,
+			BOOL_OR(status = 'success') AS has_success
+		FROM requestDetails
+		WHERE timestamp >= ? AND status IN ('error', 'success')
+		GROUP BY req_key
+	) grouped WHERE has_error AND NOT has_success`, since).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count requestDetails errors since %s: %w", since, err)
 	}

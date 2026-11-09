@@ -383,14 +383,6 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			resp.ByApiKey[bucketKey] = cur
 		}
 
-		// requestsIncludeErrors records which of the two bucket semantics
-		// produced resp.ByProvider. Daily rollups count only successes in a
-		// bucket's requests and keep errors in a separate counter, so the
-		// headline total is successes + errors. The raw history fold counts
-		// every non-canceled row in requests — errors included — so adding
-		// the error count again there would count every error twice.
-		requestsIncludeErrors := false
-
 		if window.daily {
 			dailyRows, err := repo.GetUsageDailyRecent(window.days)
 			if err != nil {
@@ -585,7 +577,6 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 				resolveConnMap(acctIDs)
 			}
 			applyRawAggregate(&resp, agg, nodeNameMap, connMap, keyNames, views)
-			requestsIncludeErrors = true
 			if !window.since.IsZero() {
 				cutoff := window.since.UTC().Format("2006-01-02T15:04:05.000Z")
 				if errCount, err := repo.GetRequestDetailsErrorCountSince(r.Context(), cutoff); err == nil {
@@ -617,36 +608,25 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			}
 		}
 
-		// Calculate total aggregates from byProvider
-		bucketRequests := 0
+		// Calculate total aggregates from byProvider. Both bucket sources
+		// count successes only — usageHistory holds no failure rows at
+		// all, and the daily rollup folds failures into its separate
+		// errors counter — so the headline total is successes + errors,
+		// with TotalErrors counting failed REQUESTS (see
+		// GetRequestDetailsErrorCountSince for the raw path and the daily
+		// fold for rollups).
+		successfulRequests := 0
 		for _, p := range resp.ByProvider {
-			bucketRequests += p.Requests
+			successfulRequests += p.Requests
 			resp.TotalPromptTokens += p.PromptTokens
 			resp.TotalCompletionTokens += p.CompletionTokens
 			resp.TotalCachedTokens += p.CachedTokens
 			resp.TotalCost += p.Cost
 		}
-		if requestsIncludeErrors {
-			// Raw buckets already include the error rows in their request
-			// counts; the total is the bucket sum itself, and the success
-			// side is what remains after the errors. The two ledgers the
-			// counts come from can skew by a row in flight, so the success
-			// side is floored at zero rather than allowed to go negative.
-			resp.TotalRequests = bucketRequests
-			successfulRequests := bucketRequests - resp.TotalErrors
-			if successfulRequests < 0 {
-				successfulRequests = 0
-			}
-			if resp.TotalRequests > 0 {
-				rate := math.Round(float64(successfulRequests)/float64(resp.TotalRequests)*1000) / 10
-				resp.SuccessRate = &rate
-			}
-		} else {
-			resp.TotalRequests = bucketRequests + resp.TotalErrors
-			if resp.TotalRequests > 0 {
-				rate := math.Round(float64(bucketRequests)/float64(resp.TotalRequests)*1000) / 10
-				resp.SuccessRate = &rate
-			}
+		resp.TotalRequests = successfulRequests + resp.TotalErrors
+		if resp.TotalRequests > 0 {
+			rate := math.Round(float64(successfulRequests)/float64(resp.TotalRequests)*1000) / 10
+			resp.SuccessRate = &rate
 		}
 
 		// Build recent requests list (20 deduped from usageHistory)
