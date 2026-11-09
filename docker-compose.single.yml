@@ -38,8 +38,7 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
-    image: axonrouter-go:local
+    image: ${AXONROUTER_IMAGE:-ghcr.io/rmz17x/axonrouter-go:latest}
     depends_on:
       postgres:
         condition: service_healthy
