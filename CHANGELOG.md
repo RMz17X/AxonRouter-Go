@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.9.79] - 2026-11-09
+
+### Fixed
+- One malformed client tool definition could take down every MiniMax turn of a mixed combo (live storm 2026-11-09 22:10–22:21 WIB: 455 requests, ~3,700 attempts, all streaming /v1/messages via a combo, all refused by MiniMax with 2013 invalid-params while lenient members tolerated the same payload and were simultaneously quota/404-unavailable). MiniMax's Anthropic endpoint validates tool definitions strictly — a definition with an empty name returns "function name is empty", one with a missing/non-object schema returns "function parameters is empty" (both reproduced verbatim through the gateway) — where other upstreams shrug the same definitions off. SanitizeClaudePassthrough now repairs the tools array on the Claude passthrough path: definitions with a blank name are dropped (a nameless tool is uncallable in every dialect) and client tools (type custom or absent) whose input_schema is missing or not an object get the minimal object schema; server tools keep their shape. The OpenAI→Claude conversion (claudeToolsFromOpenAI) applies the same two rules so it cannot mint a definition the passthrough would have dropped.
+
+### Fixed
+- Model-availability census silently skipped connections whose per-model locks live only in flattened keys (audit 2026-11-09: of 41 census locks only 20 matched the DB; anaking966, abahakunan and adenarere held live locks yet never appeared in GET /api/models/availability at all). The Go-side reader (activeModelLocks) already unions the `modelLocks` object with the flattened `modelLock_<model>` keys, but the repo prefilter in GetLockedOrUnavailableConnections selected rows on the object alone — and writers store locks almost exclusively as flattened keys, the object routinely absent. The prefilter now also matches any row carrying a `modelLock_*` key, so the census enumerates the same locks the serving path enforces; no stored data changes.
+
 ## [v1.9.78] - 2026-11-09
 
 ### Fixed
