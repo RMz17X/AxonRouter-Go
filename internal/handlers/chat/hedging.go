@@ -529,7 +529,17 @@ func (h *ChatHandler) executeHedgedWaves(
 		}
 		candidates := h.pickHedgeCandidates(remaining, provider, model, maxAttempts)
 		if len(candidates) == 0 {
-			return lastErr
+			if lastErr != nil {
+				return lastErr
+			}
+			// Nothing was ever launched (e.g. every connection is
+			// model-locked): never report success for a request nobody
+			// served — return a real error so the caller falls through
+			// to the sequential path's lock/wait semantics.
+			return &upstreamError{
+				StatusCode: http.StatusServiceUnavailable,
+				Body:       []byte(`{"error":{"message":"no eligible upstream connections available, please retry","type":"server_error","code":"upstream_unavailable"}}`),
+			}
 		}
 		for _, c := range candidates {
 			tried[c.ID] = true
