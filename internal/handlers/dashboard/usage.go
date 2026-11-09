@@ -190,18 +190,39 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 	}
 
 	// Disabled accounts must never trigger OAuth token refresh or upstream quota
-	// reads; return the stored error/reason directly.
+	// reads; return the stored error/reason directly. The one exception is a
+	// validation flag: it is not a terminal verdict (the operator clears it by
+	// verifying the account upstream), and this read is where the quota
+	// tracker asks for the account's state — so a flagged account is
+	// re-probed here with the same machinery the connection test uses. A
+	// valid verdict clears the flag and reactivates the account inside
+	// persistProbeResult, and the read then falls through to live quotas;
+	// any other verdict keeps the stored message. Terminal disables
+	// (ToS, dead auth) are never dialed.
 	if conn.IsActive == 0 {
-		msg := lastErrorText(data)
-		if msg == "" {
-			msg = "Account is disabled."
+		if status, _ := data["status"].(string); strings.EqualFold(status, "validation_required") {
+			out := h.testSingleConnection(r.Context(), conn, parseConnectionProbeData(data), data)
+			h.persistProbeResult(conn, data, out)
+			if fresh, ferr := h.Repo.GetProviderConnectionByID(connID); ferr == nil && fresh != nil {
+				conn = fresh
+				data = nil
+				if fresh.Data != "" {
+					_ = json.Unmarshal([]byte(fresh.Data), &data)
+				}
+			}
 		}
-		msg = enrichAppealMessage(msg)
-		handlerutil.WriteJSON(w, http.StatusOK, usageResult{
-			plan:    conn.Provider,
-			message: msg,
-		}.toResponse())
-		return
+		if conn.IsActive == 0 {
+			msg := lastErrorText(data)
+			if msg == "" {
+				msg = "Account is disabled."
+			}
+			msg = enrichAppealMessage(msg)
+			handlerutil.WriteJSON(w, http.StatusOK, usageResult{
+				plan:    conn.Provider,
+				message: msg,
+			}.toResponse())
+			return
+		}
 	}
 
 	// Short response cache (upstream route.js): served before proxy
@@ -261,6 +282,7 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 			log.Warn("usage", "forced credential refresh failed", "provider", conn.Provider, "conn", connID, "error", retry.err)
 		} else if retry.refreshed {
 			if retried, retryOK := fetchProviderUsage(fetchCtx, conn.Provider, data); retryOK {
+				h.applyMiniMaxCreditsPeak(conn, data, retried.quotas)
 				h.maybeAutoReleaseQuotaLocks(r.Context(), connID, retried.quotas)
 				h.writeUsageResponse(w, connID, retried.toResponse())
 				return
@@ -268,6 +290,7 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 		}
 	}
 	if ok {
+		h.applyMiniMaxCreditsPeak(conn, data, res.quotas)
 		h.maybeAutoReleaseQuotaLocks(r.Context(), connID, res.quotas)
 		h.writeUsageResponse(w, connID, res.toResponse())
 		return

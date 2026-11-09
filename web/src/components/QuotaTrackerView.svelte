@@ -909,6 +909,28 @@
     }
   }
 
+  // Verification check (operator request): re-probe one validation-flagged
+  // account from its tracker row. If Google accepts it again (the operator
+  // verified upstream), the backend clears the flag and reactivates the
+  // account; the forced quota re-read then shows the live quota table
+  // instead of the stored verdict. The usage read now runs the same check
+  // on its own for flagged accounts, so this button is the explicit,
+  // immediate form of that system check.
+  let checkingVerificationId = $state<string | null>(null)
+
+  async function checkVerification(conn: ProviderConnection): Promise<void> {
+    if (checkingVerificationId) return
+    checkingVerificationId = conn.id
+    try {
+      await api.testConnection(conn.id)
+    } catch {
+      // The refreshed row state carries the outcome.
+    } finally {
+      checkingVerificationId = null
+      await fetchQuota(conn.id, conn.provider, { force: true })
+    }
+  }
+
   async function handleResetAllCooldowns(): Promise<void> {
     if (resettingCooldowns) return
     if (
@@ -1616,6 +1638,26 @@
                       : ''}">refresh</span
                   >
                 </button>
+
+                <!-- Check verification (validation-flagged accounts only) -->
+                {#if conn.verificationUrl && !isActiveConn(conn)}
+                  <button
+                    type="button"
+                    onclick={() => checkVerification(conn)}
+                    disabled={rowBusy || checkingVerificationId === conn.id}
+                    aria-label="Check verification"
+                    title="Check verification — re-probe this account: if Google accepts it again, the flag clears and the account reactivates"
+                    class="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main disabled:opacity-50 cursor-pointer"
+                  >
+                    <span
+                      class="material-symbols-outlined text-[18px] {checkingVerificationId ===
+                      conn.id
+                        ? 'animate-spin'
+                        : ''}"
+                      >{checkingVerificationId === conn.id ? 'progress_activity' : 'fact_check'}</span
+                    >
+                  </button>
+                {/if}
 
                 <!-- Reset cooldown -->
                 {#if isActiveConn(conn)}
