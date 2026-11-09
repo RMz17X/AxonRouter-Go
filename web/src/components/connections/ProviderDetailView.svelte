@@ -4302,13 +4302,20 @@
                     <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                       {#if health?.state === 'validation'}
                         <!-- Verification-required (first-use account):
-                             Google lifts this gate inside a real sign-in —
-                             agy's login is the ceremony — never from the
-                             bare error URL, which errors outside a sign-in
-                             and changes nothing. Re-login re-runs this
-                             provider's OAuth sign-in (the exchange
-                             reactivates the connection on completion),
-                             Recheck re-probes with a real generate. -->
+                             the verification page itself is the ceremony
+                             (as in agy), but it binds only to a browser
+                             that just signed in as this account — agy
+                             works because the user is signed in there.
+                             A bare dashboard click lands on "you are not
+                             signed in" and never registers (proven:
+                             FULL_ELIGIBILITY_CHECK still flags the
+                             account after such clicks). So the flow is
+                             sequenced: this button runs the sign-in
+                             (step 1, the exchange reactivates the row),
+                             and the error panel then offers the fresh
+                             verification URL as step 2 in the same
+                             browser. Recheck re-probes with a real
+                             generate. -->
                         <span
                           class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
                           title={lastErr || 'Google requires account verification before this account can serve again'}
@@ -4320,10 +4327,10 @@
                           type="button"
                           onclick={() => handleAddConnectionClick()}
                           class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
-                          title="Re-login with this account: Google runs its one-time verification inside the sign-in, like agy — completing the sign-in reactivates the account"
+                          title="Step 1 of verification: sign in as this account so the verification page (step 2, in the error panel) binds to your browser session — the same context that makes it work in Antigravity"
                         >
                           <span class="material-symbols-outlined text-[11px]">login</span>
-                          re-login
+                          verifikasi
                         </button>
                         <button
                           type="button"
@@ -4551,16 +4558,32 @@
                           </div>
                         {/if}
                         {#if conn.verificationUrl || lastErr.toLowerCase().includes('validation_required') || lastErr.toLowerCase().includes('verify your account')}
-                          <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
-                            <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
-                            <button
-                              type="button"
-                              onclick={() => handleAddConnectionClick()}
-                              class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
-                            >
-                              <span>Login Ulang untuk Verifikasi</span>
-                              <span class="material-symbols-outlined text-xs">login</span>
-                            </button>
+                          <div class="flex flex-col gap-1.5 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                              <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
+                              <span class="inline-flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onclick={() => handleAddConnectionClick()}
+                                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
+                                >
+                                  <span>1. Login Ulang</span>
+                                  <span class="material-symbols-outlined text-xs">login</span>
+                                </button>
+                                {#if conn.verificationUrl}
+                                  <a
+                                    href={conn.verificationUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
+                                  >
+                                    <span>2. Buka Verifikasi</span>
+                                    <span class="material-symbols-outlined text-xs">open_in_new</span>
+                                  </a>
+                                {/if}
+                              </span>
+                            </div>
+                            <p class="text-text-muted leading-snug">Halaman verifikasi hanya terikat pada browser yang baru saja login sebagai akun ini — makanya di Antigravity langsung berhasil (di sana kamu sudah login), sedangkan klik dari dashboard berakhir "anda tidak login" dan tidak tercatat. Selesaikan langkah 1, lalu langkah 2 di browser yang sama.</p>
                           </div>
                         {/if}
                       </div>
