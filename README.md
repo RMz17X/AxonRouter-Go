@@ -53,7 +53,7 @@ Same idea as [9Router](https://github.com/decolua/9router), minus the Node.js ru
 │  Your CLI   │  (Claude Code, Codex, OpenClaw, Cursor, Cline...)
 │   Tool      │
 └──────┬──────┘
-       │ http://localhost:20130/v1
+       │ http://localhost:3177/v1
        ↓
 ┌─────────────────────────────────────────────┐
 │         axonrouter-go (Smart Router)           │
@@ -125,7 +125,7 @@ Dashboard → Providers → Connect **Kiro AI** (~50 credits/month free) or **Op
 
 ```text
 Claude Code / Codex / OpenClaw / Cursor / Cline Settings:
-  Endpoint: http://localhost:20130/v1
+  Endpoint: http://localhost:3177/v1
   API Key:  [Settings → API Keys in the dashboard]
   Model:    kr/claude-sonnet-4.5
 ```
@@ -137,7 +137,7 @@ Claude Code / Codex / OpenClaw / Cursor / Cline Settings:
 > [Upgrading from the SQLite era](#-upgrading-from-the-sqlite-era). There is
 > no shared-database mode anymore: the gateway never opens the legacy file.
 
-📦 [All release binaries](https://github.com/RMz17X/AxonRouter-Go/releases/latest) • 🐳 Image: `luqmenul/axonrouter-go` • 🔨 [Build from source](#-development)
+📦 [All release binaries](https://github.com/RMz17X/AxonRouter-Go/releases/latest) • 🐳 Image: `ghcr.io/rmz17x/axonrouter-go` • 🔨 [Build from source](#-development)
 
 ### Running outside Docker (unsupported)
 
@@ -203,7 +203,7 @@ the same variables from its own environment.
 | `DATABASE_URL` | **yes** | PostgreSQL connection string, e.g. `postgres://user:pass@host:5432/axonrouter?sslmode=disable`. A boot without it is a fatal error — there is no embedded or file database in this build. The compose stacks assemble it from `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB`. |
 | `JWT_SECRET` | **yes** (in practice) | Signs dashboard sessions/tokens. Every cluster node must share one value. If unset, the gateway generates an ephemeral per-boot secret and logs a loud warning: sessions then survive neither a restart nor a second node. |
 | `INITIAL_PASSWORD` | first boot | Seeds the dashboard password against an empty database. Change it from the dashboard afterwards. Without it, only local access can use the temporary compatibility default; remote login is refused until a password is set. |
-| `PORT` | no (default `20130`) | HTTP port. In the cluster stack, nginx publishes it. |
+| `PORT` | no (default `3177`) | HTTP port. In the cluster stack, nginx publishes it. |
 | `HOST` | no | Listener address; bind `127.0.0.1` to serve localhost only (e.g. behind your own reverse proxy). |
 | `DATA_DIR` | no | **Non-database** state root: CLI tokens/machine-id, uploads, provider instruction files, tunnel state, catalog cache. In compose it is the `appdata` volume at `/data`. The database never lives here. |
 | `VALKEY_URL` / `REDIS_URL` | no | Speed layer: share hot state (in-flight counters, rotation cursors, model locks) across nodes. `VALKEY_URL` wins. Unset = per-node memory (single-node mode). A configured-but-dead server degrades the gateway to PostgreSQL — never to divergent per-node memory. |
@@ -250,12 +250,12 @@ GET  /health                    Liveness
 GET  /api/version               Version metadata
 ```
 
-For Claude Messages clients: `ANTHROPIC_BASE_URL=http://localhost:20130/v1`.
+For Claude Messages clients: `ANTHROPIC_BASE_URL=http://localhost:3177/v1`.
 
 Client example:
 
 ```bash
-curl http://localhost:20130/v1/chat/completions \
+curl http://localhost:3177/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer sk-your-api-key' \
   -d '{"model":"ag/gemini-3.8-flash-high","messages":[{"role":"user","content":"Hello"}],"stream":true}'
@@ -418,10 +418,12 @@ separately and are never offered to a normal install:
 
 - GitHub Releases marks them **Pre-release**, so `releases/latest` — the URL
   `axonrouter-go update` falls back to — keeps pointing at the stable version.
-- Docker Hub tags them `exp` (`luqmenul/axonrouter-go:exp`), never `latest`.
+- The container image is published to GHCR (`ghcr.io/rmz17x/axonrouter-go`).
+  The `latest` tag tracks the default branch; a version tag (`v*`) is the
+  stable release.
 
 ```bash
-docker pull luqmenul/axonrouter-go:exp
+docker pull ghcr.io/rmz17x/axonrouter-go:latest
 ```
 
 Opt in only if you want to help shake out bugs. `axonrouter-go update` will not

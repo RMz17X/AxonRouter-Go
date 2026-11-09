@@ -17,7 +17,7 @@ One gateway + PostgreSQL 17:
 # from a clone of the repo — the compose stack brings its own PostgreSQL
 cp .env.example .env   # set POSTGRES_PASSWORD, JWT_SECRET, INITIAL_PASSWORD
 docker compose -f docker-compose.single.yml up -d
-# dashboard on http://localhost:20130 (or $PORT)
+# dashboard on http://localhost:3177 (or $PORT)
 ```
 
 ## Cluster
@@ -36,15 +36,16 @@ docker compose -f docker-compose.cluster.yml up -d
 
 | | Default |
 |---|---|
-| Port | `20130` |
+| Port | `3177` |
 | Database | PostgreSQL 17, provided by the stack |
 | State | the `appdata` volume at `/data` inside the container — non-database state only |
-| Dashboard | `http://localhost:20130` |
+| Dashboard | `http://localhost:3177` |
 | Initial password | the `INITIAL_PASSWORD` from your `.env` |
 
-Experimental builds are marked **Pre-release** and never offered to a
-normal install; Docker Hub tags them `exp` (`luqmenul/axonrouter-go:exp`),
-never `latest`.
+The published container image is `ghcr.io/rmz17x/axonrouter-go`. The `latest`
+tag tracks the default branch; a version tag (`v*`) is the stable release.
+Experimental builds are marked **Pre-release** on GitHub Releases and are never
+offered to a normal install — `releases/latest` always points at stable.
 
 ## Updates
 

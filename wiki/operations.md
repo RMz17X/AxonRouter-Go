@@ -13,17 +13,19 @@ maintenance, and the background loops that keep a deployment healthy.
 
 ```bash
 docker run -d --name axonrouter-go --restart unless-stopped \
-  -p 20130:20130 -v "$HOME/.axonrouter-go:/data" \
-  -e PORT=20130 -e DATA_DIR=/data \
+  -p 3177:3177 -v "$HOME/.axonrouter-go:/data" \
+  -e PORT=3177 -e DATA_DIR=/data \
   -e INITIAL_PASSWORD=your-secure-password \
-  luqmenul/axonrouter-go:latest
+  ghcr.io/rmz17x/axonrouter-go:latest
 ```
 
-`docker-compose.yml` in the repository root is the same shape if you prefer
-compose.
+`docker-compose.single.yml` in the repository root is the same shape if you
+prefer compose.
 
-Experimental builds are marked **Pre-release** and never offered to a normal
-install; Docker Hub tags them `exp` (`luqmenul/axonrouter-go:exp`), never `latest`.
+The published image is `ghcr.io/rmz17x/axonrouter-go`. The `latest` tag tracks
+the default branch; a version tag (`v*`) is the stable release. Experimental
+builds are marked **Pre-release** on GitHub Releases and are never offered to a
+normal install — `releases/latest` always points at stable.
 
 ## Tunnels
 
@@ -40,7 +42,7 @@ POST /api/tunnel/tailscale-disable
 ```
 
 Tailscale in a container needs the `NET_ADMIN` capability and a TUN device — see
-`docker-compose.yml` for the flags.
+`docker-compose.single.yml` (or `docker-compose.cluster.yml`) for the flags.
 
 ## Self-update
 

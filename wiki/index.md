@@ -38,12 +38,12 @@ AxonRouter-Go is a single Go binary that serves both the proxy APIs and the dash
 
 ```bash
 axonrouter-go
-# Dashboard: http://localhost:20130 (initial password: 123456)
+# Dashboard: http://localhost:3177 (initial password: 123456)
 ```
 
 Dashboard → Providers → connect **Kiro AI** (≈50 free credits per month) or
 **OpenCode Free** (no auth), then point your CLI tool at
-`http://localhost:20130/v1`.
+`http://localhost:3177/v1`.
 
 ## Which version am I on?
 

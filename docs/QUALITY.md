@@ -65,7 +65,7 @@ go test -bench=. -benchmem ./benchmark/...
 
 | Symptom | Probable Root Cause | Resolution / Fix |
 |---|---|---|
-| `403 Forbidden` on remote `/login` | Remote host attempting login with default password `123456` | Set `INITIAL_PASSWORD` environment variable or connect via SSH port forward `ssh -L 20130:localhost:20130`. |
+| `403 Forbidden` on remote `/login` | Remote host attempting login with default password `123456` | Set `INITIAL_PASSWORD` environment variable or connect via SSH port forward `ssh -L 3177:localhost:3177`. |
 | `429 Too Many Requests` (Immediate) | Key RPM/TPM limit exhausted or IP lockout bucket triggered | Check `X-RateLimit-Reset` header. Verify `TRUST_PROXY=true` if behind a reverse proxy. |
 | Streaming disconnects after 60s | Reverse proxy timeout or response buffering enabled | Add `proxy_buffering off;` and `proxy_read_timeout 300s;` in Nginx upstream configuration. |
 | High database lock contention | SQLite WAL checkpoint backlog or missing index on usage ledger | Verify SQLite journal mode is `WAL`. For high-throughput clusters, migrate to PostgreSQL via `DATABASE_URL`. |

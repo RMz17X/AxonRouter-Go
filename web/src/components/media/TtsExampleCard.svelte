@@ -48,7 +48,7 @@
   let modalError = $state('')
   let byLang = $state<Record<string, any>>({})
 
-  let endpoint = $state(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:20130')
+  let endpoint = $state(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3177')
   let tunnelEndpoint = $state('')
   let useTunnel = $state(false)
 

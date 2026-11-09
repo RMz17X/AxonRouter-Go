@@ -34,7 +34,7 @@ const (
 	// orderly shutdown instead of a platform-specific signal.
 	shutdownAPI = "/api/version/shutdown"
 	// defaultPort matches config.LoadConfig's fallback when no port is set.
-	defaultPort = 20130
+	defaultPort = 3177
 )
 
 // ErrAlreadyRunning is returned when a live daemon already owns the port.

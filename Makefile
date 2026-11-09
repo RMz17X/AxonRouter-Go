@@ -91,7 +91,7 @@ ifneq ($(origin PONYTAIL),file)
 export PONYTAIL
 endif
 
-## run — start proxy (PORT=20130)
+## run — start proxy (PORT=3177)
 run: build
 	$(BINARY) $(if $(RTK),--rtk=$(RTK)) $(if $(CAVEMAN),--caveman=$(CAVEMAN)) $(if $(PONYTAIL),--ponytail=$(PONYTAIL)) --auto-update=$(AUTO_UPDATE)
 
@@ -99,7 +99,7 @@ run: build
 dev:
 	go run -ldflags="$(LDFLAGS)" ./cmd/axonrouter-go/ $(if $(RTK),--rtk=$(RTK)) $(if $(CAVEMAN),--caveman=$(CAVEMAN)) $(if $(PONYTAIL),--ponytail=$(PONYTAIL)) --auto-update=$(AUTO_UPDATE)
 
-## web-dev — Vite dev server (HMR) on :5173, API proxied to Go :20130. FE changes hot-reload without rebuilding the binary.
+## web-dev — Vite dev server (HMR) on :5173, API proxied to Go :3177. FE changes hot-reload without rebuilding the binary.
 web-dev:
 	cd web && bun run dev
 

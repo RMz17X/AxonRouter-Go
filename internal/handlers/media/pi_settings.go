@@ -94,8 +94,11 @@ func readPiConfig() map[string]any {
 
 // piHasAxonRouterConfig backs the all-statuses card: whether any
 // provider block points at a local gateway — the named axonrouter
-// block with a baseUrl, or any block carrying the default gateway
-// port (20130).
+// block with a baseUrl, or any block carrying a gateway port.
+//
+// Both ports are matched: 3177 is the current default, and 20130 is
+// the legacy one, which is still what an already-configured client
+// file carries. A block on either port is this gateway.
 func piHasAxonRouterConfig(config map[string]any) bool {
 	providers, _ := config["providers"].(map[string]any)
 	if p, ok := providers["axonrouter"].(map[string]any); ok {
@@ -109,7 +112,7 @@ func piHasAxonRouterConfig(config map[string]any) bool {
 			continue
 		}
 		b, _ := p["baseUrl"].(string)
-		if strings.Contains(b, "20130") {
+		if strings.Contains(b, "3177") || strings.Contains(b, "20130") {
 			return true
 		}
 	}

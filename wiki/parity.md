@@ -17,7 +17,7 @@ Both projects share the same database and schema. What differs is the runtime.
 | Database | PostgreSQL (pgx, via `DATABASE_URL`) | SQLite |
 | Schema | Same shapes, additive bootstrap | Same |
 | Docker | Single binary | Node |
-| Port | `20130` | `20128` |
+| Port | `3177` | `20128` |
 
 ## Guaranteed identical
 

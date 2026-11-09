@@ -11,10 +11,10 @@ Every command comes from the single binary.
 ## Running the gateway
 
 ```bash
-axonrouter-go                  # foreground server (port 20130) — the only run mode
+axonrouter-go                  # foreground server (port 3177) — the only run mode
 axonrouter-go version          # version details, plus an update check
 axonrouter-go update           # check and self-update
-curl http://localhost:20130/health
+curl http://localhost:3177/health
 ```
 
 ## Supervision
@@ -43,7 +43,7 @@ There are no `--port` flags; use environment variables.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `PORT` | `20130` | HTTP port |
+| `PORT` | `3177` | HTTP port |
 | `DATA_DIR` | `~/.axonrouter-go` (`%APPDATA%/axonrouter-go` on Windows); a pre-rename `~/.9router` is still used when it is the only one that exists | Non-database state root (uploads, CLI tokens, tunnel state, catalog cache) |
 | `DATABASE_URL` | — (**required**) | PostgreSQL connection URL; the server refuses to boot without it |
 | `HOST` / `BIND_ADDR` | all interfaces | Listener address |

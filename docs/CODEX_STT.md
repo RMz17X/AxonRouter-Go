@@ -3,7 +3,7 @@
 Connect a Codex OAuth account under **Providers → OpenAI Codex**. Speech To Text → OpenAI Codex reuses those connections; an OpenAI API key is not a substitute.
 
 ```sh
-curl http://localhost:20130/v1/audio/transcriptions \
+curl http://localhost:3177/v1/audio/transcriptions \
   -H "Authorization: Bearer YOUR_9ROUTER_KEY" \
   -F "model=cx/transcribe" \
   -F "file=@audio.wav" \

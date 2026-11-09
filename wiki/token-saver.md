@@ -67,10 +67,10 @@ Two benches post a sample payload through the real compressor and show the
 result, so you can see the saving and the risk before turning anything on:
 
 ```bash
-curl -X POST http://localhost:20130/api/tokensaver/rtk/test \
+curl -X POST http://localhost:3177/api/tokensaver/rtk/test \
   -H 'Authorization: Bearer sk-your-api-key' -d '{...}'
 
-curl -X POST http://localhost:20130/api/tokensaver/caveman/test \
+curl -X POST http://localhost:3177/api/tokensaver/caveman/test \
   -H 'Authorization: Bearer sk-your-api-key' -d '{...}'
 ```
 

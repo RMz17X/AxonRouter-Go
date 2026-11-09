@@ -101,6 +101,6 @@
   - Svelte check: `make vet-svelte`
   - Frontend build: `cd web && bun run build`
   - Docker container rebuild: `docker compose build && docker compose up -d`
-  - Smoke test: Access `http://100.81.73.83:20130/dashboard/playground` and verify both injection and playground streaming work end-to-end.
+  - Smoke test: Access `http://100.81.73.83:3177/dashboard/playground` and verify both injection and playground streaming work end-to-end.
 
 ---

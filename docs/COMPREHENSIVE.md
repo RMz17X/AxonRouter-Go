@@ -12,7 +12,7 @@ AxonRouter-Go is a production-grade, high-performance LLM proxy gateway and rout
 
 ```mermaid
 flowchart LR
-  Clients[AI Clients: OpenAI / Claude / Cursor / Agents] --> Gateway[AxonRouter-Go Gateway :20130]
+  Clients[AI Clients: OpenAI / Claude / Cursor / Agents] --> Gateway[AxonRouter-Go Gateway :3177]
   Gateway --> Svelte[Embedded Svelte 5 Dashboard]
   Gateway --> Engine[Dialect Engine & AST Normalizer]
   Engine --> Speed[Speed Layer: Memory / Valkey]
@@ -99,7 +99,7 @@ AST normalization handles:
 |---|---|---|
 | **Primary Database** | SQLite (WAL mode, busy timeout 5000ms) | PostgreSQL 17 (pgx pool, migration autocommit) |
 | **Speed Layer** | In-memory sliding windows | Valkey / Redis cluster cache |
-| **Ingress Proxy** | Direct port `20130` | Nginx reverse proxy with load balancing |
+| **Ingress Proxy** | Direct port `3177` | Nginx reverse proxy with load balancing |
 | **Dashboard UI** | Embedded Svelte 5 SPA | Embedded Svelte 5 SPA |
 
 ---

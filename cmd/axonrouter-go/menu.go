@@ -93,7 +93,7 @@ func foregroundStart(cCtx *cli.Context) error {
 func serverURL() string {
 	cfg := config.LoadConfig()
 	if cfg.Port <= 0 {
-		return "http://127.0.0.1:20130"
+		return "http://127.0.0.1:3177"
 	}
 	port := strconv.Itoa(cfg.Port)
 	// BIND_ADDR defaults to a wildcard bind, which is not dialable; only an

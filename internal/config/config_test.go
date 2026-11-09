@@ -100,8 +100,8 @@ func TestLoadConfigDefaults(t *testing.T) {
 
 	cfg := LoadConfig()
 
-	if cfg.Port != 20130 { // Default port
-		t.Errorf("expected default port 20130, got %d", cfg.Port)
+	if cfg.Port != 3177 { // Default port
+		t.Errorf("expected default port 3177, got %d", cfg.Port)
 	}
 	if cfg.InitialPassword != "" {
 		t.Errorf("expected no default password (operator must set INITIAL_PASSWORD), got %s", cfg.InitialPassword)
@@ -132,14 +132,14 @@ func TestLoadConfigInvalidPort(t *testing.T) {
 
 	os.Setenv("PORT", "abc") // invalid number
 	cfg := LoadConfig()
-	if cfg.Port != 20130 {
-		t.Errorf("expected fallback port 20130 for invalid port, got %d", cfg.Port)
+	if cfg.Port != 3177 {
+		t.Errorf("expected fallback port 3177 for invalid port, got %d", cfg.Port)
 	}
 
 	os.Setenv("PORT", "-1") // negative port
 	cfg2 := LoadConfig()
-	if cfg2.Port != 20130 {
-		t.Errorf("expected fallback port 20130 for negative port, got %d", cfg2.Port)
+	if cfg2.Port != 3177 {
+		t.Errorf("expected fallback port 3177 for negative port, got %d", cfg2.Port)
 	}
 }
 
@@ -339,8 +339,8 @@ func TestProvideConfig(t *testing.T) {
 	if cfg == nil {
 		t.Fatal("expected ProvideConfig to return non-nil Config")
 	}
-	if cfg.Port != 20130 {
-		t.Errorf("expected default port 20130, got %d", cfg.Port)
+	if cfg.Port != 3177 {
+		t.Errorf("expected default port 3177, got %d", cfg.Port)
 	}
 }
 

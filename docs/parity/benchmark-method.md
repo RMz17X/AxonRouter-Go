@@ -148,7 +148,7 @@ Mỗi bên một gateway thật, state synthetic riêng, không chung DB:
 | | Node | Go |
 | --- | --- | --- |
 | artifact | bản standalone đã publish (`0.5.99-local.4`), không build lại trong lúc đo | `go build ./cmd/9router-go` |
-| port | 20928 | 20130 |
+| port | 20928 | 3177 |
 | `DATA_DIR` | thư mục riêng, ngoài home thật | thư mục riêng, ngoài home thật |
 | state | `POST /api/provider-nodes` → `POST /api/providers` → `POST /api/keys` → `PUT /api/models/alias` | `POST /api/provider-nodes` → `POST /api/connections` → `POST /api/keys` → `PUT /api/models/alias` |
 | upstream chung | `127.0.0.1:20199` (mock) | `127.0.0.1:20199` (mock) |

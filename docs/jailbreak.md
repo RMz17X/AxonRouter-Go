@@ -258,14 +258,14 @@ preset, and send a request:
 
 ```bash
 # arm a preset by keyword
-curl -b cookies.txt -X PUT http://localhost:20130/api/jailbreak/presets \
+curl -b cookies.txt -X PUT http://localhost:3177/api/jailbreak/presets \
   -H 'Content-Type: application/json' \
   -d '{"id":"deepseek","name":"Deepseek","prompt":"DS RULE","keywords":[{"text":"deepseek"}]}'
 
 # ask for a model the keyword covers
 curl -H 'Authorization: Bearer <client key>' \
   -H 'Content-Type: application/json' \
-  -X POST http://localhost:20130/v1/chat/completions \
+  -X POST http://localhost:3177/v1/chat/completions \
   -d '{"model":"providerx/deepseek-4-pro","messages":[{"role":"user","content":"hi"}]}'
 ```
 

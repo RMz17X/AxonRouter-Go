@@ -20,7 +20,7 @@ Statuses below mean:
 
 | Area | Current 9router-go | Historical upstream v0.5.85 | Classification |
 |------|--------------------|-----------------------------|----------------|
-| Runtime | One Go server, default port `20130` | Next.js/Node gateway and dashboard, production port `20128` | Different architecture |
+| Runtime | One Go server, default port `3177` | Next.js/Node gateway and dashboard, production port `20128` | Different architecture |
 | Dashboard | Svelte 5 + Vite SPA embedded into the Go binary (`web/`, `web/embed.go`) | Next.js App Router / React dashboard | Current native implementation, not the historical UI |
 | Routing | chi router (`internal/handlers/router.go`) | Next route handlers and Node routing stack | Different architecture |
 | Persistence | SQLite via `modernc.org/sqlite`, WAL | SQLite layer with versioned/additive migrations and backups | Shared data contract with material differences; see `DATABASE.md` |

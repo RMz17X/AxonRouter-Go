@@ -24,21 +24,21 @@ version: "3.8"
 
 services:
   axonrouter:
-    image: luqmenul/axonrouter-go:latest
+    image: ghcr.io/rmz17x/axonrouter-go:latest
     container_name: axonrouter-go
     restart: unless-stopped
     ports:
-      - "20130:20130"
+      - "3177:3177"
     volumes:
       - axonrouter_data:/data
     environment:
-      - PORT=20130
+      - PORT=3177
       - DATA_DIR=/data
       - INITIAL_PASSWORD=change_this_secure_password
       - TRUST_PROXY=true
       - PPROF_ENABLED=false
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:20130/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3177/health"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -60,7 +60,7 @@ For production traffic requiring zero-downtime rolling updates and failover:
 
 ```mermaid
 flowchart TD
-  Client[Ingress Traffic] --> Nginx[Nginx Load Balancer: Port 20130]
+  Client[Ingress Traffic] --> Nginx[Nginx Load Balancer: Port 3177]
   Nginx --> Node1[axonrouter-node-1: 20131]
   Nginx --> Node2[axonrouter-node-2: 20132]
   Nginx --> Node3[axonrouter-node-3: 20133]
@@ -110,7 +110,7 @@ Restart=always
 RestartSec=5s
 LimitNOFILE=65536
 
-Environment=PORT=20130
+Environment=PORT=3177
 Environment=DATA_DIR=/opt/axonrouter/data
 Environment=DATABASE_URL=postgres://axon:secret@127.0.0.1:5432/axonrouter?sslmode=disable
 Environment=INITIAL_PASSWORD=supersecretadminpassword

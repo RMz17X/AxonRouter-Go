@@ -9,7 +9,7 @@ The dashboard is a Svelte 5 single-page application built with Vite, TypeScript,
 - `src/components/` contains the dashboard views and reusable UI components.
 - `src/api/client.ts` provides the typed browser API client.
 - `src/lib/` contains shared Svelte state, model helpers, and UI primitives.
-- `vite.config.ts` enables the Svelte and Tailwind plugins. During development, Vite proxies `/api`, `/v1`, `/usage`, `/translator`, `/debug`, and `/admin` to `http://localhost:20130`. (`/debug` covers `/debug/traces` latency tracing and pprof; `/admin` covers `POST /admin/health/reset`.)
+- `vite.config.ts` enables the Svelte and Tailwind plugins. During development, Vite proxies `/api`, `/v1`, `/usage`, `/translator`, `/debug`, and `/admin` to `http://localhost:3177`. (`/debug` covers `/debug/traces` latency tracing and pprof; `/admin` covers `POST /admin/health/reset`.)
 
 Components use Svelte 5 runes such as `$state`, `$derived`, and `$effect`, along with modern Svelte event handlers such as `onclick` and `onchange`.
 
@@ -18,7 +18,7 @@ Components use Svelte 5 runes such as `$state`, `$derived`, and `$effect`, along
 Run the Go API server and the Vite dev server in **two terminals** — frontend changes hot-reload (HMR) with **no rebuild** and no binary restart:
 
 ```bash
-make dev        # terminal 1: Go API on :20130 (go run, auto-rebuild on Go changes)
+make dev        # terminal 1: Go API on :3177 (go run, auto-rebuild on Go changes)
 make web-dev    # terminal 2: Vite dev server + HMR on :5173
 ```
 

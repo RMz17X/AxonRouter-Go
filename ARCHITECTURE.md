@@ -169,7 +169,7 @@ key.
 2. returns 404 for a missing file-like path; and
 3. falls back to `index.html` for extensionless SPA routes.
 
-The Svelte app owns navigation among `/dashboard/...` views. Its typed client uses relative `/api`, `/v1`, `/usage`, and `/translator` requests. During development, Vite proxies those prefixes to a separately running Go server at `localhost:20130`.
+The Svelte app owns navigation among `/dashboard/...` views. Its typed client uses relative `/api`, `/v1`, `/usage`, and `/translator` requests. During development, Vite proxies those prefixes to a separately running Go server at `localhost:3177`.
 
 There is no production Node.js process. Bun is still required at build time to install dependencies and produce `web/dist`. `make web-build` skips building when `web/dist/index.html` exists; use `FORCE=1 make web-build` after dashboard changes.
 
@@ -392,7 +392,7 @@ ratchet + live probes against a running gateway.
 
 The tagged release workflow builds the five platform binaries with
 `make cross`, uploads checksums, and builds/pushes the multi-architecture
-Linux image (`luqmenul/axonrouter-go`, linux/amd64 + linux/arm64) from the
+Linux image (`ghcr.io/rmz17x/axonrouter-go`, linux/amd64 + linux/arm64) from the
 repo `Dockerfile`: Bun stage builds the SPA, a Go stage embeds it into a
 CGO-disabled binary, and the Alpine runtime runs it as a non-root user
 (uid 10001) behind `docker-entrypoint.sh`. The compose stacks

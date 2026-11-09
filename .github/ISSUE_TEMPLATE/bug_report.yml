@@ -27,7 +27,7 @@ body:
       description: The smallest set of steps that shows the bug. Include the actual request payload if it matters.
       placeholder: |
         1. Add a DeepSeek connection, combo `ds-fallback` = [`ds/deepseek-chat`, `glm/glm-5`]
-        2. Send: `curl -X POST localhost:20130/v1/chat/completions -d '{"model":"ds-fallback","messages":[{"role":"user","content":"hi"}]}'`
+        2. Send: `curl -X POST localhost:3177/v1/chat/completions -d '{"model":"ds-fallback","messages":[{"role":"user","content":"hi"}]}'`
         3. ...
       render: shell
     validations:

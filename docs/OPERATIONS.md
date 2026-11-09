@@ -67,7 +67,7 @@ AxonRouter-Go includes integrated update capabilities:
 ### 4.2 Graceful Shutdown
 Trigger graceful termination via:
 ```bash
-curl -X POST http://localhost:20130/api/version/shutdown \
+curl -X POST http://localhost:3177/api/version/shutdown \
   -H "Cookie: axonrouter_session=..."
 ```
 This stops accepting new ingress requests, waits for in-flight streams to complete (up to 30s deadline), flushes pending usage ledgers, and cleanly disconnects database pools.

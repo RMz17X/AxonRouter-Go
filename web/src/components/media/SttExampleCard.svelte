@@ -38,7 +38,7 @@
   let diarize = $state(false)
   let numSpeakers = $state('')
   let useTunnel = $state(false)
-  let localEndpoint = $state(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:20130')
+  let localEndpoint = $state(typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3177')
   let tunnelEndpoint = $state('')
   let result = $state<any>(null)
   let latency = $state<number | null>(null)

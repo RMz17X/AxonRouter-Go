@@ -2,7 +2,7 @@
 
 **Version:** `1.9.59`  
 **Binary:** `axonrouter-go`  
-**Default Port:** `20130`  
+**Default Port:** `3177`  
 **Root Repository:** [`/workspaces/AxonRouter-Go`](file:///workspaces/AxonRouter-Go)
 
 ---
@@ -43,7 +43,7 @@
 ```bash
 docker compose -f docker-compose.single.yml up -d
 ```
-Access dashboard at `http://localhost:20130`. Default login password is `123456` on localhost, or set `INITIAL_PASSWORD`.
+Access dashboard at `http://localhost:3177`. Default login password is `123456` on localhost, or set `INITIAL_PASSWORD`.
 
 ### 3.2 Build and Run Locally
 ```bash

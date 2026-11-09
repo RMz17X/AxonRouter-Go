@@ -10,7 +10,7 @@ section: Under the Hood
 ┌─────────────┐
 │  CLI tool   │  (Claude Code, Codex, OpenClaw, Cursor, Cline...)
 └──────┬──────┘
-       │ http://localhost:20130/v1
+       │ http://localhost:3177/v1
        ↓
 ┌─────────────────────────────────────────────┐
 │         axonrouter-go (Smart Router)           │
