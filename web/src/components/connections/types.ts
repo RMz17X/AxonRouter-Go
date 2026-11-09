@@ -68,11 +68,16 @@ const ICON_ALIASES: Record<string, string> = {
   'zcode': 'glm',
   'kilocode-free': 'kilocode',
   'kcf': 'kilocode',
+  'openai-compatible-chat-liquid': 'liquid',
+  'openai-compatible-liquid': 'liquid',
 }
 
 export function getIconPath(id?: string | null, apiType?: string): string {
   if (!id) return '/providers/oai-cc.png'
   const clean = id.trim()
+  if (ICON_ALIASES[clean]) {
+    return `/providers/${ICON_ALIASES[clean]}.png`
+  }
   if (clean.startsWith('openai-compatible')) {
     return apiType === 'responses' ? '/providers/oai-r.png' : '/providers/oai-cc.png'
   }
@@ -97,8 +102,11 @@ export function getProviderGlyph(
   id?: string | null
 ): { name: string; color: string; initials: string } {
   const clean = id?.trim()
+  const resolvedAlias = clean ? ICON_ALIASES[clean] : undefined
   const entry = clean
-    ? (PROVIDER_CATALOG_MAP.get(clean) ?? PROVIDER_CATALOG.find((p) => p.alias === clean))
+    ? (PROVIDER_CATALOG_MAP.get(clean)
+        ?? (resolvedAlias ? PROVIDER_CATALOG_MAP.get(resolvedAlias) : undefined)
+        ?? PROVIDER_CATALOG.find((p) => p.alias === clean || (resolvedAlias && p.alias === resolvedAlias)))
     : undefined
   let name = entry?.name ?? clean ?? 'OpenAI'
   if (name.startsWith('openai-compatible-chat-')) {

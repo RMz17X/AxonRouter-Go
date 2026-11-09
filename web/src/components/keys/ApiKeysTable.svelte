@@ -106,14 +106,8 @@
       // "which are serving".
       if (activePill === 'forward' && !isActive(k)) return false
       if (activePill === 'reverse' && isActive(k)) return false
-      // Tokens: forward is the heaviest spenders, reverse the lightest. A
-      // personal operator reads this pill as "which key is eating my quota",
-      // and the answer spans orders of magnitude on a real deployment — one key
-      // idle, another at two billion tokens. Unused is the other end of the
-      // same question: a credential that has never been spent is either a
-      // spare or a key left behind, and both are worth seeing on their own.
-      if (tokensPill === 'forward' && (k.usedTokens ?? 0) <= 0) return false
-      if (tokensPill === 'reverse' && (k.usedTokens ?? 0) > 0) return false
+      // Unused: forward shows keys that have never been spent; reverse shows
+      // keys that have been used at least once.
       if (unusedPill === 'forward' && (k.usedCount ?? 0) > 0) return false
       if (unusedPill === 'reverse' && (k.usedCount ?? 0) === 0) return false
       return true
@@ -184,6 +178,16 @@
     }
   })
 
+  // Prune any selected IDs that no longer exist in apiKeys after a delete or refresh.
+  $effect(() => {
+    if (selectedIds.length === 0) return
+    const validIds = new Set(apiKeys.map((k) => k.id))
+    const filtered = selectedIds.filter((id) => validIds.has(id))
+    if (filtered.length !== selectedIds.length) {
+      selectedIds = filtered
+    }
+  })
+
   const isPageAllSelected = $derived(
     pagedKeys.length > 0 && pagedKeys.every((k) => selectedIds.includes(k.id)),
   )
@@ -207,7 +211,8 @@
     let longest = 0
     for (const k of pagedKeys) {
       const raw = secretOf(k) || k.keyDisplay || ''
-      if (raw.length > longest) longest = raw.length
+      const len = Math.min(raw.length, 48)
+      if (len > longest) longest = len
     }
     if (longest === 0) return undefined
     // 11px mono at ~6.6px per character, plus the two 22px buttons, the gaps
@@ -277,7 +282,7 @@
     if (value.length <= 10) return value
     const head = value.slice(0, 6)
     const tail = value.slice(-4)
-    const middle = value.length - head.length - tail.length
+    const middle = Math.min(24, value.length - head.length - tail.length)
     return head + '•'.repeat(middle) + tail
   }
 
@@ -346,22 +351,44 @@
     }, 2000)
   }
 
+  function parseSafeDate(raw?: string): Date | null {
+    if (!raw) return null
+    const normalized = raw.replace(/^(\d{4}-\d{2}-\d{2})(?:TH|ST|ND|RD)?H24:/i, '$1T00:')
+    const parsed = new Date(normalized)
+    if (!Number.isNaN(parsed.getTime())) return parsed
+    const datePrefix = raw.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (datePrefix) {
+      const fallback = new Date(`${datePrefix[1]}T00:00:00Z`)
+      if (!Number.isNaN(fallback.getTime())) return fallback
+    }
+    return null
+  }
+
   // A sortable age for a key. An unparseable or missing date becomes 0 so it
   // sorts to the bottom of "newest first" instead of the top — an unknown age
   // is not the most recent thing.
   function dateValue(k: APIKey): number {
-    if (!k.createdAt) return 0
-    const t = new Date(k.createdAt).getTime()
-    return Number.isNaN(t) ? 0 : t
+    const parsed = parseSafeDate(k.createdAt)
+    return parsed ? parsed.getTime() : 0
   }
   function isActive(k: APIKey): boolean {
     return k.isActive === 1
   }
 
   function isExpired(k: APIKey): boolean {
-    if (!k.expiresAt) return false
-    const parsed = new Date(k.expiresAt)
-    return !Number.isNaN(parsed.getTime()) && parsed.getTime() < Date.now()
+    const parsed = parseSafeDate(k.expiresAt)
+    return parsed !== null && parsed.getTime() < Date.now()
+  }
+
+  function isQuotaExhausted(k: APIKey): boolean {
+    const quota = k.tokenQuota ?? 0
+    return quota > 0 && (k.usedTokens ?? 0) >= quota
+  }
+
+  function formatShortDate(rfc3339?: string): string {
+    const parsed = parseSafeDate(rfc3339)
+    if (!parsed) return ''
+    return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
   // Tokens are shown compactly: a budget is read as a scale ("12.3k of 250k"),
@@ -396,7 +423,14 @@
       })
     }
     if ((k.expiresAt ?? '') !== '') {
-      badges.push({ label: isExpired(k) ? 'expired' : 'expires', tone: isExpired(k) ? 'danger' : 'info' })
+      const expired = isExpired(k)
+      const dateStr = formatShortDate(k.expiresAt)
+      badges.push({
+        label: expired
+          ? `expired${dateStr ? ` ${dateStr}` : ''}`
+          : `expires${dateStr ? ` ${dateStr}` : ''}`,
+        tone: expired ? 'danger' : 'info',
+      })
     }
     return badges
   }
@@ -451,6 +485,7 @@
     if (!confirm(`Permanently delete "${keyLabel(k)}"? This cannot be undone.`)) return
     await runExclusive(k.id, async () => {
       await api.deleteApiKey(k.id)
+      selectedIds = selectedIds.filter((id) => id !== k.id)
       onRefresh?.()
     })
   }
@@ -550,7 +585,7 @@
     {@const totalTokens = apiKeys.reduce((sum, k) => sum + (k.usedTokens ?? 0), 0)}
     {@const unusedCount = apiKeys.filter((k) => (k.usedCount ?? 0) === 0).length}
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-      <!-- Active: filters to live keys on a phone. -->
+      <!-- Active: filters to live keys (forward) or paused keys (reverse). -->
       <button
         type="button"
         onclick={() => (activePill = cycle(activePill))}
@@ -559,9 +594,16 @@
           ? 'border-brand-500/50 bg-brand-500/10'
           : 'border-border bg-surface-2/60 hover:bg-surface-2'}"
       >
-        <span class="block text-[11px] text-text-muted">Active</span>
+        <span class="flex items-center justify-between gap-1 text-[11px] text-text-muted">
+          <span>Active</span>
+          {#if activePill === 'forward'}
+            <span class="text-[10px] font-semibold text-brand-500">Live only</span>
+          {:else if activePill === 'reverse'}
+            <span class="text-[10px] font-semibold text-amber-500">Paused only</span>
+          {/if}
+        </span>
         <span class="mt-0.5 flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+          <span class="w-1.5 h-1.5 rounded-full {activePill === 'reverse' ? 'bg-amber-500' : 'bg-success'}"></span>
           <span class="text-sm font-semibold font-mono text-text-main">{activeCount}</span>
         </span>
       </button>
@@ -571,7 +613,10 @@
            for the whole list, not for the current filter. -->
       <button
         type="button"
-        onclick={() => (requestsPill = cycle(requestsPill))}
+        onclick={() => {
+          requestsPill = cycle(requestsPill)
+          if (requestsPill !== 'off') tokensPill = 'off'
+        }}
         aria-pressed={requestsPill !== 'off'}
         class="rounded-lg border px-3 py-2 text-left transition-colors cursor-pointer {requestsPill !== 'off'
           ? 'border-brand-500/50 bg-brand-500/10'
@@ -587,12 +632,8 @@
           {/if}
         </span>
       </button>
-      <!-- Tokens: the spend figure. A personal operator's first question about
-           a key list is which one is consuming the quota, and the spread is
-           wide enough to be worth seeing — a deployment with four keys can have
-           one idle, one at a hundred thousand and one at two billion. Forward is
-           the heaviest first, reverse the lightest, and either way the number is
-           the total across every key, not the rows currently showing. -->
+      <!-- Tokens: the spend figure. Forward is the heaviest first, reverse the
+           lightest, and either way the number is the total across every key. -->
       <button
         type="button"
         onclick={() => {
@@ -608,12 +649,16 @@
           : 'border-border bg-surface-2/60 hover:bg-surface-2'}"
       >
         <span class="block text-[11px] text-text-muted">Tokens</span>
-        <span class="mt-0.5 block text-sm font-semibold font-mono text-text-main">{compactTokens(totalTokens)}</span>
+        <span class="mt-0.5 flex items-center gap-1">
+          <span class="text-sm font-semibold font-mono text-text-main">{compactTokens(totalTokens)}</span>
+          {#if tokensPill === 'forward'}
+            <span class="material-symbols-outlined text-[12px] text-brand-500" aria-hidden="true">arrow_downward</span>
+          {:else if tokensPill === 'reverse'}
+            <span class="material-symbols-outlined text-[12px] text-brand-500" aria-hidden="true">arrow_upward</span>
+          {/if}
+        </span>
       </button>
-      <!-- Unused: never spent. Half of a personal deployment can be keys that
-           were minted for a tool that never got configured, and each one is a
-           credential that grants access to nothing while still being something
-           to leak. This pill is the cleanup list. -->
+      <!-- Unused: never spent (forward) or used at least once (reverse). -->
       <button
         type="button"
         onclick={() => (unusedPill = cycle(unusedPill))}
@@ -622,7 +667,14 @@
           ? 'border-brand-500/50 bg-brand-500/10'
           : 'border-border bg-surface-2/60 hover:bg-surface-2'}"
       >
-        <span class="block text-[11px] text-text-muted">Unused</span>
+        <span class="flex items-center justify-between gap-1 text-[11px] text-text-muted">
+          <span>Unused</span>
+          {#if unusedPill === 'forward'}
+            <span class="text-[10px] font-semibold text-brand-500">Idle only</span>
+          {:else if unusedPill === 'reverse'}
+            <span class="text-[10px] font-semibold text-brand-500">Used only</span>
+          {/if}
+        </span>
         <span class="mt-0.5 block text-sm font-semibold font-mono {unusedCount > 0 ? 'text-warning' : 'text-text-subtle'}">
           {unusedCount}
         </span>
@@ -658,7 +710,12 @@
         <span class="text-text-subtle">Sort</span>
         <select
           value={sortKey}
-          onchange={(e) => (sortKey = e.currentTarget.value as 'newest' | 'name' | 'requests')}
+          onchange={(e) => {
+            sortKey = e.currentTarget.value as 'newest' | 'name' | 'requests'
+            // Release any active spend-sort pill so the chosen dropdown sort takes effect immediately.
+            requestsPill = 'off'
+            tokensPill = 'off'
+          }}
           aria-label="Sort keys"
           class="bg-transparent border-0 p-0 text-xs font-medium text-text-main focus:outline-none cursor-pointer"
         >
@@ -899,7 +956,7 @@
         {/if}
       </div>
       <p class="mt-0.5 text-[11px] text-text-subtle">
-        Created {k.createdAt ? new Date(k.createdAt).toLocaleDateString() : '—'}
+        Created {formatShortDate(k.createdAt) || '—'}
         {#if (k.usedCount ?? 0) > 0}
           · {(k.usedCount ?? 0).toLocaleString()} req
         {/if}
@@ -930,14 +987,29 @@
     {/snippet}
     {#snippet statusCell(k: APIKey)}
       {@const active = isActive(k)}
-      <span
-        class="inline-flex items-center gap-1.5 text-[11px] font-medium {active
-          ? 'text-success'
-          : 'text-text-muted'}"
-      >
-        <span class="w-1.5 h-1.5 rounded-full {active ? 'bg-success' : 'bg-danger opacity-60'}"></span>
-        {active ? 'Active' : 'Paused'}
-      </span>
+      {@const expired = isExpired(k)}
+      {@const exhausted = isQuotaExhausted(k)}
+      {#if !active}
+        <span class="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-text-muted">
+          <span class="w-1.5 h-1.5 rounded-full bg-danger opacity-60"></span>
+          Paused
+        </span>
+      {:else if expired}
+        <span class="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-danger">
+          <span class="w-1.5 h-1.5 rounded-full bg-danger"></span>
+          Expired
+        </span>
+      {:else if exhausted}
+        <span class="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-warning">
+          <span class="w-1.5 h-1.5 rounded-full bg-warning"></span>
+          Quota Full
+        </span>
+      {:else}
+        <span class="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-success">
+          <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+          Active
+        </span>
+      {/if}
     {/snippet}
     {#if visibleKeys.length === 0}
       <!-- No match. This is a different situation from having no keys at all,
@@ -993,17 +1065,7 @@
             <span class="min-w-0 flex-1 text-sm font-semibold text-text-main truncate">
               {k.name || 'Client Token'}
             </span>
-            <!-- KeiRouter's StatusPill: a bare dot plus a label, not a filled
-                 badge. A paused key reads at a glance without spending a
-                 column on it. -->
-            <span
-              class="inline-flex shrink-0 items-center gap-1.5 text-[11px] font-medium {active
-                ? 'text-success'
-                : 'text-text-muted'}"
-            >
-              <span class="w-1.5 h-1.5 rounded-full {active ? 'bg-success' : 'bg-danger opacity-60'}"></span>
-              {active ? 'Active' : 'Paused'}
-            </span>
+            {@render statusCell(k)}
             <span
               class="shrink-0 text-text-muted transition-transform {expanded ? 'rotate-180' : ''}"
               aria-hidden="true"

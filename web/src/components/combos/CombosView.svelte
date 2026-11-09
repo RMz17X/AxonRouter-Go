@@ -6,6 +6,8 @@
     comboStrategyOptions,
     getComboModels,
     INHERIT_STRATEGY,
+    isLikelyEasyModel,
+    isLikelyHardModel,
     parseCapacityAdapterSettings,
     updateComboStrategy,
     updateFirstTokenGrace,
@@ -66,13 +68,16 @@
   // Edit / Create Modal state
   let editingCombo = $state<Combo | null>(null)
   let modalModels = $state<string[]>([])
+  let modalEasyModels = $state<string[]>([])
+  let modalHardModels = $state<string[]>([])
+  let modalRouterModel = $state<string>('')
   let isSavingCombo = $state(false)
   let comboSaveError = $state('')
   let modalNameResetKey = $state(0)
 
   // Model Picker Modal state
   let showModelPicker = $state(false)
-  let modelPickerTarget = $state<'combo' | 'vision' | 'audio' | 'judge' | 'router'>('combo')
+  let modelPickerTarget = $state<'combo' | 'combo-easy' | 'combo-hard' | 'vision' | 'audio' | 'judge' | 'router'>('combo')
   let policyCombo = $state<Combo | null>(null)
 
   // Confirm Delete Modal state (upstream confirmState parity). Carries the ids
@@ -323,7 +328,14 @@
 
   async function handleSaveSmartPolicy(
     comboName: string,
-    cfg: { smartPolicy: string; sessionSticky: boolean; confidenceThreshold: number }
+    cfg: {
+      smartPolicy: string
+      sessionSticky: boolean
+      confidenceThreshold: number
+      routerModel?: string
+      easyModels?: string[]
+      hardModels?: string[]
+    }
   ) {
     const updated = updateSmartPolicy(comboStrategies, comboName, cfg)
     comboStrategies = updated
@@ -346,18 +358,43 @@
   function openCreateModal() {
     editingCombo = null
     modalModels = []
+    modalEasyModels = []
+    modalHardModels = []
+    modalRouterModel = ''
     comboSaveError = ''
     isCreatingOpen = true
   }
   function openEditModal(combo: Combo) {
     editingCombo = combo
-    modalModels = [...getComboModels(combo)]
+    const models = [...getComboModels(combo)]
+    modalModels = models
+    const strat = comboStrategies[combo.name]
+    let easy = strat?.easyModels ? [...strat.easyModels] : []
+    let hard = strat?.hardModels ? [...strat.hardModels] : []
+    const effectiveStrat = strat?.fallbackStrategy || 'fallback'
+    if (effectiveStrat === 'smart' && easy.length === 0 && hard.length === 0 && models.length > 0) {
+      const detectedEasy: string[] = []
+      const detectedHard: string[] = []
+      for (const m of models) {
+        if (isLikelyEasyModel(m)) detectedEasy.push(m)
+        else if (isLikelyHardModel(m)) detectedHard.push(m)
+        else detectedEasy.push(m)
+      }
+      easy = detectedEasy
+      hard = detectedHard
+    }
+    modalEasyModels = easy
+    modalHardModels = hard
+    modalRouterModel = strat?.routerModel || ''
     comboSaveError = ''
     isCreatingOpen = true
   }
   function closeModal() {
     isCreatingOpen = false
     editingCombo = null
+    modalEasyModels = []
+    modalHardModels = []
+    modalRouterModel = ''
     comboSaveError = ''
   }
 
@@ -366,29 +403,56 @@
     models: string[],
     matchRules: SmartRule[],
     timeoutMs: number,
-    graceMs: number | undefined
+    graceMs: number | undefined,
+    strategy: string = 'fallback',
+    smartCfg?: {
+      easyModels?: string[]
+      hardModels?: string[]
+      routerModel?: string
+    }
   ) {
     isSavingCombo = true
     comboSaveError = ''
     try {
+      // `inherit` is a dashboard-only value: the combo row needs a concrete
+      // strategy, and the settings override is what gets removed instead.
+      const rowStrategy = strategy === INHERIT_STRATEGY ? 'fallback' : strategy
       if (editingCombo) {
         await api.updateCombo(editingCombo.id, { name, models, matchRules })
+        if (rowStrategy !== strategy) {
+          await api.updateCombo(editingCombo.id, { strategy: rowStrategy })
+        }
       } else {
-        await api.createCombo({ name, models, strategy: 'fallback', matchRules })
+        await api.createCombo({ name, models, strategy: rowStrategy, matchRules })
       }
-      // Strategies are keyed by combo name, so the timeout and grace are
-      // written under the saved name, in one patch, and only when they differ
-      // from what is stored: a plain save must not create an empty strategy row.
-      const stored = comboStrategies[name]
+      // Strategies are keyed by combo name, so the strategy, timeout, and grace
+      // are written under the saved name in one go.
+      let updated = updateComboStrategy(comboStrategies, name, strategy)
+      if (smartCfg) {
+        const existing = updated[name] || {}
+        const nextInfo: ComboStrategyInfo = { ...existing }
+        if (smartCfg.easyModels !== undefined) {
+          nextInfo.easyModels = smartCfg.easyModels
+        }
+        if (smartCfg.hardModels !== undefined) {
+          nextInfo.hardModels = smartCfg.hardModels
+        }
+        if (smartCfg.routerModel !== undefined) {
+          if (smartCfg.routerModel.trim()) nextInfo.routerModel = smartCfg.routerModel.trim()
+          else delete nextInfo.routerModel
+        }
+        updated = { ...updated, [name]: nextInfo }
+      }
+      const stored = updated[name]
       if ((stored?.firstTokenTimeoutMs ?? 0) !== timeoutMs || stored?.firstTokenGraceMs !== graceMs) {
-        const updated = updateFirstTokenGrace(
-          updateFirstTokenTimeout(comboStrategies, name, timeoutMs),
+        updated = updateFirstTokenGrace(
+          updateFirstTokenTimeout(updated, name, timeoutMs),
           name,
           graceMs
         )
-        await api.patchSettings({ comboStrategies: updated })
-        comboStrategies = updated
       }
+      comboStrategies = updated
+      await api.patchSettings({ comboStrategies: updated })
       closeModal()
       onRefresh()
     } catch (e) {
@@ -423,12 +487,14 @@
     }
   }
 
-  function openModelPicker(target: 'combo' | 'vision' | 'audio' | 'judge' | 'router') {
+  function openModelPicker(target: 'combo' | 'combo-easy' | 'combo-hard' | 'vision' | 'audio' | 'judge' | 'router' = 'combo') {
     modelPickerTarget = target
     showModelPicker = true
   }
 
   let addedModelValues = $derived.by(() => {
+    if (modelPickerTarget === 'combo-easy') return modalEasyModels
+    if (modelPickerTarget === 'combo-hard') return modalHardModels
     if (modelPickerTarget === 'combo') return modalModels
     if (modelPickerTarget === 'vision') return capacityAdapter.vision.models
     if (modelPickerTarget === 'audio') return capacityAdapter.audioInput.models
@@ -437,7 +503,7 @@
       return judge ? [judge] : []
     }
     if (modelPickerTarget === 'router') {
-      const router = editingCombo?.name ? comboStrategies[editingCombo.name]?.routerModel : undefined
+      const router = modalRouterModel || (editingCombo?.name ? comboStrategies[editingCombo.name]?.routerModel : undefined)
       return router ? [router] : []
     }
     return []
@@ -445,6 +511,14 @@
 
   function handleSelectModel(val: string) {
     if (modelPickerTarget === 'combo') {
+      if (!modalModels.includes(val)) modalModels = [...modalModels, val]
+    } else if (modelPickerTarget === 'combo-easy') {
+      if (!modalEasyModels.includes(val)) modalEasyModels = [...modalEasyModels, val]
+      modalHardModels = modalHardModels.filter((m) => m !== val)
+      if (!modalModels.includes(val)) modalModels = [...modalModels, val]
+    } else if (modelPickerTarget === 'combo-hard') {
+      if (!modalHardModels.includes(val)) modalHardModels = [...modalHardModels, val]
+      modalEasyModels = modalEasyModels.filter((m) => m !== val)
       if (!modalModels.includes(val)) modalModels = [...modalModels, val]
     } else if (modelPickerTarget === 'vision') {
       const cur = capacityAdapter.vision.models
@@ -461,6 +535,7 @@
       showModelPicker = false
     } else if (modelPickerTarget === 'router' && editingCombo) {
       handleSetRouterModel(editingCombo.name, val)
+      modalRouterModel = val
       showModelPicker = false
     }
   }
@@ -468,6 +543,18 @@
   function handleDeselectModel(val: string) {
     if (modelPickerTarget === 'combo') {
       modalModels = modalModels.filter((m) => m !== val)
+      modalEasyModels = modalEasyModels.filter((m) => m !== val)
+      modalHardModels = modalHardModels.filter((m) => m !== val)
+    } else if (modelPickerTarget === 'combo-easy') {
+      modalEasyModels = modalEasyModels.filter((m) => m !== val)
+      if (!modalHardModels.includes(val)) {
+        modalModels = modalModels.filter((m) => m !== val)
+      }
+    } else if (modelPickerTarget === 'combo-hard') {
+      modalHardModels = modalHardModels.filter((m) => m !== val)
+      if (!modalEasyModels.includes(val)) {
+        modalModels = modalModels.filter((m) => m !== val)
+      }
     } else if (modelPickerTarget === 'vision') {
       const cur = capacityAdapter.vision.models
       saveCapacityAdapter({ ...capacityAdapter, vision: { ...capacityAdapter.vision, models: cur.filter((m) => m !== val) } })
@@ -479,6 +566,7 @@
       showModelPicker = false
     } else if (modelPickerTarget === 'router' && editingCombo) {
       handleSetRouterModel(editingCombo.name, '')
+      modalRouterModel = ''
       showModelPicker = false
     }
   }
@@ -709,6 +797,11 @@
     isOpen={isCreatingOpen}
     {editingCombo}
     models={modalModels}
+    initialStrategy={editingCombo ? comboStrategies[editingCombo.name]?.fallbackStrategy || 'fallback' : 'fallback'}
+    initialEasyModels={editingCombo ? comboStrategies[editingCombo.name]?.easyModels || [] : []}
+    initialHardModels={editingCombo ? comboStrategies[editingCombo.name]?.hardModels || [] : []}
+    initialRouterModel={editingCombo ? comboStrategies[editingCombo.name]?.routerModel || '' : ''}
+    globalStrategy={globalComboStrategy}
     isSaving={isSavingCombo}
     saveError={comboSaveError}
     responseTimeoutMs={editingCombo ? comboStrategies[editingCombo.name]?.firstTokenTimeoutMs ?? 0 : 0}
@@ -717,6 +810,11 @@
     onSave={handleSaveCombo}
     onOpenModelPicker={() => openModelPicker('combo')}
     onUpdateModels={(newModels) => (modalModels = newModels)}
+    onOpenSmartPolicy={() => {
+      if (editingCombo) {
+        policyCombo = editingCombo
+      }
+    }}
   />
 {/key}
 
@@ -734,14 +832,24 @@
   onClose={() => (showModelPicker = false)}
 />
 
-<!-- Smart Router policy editor (upstream SmartPolicyModal parity) -->
+<!-- Smart Router policy & pools editor (upstream SmartPolicyModal parity) -->
 <SmartPolicyModal
   isOpen={!!policyCombo}
   onClose={() => (policyCombo = null)}
   comboName={policyCombo?.name || ''}
+  models={policyCombo ? getComboModels(policyCombo) : []}
   currentPolicy={policyCombo ? comboStrategies[policyCombo.name]?.smartPolicy : undefined}
   currentThreshold={policyCombo ? comboStrategies[policyCombo.name]?.confidenceThreshold : undefined}
+  currentRouterModel={policyCombo ? comboStrategies[policyCombo.name]?.routerModel : undefined}
+  currentEasyModels={policyCombo ? comboStrategies[policyCombo.name]?.easyModels : undefined}
+  currentHardModels={policyCombo ? comboStrategies[policyCombo.name]?.hardModels : undefined}
   onSave={(cfg) => policyCombo && handleSaveSmartPolicy(policyCombo.name, cfg)}
+  onOpenRouterPicker={() => {
+    if (policyCombo) {
+      editingCombo = policyCombo
+      openModelPicker('router')
+    }
+  }}
 />
 
 <!-- Confirm Delete Modal (upstream ConfirmModal parity) -->

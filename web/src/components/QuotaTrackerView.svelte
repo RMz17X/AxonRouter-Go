@@ -1073,15 +1073,20 @@
     return () => stopTimers()
   })
 
-  // Refetch connections when pagination/filter inputs change (skip first run;
-  // the initial load happens in onMount)
+  // Refetch connections & auto-fetch quotas when pagination/filter inputs change
+  // (skip first run; the initial load happens in onMount)
   $effect(() => {
     void page
     void pageSize
     void accountFilter
     void providerFilter
     if (!initialLoadDone) return
-    void fetchConnections(page)
+    void (async () => {
+      connectionsLoading = true
+      const visible = await fetchConnections(page)
+      connectionsLoading = false
+      await fetchQuotasFor(visible, visible)
+    })()
   })
 
   onMount(() => {
@@ -1127,6 +1132,14 @@
     const stored = window.localStorage.getItem(AUTO_REFRESH_STORAGE_KEY)
     autoRefresh = stored === null ? true : stored === 'true'
     hasHydratedAutoRefresh = true
+
+    // Hydrate quota data from localStorage cache if available
+    try {
+      const cached = getQuotaCache()
+      if (cached && Object.keys(cached).length > 0) {
+        quotaData = { ...cached }
+      }
+    } catch {}
 
     // Load quota visibility settings
     api

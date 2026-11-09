@@ -20,7 +20,7 @@
 
   interface Props {
     isOpen: boolean
-    target: 'combo' | 'vision' | 'audio' | 'judge' | 'router' | 'api-key' | 'models'
+    target: 'combo' | 'combo-easy' | 'combo-hard' | 'vision' | 'audio' | 'judge' | 'router' | 'api-key' | 'models'
     connections?: ProviderConnection[]
     combos?: Combo[]
     providerNodes?: ProviderNode[]
@@ -60,6 +60,15 @@
   $effect(() => {
     if (isOpen) {
       searchQuery = ''
+      if (target === 'router') {
+        activeFilter = 'decision'
+      } else if (target === 'vision') {
+        activeFilter = 'vision'
+      } else if (target === 'combo-hard') {
+        activeFilter = 'reasoning'
+      } else {
+        activeFilter = 'all'
+      }
       // Upstream parity (ComboFormModal fetchModalData): aliases drive
       // passthrough + custom-node rows; customs/disabled complete the merge.
       // One batch, one write: three chained fetches each published their own
@@ -172,9 +181,13 @@
                   ? 'Select Judge Model'
                   : target === 'router'
                     ? 'Select System One Router'
-                    : target === 'api-key' || target === 'models'
-                      ? 'Select Allowed Models'
-                      : 'Add Model to Combo'}
+                    : target === 'combo-easy'
+                      ? 'Add Model to Easy Pool (⚡ Simple / Fast)'
+                      : target === 'combo-hard'
+                        ? 'Add Model to Hard Pool (🧠 Reasoning / Complex)'
+                        : target === 'api-key' || target === 'models'
+                          ? 'Select Allowed Models'
+                          : 'Add Model to Combo'}
           </h2>
         </div>
         <button
@@ -243,33 +256,35 @@
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             <span>Connected ({connectedModelsCount})</span>
           </button>
-          <button
-            type="button"
-            onclick={() => (activeFilter = 'vision')}
-            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'vision'
-              ? 'bg-brand-500 text-white font-medium shadow-xs'
-              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
-          >
-            Vision
-          </button>
-          <button
-            type="button"
-            onclick={() => (activeFilter = 'reasoning')}
-            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'reasoning'
-              ? 'bg-brand-500 text-white font-medium shadow-xs'
-              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
-          >
-            Reasoning
-          </button>
-          <button
-            type="button"
-            onclick={() => (activeFilter = 'decision')}
-            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'decision'
-              ? 'bg-brand-500 text-white font-medium shadow-xs'
-              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
-          >
-            Decision
-          </button>
+          {#if target !== 'router'}
+            <button
+              type="button"
+              onclick={() => (activeFilter = 'vision')}
+              class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'vision'
+                ? 'bg-brand-500 text-white font-medium shadow-xs'
+                : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+            >
+              Vision
+            </button>
+            <button
+              type="button"
+              onclick={() => (activeFilter = 'reasoning')}
+              class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'reasoning'
+                ? 'bg-brand-500 text-white font-medium shadow-xs'
+                : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+            >
+              Reasoning
+            </button>
+            <button
+              type="button"
+              onclick={() => (activeFilter = 'decision')}
+              class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'decision'
+                ? 'bg-brand-500 text-white font-medium shadow-xs'
+                : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+            >
+              Decision
+            </button>
+          {/if}
         </div>
       </div>
 

@@ -13,8 +13,11 @@ const MEDIA_KINDS: Record<string, true> = {
 
 function isChatModel(m: unknown, target?: string): boolean {
   const kind = getModelKind(m)
-  if (target === 'router' && (kind === 'systemone' || kind === 'decision')) {
-    return true
+  if (target === 'router') {
+    if (kind === 'systemone' || kind === 'decision') return true
+    const modelId = typeof m === 'object' && m && 'id' in m ? String((m as { id: unknown }).id) : ''
+    const caps = getModelCaps(modelId, m)
+    return Boolean(caps.decision)
   }
   if (!kind || kind === 'llm' || kind === 'chat') {
     const obj = typeof m === 'object' && m !== null ? (m as { kind?: string; type?: string }) : null
@@ -195,7 +198,7 @@ export function resolveModelPickerGroups(
     }
 
     for (const m of visibleCustoms) {
-      if (seenModelIds.has(m.id)) continue
+      if (!m.id || seenModelIds.has(m.id) || !isChatModel(m, target)) continue
       seenModelIds.add(m.id)
       models.push({
         id: m.id,
@@ -209,7 +212,7 @@ export function resolveModelPickerGroups(
 
     for (const [aliasName, fullModel] of aliasEntries) {
       const modelId = (fullModel as string).replace(`${alias}/`, '')
-      if (!modelId || seenModelIds.has(modelId)) continue
+      if (!modelId || seenModelIds.has(modelId) || !isChatModel(modelId, target)) continue
       seenModelIds.add(modelId)
       models.push({
         id: modelId,
@@ -257,7 +260,7 @@ export function resolveModelPickerGroups(
     const isCompatibleNode = node.type === 'openai-compatible' || node.type === 'anthropic-compatible'
 
     const registeredCustom = (extras.customModels || [])
-      .filter((m) => m.providerAlias === node.id && m.id)
+      .filter((m) => m.providerAlias === node.id && m.id && isChatModel(m, target))
       .map((m) => ({
         id: m.id,
         name: m.name || m.id,
@@ -272,6 +275,7 @@ export function resolveModelPickerGroups(
 
     const nodeModels = Object.entries(extras.modelAliases || {})
       .filter(([, fullModel]) => typeof fullModel === 'string' && fullModel.startsWith(`${node.id}/`))
+      .filter(([, fullModel]) => isChatModel((fullModel as string).replace(`${node.id}/`, ''), target))
       .map(([aliasName, fullModel]) => {
         const modelId = (fullModel as string).replace(`${node.id}/`, '')
         return {
@@ -286,6 +290,8 @@ export function resolveModelPickerGroups(
       })
     const seen = new Set(nodeModels.map((m) => m.value))
     const mergedModels = [...nodeModels, ...registeredCustom.filter((m) => !seen.has(m.value))]
+
+    if (target === 'router' && mergedModels.length === 0) continue
 
     const modelsToShow =
       mergedModels.length > 0
@@ -330,7 +336,7 @@ export function resolveFilteredCombos(
   searchQuery: string,
   target: string
 ): Combo[] {
-  if (target === 'vision' || target === 'audio') {
+  if (target === 'vision' || target === 'audio' || target === 'router') {
     return []
   }
 
@@ -373,11 +379,13 @@ export function resolveFilteredGroups(
     .map((group) => {
       let models = group.models
 
-      // Filter by input-modality capability (vision / audio) matching upstream ModelSelectModal capFilter
+      // Filter by input-modality capability (vision / audio / router) matching upstream ModelSelectModal capFilter
       if (target === 'vision') {
         models = models.filter((m) => m.caps.vision)
       } else if (target === 'audio') {
         models = models.filter((m) => m.caps.audioInput)
+      } else if (target === 'router') {
+        models = models.filter((m) => m.caps.decision)
       }
 
       if (models.length === 0) return null

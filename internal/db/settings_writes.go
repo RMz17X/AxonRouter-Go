@@ -211,6 +211,24 @@ func (r *Repo) SetComboStrategy(comboName string, strat ComboStrategy) error {
 		if len(strat.FallbackCombos) > 0 {
 			entry["fallbackCombos"] = strat.FallbackCombos
 		}
+		if strat.RouterModel != "" {
+			entry["routerModel"] = strat.RouterModel
+		}
+		if strat.SmartPolicy != "" {
+			entry["smartPolicy"] = strat.SmartPolicy
+		}
+		if strat.SessionSticky != nil {
+			entry["sessionSticky"] = *strat.SessionSticky
+		}
+		if strat.ConfidenceThreshold != nil {
+			entry["confidenceThreshold"] = *strat.ConfidenceThreshold
+		}
+		if strat.EasyModels != nil {
+			entry["easyModels"] = strat.EasyModels
+		}
+		if strat.HardModels != nil {
+			entry["hardModels"] = strat.HardModels
+		}
 
 		if strat.Strategy == "fallback" && strat.JudgeModel == "" && len(strat.FallbackCombos) == 0 && len(entry) <= 2 {
 			delete(currentMap, comboName)

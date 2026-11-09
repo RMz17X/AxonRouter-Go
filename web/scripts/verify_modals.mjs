@@ -1,5 +1,5 @@
 import { chromium } from 'playwright';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 
 const SCREENSHOT_DIR = '/workspaces/AxonRouter-Go/screenshots/modal_verification';
 mkdirSync(SCREENSHOT_DIR, { recursive: true });
@@ -18,9 +18,22 @@ async function run() {
   await page.goto('http://127.0.0.1:3177', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1000);
 
+  if (page.url().includes('/login')) {
+    console.log('Logging in to dashboard...');
+    let pw = '123456';
+    if (existsSync('/workspaces/AxonRouter-Go/.env')) {
+      const envTxt = readFileSync('/workspaces/AxonRouter-Go/.env', 'utf8');
+      const matched = (envTxt.match(/^INITIAL_PASSWORD=(.*)$/m) || [])[1]?.trim();
+      if (matched) pw = matched;
+    }
+    await page.fill('input[type=password]', pw);
+    await page.getByRole('button', { name: 'Login' }).click();
+    await page.waitForTimeout(2000);
+  }
+
   // 1. Verify Endpoint / Keys View
   console.log('Verifying Endpoint view...');
-  const createKeyBtn = page.getByRole('button', { name: 'Create Key' }).first();
+  const createKeyBtn = page.getByRole('button', { name: /Create Key/ }).first();
   await createKeyBtn.waitFor({ state: 'visible', timeout: 10000 });
   await page.screenshot({ path: `${SCREENSHOT_DIR}/01_endpoint_view.png` });
 
@@ -33,13 +46,7 @@ async function run() {
   const modalHeader = page.locator('text=Create API Key');
   await modalHeader.first().waitFor({ state: 'visible' });
 
-  // Verify Single & Bulk tabs exist
-  const singleTab = page.getByRole('button', { name: 'Single' });
-  const bulkTab = page.getByRole('button', { name: 'Bulk' });
-  await singleTab.waitFor({ state: 'visible' });
-  await bulkTab.waitFor({ state: 'visible' });
-
-  // Verify form controls in Single tab
+  // Verify form controls
   const nameInput = page.locator('#new-key-name');
   await nameInput.waitFor({ state: 'visible' });
   const tpmInput = page.locator('#create-tpm');
@@ -47,7 +54,7 @@ async function run() {
   const quotaInput = page.locator('#create-quota');
   await quotaInput.waitFor({ state: 'visible' });
 
-  console.log('Single tab form verified (Name, TPM in M, Quota in M).');
+  console.log('Create API Key form verified (Name, TPM in M, Quota in M).');
   await page.screenshot({ path: `${SCREENSHOT_DIR}/02_create_key_modal_single.png` });
 
   // 3. Open Model Picker from CreateApiKeyModal
@@ -72,17 +79,6 @@ async function run() {
   console.log('Closing Model Picker via Escape key...');
   await page.keyboard.press('Escape');
   await page.waitForTimeout(500);
-
-  // 4. Switch to Bulk tab
-  console.log('Switching to Bulk tab...');
-  await bulkTab.click();
-  await page.waitForTimeout(300);
-  const bulkInput = page.locator('#bulk-keys-input');
-  await bulkInput.waitFor({ state: 'visible' });
-  const bulkSubmitBtn = page.getByRole('button', { name: 'Create keys' });
-  await bulkSubmitBtn.waitFor({ state: 'visible' });
-  console.log('Bulk tab verified.');
-  await page.screenshot({ path: `${SCREENSHOT_DIR}/04_create_key_modal_bulk.png` });
 
   // Close Create Key modal
   const cancelBtn = page.getByRole('button', { name: 'Cancel' }).first();

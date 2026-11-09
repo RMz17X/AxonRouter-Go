@@ -113,6 +113,8 @@
   let isSmart = $derived(effectiveComboStrategy(strategyInfo.fallbackStrategy, globalStrategy) === 'smart')
   let routerModel = $derived(strategyInfo.routerModel || '')
   let policyLabel = $derived(smartPolicyLabel(strategyInfo))
+  let easyCount = $derived(strategyInfo.easyModels?.length ?? 0)
+  let hardCount = $derived(strategyInfo.hardModels?.length ?? 0)
   let strategyOptions = $derived(comboStrategyOptions(globalStrategy))
 </script>
 
@@ -181,6 +183,17 @@
                 {#if hasReasoning(model)}
                   <Sparkles class="w-3 h-3 text-amber-500 shrink-0" role="img" aria-label="Reasoning — supports reasoning / thinking" />
                 {/if}
+                {#if isSmart && strategyInfo.easyModels?.includes(model)}
+                  <span
+                    class="rounded bg-emerald-500/10 px-1 py-0.2 font-mono text-[9px] font-semibold text-emerald-500 border border-emerald-500/20"
+                    title="Configured in Easy pool"
+                  >easy</span>
+                {:else if isSmart && strategyInfo.hardModels?.includes(model)}
+                  <span
+                    class="rounded bg-purple-500/10 px-1 py-0.2 font-mono text-[9px] font-semibold text-purple-400 border border-purple-500/20"
+                    title="Configured in Hard pool"
+                  >hard</span>
+                {/if}
               </code>
             {/each}
             {#if modelsList.length > 3}
@@ -248,10 +261,26 @@
               type="button"
               onclick={() => onOpenPolicyModal(combo)}
               class="inline-flex items-center gap-1 rounded border border-border/70 bg-black/[0.02] dark:bg-white/[0.02] px-2 py-0.5 text-[11px] text-text-main hover:border-brand-500/50 hover:bg-brand-500/5 transition-colors cursor-pointer"
-              title="Configure routing policy and prompt cache retention"
+              title="Configure routing policy, decision model, and prompt cache retention"
             >
               <span class="material-symbols-outlined text-[13px] text-text-muted">tune</span>
               <span class="font-medium">{policyLabel}</span>
+            </button>
+            <button
+              type="button"
+              onclick={() => onOpenPolicyModal(combo)}
+              class="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer"
+              title="Click to configure Easy model pool"
+            >
+              <span>⚡ {easyCount > 0 ? `${easyCount} Easy` : 'Easy: Auto'}</span>
+            </button>
+            <button
+              type="button"
+              onclick={() => onOpenPolicyModal(combo)}
+              class="inline-flex items-center gap-1 rounded border border-purple-500/30 bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition-colors cursor-pointer"
+              title="Click to configure Hard model pool"
+            >
+              <span>🧠 {hardCount > 0 ? `${hardCount} Hard` : 'Hard: Auto'}</span>
             </button>
           </div>
         {/if}
