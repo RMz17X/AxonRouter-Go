@@ -1,5 +1,101 @@
 # Changelog
 
+## [v1.9.59] - 2026-11-09
+
+# 1041 — Persona becomes virtual models: minted names, picker targets, binding layer retired
+
+## The change of logic (owner's order)
+- Setting a persona no longer arms a prompt on a model or combo name
+  that already exists. A persona is now a **virtual model**: the
+  operator mints a NEW name, picks the target it runs on — a single
+  model or a combo, via the Combos model picker — and picks the preset
+  it injects from the library (which is unchanged).
+- The name must be different from everything else: creation refuses a
+  name already used by a catalog model, a combo, a model alias, or
+  another persona; combo create/rename refuse a persona's name from
+  the other side. A persona may not target another persona, so
+  resolution is always one hop.
+- Clients call the persona name like any model. `/v1/models` publishes
+  it with `owned_by: "persona"`, cloning its target's entry so
+  capabilities and limits match what will actually serve.
+
+## Serving path
+- `resolveModel` resolves a persona name to its target (model id or
+  combo name) before alias/combo handling.
+- `applyJailbreak` treats a persona request the way it treats the
+  playground override: the persona's own preset replaces the standing
+  resolver outright, so no keyword rule stacks underneath it and the
+  target's legs cannot re-arm a different preset.
+
+## Retired: per-model exact bindings
+- The resolver's exact-binding arm and the explain endpoint's
+  exact-binding branch are removed; keyword rules and the exclude
+  lists are now the only standing arming mechanisms.
+- The binding endpoints (`GET/PUT/DELETE /api/jailbreak/models`) and
+  the dashboard binding UI (BindingList, BindModal, BindingBatchBar,
+  BulkArm) are deleted; the stored binding rows are wiped from the kv
+  store as part of the release. The preset library, its keyword rules,
+  excludes, import, preview, and usage counters are untouched.
+- The db-layer binding helpers remain as unused surface: the repo's
+  existing test files still reference them, and the tests were not
+  part of this change (they are reconciled when the suite is next
+  maintained).
+- The Playground's standing-prompt chip now asks the resolve/explain
+  endpoint for the selected model instead of reading the deleted
+  binding map; its prompt-decision payload is unchanged.
+- Persona page rework: "Persona models" segment with create/edit
+  modal (name, picker target, preset combobox); GlobalExcludes moves
+  under Presets, alongside the keyword machinery it governs; the
+  How-it-works copy is rewritten for the two remaining arming paths.
+
+## Verification
+- go build ./... and go vet on the touched packages green;
+  svelte-check 0 errors / 0 warnings over 3,904 files; web build
+  green.
+- Live proofs on staging are recorded with the v1.9.59 release:
+  persona listed in /v1/models, prompt-shaped answer through the
+  persona name on both a model target and a combo target, collision
+  rejections, retired endpoints gone.
+
+# 1040 — TokenHarbor: rate-limit cooldown parsed regardless of HTTP status (record for commit 34ae9511)
+
+## What landed
+- TokenHarbor's "retry in about N sec" cooldown text is now honoured
+  on any HTTP status, not only the statuses the parser previously
+  gated on — a throttling reply wearing a different status code still
+  benches the account for the duration the upstream asked for.
+
+# 1039 — TokenHarbor: attempt cap and server_busy classification (record for commit d717188b)
+
+## What landed
+- TokenHarbor errors that report a busy or overloaded upstream —
+  "under heavy load", `server_busy`, `service_busy`, "slowed down for
+  a few minutes" — classify as their own server_busy kind instead of
+  falling through to the generic buckets.
+- The fallback and combo loops gain an attempt cap for TokenHarbor, so
+  a busy upstream is not retried account after account without bound.
+
+# 1038 — Client error masking, speculative hedging refinements, Liquid AI provider (record for commit 95dabd7d)
+
+## What landed
+- Client-facing upstream errors are masked before they reach the
+  caller — 429 → 503, 402/403 → 503, Cloudflare 520–526 → 502/504 —
+  while the dashboard keeps the genuine raw error. A per-provider-node
+  custom error policy plus its dashboard editor field
+  (ProviderNodeErrorPolicyField) ride along.
+- Speculative hedging adjustments across the chat path (smart router,
+  retry-after, combo, dahl concurrency) on top of the hedging engine
+  recorded in fragment 1026.
+- Liquid AI joins the provider registry with decision capabilities —
+  the provider the d1/SystemOne decision models answer through — plus
+  its model-picker entries.
+- The previously uncommitted legacy-media and shared errorclassify
+  work-in-progress is folded into the same commit.
+
+## Verification
+- Tree builds green and svelte-check is 0 errors / 0 warnings over the
+  merged result (checked at the v1.9.59 release gate).
+
 ## [v1.9.58] - 2026-11-08
 
 # 1037 — Fragment 1035 completed: the stats feed's own RecentRequest shape gains `tokens`
