@@ -11,6 +11,7 @@
     X
   } from 'lucide-svelte'
   import { copyToClipboard } from '../lib/clipboard'
+  import { parseCustomModelsResponse } from '../lib/customModels'
   import { api, type APIKey } from '../api/client'
   import HermesToolCard from './cli-tools/HermesToolCard.svelte'
   import HostSetupCommand from './cli-tools/HostSetupCommand.svelte'
@@ -44,6 +45,7 @@
       localOrigin = window.location.origin
     }
     loadStatuses()
+    loadModelSuggestions()
   })
 
   // What the guide cards paste. With no key on the instance the snippet still
@@ -62,35 +64,76 @@
     key: string
     label: string
     placeholder: string
+    /** Model-mapping field: offers the gateway's model/combo/persona names as
+     * suggestions while still accepting any custom model name typed in. */
+    model?: boolean
   }
   const SETUP_FIELDS: Record<string, SetupField[]> = {
     claude: [
-      { key: 'model', label: 'Model', placeholder: 'cc/claude-sonnet-5' },
-      { key: 'sonnet', label: 'Sonnet tier', placeholder: 'cc/claude-sonnet-5' },
-      { key: 'opus', label: 'Opus tier', placeholder: 'cc/claude-opus-5' },
-      { key: 'haiku', label: 'Haiku tier', placeholder: 'cc/claude-haiku-4-5-20251001' },
-      { key: 'fable', label: 'Fable tier', placeholder: 'cc/claude-fable-5' },
+      { key: 'model', label: 'Model', placeholder: 'cc/claude-sonnet-5', model: true },
+      { key: 'sonnet', label: 'Sonnet tier', placeholder: 'cc/claude-sonnet-5', model: true },
+      { key: 'opus', label: 'Opus tier', placeholder: 'cc/claude-opus-5', model: true },
+      { key: 'haiku', label: 'Haiku tier', placeholder: 'cc/claude-haiku-4-5-20251001', model: true },
+      { key: 'fable', label: 'Fable tier', placeholder: 'cc/claude-fable-5', model: true },
       { key: 'maxContextTokens', label: 'Max context tokens', placeholder: '200000' },
     ],
     codex: [
-      { key: 'model', label: 'Model', placeholder: 'gpt-5' },
-      { key: 'subagentModel', label: 'Subagent model', placeholder: 'gpt-5' },
+      { key: 'model', label: 'Model', placeholder: 'gpt-5', model: true },
+      { key: 'subagentModel', label: 'Subagent model', placeholder: 'gpt-5', model: true },
     ],
     opencode: [
-      { key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' },
-      { key: 'subagentModel', label: 'Explorer model', placeholder: 'claude-sonnet-5' },
+      { key: 'model', label: 'Model', placeholder: 'claude-sonnet-5', model: true },
+      { key: 'subagentModel', label: 'Explorer model', placeholder: 'claude-sonnet-5', model: true },
     ],
     droid: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'claude-sonnet-5, gpt-5' }],
     copilot: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'gpt-5, claude-sonnet-5' }],
     cowork: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'claude-sonnet-5' }],
-    openclaw: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
-    cline: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
-    kilo: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
-    jcode: [{ key: 'model', label: 'Model', placeholder: 'gpt-5' }],
-    qwen: [{ key: 'model', label: 'Model', placeholder: 'qwen3-coder-plus' }],
-    'deepseek-tui': [{ key: 'model', label: 'Model', placeholder: 'deepseek-chat' }],
-    'grok-build': [{ key: 'model', label: 'Model', placeholder: 'grok-4' }],
+    openclaw: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5', model: true }],
+    cline: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5', model: true }],
+    kilo: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5', model: true }],
+    jcode: [{ key: 'model', label: 'Model', placeholder: 'gpt-5', model: true }],
+    qwen: [{ key: 'model', label: 'Model', placeholder: 'qwen3-coder-plus', model: true }],
+    'deepseek-tui': [{ key: 'model', label: 'Model', placeholder: 'deepseek-chat', model: true }],
+    'grok-build': [{ key: 'model', label: 'Model', placeholder: 'grok-4', model: true }],
     amp: [],
+  }
+
+  // Names the model-mapping fields suggest: every combo, persona, custom
+  // model and chat model this gateway can serve. Suggestions only — the
+  // fields stay free-text, so a custom model name always works, and tools
+  // like Claude Code take one custom name per tier (model/sonnet/opus/
+  // haiku/fable), not a single global model.
+  let modelSuggestions = $state<string[]>([])
+  async function loadModelSuggestions() {
+    const names = new Set<string>()
+    const add = (v?: string | null) => {
+      if (v) names.add(v)
+    }
+    try {
+      for (const c of (await api.getCombos()) ?? []) add(c.name)
+    } catch {
+      /* suggestions are best-effort */
+    }
+    try {
+      const { personas } = await api.listPersonas()
+      for (const p of personas ?? []) add(p.name)
+    } catch {
+      /* best-effort */
+    }
+    try {
+      for (const e of parseCustomModelsResponse(await api.getCustomModels())) add(e.id)
+    } catch {
+      /* best-effort */
+    }
+    try {
+      const { meta } = await api.getModelMeta()
+      for (const [id, m] of Object.entries(meta ?? {})) {
+        if (!m.kind || m.kind === 'llm' || m.kind === 'chat') add(id)
+      }
+    } catch {
+      /* best-effort */
+    }
+    modelSuggestions = [...names].sort((a, b) => a.localeCompare(b))
   }
   let setupKeyId = $state('')
   let mapping = $state<Record<string, string>>({})
@@ -925,10 +968,23 @@
                     value={mapping[field.key] ?? ''}
                     oninput={(e) => (mapping = { ...mapping, [field.key]: e.currentTarget.value })}
                     placeholder={field.placeholder}
+                    list={field.model ? 'cli-tool-model-names' : undefined}
+                    autocomplete="off"
+                    spellcheck="false"
                     class="flex-1 min-w-0 h-8 px-2 rounded bg-surface border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-brand-500/50"
                   />
                 </div>
               {/each}
+              <datalist id="cli-tool-model-names">
+                {#each modelSuggestions as name (name)}
+                  <option value={name}></option>
+                {/each}
+              </datalist>
+              {#if setupFields.some((f) => f.model)}
+                <p class="text-[11px] text-text-subtle leading-relaxed">
+                  Pick any model, combo or persona this gateway serves — or type a custom model name. Each field maps independently, so tiers can point at different models.
+                </p>
+              {/if}
             </div>
             <HostSetupCommand toolId={selectedTool.id} baseUrl={localOrigin} apiKey={setupApiKey} params={mapping} />
           </div>
