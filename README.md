@@ -76,12 +76,13 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
-The delivery is **Docker Compose**. Two stacks ship in the repo root:
+The delivery is **Docker Compose**. Three stacks ship in the repo root:
 
-| Stack | File | Shape |
-| --- | --- | --- |
-| Single node | `docker-compose.single.yml` | 1 gateway + PostgreSQL 17 |
-| Cluster | `docker-compose.cluster.yml` | N gateway replicas + PostgreSQL 17 + Valkey + nginx |
+| Stack | File | Shape | Image / Build Source |
+| --- | --- | --- | --- |
+| Single node (Production) | `docker-compose.single.yml` | 1 gateway + PostgreSQL 17 | Registry (`ghcr.io/rmz17x/axonrouter-go:latest`) |
+| Cluster (Production) | `docker-compose.cluster.yml` | N gateway replicas + PostgreSQL 17 + Valkey + nginx | Registry (`ghcr.io/rmz17x/axonrouter-go:latest`) |
+| Local Build / Staging | `docker-compose.build.yml` | 1 gateway + PostgreSQL 17 | Direct local source build (`axonrouter-go:local`) |
 
 **1. Configure:**
 
@@ -91,22 +92,29 @@ cp .env.example .env
 # to long random values. Every node in a cluster must share the same JWT_SECRET.
 ```
 
-**2. Start (single node):**
+**2. Start (single node from registry):**
 
 ```bash
 docker compose -f docker-compose.single.yml up -d
-# Dashboard + gateway: http://localhost:20130
+# Dashboard + gateway: http://localhost:3177
 ```
 
 Log in with the `INITIAL_PASSWORD` from your `.env` (it seeds the dashboard
 password on first boot against an empty database), then change it in
 **Settings → Profile**.
 
-**Or the cluster:**
+**Or the cluster (from registry):**
 
 ```bash
 docker compose -f docker-compose.cluster.yml up -d
 # nginx publishes the same port; replica count is APP_REPLICAS in .env (default 2)
+```
+
+**Or build and run directly from local source (development / staging):**
+
+```bash
+docker compose -f docker-compose.build.yml up -d --build
+# or: make compose-build
 ```
 
 **3. Connect a FREE provider (no signup needed):**
@@ -361,12 +369,14 @@ works — the gateway creates its schema on first boot).
 git clone https://github.com/RMz17X/AxonRouter-Go.git
 cd axonrouter-go
 
-# The supported dev loop is compose-based (same stacks as production):
+# The supported dev loop with direct local build:
 cp .env.example .env   # set POSTGRES_PASSWORD / JWT_SECRET / INITIAL_PASSWORD
-docker compose -f docker-compose.single.yml up -d
+docker compose -f docker-compose.build.yml up -d --build
+# Or run with official published image:
+# docker compose -f docker-compose.single.yml up -d
 
 # Frontend hot-reload against a running gateway:
-make web-dev           # Vite dev server on :5173, API proxied to :20130
+make web-dev           # Vite dev server on :5173, API proxied to :3177
 
 # Native build (embeds the dashboard; needs web/dist first):
 make web-build

@@ -644,10 +644,20 @@ done
 # PostgreSQL — DATABASE_URL/JWT_SECRET from ~/.axonrouter-go.env or the shell):
 make dev
 
-# Or run the supported deployment shape (Docker):
+# Supported deployment shapes (Docker Compose):
 #   cp .env.example .env   # set POSTGRES_PASSWORD / JWT_SECRET / INITIAL_PASSWORD
-#   docker compose -f docker-compose.single.yml up -d --build      # single node
-#   docker compose -f docker-compose.cluster.yml up -d --build     # cluster (APP_REPLICAS nodes)
+#
+# 1. Production Single Node (pulls official image from GHCR registry):
+#   docker compose -f docker-compose.single.yml up -d
+#
+# 2. Production Cluster (N replicas + Valkey + nginx, from GHCR registry):
+#   docker compose -f docker-compose.cluster.yml up -d
+#
+# 3. Local Development / Staging Build (builds directly from local source):
+#   docker compose -f docker-compose.build.yml up -d --build
+#   # or via Makefile shortcut:
+#   make compose-build
+#
 # Import a legacy SQLite-era install into PostgreSQL (one-shot; the file
 # goes in ./legacy/, or point LEGACY_DIR at its directory first):
 #   docker compose -f docker-compose.single.yml --profile migrate run --rm migrate
