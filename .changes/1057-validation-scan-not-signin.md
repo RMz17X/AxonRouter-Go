@@ -1,7 +1,0 @@
-## Antigravity verification: the scan verifies, not a sign-in — bundled button reverted (v1.9.72)
-
-- **Owner's verdict (2026-11-09, after testing v1.9.71 himself):** "logika verifikasi = login ulang itu salah besar, gw udah login ulang pun percuma — yang harus diverifikasi itu verifikasi scan biasanya." He completed a fresh sign-in and the gate did not move. Both sign-in-based theories (v1.9.68's re-login ceremony, the Google-forum token rule behind v1.9.71) are falsified for these accounts by direct experiment: fresh grants still read VALIDATION_REQUIRED on Google's FULL_ELIGIBILITY_CHECK and on generate.
-- **What verifies, per the owner:** the scan step inside Google's verification flow — the QR code scanned with the phone that is signed into the account. That is the act that lifts the gate in the real client.
-- **Change vs v1.9.71:** the sign-in-based Verifikasi button is removed again. The flagged row offers only the account's own verification URL ("verifikasi"); the error panel shows the single "Buka Verifikasi" action plus one muted line stating the scan fact (open the page on another screen, scan its QR with the phone signed into this account). No sign-in action anywhere in the verification UI — settled; do not reintroduce one.
-- **Kept:** the generate-oracle recheck (v1.9.63/64) and the v1.9.68 exchange-side reactivation (invisible; only affects a normal re-add).
-- **Verification:** build + svelte-check gates at release; staging /api/version read-back after deploy.
