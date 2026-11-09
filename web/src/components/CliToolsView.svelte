@@ -470,7 +470,7 @@
       category: 'cli',
       image: '/providers/opendesign.png',
       color: '#7C3AED',
-      description: 'OpenDesign — claude.ai/design open-sourced! Agent-native design skills pack',
+      description: 'Open-source design agent with native design skills',
       configType: 'guide',
       instructions: [
         `/plugin marketplace add manalkaff/opendesign`,
@@ -484,7 +484,7 @@
       category: 'cli',
       image: '/providers/pi.png',
       color: '#111827',
-      description: 'pi coding agent — point ~/.pi/agent/models.json at the AxonRouter-Go gateway',
+      description: 'Minimal terminal coding agent with provider extensions',
       configType: 'guide',
       instructions: [
         `Add a AxonRouter-Go provider to ~/.pi/agent/models.json (Windows: %USERPROFILE%\\.pi\\agent\\models.json):`,
@@ -502,7 +502,7 @@
       category: 'cli',
       color: '#7C3AED',
       image: '/providers/omp.png',
-      description: 'omp coding agent — register the gateway in ~/.omp/agent/models.yml',
+      description: 'Oh My Pi — batteries-included terminal coding agent',
       configType: 'guide',
       instructions: [
         `Add a AxonRouter-Go provider to ~/.omp/agent/models.yml (profiles live in ~/.omp/profiles/<name>/agent/):`,
@@ -520,7 +520,7 @@
       category: 'cli',
       image: '/providers/crush.png',
       color: '#8B5CF6',
-      description: 'Crush AI terminal agent — configure ~/.config/crush/crush.json',
+      description: 'Polished terminal AI coding agent with LSP and MCP support',
       configType: 'guide',
       instructions: [
         `Add AxonRouter-Go to your Crush config in ~/.config/crush/crush.json:`,
@@ -537,7 +537,7 @@
       category: 'cli',
       image: '/providers/forge.png',
       color: '#F97316',
-      description: 'Forge AI coding CLI — configure ~/.forge/config.toml',
+      description: 'AI pair-programming CLI for the terminal',
       configType: 'guide',
       instructions: [
         `Configure AxonRouter-Go endpoint under the [openai] section in ~/.forge/config.toml:`,
@@ -554,7 +554,7 @@
       category: 'cli',
       image: '/providers/smelt.svg',
       color: '#E11D48',
-      description: 'Smelt terminal coding agent — configure ~/.smelt/config.json',
+      description: 'Lightweight terminal coding agent',
       configType: 'guide',
       instructions: [
         `Add AxonRouter-Go gateway configuration to ~/.smelt/config.json:`,
@@ -571,7 +571,7 @@
       category: 'cli',
       image: '/providers/codewhale.svg',
       color: '#06B6D4',
-      description: 'CodeWhale terminal developer suite — configure ~/.codewhale/config.toml',
+      description: 'AI coding suite for the terminal',
       configType: 'guide',
       instructions: [
         `Add AxonRouter-Go endpoint under [openai] in ~/.codewhale/config.toml:`,
@@ -617,6 +617,14 @@
     }
     return { label: 'Not installed', cls: 'bg-surface-2 text-text-subtle border-border' }
   }
+
+  let installedCount = $derived(toolsCatalog.filter((t) => statuses[t.id]?.installed).length)
+  let connectedCount = $derived(toolsCatalog.filter((t) => statuses[t.id]?.has9Router).length)
+  let categoryCounts = $derived({
+    cli: toolsCatalog.filter((t) => t.category === 'cli').length,
+    ide: toolsCatalog.filter((t) => t.category === 'ide').length,
+    mitm: toolsCatalog.filter((t) => t.category === 'mitm').length,
+  })
 </script>
 
 <div class="flex flex-col gap-6">
@@ -629,7 +637,7 @@
         </div>
         <div>
           <h1 class="font-headline text-2xl sm:text-3xl font-bold text-text-main tracking-tight flex items-center gap-2">
-            CLI & IDE Tools
+            CLI Tools
           </h1>
           <p class="font-body text-xs sm:text-sm text-text-muted">
             Configure Cursor, Claude Code, Cline, and terminal agents to connect to AxonRouter-Go
@@ -647,6 +655,22 @@
       <RefreshCw class="w-3.5 h-3.5 {isLoading ? 'animate-spin text-brand-500' : 'text-text-muted'}" />
       <span>Scan Installed Tools</span>
     </button>
+  </div>
+
+  <!-- STATS ROW -->
+  <div class="grid grid-cols-3 gap-3">
+    <div class="p-3 rounded-xl bg-surface border border-border">
+      <div class="text-[11px] uppercase tracking-wider text-text-muted">Visible Tools</div>
+      <div class="mt-1 text-2xl font-semibold text-text-main">{filteredTools.length}</div>
+    </div>
+    <div class="p-3 rounded-xl bg-surface border border-border">
+      <div class="text-[11px] uppercase tracking-wider text-text-muted">Installed</div>
+      <div class="mt-1 text-2xl font-semibold text-text-main">{installedCount}</div>
+    </div>
+    <div class="p-3 rounded-xl bg-surface border border-border">
+      <div class="text-[11px] uppercase tracking-wider text-text-muted">Connected</div>
+      <div class="mt-1 text-2xl font-semibold text-text-main">{connectedCount}</div>
+    </div>
   </div>
 
   <!-- SEARCH & CATEGORY FILTER TABS -->
@@ -669,7 +693,7 @@
           ? 'bg-surface text-brand-500 shadow-sm'
           : 'text-text-muted hover:text-text-main'}"
       >
-        CLI Agents
+        CLI Agents ({categoryCounts.cli})
       </button>
       <button
         type="button"
@@ -678,7 +702,7 @@
           ? 'bg-surface text-brand-500 shadow-sm'
           : 'text-text-muted hover:text-text-main'}"
       >
-        IDE & Editors
+        IDE & Editors ({categoryCounts.ide})
       </button>
       <button
         type="button"
@@ -687,7 +711,7 @@
           ? 'bg-surface text-brand-500 shadow-sm'
           : 'text-text-muted hover:text-text-main'}"
       >
-        MITM Proxies
+        MITM Proxies ({categoryCounts.mitm})
       </button>
     </div>
 
@@ -702,6 +726,17 @@
       />
     </div>
   </div>
+
+  <!-- LEGEND -->
+  <p class="text-[11px] leading-relaxed text-text-subtle">
+    Status: <span class="text-text-muted font-medium">Connected</span> = detected on this host and pointed at this gateway ·
+    <span class="text-text-muted font-medium">Not configured</span> = detected, but not pointed here ·
+    <span class="text-text-muted font-medium">Not installed</span> = not detected on this host ·
+    <span class="text-text-muted font-medium">Guide</span> = no local detection, setup guide only.
+    Methods: <span class="text-text-muted font-medium">Environment</span> = environment variables ·
+    <span class="text-text-muted font-medium">Settings UI</span> = configure inside the app ·
+    <span class="text-text-muted font-medium">Transparent</span> = MITM proxy interception.
+  </p>
 
   <!-- TOOLS GRID -->
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -718,34 +753,31 @@
           <!-- Top Row: Icon, Name, Status Badge -->
           <div class="flex items-start justify-between gap-2">
             <div class="flex items-center gap-3">
-              <div class="size-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden bg-surface-2 border border-border/50 p-1">
+              <div class="relative size-10 rounded-xl shrink-0 overflow-hidden bg-surface-2 border border-border/50">
                 {#if tool.image}
-                  <img
-                    src={tool.image}
-                    alt=""
-                    class="size-8 object-contain rounded-lg"
-                    onerror={(e) => {
-                      const img = e.currentTarget as HTMLElement
-                      img.style.display = 'none'
-                      const fallback = img.nextElementSibling as HTMLElement
-                      if (fallback) fallback.style.display = 'flex'
-                    }}
-                    loading="lazy"
-                    decoding="async"
-                  />
                   <div
-                    class="size-8 rounded-lg hidden items-center justify-center font-bold text-white text-xs shadow-sm"
+                    class="absolute inset-0 flex items-center justify-center font-bold text-white text-xs"
                     style="background-color: {tool.color}"
                   >
                     {tool.name.slice(0, 2).toUpperCase()}
                   </div>
+                  <img
+                    src={tool.image}
+                    alt=""
+                    class="absolute inset-0 size-full object-contain p-1 opacity-0 transition-opacity duration-200"
+                    onload={(e) => ((e.currentTarget as HTMLElement).style.opacity = '1')}
+                    onerror={(e) => ((e.currentTarget as HTMLElement).style.display = 'none')}
+                    decoding="async"
+                  />
                 {:else if tool.icon}
-                  <span class="material-symbols-outlined text-[24px]" style="color: {tool.color}">
-                    {tool.icon}
-                  </span>
+                  <div class="absolute inset-0 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[24px]" style="color: {tool.color}">
+                      {tool.icon}
+                    </span>
+                  </div>
                 {:else}
                   <div
-                    class="size-8 rounded-lg flex items-center justify-center font-bold text-white text-xs shadow-sm"
+                    class="absolute inset-0 flex items-center justify-center font-bold text-white text-xs"
                     style="background-color: {tool.color}"
                   >
                     {tool.name.slice(0, 2).toUpperCase()}
@@ -756,8 +788,8 @@
                 <h3 class="font-bold text-sm text-text-main group-hover:text-brand-500 transition-colors">
                   {tool.name}
                 </h3>
-                <span class="text-[10px] font-mono text-text-subtle capitalize">
-                  {tool.category} tool
+                <span class="text-[10px] font-mono text-text-subtle">
+                  {tool.category === 'cli' ? 'CLI Tool' : tool.category === 'ide' ? 'IDE Tool' : 'MITM Tool'}
                 </span>
               </div>
             </div>
@@ -788,12 +820,23 @@
 </div>
 
 <!-- MODAL: Tool Configuration Detail -->
+<svelte:window
+  onkeydown={(e) => {
+    if (e.key === 'Escape') selectedTool = null
+  }}
+/>
 {#if selectedTool}
   {@const status = getToolStatus(selectedTool.id)}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-    <div class="w-full max-w-xl p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-5">
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+    role="presentation"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) selectedTool = null
+    }}
+  >
+    <div class="w-full max-w-xl rounded-2xl bg-surface border border-border shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden">
       <!-- Modal Header -->
-      <div class="flex items-start justify-between pb-3 border-b border-border">
+      <div class="flex items-start justify-between px-6 pt-5 pb-3 border-b border-border shrink-0">
         <div class="flex items-center gap-3">
           <div class="size-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden bg-surface-2 border border-border/50 p-1.5">
             {#if selectedTool.image}
@@ -807,7 +850,6 @@
                   const fallback = img.nextElementSibling as HTMLElement
                   if (fallback) fallback.style.display = 'flex'
                 }}
-                loading="lazy"
                 decoding="async"
               />
               <div
@@ -849,6 +891,8 @@
         </button>
       </div>
 
+      <!-- Modal Body (scrolls; header and footer stay pinned) -->
+      <div class="overflow-y-auto flex-1 px-6 py-4 space-y-5">
       <!-- Hermes has per-profile settings the generic env snippet cannot express. -->
       {#if selectedTool.id === 'hermes'}
         <HermesToolCard installed={!!statuses.hermes?.installed} {apiKeys} />
@@ -869,7 +913,7 @@
                     <option value="">No key created</option>
                   {/if}
                   {#each apiKeys as key (key.id)}
-                    <option value={key.id}>{key.name || key.keyDisplay || key.key}</option>
+                    <option value={key.id}>{key.name || 'Unnamed key'}{key.keyDisplay ? ` · ${key.keyDisplay}` : ''}</option>
                   {/each}
                 </select>
               </div>
@@ -987,7 +1031,7 @@
                     {idx + 1}
                   </span>
                   <span class="text-text-muted leading-relaxed select-text flex-1">
-                    {step}
+                    {step.split('<your-api-key>').join(snippetApiKey)}
                   </span>
                 </div>
               {/each}
@@ -996,8 +1040,10 @@
         {/if}
       {/if}
 
+      </div>
+
       <!-- Footer -->
-      <div class="flex items-center justify-between pt-3 border-t border-border">
+      <div class="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
         <div class="flex items-center gap-1.5 text-xs text-text-subtle font-mono">
           <Key class="w-3.5 h-3.5 text-brand-500" />
           <span>Active Token: {noApiKey ? 'none created' : `${effectiveApiKey.slice(0, 10)}••••`}</span>
