@@ -194,15 +194,15 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 	// validation flag: it is not a terminal verdict (the operator clears it by
 	// verifying the account upstream), and this read is where the quota
 	// tracker asks for the account's state — so a flagged account is
-	// re-probed here with the same machinery the connection test uses. A
-	// valid verdict clears the flag and reactivates the account inside
-	// persistProbeResult, and the read then falls through to live quotas;
-	// any other verdict keeps the stored message. Terminal disables
+	// re-checked here against a real generate (recheckValidationFlag), the
+	// only verdict that cannot lie about whether the account can serve. A
+	// pass clears the flag and reactivates the account, and the read then
+	// falls through to live quotas; a failure re-parks it with the freshest
+	// verdict and keeps the stored message. Terminal disables
 	// (ToS, dead auth) are never dialed.
 	if conn.IsActive == 0 {
 		if status, _ := data["status"].(string); strings.EqualFold(status, "validation_required") {
-			out := h.testSingleConnection(r.Context(), conn, parseConnectionProbeData(data), data)
-			h.persistProbeResult(conn, data, out)
+			h.recheckValidationFlag(r.Context(), conn, data)
 			if fresh, ferr := h.Repo.GetProviderConnectionByID(connID); ferr == nil && fresh != nil {
 				conn = fresh
 				data = nil
@@ -323,7 +323,15 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 					_ = h.Repo.DisableConnectionWithReason(conn.ID, http.StatusForbidden, res.message)
 				} else if strings.Contains(lowerMsg, "validation_required") ||
 					strings.Contains(lowerMsg, "verify your account") {
-					_ = h.Repo.SetConnectionVerificationRequired(conn.ID, "https://antigravity.google", res.message)
+					// Store the account-specific verification URL the
+					// error carried (its token rotates per error), not
+					// the generic landing page: the operator's Verify
+					// link must open the flow Google actually gated.
+					valURL := res.validationURL
+					if valURL == "" {
+						valURL = "https://antigravity.google"
+					}
+					_ = h.Repo.SetConnectionVerificationRequired(conn.ID, valURL, res.message)
 				}
 			}
 			if res.message == "" {

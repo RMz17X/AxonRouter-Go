@@ -33,6 +33,10 @@ type usageResult struct {
 	quotas  map[string]any
 	message string
 	extra   map[string]any
+	// validationURL carries the account-specific verification link a
+	// VALIDATION_REQUIRED error arrived with, so the flag writer can
+	// store the real flow instead of the generic landing page.
+	validationURL string
 	// bare mirrors upstream handlers (e.g. qoder) that return {message}
 	// with NO quotas key on error. Most handlers include quotas:{}.
 	bare bool
@@ -1899,7 +1903,7 @@ func fetchAntigravityDashboardUsage(ctx context.Context, accessToken, projectID 
 		}
 		if strings.Contains(lowerErr, "validation_required") ||
 			strings.Contains(lowerErr, "verify your account") {
-			return usageResult{plan: plan, message: errMsg}
+			return usageResult{plan: plan, message: errMsg, validationURL: findValidationURL(body)}
 		}
 		return usageResult{plan: plan, message: "Antigravity quota API access forbidden. Chat may still work."}
 	}

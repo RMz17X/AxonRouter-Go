@@ -419,7 +419,36 @@ func (h *DashboardHandler) testSingleConnection(ctx context.Context, conn *model
 	if conn.AuthType == "apikey" || conn.AuthType == "cookie" || conn.AuthType == "compatible" || conn.AuthType == "none" || (conn != nil && providers.KnownProviders[providers.ResolveAlias(conn.Provider)].NoAuth) {
 		return h.probeAPIKeyConnection(ctx, conn, data, raw, client)
 	}
-	return h.probeOAuthConnection(ctx, conn, data, client)
+	out := h.probeOAuthConnection(ctx, conn, data, client)
+	// A validation-flagged Antigravity account needs a stronger verdict
+	// than the account probe's: loadCodeAssist accepts accounts the
+	// generate surface still refuses, so a "valid" here would release
+	// an account that cannot serve and watch the next quota read park
+	// it again. Decide the release on a real generate instead; on
+	// failure the caller persists the refreshed stored verdict.
+	if out.valid && conn != nil && conn.Provider == "antigravity" {
+		if status, _ := raw["status"].(string); strings.EqualFold(status, "validation_required") {
+			if !h.recheckValidationFlag(ctx, conn, raw) {
+				if fresh, ferr := h.Repo.GetProviderConnectionByID(conn.ID); ferr == nil && fresh != nil && fresh.Data != "" {
+					var fd map[string]any
+					if err := json.Unmarshal([]byte(fresh.Data), &fd); err == nil && fd != nil {
+						for k := range raw {
+							delete(raw, k)
+						}
+						for k, v := range fd {
+							raw[k] = v
+						}
+					}
+				}
+				msg := lastErrorText(raw)
+				if msg == "" {
+					msg = "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED"
+				}
+				return probeOutcome{message: msg}
+			}
+		}
+	}
+	return out
 }
 
 // probeHTTPClient resolves the connection's proxy the way the chat pipeline
