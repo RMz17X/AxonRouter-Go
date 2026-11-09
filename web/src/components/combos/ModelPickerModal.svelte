@@ -256,33 +256,35 @@
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             <span>Connected ({connectedModelsCount})</span>
           </button>
-          <button
-            type="button"
-            onclick={() => (activeFilter = 'vision')}
-            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'vision'
-              ? 'bg-brand-500 text-white font-medium shadow-xs'
-              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
-          >
-            Vision
-          </button>
-          <button
-            type="button"
-            onclick={() => (activeFilter = 'reasoning')}
-            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'reasoning'
-              ? 'bg-brand-500 text-white font-medium shadow-xs'
-              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
-          >
-            Reasoning
-          </button>
-          <button
-            type="button"
-            onclick={() => (activeFilter = 'decision')}
-            class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'decision'
-              ? 'bg-brand-500 text-white font-medium shadow-xs'
-              : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
-          >
-            Decision
-          </button>
+          {#if target !== 'router'}
+            <button
+              type="button"
+              onclick={() => (activeFilter = 'vision')}
+              class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'vision'
+                ? 'bg-brand-500 text-white font-medium shadow-xs'
+                : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+            >
+              Vision
+            </button>
+            <button
+              type="button"
+              onclick={() => (activeFilter = 'reasoning')}
+              class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'reasoning'
+                ? 'bg-brand-500 text-white font-medium shadow-xs'
+                : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+            >
+              Reasoning
+            </button>
+            <button
+              type="button"
+              onclick={() => (activeFilter = 'decision')}
+              class="px-2 py-0.5 rounded-full transition cursor-pointer {activeFilter === 'decision'
+                ? 'bg-brand-500 text-white font-medium shadow-xs'
+                : 'bg-surface border border-border text-text-muted hover:text-text-main hover:bg-surface-2'}"
+            >
+              Decision
+            </button>
+          {/if}
         </div>
       </div>
 

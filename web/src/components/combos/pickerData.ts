@@ -198,7 +198,7 @@ export function resolveModelPickerGroups(
     }
 
     for (const m of visibleCustoms) {
-      if (seenModelIds.has(m.id)) continue
+      if (!m.id || seenModelIds.has(m.id) || !isChatModel(m, target)) continue
       seenModelIds.add(m.id)
       models.push({
         id: m.id,
@@ -212,7 +212,7 @@ export function resolveModelPickerGroups(
 
     for (const [aliasName, fullModel] of aliasEntries) {
       const modelId = (fullModel as string).replace(`${alias}/`, '')
-      if (!modelId || seenModelIds.has(modelId)) continue
+      if (!modelId || seenModelIds.has(modelId) || !isChatModel(modelId, target)) continue
       seenModelIds.add(modelId)
       models.push({
         id: modelId,
@@ -260,7 +260,7 @@ export function resolveModelPickerGroups(
     const isCompatibleNode = node.type === 'openai-compatible' || node.type === 'anthropic-compatible'
 
     const registeredCustom = (extras.customModels || [])
-      .filter((m) => m.providerAlias === node.id && m.id)
+      .filter((m) => m.providerAlias === node.id && m.id && isChatModel(m, target))
       .map((m) => ({
         id: m.id,
         name: m.name || m.id,
@@ -275,6 +275,7 @@ export function resolveModelPickerGroups(
 
     const nodeModels = Object.entries(extras.modelAliases || {})
       .filter(([, fullModel]) => typeof fullModel === 'string' && fullModel.startsWith(`${node.id}/`))
+      .filter(([, fullModel]) => isChatModel((fullModel as string).replace(`${node.id}/`, ''), target))
       .map(([aliasName, fullModel]) => {
         const modelId = (fullModel as string).replace(`${node.id}/`, '')
         return {
@@ -289,6 +290,8 @@ export function resolveModelPickerGroups(
       })
     const seen = new Set(nodeModels.map((m) => m.value))
     const mergedModels = [...nodeModels, ...registeredCustom.filter((m) => !seen.has(m.value))]
+
+    if (target === 'router' && mergedModels.length === 0) continue
 
     const modelsToShow =
       mergedModels.length > 0
