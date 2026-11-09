@@ -248,11 +248,30 @@ func convertClaudeMessage(msg ClaudeMessage) ([]OpenAIMessage, error) {
 
 // EnsureToolCallIDs validates and repairs tool_call_id on assistant tool_calls and tool messages.
 // It pairs orphaned or id-less tool messages with pending assistant tool calls (PR #4090).
+//
+// A tool message whose id names no tool call anywhere in the request is an
+// orphan: its call fell out of the client's history (a compaction cut, a
+// window slice, a lane switch that dropped the assistant turn). Strict
+// upstreams refuse the whole request over one ("tool result's tool id ...
+// not found"), so the orphan is dropped — the repair the missing-response
+// pass below already performs in the other direction.
 func EnsureToolCallIDs(messages []OpenAIMessage) []OpenAIMessage {
+	knownIDs := make(map[string]bool)
+	for _, m := range messages {
+		if m.Role != "assistant" {
+			continue
+		}
+		for _, tc := range m.ToolCalls {
+			if tc.ID != "" {
+				knownIDs[tc.ID] = true
+			}
+		}
+	}
 	var pendingToolCallIds []string
 	toolSeq := 0
+	out := make([]OpenAIMessage, 0, len(messages))
 	for i := range messages {
-		msg := &messages[i]
+		msg := messages[i]
 		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
 			for k := range msg.ToolCalls {
 				tc := &msg.ToolCalls[k]
@@ -264,6 +283,9 @@ func EnsureToolCallIDs(messages []OpenAIMessage) []OpenAIMessage {
 			toolSeq++
 		} else if msg.Role == "tool" {
 			if msg.ToolCallID != "" {
+				if !knownIDs[msg.ToolCallID] {
+					continue
+				}
 				for idx, id := range pendingToolCallIds {
 					if id == msg.ToolCallID {
 						pendingToolCallIds = append(pendingToolCallIds[:idx], pendingToolCallIds[idx+1:]...)
@@ -279,8 +301,9 @@ func EnsureToolCallIDs(messages []OpenAIMessage) []OpenAIMessage {
 				}
 			}
 		}
+		out = append(out, msg)
 	}
-	return messages
+	return out
 }
 
 func fixMissingToolResponsesOpenAI(messages []OpenAIMessage) []OpenAIMessage {
@@ -692,41 +715,67 @@ func SanitizeClaudePassthrough(body []byte, intentionalPrefill bool) []byte {
 		}
 	}
 
-	// Second pass: drop tool_result referencing dropped server_tool_use ids
-	if len(droppedIDs) > 0 {
-		for _, mRaw := range messagesRaw {
-			msgMap, ok := mRaw.(map[string]any)
+	// Second pass: drop tool_result blocks that no surviving tool call can
+	// claim — references to dropped server_tool_use ids, and orphans whose
+	// tool_use fell out of the client's history entirely (a compaction cut
+	// or a lane switch that dropped the assistant turn). Strict
+	// Claude-format upstreams refuse the whole request over a single
+	// orphan ("tool result's tool id ... not found").
+	liveIDs := make(map[string]bool)
+	for _, mRaw := range messagesRaw {
+		msgMap, ok := mRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		blocks, ok := msgMap["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, bRaw := range blocks {
+			block, ok := bRaw.(map[string]any)
 			if !ok {
 				continue
 			}
-			contentRaw, ok := msgMap["content"]
+			bType, _ := block["type"].(string)
+			if bType == "tool_use" || bType == "server_tool_use" {
+				if id, isStr := block["id"].(string); isStr && id != "" && !droppedIDs[id] {
+					liveIDs[id] = true
+				}
+			}
+		}
+	}
+	for _, mRaw := range messagesRaw {
+		msgMap, ok := mRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		contentRaw, ok := msgMap["content"]
+		if !ok {
+			continue
+		}
+		blocks, ok := contentRaw.([]any)
+		if !ok {
+			continue
+		}
+		var kept []any
+		for _, bRaw := range blocks {
+			block, ok := bRaw.(map[string]any)
 			if !ok {
+				kept = append(kept, bRaw)
 				continue
 			}
-			blocks, ok := contentRaw.([]any)
-			if !ok {
-				continue
-			}
-			var kept []any
-			for _, bRaw := range blocks {
-				block, ok := bRaw.(map[string]any)
-				if !ok {
-					kept = append(kept, bRaw)
+			bType, _ := block["type"].(string)
+			if bType == "tool_result" || bType == "web_search_tool_result" {
+				toolUseID, _ := block["tool_use_id"].(string)
+				if droppedIDs[toolUseID] || !liveIDs[toolUseID] {
+					changed = true
 					continue
 				}
-				bType, _ := block["type"].(string)
-				if bType == "tool_result" || bType == "web_search_tool_result" {
-					toolUseID, _ := block["tool_use_id"].(string)
-					if droppedIDs[toolUseID] {
-						changed = true
-						continue
-					}
-				}
-				kept = append(kept, bRaw)
 			}
-			if len(kept) != len(blocks) {
-				msgMap["content"] = kept
-			}
+			kept = append(kept, bRaw)
+		}
+		if len(kept) != len(blocks) {
+			msgMap["content"] = kept
 		}
 	}
 

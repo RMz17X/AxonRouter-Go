@@ -407,9 +407,17 @@ func (h *ChatHandler) handleAccountFallback(
 				errMsg = fmt.Sprintf("%d upstream error", ue.StatusCode)
 			}
 			lockKey := canonicalLockModel(provider, model)
-			h.Repo.LockConnectionModel(connObj.ID, lockKey, cooldownSec, classification.NewBackoffLevel)
+			// A banned-class verdict (404 NOT_FOUND and its siblings)
+			// says the account does not have the model at all, so the
+			// lock gets the durable twin the quota auto-release cannot
+			// lift; every other class keeps the transient lock alone.
+			lockFn := h.Repo.LockConnectionModel
+			if classification.BannedAccount {
+				lockFn = h.Repo.LockConnectionModelGone
+			}
+			lockFn(connObj.ID, lockKey, cooldownSec, classification.NewBackoffLevel)
 			if lockKey != model {
-				_ = h.Repo.LockConnectionModel(connObj.ID, model, cooldownSec, classification.NewBackoffLevel)
+				_ = lockFn(connObj.ID, model, cooldownSec, classification.NewBackoffLevel)
 			}
 			// Account-scoped cooldown alongside the per-model locks, so the
 			// selector can skip this account before spending a request

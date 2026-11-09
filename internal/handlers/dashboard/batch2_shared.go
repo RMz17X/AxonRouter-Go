@@ -89,6 +89,12 @@ func futureTime(m map[string]any, key string, now time.Time) (time.Time, bool) {
 
 const modelLockKeyPrefix = "modelLock_"
 
+// modelGoneKeyPrefix is the durable half of a banned-class lock (the
+// upstream disowned the model for this account). For availability the
+// pair is locked exactly like a modelLock_ entry; the families differ
+// only in which clear paths may lift them (see db.LockConnectionModelGone).
+const modelGoneKeyPrefix = "modelGone_"
+
 // activeModelLocks returns the connection's live model locks as a
 // model -> until-ISO map, merging AxonRouter's two storage shapes: the
 // modelLocks object and the flattened modelLock_<model> keys this codebase
@@ -106,10 +112,15 @@ func activeModelLocks(data map[string]any, now time.Time) map[string]string {
 		}
 	}
 	for key, v := range data {
-		if !strings.HasPrefix(key, modelLockKeyPrefix) {
+		model := ""
+		switch {
+		case strings.HasPrefix(key, modelLockKeyPrefix):
+			model = strings.TrimPrefix(key, modelLockKeyPrefix)
+		case strings.HasPrefix(key, modelGoneKeyPrefix):
+			model = strings.TrimPrefix(key, modelGoneKeyPrefix)
+		default:
 			continue
 		}
-		model := strings.TrimPrefix(key, modelLockKeyPrefix)
 		if model == "" {
 			continue
 		}
@@ -135,10 +146,17 @@ func storedModelLocks(data map[string]any) map[string]any {
 		}
 	}
 	for key, v := range data {
-		if !strings.HasPrefix(key, modelLockKeyPrefix) || v == nil {
+		if v == nil {
 			continue
 		}
-		if model := strings.TrimPrefix(key, modelLockKeyPrefix); model != "" {
+		model := ""
+		switch {
+		case strings.HasPrefix(key, modelLockKeyPrefix):
+			model = strings.TrimPrefix(key, modelLockKeyPrefix)
+		case strings.HasPrefix(key, modelGoneKeyPrefix):
+			model = strings.TrimPrefix(key, modelGoneKeyPrefix)
+		}
+		if model != "" {
 			locks[model] = v
 		}
 	}

@@ -422,6 +422,7 @@ func (r *Repo) GetLockedOrUnavailableConnections(ctx context.Context) ([]*models
 		"   OR (data->>'oauthLockedUntil') IS NOT NULL " +
 		"   OR (data->>'modelLocks') IS NOT NULL " +
 		"   OR EXISTS (SELECT 1 FROM jsonb_object_keys(data) AS k WHERE k LIKE 'modelLock\\_%') " +
+		"   OR EXISTS (SELECT 1 FROM jsonb_object_keys(data) AS k WHERE k LIKE 'modelGone\\_%') " +
 		"   OR (data->>'testStatus') = 'unavailable' " +
 		connectionSortOrder
 	return r.listProviderConnections(query, nil)

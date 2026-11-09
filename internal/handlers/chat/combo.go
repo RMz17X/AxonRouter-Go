@@ -1890,11 +1890,18 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 	}
 	cooldownSec := cooldownSecForClassification(ue.StatusCode, cls, ue, provider)
 	lockKey := canonicalLockModel(provider, model)
-	if err := h.Repo.LockConnectionModel(connID, lockKey, cooldownSec, cls.NewBackoffLevel); err != nil {
+	// Banned-class verdicts (404 NOT_FOUND and its siblings) take the
+	// durable lock twin: the quota auto-release must not resurrect a
+	// model the upstream says this account does not have.
+	lockFn := h.Repo.LockConnectionModel
+	if cls.BannedAccount {
+		lockFn = h.Repo.LockConnectionModelGone
+	}
+	if err := lockFn(connID, lockKey, cooldownSec, cls.NewBackoffLevel); err != nil {
 		log.Warn("combo", "lock failed", "conn", connID, "provider", provider, "model", lockKey, "error", err)
 	}
 	if lockKey != model {
-		_ = h.Repo.LockConnectionModel(connID, model, cooldownSec, cls.NewBackoffLevel)
+		_ = lockFn(connID, model, cooldownSec, cls.NewBackoffLevel)
 	}
 	// Account-scoped cooldown alongside the per-model locks, so the selector
 	// can skip this account before spending a request (upstream applyErrorState).
