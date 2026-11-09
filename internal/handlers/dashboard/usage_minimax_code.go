@@ -13,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"axonrouter/proxy/internal/models"
 )
 
 // MiniMax Code account usage — credits balance, plan tier, and M Plan rate
@@ -130,48 +128,6 @@ func creditsQuota(balance string) map[string]any {
 	q["isCreditBalance"] = true
 	q["currency"] = "credits"
 	return q
-}
-
-// applyMiniMaxCreditsPeak gives the MiniMax credits row a real percentage
-// to draw as a progress bar. MiniMax reports only a balance — no grant
-// total and no consumed amount — so a burn-down share needs a reference:
-// the highest balance ever read for this connection, persisted on the
-// connection blob as creditsPeak. The row is rewritten against that peak
-// (total = peak, used = peak − balance, remaining = balance,
-// remainingPercentage = balance / peak × 100), so the bar drains as
-// credits are spent and refills when a top-up raises the peak. The peak
-// only ever grows, and only on a live read that beats it. No-op for
-// other providers and for payloads without a Credits row.
-func (h *DashboardHandler) applyMiniMaxCreditsPeak(conn *models.ProviderConnection, data map[string]any, quotas map[string]any) {
-	if conn == nil || data == nil || quotas == nil {
-		return
-	}
-	if _, ok := miniMaxCodeSites[conn.Provider]; !ok {
-		return
-	}
-	row, ok := quotas["Credits"].(map[string]any)
-	if !ok {
-		return
-	}
-	balance, ok := row["total"].(float64)
-	if !ok || balance < 0 {
-		return
-	}
-	peak, _ := data["creditsPeak"].(float64)
-	if peak < balance {
-		peak = balance
-		data["creditsPeak"] = peak
-		if encoded, err := json.Marshal(data); err == nil {
-			_ = h.Repo.UpdateConnectionData(conn.ID, string(encoded))
-		}
-	}
-	if peak <= 0 {
-		return
-	}
-	row["used"] = peak - balance
-	row["total"] = peak
-	row["remaining"] = balance
-	row["remainingPercentage"] = balance / peak * 100
 }
 
 // miniMaxCodeWindowQuota renders one M Plan window in the dashboard quota

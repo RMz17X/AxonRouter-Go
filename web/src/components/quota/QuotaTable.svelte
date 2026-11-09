@@ -183,8 +183,6 @@
       )}
         {@const isUnlimited = quota.unlimited === true}
         {@const isCreditBalance = quota.isCreditBalance === true}
-        {@const isMiniMaxCredit =
-          isCreditBalance && (provider === 'minimax-code' || provider === 'minimax-code-global')}
         {@const creditAmount = quota.remaining ?? quota.total ?? 0}
         {@const isUnknown = quota.remainingPct === null}
         {@const colors = isCreditBalance
@@ -218,7 +216,7 @@
             </div>
             <!-- Reset time rides the name row on mobile so the value column keeps its width -->
             <span class="{resetPrimary} ml-auto shrink-0 truncate text-text-muted sm:hidden">
-              {countdown !== '-' ? countdownLabel : resetDisplay || 'N/A'}
+              {countdown !== '-' ? countdownLabel : resetDisplay || (isCreditBalance ? '' : 'N/A')}
             </span>
           </div>
 
@@ -226,7 +224,7 @@
                width the fixed name column plus the reset column would leave it
                only a few pixels and cut the used/total text to nothing. -->
           <div class="min-w-0 flex-1 sm:min-w-[7rem] {compact ? 'space-y-1' : 'space-y-1.5'}">
-            {#if !isUnlimited && !isUnknown && (!isCreditBalance || isMiniMaxCredit)}
+            {#if !isUnlimited && !isUnknown && !isCreditBalance}
               <div
                 class="{compact ? 'h-1' : 'h-1.5'} rounded-full overflow-hidden border {colors.bgLight} {quota.remainingPct ===
                 0
@@ -268,7 +266,7 @@
               >
                 {isUnlimited
                   ? 'Unlimited'
-                  : isCreditBalance && !isMiniMaxCredit
+                  : isCreditBalance
                     ? ''
                     : isUnknown
                       ? '—'
@@ -301,7 +299,7 @@
                   {/if}
                 </div>
               {/if}
-            {:else}
+            {:else if !isCreditBalance}
               <div class="{resetPrimary} text-text-muted italic">N/A</div>
             {/if}
           </div>

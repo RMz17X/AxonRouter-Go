@@ -282,7 +282,6 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 			log.Warn("usage", "forced credential refresh failed", "provider", conn.Provider, "conn", connID, "error", retry.err)
 		} else if retry.refreshed {
 			if retried, retryOK := fetchProviderUsage(fetchCtx, conn.Provider, data); retryOK {
-				h.applyMiniMaxCreditsPeak(conn, data, retried.quotas)
 				h.maybeAutoReleaseQuotaLocks(r.Context(), connID, retried.quotas)
 				h.writeUsageResponse(w, connID, retried.toResponse())
 				return
@@ -290,7 +289,6 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 		}
 	}
 	if ok {
-		h.applyMiniMaxCreditsPeak(conn, data, res.quotas)
 		h.maybeAutoReleaseQuotaLocks(r.Context(), connID, res.quotas)
 		h.writeUsageResponse(w, connID, res.toResponse())
 		return
