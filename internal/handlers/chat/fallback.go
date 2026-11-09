@@ -700,6 +700,47 @@ func isOpenAIChatBody(body []byte) bool {
 	return false
 }
 
+// isClaudeMessagesBody reports whether a request body is in the Claude
+// Messages shape rather than the OpenAI Chat Completions shape. The
+// discriminators cannot appear in a genuine OpenAI request: a top-level
+// system or context_management field, tools declared with input_schema, and
+// tool_use / tool_result content blocks.
+func isClaudeMessagesBody(body []byte) bool {
+	var probe struct {
+		System            any              `json:"system"`
+		ContextManagement any              `json:"context_management"`
+		Messages          []map[string]any `json:"messages"`
+		Tools             []map[string]any `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return false
+	}
+	if probe.System != nil || probe.ContextManagement != nil {
+		return true
+	}
+	for _, t := range probe.Tools {
+		if _, ok := t["input_schema"]; ok {
+			return true
+		}
+	}
+	for _, m := range probe.Messages {
+		blocks, ok := m["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, b := range blocks {
+			bm, ok := b.(map[string]any)
+			if !ok {
+				continue
+			}
+			if bm["type"] == "tool_use" || bm["type"] == "tool_result" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func appendBetaQuery(u string) string {
 	if strings.Contains(u, "beta=true") {
 		return u
@@ -901,6 +942,25 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 					pipedBody = out
 				}
 			}
+		}
+	}
+
+	// Mirror of the Claude-lane gate above for OpenAI-wire attempts: a combo
+	// whose earlier members needed the Claude working body hands this attempt
+	// a Claude-shaped body (top-level system, tool_use blocks,
+	// context_management). Lenient OpenAI endpoints ignore the foreign
+	// fields, but strict ones (Gonka/dahl) reject them outright — "Chat
+	// completions parameter \"system\" is currently rejected" — so the body's
+	// own shape decides here too: convert before the OpenAI filter below.
+	// Gemini-native attempts are excluded: their forward path consumes the
+	// working body in either shape by design.
+	if !upstreamClaude && !providerCfg.IsGeminiNative() &&
+		!executor.UpstreamSpeaksResponses(provider, wireModel, providerCfg) &&
+		isClaudeMessagesBody(pipedBody) {
+		if converted, err := translator.TranslateClaudeToOpenAI(pipedBody); err == nil {
+			pipedBody = converted
+		} else {
+			log.Warn("fallback", "claude→openai conversion failed", "provider", provider, "model", model, "error", err)
 		}
 	}
 
