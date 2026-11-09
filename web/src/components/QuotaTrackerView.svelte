@@ -5,7 +5,7 @@
   // Claude throttling, provider/account filters, codex sort, expiring-first,
   // bulk turn off empty / on available, quota hide/show via settings,
   // and per-connection refresh/toggle/delete actions.
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import {
     api,
     type CodexResetCredit,
@@ -944,6 +944,27 @@
       await fetchQuota(conn.id, conn.provider, { force: true })
     }
   }
+
+  // The tracker refreshes its list on its own cycle (auto-refresh,
+  // quota re-reads, mutations). When a refresh shows an account is no
+  // longer flagged — e.g. the usage auto-check released it server-side
+  // — the fresh URL kept from an earlier test is stale, so the row
+  // drops it on the refresh itself instead of waiting for another
+  // Verifikasi press. Connections absent from the fresh list are left
+  // alone: absence is not a verdict.
+  $effect(() => {
+    const byId = new Map(connections.map((c) => [c.id, c]))
+    untrack(() => {
+      const stale = Object.keys(freshVerifyUrlByConn).filter((id) => {
+        const conn = byId.get(id)
+        return conn !== undefined && !isValidationFlagged(conn)
+      })
+      if (stale.length === 0) return
+      const next = { ...freshVerifyUrlByConn }
+      for (const id of stale) delete next[id]
+      freshVerifyUrlByConn = next
+    })
+  })
 
   async function handleResetAllCooldowns(): Promise<void> {
     if (resettingCooldowns) return

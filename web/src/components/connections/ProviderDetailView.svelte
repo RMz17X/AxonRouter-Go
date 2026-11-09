@@ -750,6 +750,27 @@
   // connection id (fragment 1061): shown in the row's error panel until
   // the next test replaces them or the account releases.
   let freshVerifyUrls = $state<Record<string, string>>({})
+
+  // "Or the account releases" includes releases this page did not start:
+  // when refreshed row data stops reading "validation" for a connection
+  // (e.g. the usage auto-check enabled it server-side), the URL an
+  // earlier test minted for it is stale and the panel must drop it on
+  // the refresh itself, not wait for another Verifikasi press. Entries
+  // for connections outside the current page slice are left alone —
+  // absence from the slice is not a verdict.
+  $effect(() => {
+    const health = connectionHealthById
+    untrack(() => {
+      const stale = Object.keys(freshVerifyUrls).filter((id) => {
+        const h = health.get(id)
+        return h !== undefined && h.state !== 'validation'
+      })
+      if (stale.length === 0) return
+      const next = { ...freshVerifyUrls }
+      for (const id of stale) delete next[id]
+      freshVerifyUrls = next
+    })
+  })
   let pkceCodeVerifier = $state('')
   let pkceState = $state('')
   let pkceRedirectUri = $state('')
