@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.9.87] - 2026-11-10
+
+### Fixed
+- Usage numbers now count requests, not attempts, on every remaining surface. The Request Details page paged raw requestDetails rows — one per failed attempt — and reported the row count as its total; it now collapses to one representative row per request (its success row when one exists, else its latest) and counts distinct requests. Combo analytics aggregated raw rows the same way; it now aggregates the same representative rows. Sub-day provider breakdowns carried no errors at all (every provider showed a fake 100% next to a lower headline rate); they now merge failed-request counts per provider at the same grain as the headline.
+- Daily windows double-counted errors in the headline total: the rollup's per-provider "requests" already includes error folds (mergeDailyUsageError increments it), and the totals added totalErrors on top. The daily fold now normalizes bucket requests to successes (requests - errors), so the shared successes + errors formula is right on both paths. Corrects the daily half of fragment 1072/1073's accounting in the same spirit as 1074.
+- The daily fold kept a phantom error (and a second request count) for requests that failed on early attempts and then succeeded: LogFailure's first-failure fold now records provider/model/day, and LogUsage retracts that fold when the request succeeds the same day.
+- Liquid d1/d1.1/d1-ultra are System One decision models, not chat models: Liquid's chat catalog carries none of them on any key (verified fleet-wide; the chat catalog union is the three LFM models), so every chat request for them burned one upstream attempt per key on a guaranteed 404 and, under retry pile-up, a 503 throttle from Liquid. Chat requests naming a systemone-kind model are now refused locally with a 404, and combo members of that kind are skipped without an upstream attempt. The smart router's own System One lane is untouched.
+
 ## [v1.9.86] - 2026-11-10
 
 ### Fixed
