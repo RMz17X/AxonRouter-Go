@@ -477,6 +477,53 @@ func TranslateClaudeToOpenAI(claudeBody []byte) ([]byte, error) {
 	return out, nil
 }
 
+// sanitizeClaudeToolDefs repairs the tools array of a Claude-format
+// request in place and reports whether it changed anything.
+//
+// Strict Anthropic-compatible upstreams (MiniMax is the proven case,
+// 2026-11-09) validate tool definitions and refuse the WHOLE request
+// with a 2013 invalid-params error when one definition is malformed,
+// where lenient upstreams shrug it off — so a single broken client-side
+// tool (an MCP server that failed to load, a skill registering an
+// unnamed tool) poisons every turn of a mixed combo once the lenient
+// members are unavailable. A tool without a name cannot be called by
+// any model, so it is dropped; a client tool whose input_schema is
+// missing or not an object gets the minimal object schema, the same
+// default the OpenAI→Claude conversion applies. Server tools (a type
+// other than "custom") legitimately carry no input_schema and are left
+// alone apart from the name rule.
+func sanitizeClaudeToolDefs(req map[string]any) bool {
+	toolsRaw, ok := req["tools"].([]any)
+	if !ok || len(toolsRaw) == 0 {
+		return false
+	}
+	changed := false
+	kept := make([]any, 0, len(toolsRaw))
+	for _, tRaw := range toolsRaw {
+		tool, ok := tRaw.(map[string]any)
+		if !ok {
+			kept = append(kept, tRaw)
+			continue
+		}
+		name, _ := tool["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			changed = true
+			continue
+		}
+		if toolType, _ := tool["type"].(string); toolType == "" || toolType == "custom" {
+			if _, isObj := tool["input_schema"].(map[string]any); !isObj {
+				tool["input_schema"] = map[string]any{"type": "object", "properties": map[string]any{}}
+				changed = true
+			}
+		}
+		kept = append(kept, tRaw)
+	}
+	if changed {
+		req["tools"] = kept
+	}
+	return changed
+}
+
 // SanitizeClaudePassthrough drops foreign server_tool_use blocks that would poison Claude history.
 // Port of decolua/9router PR #3686 (fix/claude: drop server_tool_use blocks carrying a foreign id).
 // Anthropic validates server_tool_use.id against ^srvtoolu_[a-zA-Z0-9_]+$ and 400s if not matched.
@@ -499,12 +546,18 @@ func SanitizeClaudePassthrough(body []byte, intentionalPrefill bool) []byte {
 	if err := json.Unmarshal(body, &req); err != nil {
 		return body
 	}
+	toolsChanged := sanitizeClaudeToolDefs(req)
 	messagesRaw, ok := req["messages"].([]any)
 	if !ok || len(messagesRaw) == 0 {
+		if toolsChanged {
+			if out, err := json.Marshal(req, json.Deterministic(true)); err == nil {
+				return out
+			}
+		}
 		return body
 	}
 	droppedIDs := make(map[string]bool)
-	changed := false
+	changed := toolsChanged
 
 	// First pass: drop foreign server_tool_use and collect their ids
 	// Wrap bare content block objects into single-element array (parity with decolua/9router v0.5.75 #8a81085)

@@ -47,12 +47,19 @@ func claudeToolsFromOpenAI(rawTools []any) []any {
 		if !hasFn {
 			fn = tool
 		}
+		// A function tool without a name is uncallable in every dialect
+		// and a whole-request rejection on strict Claude-format
+		// upstreams (see sanitizeClaudeToolDefs); drop it here too so
+		// the conversion path cannot mint one.
+		if name, _ := fn["name"].(string); strings.TrimSpace(name) == "" {
+			continue
+		}
 		description, _ := fn["description"].(string)
 		schema := fn["parameters"]
 		if schema == nil {
 			schema = fn["input_schema"]
 		}
-		if schema == nil {
+		if _, isObj := schema.(map[string]any); !isObj {
 			schema = map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{}}
 		}
 		converted := map[string]any{
