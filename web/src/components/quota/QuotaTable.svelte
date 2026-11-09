@@ -183,6 +183,9 @@
       )}
         {@const isUnlimited = quota.unlimited === true}
         {@const isCreditBalance = quota.isCreditBalance === true}
+        {@const isMiniMaxCredit =
+          isCreditBalance && (provider === 'minimax-code' || provider === 'minimax-code-global')}
+        {@const creditAmount = quota.remaining ?? quota.total ?? 0}
         {@const isUnknown = quota.remainingPct === null}
         {@const colors = isCreditBalance
           ? {
@@ -223,7 +226,7 @@
                width the fixed name column plus the reset column would leave it
                only a few pixels and cut the used/total text to nothing. -->
           <div class="min-w-0 flex-1 sm:min-w-[7rem] {compact ? 'space-y-1' : 'space-y-1.5'}">
-            {#if !isUnlimited && !isCreditBalance && !isUnknown}
+            {#if !isUnlimited && !isUnknown && (!isCreditBalance || isMiniMaxCredit)}
               <div
                 class="{compact ? 'h-1' : 'h-1.5'} rounded-full overflow-hidden border {colors.bgLight} {quota.remainingPct ===
                 0
@@ -247,13 +250,13 @@
                 title={isUnlimited
                   ? `${fmtNum(quota.used)} used · Unlimited`
                   : isCreditBalance
-                    ? `Credit balance: ${(quota.total || 0).toFixed(2)} ${quota.currency || ''}`
+                    ? `Credit balance: ${creditAmount.toFixed(2)} ${quota.currency || ''}`
                     : `${fmtNum(quota.used)} / ${(quota.total || 0) > 0 ? fmtNum(quota.total) : '∞'}`}
               >
                 {isUnlimited
                   ? `${fmtNum(quota.used)} used · Unlimited`
                   : isCreditBalance
-                    ? `Credit: ${(quota.total || 0).toFixed(2)} ${quota.currency || ''}`
+                    ? `Credit: ${creditAmount.toFixed(2)} ${quota.currency || ''}`
                     : `${fmtNum(quota.used)} / ${(quota.total || 0) > 0 ? fmtNum(quota.total) : '∞'}`}
               </span>
               <span
@@ -263,7 +266,13 @@
                     ? 'text-blue-600 dark:text-blue-400'
                     : colors.text}"
               >
-                {isUnlimited ? 'Unlimited' : isCreditBalance ? '' : isUnknown ? '—' : `${quota.remainingPct}%`}
+                {isUnlimited
+                  ? 'Unlimited'
+                  : isCreditBalance && !isMiniMaxCredit
+                    ? ''
+                    : isUnknown
+                      ? '—'
+                      : `${quota.remainingPct}%`}
               </span>
             </div>
           </div>
