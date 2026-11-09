@@ -395,6 +395,13 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 					continue
 				}
 
+				// The day's own error total. Sub-day windows overlay the
+				// ledger's error count below; a daily window's start is
+				// zero, so that overlay never runs here and every daily
+				// window used to report totalErrors 0 (and a 100% success
+				// rate) no matter how many errors the rollup recorded.
+				resp.TotalErrors += getMapInt(dayData, "errors")
+
 				// byProvider
 				if bp, ok := dayData["byProvider"].(map[string]any); ok {
 					for prov, pVal := range bp {
