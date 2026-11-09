@@ -2,14 +2,12 @@
 
 Every tagged release posts a short summary to a Telegram group.
 
-> **Release flow (current).** The notification is the last step of the
-> image-based release pipeline in `.github/workflows/release.yml`: a tag
-> builds the platform binaries and the multi-architecture Docker image
-> (`luqmenul/9router-go`, pushed to Docker Hub with channel-derived tags —
-> stable tags get `latest`/minor/patch, `-exp` tags get the `exp`
-> variants), and the `notify` job runs only after both exist, so the
-> message's `docker pull` line always names a published image. Local
-> development does not use this flow — it uses the compose stacks
+> **Release flow (current).** The release pipeline is
+> `.github/workflows/release.yml`: a push to `main` or a `v*` tag builds the
+> platform binaries and the multi-architecture Docker image
+> (`ghcr.io/rmz17x/axonrouter-go`, pushed to GHCR — `latest` tracks the
+> default branch, a `v*` tag is the stable release). Local development does
+> not use this flow — it uses the compose stacks
 > (`docker-compose.single.yml` / `docker-compose.cluster.yml`); see
 > `../README.md`.
 
@@ -86,7 +84,7 @@ TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... \
 ## What the message looks like
 
 ```
-🚀 9router-go v1.9.11
+🚀 axonrouter-go v1.9.11
 ✅ Stable release
 
 What's new:
@@ -95,8 +93,8 @@ What's new:
 🐛 fix(chat): error model-gated tidak mengunci seluruh akun
 … up to 10 entries
 
-Release notes: https://github.com/luqman-v1/9router-go/releases/tag/v1.9.11
-    docker pull luqmenul/9router-go:1.9.11
+Release notes: https://github.com/RMz17X/AxonRouter-Go/releases/tag/v1.9.11
+    docker pull ghcr.io/rmz17x/axonrouter-go:1.9.11
 ```
 
 Only headings are listed, not their bullets: the full notes live on the
@@ -137,7 +135,7 @@ To pin the notice to one topic, add its id — the number from the topic URL, or
 the last component of `t.me/c/<chat>/<topic>`:
 
 ```bash
-echo 1234 | gh secret set TELEGRAM_TOPIC_ID --repo luqman-v1/9router-go
+echo 1234 | gh secret set TELEGRAM_TOPIC_ID --repo RMz17X/AxonRouter-Go
 ```
 
 The script omits the field entirely when the variable is unset, so leaving it
