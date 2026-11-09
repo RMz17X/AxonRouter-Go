@@ -728,6 +728,7 @@
   let oauthAuthUrl = $state('')
   let copiedAuthUrl = $state(false)
   let callbackInput = $state('')
+  let pasteNote = $state('')
   let oauthError = $state<string | null>(null)
   let isConnecting = $state(false)
   let clineCodeVerifier = $state('')
@@ -2402,6 +2403,24 @@
     copyToClipboard(oauthAuthUrl)
     copiedAuthUrl = true
     setTimeout(() => (copiedAuthUrl = false), 2000)
+  }
+
+  // Step 2's Paste button: pull the code straight from the clipboard
+  // instead of making the operator long-press the field. A clipboard
+  // read needs a secure context and a granted permission, so a refusal
+  // degrades to a hint under the field rather than an error.
+  async function pasteCallbackCode() {
+    pasteNote = ''
+    try {
+      const text = await navigator.clipboard.readText()
+      if (text && text.trim()) {
+        callbackInput = text.trim()
+      } else {
+        pasteNote = 'Clipboard is empty — copy the code from Google first.'
+      }
+    } catch {
+      pasteNote = 'Clipboard read is blocked in this browser — long-press the field and choose Paste.'
+    }
   }
 
   async function submitManualCallback() {
@@ -5725,7 +5744,7 @@
         onclick={closeOAuthModal}
         role="presentation"
       ></div>
-    <div class="relative w-full bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] fade-in max-w-lg p-6">
+    <div class="relative w-full bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] fade-in max-w-lg p-4 sm:p-6">
       <div class="flex items-center justify-between pb-3 border-b border-border-subtle mb-4">
         <h2 class="text-lg font-semibold text-text-main">Connect {providerName}</h2>
         <button
@@ -5833,8 +5852,8 @@
           {#if kiroSocialAuthUrl}
             <p class="text-xs text-text-muted">Open this URL, log in, then paste the callback URL (kiro://…) below:</p>
             <div class="flex gap-2">
-              <input readonly value={kiroSocialAuthUrl} class="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-md bg-background text-text-muted select-all font-mono" />
-              <button type="button" onclick={() => window.open(kiroSocialAuthUrl, '_blank')} class="px-3 py-1.5 text-xs font-semibold rounded-md border border-border bg-surface-2 hover:bg-surface-3 cursor-pointer">Open</button>
+              <input readonly value={kiroSocialAuthUrl} class="min-w-0 flex-1 px-2.5 h-8 text-xs border border-border rounded-md bg-background text-text-muted select-all font-mono" />
+              <button type="button" onclick={() => window.open(kiroSocialAuthUrl, '_blank')} class="flex h-8 shrink-0 items-center px-3 text-xs font-semibold whitespace-nowrap rounded-md border border-border bg-surface-2 hover:bg-surface-3 cursor-pointer">Open</button>
             </div>
           {/if}
           <input bind:value={kiroSocialCallback} placeholder="kiro://kiro.kiroAgent/authenticate-success?code=…" class="w-full px-2.5 py-1.5 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary font-mono" />
@@ -5933,30 +5952,37 @@
         {#if oauthAuthUrl}
           <div>
             <p class="text-sm font-medium mb-1">Step 1: Open this URL in your browser</p>
-          <div class="flex gap-2">
-            <input
-              readonly
-              value={oauthAuthUrl}
-              class="flex-1 px-2.5 py-1.5 text-xs border border-border rounded-md bg-background text-text-muted select-all font-mono"
-            />
-            <button
-              type="button"
-              onclick={() => window.open(oauthAuthUrl, '_blank')}
-              class="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md border border-border bg-surface-2 hover:bg-surface-3 text-text-main cursor-pointer"
-            >
-              <span class="material-symbols-outlined text-sm">open_in_new</span>
-              {providerId === 'antigravity' ? 'Open login page' : 'Open'}
-            </button>
-            <button
-              type="button"
-              onclick={copyAuthUrl}
-              class="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-md border border-border bg-surface-2 hover:bg-surface-3 text-text-main cursor-pointer"
-            >
-              <span class="material-symbols-outlined text-sm">{copiedAuthUrl ? 'check' : 'content_copy'}</span>
-              {copiedAuthUrl ? 'Copied' : 'Copy'}
-            </button>
+            <!-- Stacked on phones: the URL field takes its own row and the
+                 two actions share a row of equal halves, so neither button
+                 is pushed off the modal's edge nor wraps its label into a
+                 tall stack. On sm+ the wrapper dissolves (sm:contents) and
+                 the three sit on one row again. -->
+            <div class="flex flex-col gap-2 sm:flex-row">
+              <input
+                readonly
+                value={oauthAuthUrl}
+                class="min-w-0 flex-1 px-2.5 h-8 text-xs border border-border rounded-md bg-background text-text-muted select-all font-mono"
+              />
+              <div class="grid grid-cols-2 gap-2 sm:contents">
+                <button
+                  type="button"
+                  onclick={() => window.open(oauthAuthUrl, '_blank')}
+                  class="flex h-8 items-center justify-center gap-1 px-3 text-xs font-semibold whitespace-nowrap rounded-md border border-border bg-surface-2 hover:bg-surface-3 text-text-main cursor-pointer"
+                >
+                  <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  {providerId === 'antigravity' ? 'Open login page' : 'Open'}
+                </button>
+                <button
+                  type="button"
+                  onclick={copyAuthUrl}
+                  class="flex h-8 items-center justify-center gap-1 px-3 text-xs font-semibold whitespace-nowrap rounded-md border border-border bg-surface-2 hover:bg-surface-3 text-text-main cursor-pointer"
+                >
+                  <span class="material-symbols-outlined text-sm">{copiedAuthUrl ? 'check' : 'content_copy'}</span>
+                  {copiedAuthUrl ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
         {/if}
 
         {#if providerId === 'gitlab'}
@@ -5995,15 +6021,28 @@
                     ? 'Step 2: Paste the callback URL here'
                     : 'Manual token import (no browser login for this provider)'}
           </p>
-          <input
-            bind:value={callbackInput}
-            placeholder={providerId === 'antigravity'
-              ? 'Paste the authorization code shown by Google'
-              : providerId === 'freebuff'
-                ? 'https://freebuff.com/onboard?auth_code=... or paste authToken'
-                : `${dashboardCallback()}?code=...&state=...`}
-            class="w-full px-2.5 py-1.5 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary font-mono"
-          />
+          <div class="flex gap-2">
+            <input
+              bind:value={callbackInput}
+              placeholder={providerId === 'antigravity'
+                ? 'Paste the authorization code shown by Google'
+                : providerId === 'freebuff'
+                  ? 'https://freebuff.com/onboard?auth_code=... or paste authToken'
+                  : `${dashboardCallback()}?code=...&state=...`}
+              class="min-w-0 flex-1 px-2.5 h-8 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary font-mono"
+            />
+            <button
+              type="button"
+              onclick={pasteCallbackCode}
+              class="flex h-8 shrink-0 items-center gap-1 px-3 text-xs font-semibold whitespace-nowrap rounded-md border border-border bg-surface-2 hover:bg-surface-3 text-text-main cursor-pointer"
+            >
+              <span class="material-symbols-outlined text-sm">content_paste</span>
+              Paste
+            </button>
+          </div>
+          {#if pasteNote}
+            <p class="text-[11px] text-text-muted mt-1">{pasteNote}</p>
+          {/if}
           <p class="text-[11px] text-text-muted mt-1">
             {providerId === 'antigravity'
               ? 'After you sign in, Google’s Antigravity page displays an authorization code. Copy it, paste it above, then click Connect. The code works once — if it expires, close this modal and click Log in again.'
@@ -6033,7 +6072,7 @@
               }
             }}
             disabled={isConnecting || isPollingDevice}
-            class="flex-1 py-1.5 text-xs font-semibold rounded-[8px] bg-brand-500 hover:bg-brand-600 text-white shadow-sm disabled:opacity-50 cursor-pointer"
+            class="flex-1 h-8 text-xs font-semibold rounded-[8px] bg-brand-500 hover:bg-brand-600 text-white shadow-sm disabled:opacity-50 cursor-pointer"
           >
             {isConnecting || isPollingDevice ? 'Checking…' : deviceUserCode ? 'Check now' : providerId === 'freebuff' ? 'Check & Connect' : 'Connect'}
           </button>
@@ -6048,7 +6087,7 @@
               }
               isAuthorizingFreebuff = false
             }}
-            class="flex-1 py-1.5 text-xs font-semibold rounded-[8px] bg-surface-2 hover:bg-surface-3 text-text-main border border-border cursor-pointer"
+            class="flex-1 h-8 text-xs font-semibold rounded-[8px] bg-surface-2 hover:bg-surface-3 text-text-main border border-border cursor-pointer"
           >
             Cancel
           </button>
