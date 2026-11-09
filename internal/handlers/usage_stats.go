@@ -407,7 +407,12 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 					for prov, pVal := range bp {
 						if pm, ok := pVal.(map[string]any); ok {
 							cur := resp.ByProvider[prov]
-							cur.Requests += getMapInt(pm, "requests")
+							// The rollup's per-provider "requests" counts
+							// success AND error folds (mergeDailyUsageError
+							// increments it too); normalize to successes so
+							// the shared totals below stay successes +
+							// errors on both the raw and daily paths.
+							cur.Requests += getMapInt(pm, "requests") - getMapInt(pm, "errors")
 							cur.Errors += getMapInt(pm, "errors")
 							cur.PromptTokens += getMapInt64(pm, "promptTokens")
 							cur.CompletionTokens += getMapInt64(pm, "completionTokens")
@@ -443,7 +448,7 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 							cur := resp.ByModel[statsKey]
 							cur.RawModel = rawModel
 							cur.Provider = displayName
-							cur.Requests += getMapInt(mm, "requests")
+							cur.Requests += getMapInt(mm, "requests") - getMapInt(mm, "errors")
 							cur.PromptTokens += getMapInt64(mm, "promptTokens")
 							cur.CompletionTokens += getMapInt64(mm, "completionTokens")
 							cur.CachedTokens += getMapInt64(mm, "cachedTokens")
@@ -582,6 +587,18 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 				if errCount, err := repo.GetRequestDetailsErrorCountSince(r.Context(), cutoff); err == nil {
 					resp.TotalErrors = errCount
 				}
+				// Per-provider errors at the same request grain, merged
+				// into buckets the window already has: without them the
+				// breakdown showed every provider at a fake 100% in
+				// sub-day windows while the headline rate said otherwise.
+				if byProv, err := repo.GetRequestDetailsErrorCountByProviderSince(r.Context(), cutoff); err == nil {
+					for prov, n := range byProv {
+						if cur, ok := resp.ByProvider[prov]; ok {
+							cur.Errors += n
+							resp.ByProvider[prov] = cur
+						}
+					}
+				}
 			}
 		}
 
@@ -608,13 +625,13 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			}
 		}
 
-		// Calculate total aggregates from byProvider. Both bucket sources
-		// count successes only — usageHistory holds no failure rows at
-		// all, and the daily rollup folds failures into its separate
-		// errors counter — so the headline total is successes + errors,
-		// with TotalErrors counting failed REQUESTS (see
-		// GetRequestDetailsErrorCountSince for the raw path and the daily
-		// fold for rollups).
+		// Calculate total aggregates from byProvider. Bucket Requests are
+		// successes on both paths: usageHistory holds no failure rows at
+		// all, and the daily fold above normalizes the rollup's
+		// success+error "requests" down by its errors. The headline
+		// total is therefore successes + errors, with TotalErrors
+		// counting failed REQUESTS (see GetRequestDetailsErrorCountSince
+		// for the raw path and the daily fold for rollups).
 		successfulRequests := 0
 		for _, p := range resp.ByProvider {
 			successfulRequests += p.Requests

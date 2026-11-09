@@ -171,6 +171,10 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if msg, bad := systemoneChatError(modelInfo); bad {
+		handlerutil.WriteJSONError(w, http.StatusNotFound, msg)
+		return
+	}
 	requiredCaps := DetectRequiredCapabilities(body)
 
 	if len(modelInfo.ComboModels) > 0 {
@@ -320,6 +324,10 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Error("chat", "resolve model failed", "error", err, "model", reqBody.Model)
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if msg, bad := systemoneChatError(modelInfo); bad {
+		handlerutil.WriteJSONError(w, http.StatusNotFound, msg)
 		return
 	}
 

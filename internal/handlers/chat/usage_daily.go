@@ -53,6 +53,7 @@ type dailyUsageDelta struct {
 	cachedTokens int
 	cost         float64
 	failed       bool
+	retract      bool
 }
 
 var dailyAccum struct {
@@ -161,7 +162,9 @@ func applyDailyDeltas(repo *db.Repo, deltas []dailyUsageDelta) (unlanded []daily
 		err := repo.FoldUsageDaily(dateKey, func(existing string) (string, error) {
 			data := parseDailyData(existing)
 			for _, d := range byDate[dateKey] {
-				if d.failed {
+				if d.retract {
+					mergeDailyUsageRetract(data, d.provider, d.model)
+				} else if d.failed {
 					mergeDailyUsageError(data, d.provider, d.model)
 				} else {
 					mergeDailyUsage(data, d.provider, d.model, d.endpoint, d.connectionID, d.apiKey, d.promptTokens, d.completion, d.cachedTokens, d.cost)

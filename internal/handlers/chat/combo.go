@@ -850,6 +850,15 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 			if modelInfo == nil {
 				continue
 			}
+			// A System One decision model (Liquid d1 family) can never
+			// serve a chat member: skip it without an upstream attempt.
+			if providers.GetProviderModelKind(modelInfo.Provider, modelInfo.Model) == "systemone" {
+				log.Warn("combo", "skip systemone member", "provider", modelInfo.Provider, "model", modelInfo.Model)
+				if lastErr == nil {
+					lastErr = &upstreamError{StatusCode: http.StatusNotFound, Body: []byte(`{"error":{"message":"member is a System One decision model and cannot serve chat requests","type":"not_found_error","code":404}}`)}
+				}
+				continue
+			}
 			isLastModel := i == lastTried.index(excludeIDs)
 
 			// Skip unavailable (model-locked) providers
@@ -1384,6 +1393,15 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 		for i, entry := range models {
 			modelInfo := h.resolveModelEntry(entry)
 			if modelInfo == nil {
+				continue
+			}
+			// A System One decision model (Liquid d1 family) can never
+			// serve a chat member: skip it without an upstream attempt.
+			if providers.GetProviderModelKind(modelInfo.Provider, modelInfo.Model) == "systemone" {
+				log.Warn("combo", "skip systemone member", "provider", modelInfo.Provider, "model", modelInfo.Model)
+				if lastErr == nil {
+					lastErr = &upstreamError{StatusCode: http.StatusNotFound, Body: []byte(`{"error":{"message":"member is a System One decision model and cannot serve chat requests","type":"not_found_error","code":404}}`)}
+				}
 				continue
 			}
 			isLastModel := i == lastTried.index(excludeIDs)

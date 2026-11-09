@@ -113,20 +113,30 @@ func requestIDDetailField(ctx context.Context) map[string]any {
 }
 
 // dailyErrorFoldSeen remembers which requests already folded a daily
-// error delta in this process. LogFailure runs once per failed ATTEMPT,
-// but the daily aggregate's errors counter is read as failed REQUESTS:
-// without the guard, a request that tried five accounts folded five
-// errors. The first failure of a request folds; its later attempts do
+// error delta in this process, and under which provider/model/day, so a
+// request that later SUCCEEDS can retract the fold (see LogUsage).
+// LogFailure runs once per failed ATTEMPT, but the daily aggregate is
+// read as requests: without the guard, a request that tried five
+// accounts folded five errors, and a request that failed twice before
+// succeeding counted as both a request and an error next to its success
+// fold. The first failure of a request folds; its later attempts do
 // not. Entries expire once the request is long finished, and the map
 // is swept lazily when it grows past a size cap.
+type dailyErrorFoldRecord struct {
+	at       time.Time
+	dateKey  string
+	provider string
+	model    string
+}
+
 var dailyErrorFoldSeen struct {
 	mu   sync.Mutex
-	seen map[string]time.Time
+	seen map[string]dailyErrorFoldRecord
 }
 
 const dailyErrorFoldTTL = 15 * time.Minute
 
-func firstDailyErrorFold(reqID string) bool {
+func firstDailyErrorFold(reqID, provider, model string) bool {
 	if reqID == "" {
 		// No request identity to dedupe on: fold as before.
 		return true
@@ -135,20 +145,41 @@ func firstDailyErrorFold(reqID string) bool {
 	dailyErrorFoldSeen.mu.Lock()
 	defer dailyErrorFoldSeen.mu.Unlock()
 	if dailyErrorFoldSeen.seen == nil {
-		dailyErrorFoldSeen.seen = map[string]time.Time{}
+		dailyErrorFoldSeen.seen = map[string]dailyErrorFoldRecord{}
 	}
 	if len(dailyErrorFoldSeen.seen) > 8192 {
-		for k, t := range dailyErrorFoldSeen.seen {
-			if now.Sub(t) > dailyErrorFoldTTL {
+		for k, rec := range dailyErrorFoldSeen.seen {
+			if now.Sub(rec.at) > dailyErrorFoldTTL {
 				delete(dailyErrorFoldSeen.seen, k)
 			}
 		}
 	}
-	if t, ok := dailyErrorFoldSeen.seen[reqID]; ok && now.Sub(t) < dailyErrorFoldTTL {
+	if rec, ok := dailyErrorFoldSeen.seen[reqID]; ok && now.Sub(rec.at) < dailyErrorFoldTTL {
 		return false
 	}
-	dailyErrorFoldSeen.seen[reqID] = now
+	dailyErrorFoldSeen.seen[reqID] = dailyErrorFoldRecord{
+		at:       now,
+		dateKey:  now.UTC().Format("2006-01-02"),
+		provider: provider,
+		model:    model,
+	}
 	return true
+}
+
+// takeDailyErrorFold removes and returns the error fold a request made,
+// if any. LogUsage uses it to retract the fold of a request that went on
+// to succeed.
+func takeDailyErrorFold(reqID string) (dailyErrorFoldRecord, bool) {
+	if reqID == "" {
+		return dailyErrorFoldRecord{}, false
+	}
+	dailyErrorFoldSeen.mu.Lock()
+	defer dailyErrorFoldSeen.mu.Unlock()
+	rec, ok := dailyErrorFoldSeen.seen[reqID]
+	if ok {
+		delete(dailyErrorFoldSeen.seen, reqID)
+	}
+	return rec, ok
 }
 
 func (h *ChatHandler) LogFailure(
@@ -304,7 +335,7 @@ func (h *ChatHandler) LogFailure(
 			},
 		})
 	}
-	if !isProxyBlocked && status != "canceled" && firstDailyErrorFold(middleware.GetRequestIDFromContext(ctx)) {
+	if !isProxyBlocked && status != "canceled" && firstDailyErrorFold(middleware.GetRequestIDFromContext(ctx), failureProvider, failureModel) {
 		accumulateDailyUsage(failureRepo, dailyUsageDelta{
 			provider:     failureProvider,
 			model:        failureModel,
@@ -629,6 +660,22 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		cachedTokens: cachedTokens,
 		cost:         cost,
 	})
+
+	// A request that failed on earlier attempts already folded a daily
+	// error delta (requests + errors); this success folds its own
+	// request on top, so without a retraction the day counts the
+	// request twice and keeps a phantom error. Retract the error fold
+	// under its original provider/model when it landed on this same
+	// day; a fold from a previous day stays, as that day's record of
+	// the attempts stands.
+	if rec, ok := takeDailyErrorFold(middleware.GetRequestIDFromContext(ctx)); ok && rec.dateKey == time.Now().UTC().Format("2006-01-02") {
+		accumulateDailyUsage(h.Repo, dailyUsageDelta{
+			dateKey:  rec.dateKey,
+			provider: rec.provider,
+			model:    rec.model,
+			retract:  true,
+		})
+	}
 
 	usagetracker.GetTracker().PushRecent(usagetracker.RecentRequest{
 		Timestamp:        now.Format(time.RFC3339),
@@ -979,6 +1026,38 @@ func mergeDailyUsageError(data map[string]any, provider, model string) {
 	if mm["provider"] == nil {
 		mm["provider"] = provider
 	}
+	byModel[modelKey] = mm
+	data["byModel"] = byModel
+}
+
+func decDailyInt(data map[string]any, key string) {
+	if v := getJSONInt(data, key); v > 0 {
+		data[key] = v - 1
+	}
+}
+
+// mergeDailyUsageRetract undoes one mergeDailyUsageError fold: the
+// request it belonged to went on to succeed, so its error fold must not
+// stand next to the success fold. Counters floor at zero — a retract
+// whose original fold landed in an earlier flush generation whose blob
+// was rebuilt must not drive a counter negative.
+func mergeDailyUsageRetract(data map[string]any, provider, model string) {
+	decDailyInt(data, "requests")
+	decDailyInt(data, "totalRequests")
+	decDailyInt(data, "errors")
+
+	byProvider := getJSONMap(data, "byProvider")
+	pp := getJSONMap(byProvider, provider)
+	decDailyInt(pp, "requests")
+	decDailyInt(pp, "errors")
+	byProvider[provider] = pp
+	data["byProvider"] = byProvider
+
+	modelKey := model + "|" + provider
+	byModel := getJSONMap(data, "byModel")
+	mm := getJSONMap(byModel, modelKey)
+	decDailyInt(mm, "requests")
+	decDailyInt(mm, "errors")
 	byModel[modelKey] = mm
 	data["byModel"] = byModel
 }
