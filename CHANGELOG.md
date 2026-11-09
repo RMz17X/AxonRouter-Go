@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.9.84] - 2026-11-10
+
+### Fixed
+- Daily-window usage stats (`period=7d`, `30d`, `60d`, `all`, and custom `<n>d`) reported `totalErrors` 0 and a 100% success rate regardless of the errors on record. The daily fold accumulated per-provider errors into the breakdown but never carried any error total into the response, and the ledger error-count overlay that sub-day windows use is keyed on the window start, which a daily window leaves zero. Each folded day now adds its rollup's own recorded `errors` total (the staging rollups hold 20,875 errors across the last 7 days the endpoint reported as 0), so `totalRequests` and `successRate` for daily windows count errors the same way the Today/24h windows already did.
+
+### Added
+- The smart (System One) combo strategy now honors the operator's explicit `easyModels` / `hardModels` tiers from `comboStrategies[name]` — the fields the dashboard's Smart Routing section saves and the JS upstream defines. The Go port previously never read them: `applyComboStrategies` dropped the keys and `buildSmartCriteria` derived every model's description from name/capability heuristics alone, so a stored tier list (e.g. smart-liquid-test's) changed nothing. The fields are now parsed into `ComboStrategy`, persisted by `SetComboStrategy`, and applied in `buildSmartCriteria`: a hard-listed model is always described to the router as the advanced-reasoning tier and an easy-listed one as the fast lightweight tier, whatever its name suggests; unlisted models keep the heuristic description. Deliberate divergence in mechanism, recorded: upstream also ships a separate difficulty-tier strategy (`handleDifficultyChat`) that routes to tier candidate sets with a judge prompt; the Go port carries only the System One strategy, so the lists steer the router's criteria rather than gating candidate sets.
+
 ## [v1.9.83] - 2026-11-10
 
 ### Fixed
