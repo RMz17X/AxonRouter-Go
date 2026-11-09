@@ -1,5 +1,49 @@
 # Changelog
 
+## [v1.9.62] - 2026-11-09
+
+### MiniMax credits get a progress bar (peak-relative), like Antigravity's quota rows
+
+- The Quota Tracker drew Antigravity windows as progress bars with a
+  percentage but showed a MiniMax account's credits as a bare amount:
+  the table deliberately suppresses the bar and the percentage for
+  credit-balance rows, and MiniMax reports only a balance — no grant
+  total, no consumed amount — so no honest percentage existed.
+- The usage read now maintains a per-connection reference on the
+  connection blob (`creditsPeak`): the highest balance ever read for
+  that connection, raised only by a live read that beats it. The
+  Credits row is rewritten against the peak (total = peak,
+  used = peak − balance, remaining = balance,
+  remainingPercentage = balance / peak × 100), so the share is real:
+  it drains as credits are spent and refills when a top-up raises the
+  peak.
+- The quota table renders the bar and the percentage for MiniMax
+  credit rows (other credit-balance providers are untouched), and the
+  amount line shows the current balance via the row's `remaining`
+  field, falling back to `total` for providers that do not set it.
+
+### Verification-required accounts: automatic recheck on quota reads + a Check button in the Quota Tracker
+
+- Root cause of "I verified the account but it stays disabled": the
+  only release path was the manual Recheck on the provider page. The
+  quota usage endpoint short-circuits every inactive connection to its
+  stored error without any live read, so the Quota Tracker — where the
+  operator watches these accounts — could never observe that Google
+  accepts the account again, and no automatic check existed.
+- `HandleGetConnectionUsage` now special-cases a validation-flagged
+  connection (`data.status = validation_required`, the non-terminal
+  verdict carved out in fragment 973): the read runs the same probe
+  the connection test uses, and `persistProbeResult`'s existing
+  verified-transition clears the flag and reactivates the account;
+  the read then falls through and serves live quotas. Any other
+  verdict keeps returning the stored message. Terminal disables
+  (ToS, dead auth) are still never dialed.
+- The Quota Tracker row actions gain a Check verification button for
+  flagged accounts (the tracker's counterpart of the provider page's
+  Recheck): it re-probes via the connection test endpoint and force-
+  refreshes the row, so the verdict is visible in place — released
+  rows flip straight to their quota table.
+
 ## [v1.9.61] - 2026-11-09
 
 ### TokenHarbor waves: never report success when no candidate was pickable
