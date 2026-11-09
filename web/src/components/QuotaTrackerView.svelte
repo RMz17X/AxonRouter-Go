@@ -1738,8 +1738,16 @@
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
                 {/if}
-                {#if error.toLowerCase().includes('validation_required') || error.toLowerCase().includes('verify your account') || conn.verificationUrl}
-                  <p class="text-[11px] text-text-muted px-2">Verifikasi akun ini perlu login ulang: buka halaman provider-nya, klik Re-login pada akun ini, lalu selesaikan sign-in Google-nya.</p>
+                {#if conn.verificationUrl}
+                  <a
+                    href={conn.verificationUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                  >
+                    <span>Verifikasi Akun</span>
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
                 {/if}
               </div>
             {:else if quota?.message}
@@ -1756,8 +1764,16 @@
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
                 {/if}
-                {#if quota.message.toLowerCase().includes('validation_required') || quota.message.toLowerCase().includes('verify your account') || conn.verificationUrl}
-                  <p class="text-[11px] text-text-muted px-2">Verifikasi akun ini perlu login ulang: buka halaman provider-nya, klik Re-login pada akun ini, lalu selesaikan sign-in Google-nya.</p>
+                {#if conn.verificationUrl}
+                  <a
+                    href={conn.verificationUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                  >
+                    <span>Verifikasi Akun</span>
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
                 {/if}
               </div>
             {:else}
