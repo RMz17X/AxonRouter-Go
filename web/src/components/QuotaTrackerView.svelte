@@ -921,8 +921,21 @@
   let checkingVerificationId = $state<string | null>(null)
   let freshVerifyUrlByConn = $state<Record<string, string>>({})
 
+  const VALIDATION_ERROR_MARKERS = ['validation_required', 'verify your account']
+
   function isValidationFlagged(conn: ProviderConnection): boolean {
-    return typeof conn.status === 'string' && conn.status.toLowerCase() === 'validation_required'
+    if (typeof conn.status === 'string' && conn.status.toLowerCase() === 'validation_required')
+      return true
+    // This view's list payload (/api/providers/client) folds a parked
+    // validation row into effectiveStatus 'disabled' — the canonical
+    // status engine has no validation verdict — so the flag alone
+    // never matches here and the stored error's markers are the tell,
+    // the same fallback connectionHealth uses on the provider page.
+    const lastError = typeof conn.lastError === 'string' ? conn.lastError.toLowerCase() : ''
+    return (
+      conn.effectiveStatus === 'disabled' &&
+      VALIDATION_ERROR_MARKERS.some((marker) => lastError.includes(marker))
+    )
   }
 
   async function checkVerification(conn: ProviderConnection): Promise<void> {
