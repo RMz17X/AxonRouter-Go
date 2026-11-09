@@ -405,14 +405,23 @@ func (r *Repo) GetFirstConnectionPerProvider(ctx context.Context) ([]*models.Pro
 }
 
 // GetLockedOrUnavailableConnections queries only rows that have lockedAllUntil,
-// rateLimitedUntil, oauthLockedUntil, modelLocks, or testStatus=unavailable in
-// their data JSON, avoiding a 170k-row scan.
+// rateLimitedUntil, oauthLockedUntil, modelLocks, a flattened modelLock_* key,
+// or testStatus=unavailable in their data JSON, avoiding a 170k-row scan.
+//
+// The flattened-key clause is load-bearing: writers store per-model locks
+// almost exclusively as modelLock_<model> keys and the modelLocks object is
+// routinely absent, so keying the prefilter on the object alone made the
+// availability census silently skip those connections (anaking966,
+// abahakunan and adenarere held live locks yet never appeared, audit
+// 2026-11-09) while the Go-side reader (activeModelLocks) already reads
+// both shapes.
 func (r *Repo) GetLockedOrUnavailableConnections(ctx context.Context) ([]*models.ProviderConnection, error) {
 	query := "SELECT " + providerConnectionColumns + " FROM providerConnections " +
 		"WHERE (data->>'lockedAllUntil') IS NOT NULL " +
 		"   OR (data->>'rateLimitedUntil') IS NOT NULL " +
 		"   OR (data->>'oauthLockedUntil') IS NOT NULL " +
 		"   OR (data->>'modelLocks') IS NOT NULL " +
+		"   OR EXISTS (SELECT 1 FROM jsonb_object_keys(data) AS k WHERE k LIKE 'modelLock\\_%') " +
 		"   OR (data->>'testStatus') = 'unavailable' " +
 		connectionSortOrder
 	return r.listProviderConnections(query, nil)
