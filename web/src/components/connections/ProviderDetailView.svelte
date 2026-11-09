@@ -4301,18 +4301,25 @@
                     {/if}
                     <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                       {#if health?.state === 'validation'}
-                        <!-- Verification-required (first-use account):
-                             the owner falsified both sign-in theories
-                             empirically (2026-11-09): he completed a fresh
-                             sign-in and the gate did not move — "logika
-                             verifikasi = login ulang itu salah besar".
-                             What actually verifies is the scan step in
-                             Google's flow (the QR code scanned with the
-                             phone signed into the account). So the only
-                             action here is the account's own verification
-                             URL. Do NOT reintroduce a sign-in-based
-                             verify action. Recheck re-probes with a
-                             real generate. -->
+                        <!-- Verification-required (first-use account).
+                             The owner's spec (2026-11-09): the Verifikasi
+                             button directly test-calls the completion API
+                             for this account; if the test still fails
+                             with the verification gate, the stored
+                             verification URL is updated from that test's
+                             own error. Both halves already live in the
+                             backend (recheckValidationFlag: a real
+                             pinned generate decides release, and a
+                             still-flagged failure re-parks with the
+                             fresh validation_url extracted from the
+                             error body — the plt token rotates per
+                             error, so the freshest always wins). The
+                             row's refresh then shows the updated link
+                             in the error panel ("Buka Verifikasi").
+                             No sign-in-based action: the owner falsified
+                             that empirically ("verifikasi = login ulang
+                             itu salah besar") — what verifies is the
+                             scan step in Google's own page. -->
                         <span
                           class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
                           title={lastErr || 'Google requires account verification before this account can serve again'}
@@ -4320,31 +4327,19 @@
                           <span class="material-symbols-outlined text-[12px]">gpp_maybe</span>
                           needs verification
                         </span>
-                        {#if conn.verificationUrl}
-                          <a
-                            href={conn.verificationUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
-                            title="Open this account's Google verification page"
-                          >
-                            <span class="material-symbols-outlined text-[11px]">open_in_new</span>
-                            verifikasi
-                          </a>
-                        {/if}
                         <button
                           type="button"
                           onclick={() => recheckVerification(conn)}
                           disabled={recheckingId === conn.id}
-                          class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-surface-2 text-text-main hover:bg-surface-3 transition-colors disabled:opacity-50 cursor-pointer"
-                          title="Re-probe this account: if Google accepts it again, the flag clears and the account reactivates"
+                          class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 cursor-pointer"
+                          title="Test-call the completion API for this account now: if Google accepts it, the account reactivates; if it is still verification-gated, the Buka Verifikasi link is refreshed with the newest URL from that test"
                         >
                           {#if recheckingId === conn.id}
                             <span class="material-symbols-outlined text-[11px] animate-spin">progress_activity</span>
                           {:else}
                             <span class="material-symbols-outlined text-[11px]">fact_check</span>
                           {/if}
-                          recheck
+                          verifikasi
                         </button>
                       {:else if !isConnActive || conn.testStatus === 'disabled' || isFatalDisabledErr}
                         <span
@@ -4558,20 +4553,17 @@
                           </div>
                         {/if}
                         {#if conn.verificationUrl}
-                          <div class="flex flex-col gap-1.5 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
-                            <div class="flex flex-wrap items-center justify-between gap-2">
-                              <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
-                              <a
-                                href={conn.verificationUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
-                              >
-                                <span>Buka Verifikasi</span>
-                                <span class="material-symbols-outlined text-xs">open_in_new</span>
-                              </a>
-                            </div>
-                            <p class="text-text-muted leading-snug">Yang memverifikasi adalah langkah scan di halaman itu: buka di layar lain (mis. laptop), lalu scan QR-nya pakai HP yang login sebagai akun ini.</p>
+                          <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
+                            <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
+                            <a
+                              href={conn.verificationUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
+                            >
+                              <span>Buka Verifikasi</span>
+                              <span class="material-symbols-outlined text-xs">open_in_new</span>
+                            </a>
                           </div>
                         {/if}
                       </div>
