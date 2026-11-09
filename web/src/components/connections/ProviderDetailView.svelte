@@ -2364,7 +2364,7 @@
 
   function dashboardOrigin(): string {
     if (typeof window !== 'undefined' && window.location?.origin) return window.location.origin
-    return 'http://localhost:3177'
+    return 'http://localhost:20130'
   }
 
   function openGenericOAuth() {
@@ -4302,22 +4302,17 @@
                     <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                       {#if health?.state === 'validation'}
                         <!-- Verification-required (first-use account):
-                             mirror agy exactly (owner's call, 2026-11-09:
-                             "kenapa gak sekalian sign ulang kaya agy").
-                             Google staff's own forum answer: after the
-                             browser verification, an existing token keeps
-                             returning VALIDATION_REQUIRED — the fix is
-                             "sign in again so a fresh token is issued",
-                             and the official app pairs Verify with
-                             "Sign in again". So this Verifikasi action
-                             IS agy's flow: it runs this provider's OAuth
-                             sign-in, Google interposes any still-pending
-                             verification inside that flow, and the fresh
-                             grant carries the verified state (the
-                             exchange reactivates the flagged row,
-                             v1.9.68). The raw verification URL stays
-                             available in the error panel. Recheck
-                             re-probes with a real generate. -->
+                             the owner falsified both sign-in theories
+                             empirically (2026-11-09): he completed a fresh
+                             sign-in and the gate did not move — "logika
+                             verifikasi = login ulang itu salah besar".
+                             What actually verifies is the scan step in
+                             Google's flow (the QR code scanned with the
+                             phone signed into the account). So the only
+                             action here is the account's own verification
+                             URL. Do NOT reintroduce a sign-in-based
+                             verify action. Recheck re-probes with a
+                             real generate. -->
                         <span
                           class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
                           title={lastErr || 'Google requires account verification before this account can serve again'}
@@ -4325,15 +4320,18 @@
                           <span class="material-symbols-outlined text-[12px]">gpp_maybe</span>
                           needs verification
                         </span>
-                        <button
-                          type="button"
-                          onclick={() => handleAddConnectionClick()}
-                          class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
-                          title="Verifikasi akun ini seperti di Antigravity: sign-in Google sekali jalan — verifikasi yang masih pending muncul di dalam alurnya, dan token baru terbit membawa status terverifikasi"
-                        >
-                          <span class="material-symbols-outlined text-[11px]">verified</span>
-                          verifikasi
-                        </button>
+                        {#if conn.verificationUrl}
+                          <a
+                            href={conn.verificationUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                            title="Open this account's Google verification page"
+                          >
+                            <span class="material-symbols-outlined text-[11px]">open_in_new</span>
+                            verifikasi
+                          </a>
+                        {/if}
                         <button
                           type="button"
                           onclick={() => recheckVerification(conn)}
@@ -4559,30 +4557,21 @@
                             </a>
                           </div>
                         {/if}
-                        {#if conn.verificationUrl || lastErr.toLowerCase().includes('validation_required') || lastErr.toLowerCase().includes('verify your account')}
-                          <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
-                            <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
-                            <span class="inline-flex flex-wrap items-center gap-1.5">
-                              <button
-                                type="button"
-                                onclick={() => handleAddConnectionClick()}
-                                class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
+                        {#if conn.verificationUrl}
+                          <div class="flex flex-col gap-1.5 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                              <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
+                              <a
+                                href={conn.verificationUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
                               >
-                                <span>Verifikasi</span>
-                                <span class="material-symbols-outlined text-xs">verified</span>
-                              </button>
-                              {#if conn.verificationUrl}
-                                <a
-                                  href={conn.verificationUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
-                                >
-                                  <span>Buka Halaman Verifikasi</span>
-                                  <span class="material-symbols-outlined text-xs">open_in_new</span>
-                                </a>
-                              {/if}
-                            </span>
+                                <span>Buka Verifikasi</span>
+                                <span class="material-symbols-outlined text-xs">open_in_new</span>
+                              </a>
+                            </div>
+                            <p class="text-text-muted leading-snug">Yang memverifikasi adalah langkah scan di halaman itu: buka di layar lain (mis. laptop), lalu scan QR-nya pakai HP yang login sebagai akun ini.</p>
                           </div>
                         {/if}
                       </div>
