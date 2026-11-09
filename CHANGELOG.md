@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.9.78] - 2026-11-09
+
+### Fixed
+- Quota Tracker verification UI never rendered at all (found by live browser verification of fragment 1063, 2026-11-09): the tracker's `isValidationFlagged` keyed only on the stored status flag, but the tracker's own list payload (`GET /api/providers/client`) folds a parked validation row into `effectiveStatus: 'disabled'` with `status: 'disabled'` — the canonical status engine has no validation verdict — so the predicate could never match on this surface and the strip from fragment 1063 (like the check control from fragment 1061 before it) stayed dead. The provider detail page was unaffected because its health derivation already carried the fallback.
+- `isValidationFlagged` now mirrors connectionHealth's derivation: the stored flag, or a disabled effective status whose stored error carries the validation markers (`validation_required`, `verify your account`) — both fields are present on the client-page payload. The fragment-1062 prune inherits the corrected predicate, so a released account's strip still clears itself on refresh while a still-gated account's strip now actually appears.
+
 ## [v1.9.77] - 2026-11-09
 
 ### Fixed
