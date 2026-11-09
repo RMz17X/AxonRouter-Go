@@ -1,5 +1,14 @@
 # Changelog
 
+## [v1.9.74] - 2026-11-09
+
+## Validation recheck: an upstream answer without the gate releases the account (v1.9.74)
+
+- **Proven live (2026-11-09, nganzgore):** the owner completed Google's scan verification from the agy-printed link (QR scanned on his phone → "Authentication successful"); agy then served the account on its EXISTING token with no re-login — the scan lifts the gate account-side, settling the mechanism (both sign-in theories falsified). Server read-back minutes later: `loadCodeAssist` FULL_ELIGIBILITY_CHECK returns currentTier=free-tier with ineligibleTiers EMPTY, and generate answers 429 RESOURCE_EXHAUSTED (quota), not 403 VALIDATION_REQUIRED.
+- **Defect:** the gateway row stayed parked as validation_required. `recheckValidationFlag` treated every ping failure alike: a 429 answer re-parked the account with the stale verification verdict, so the owner's Verifikasi test button could never release an account whose verification was already done but whose quota was momentarily exhausted.
+- **Fix:** in the recheck's failure branch, an upstream answer (`*proxy.UpstreamError` with a body) that does NOT carry the validation markers is itself the verdict — Google evaluated the generate and refused it for another reason, so the verification gate is gone and the account releases (the temporary release already left the row clean). A ping with no upstream answer (transport/timeout) still re-parks, and a still-gated refusal still re-parks with the fresh message + verification URL from that error, per the owner's Verifikasi-button spec (fragment 1059).
+- **Verification:** go build + vet at release; live proof on staging — the connection test on nganzgore releases the row (read-back of isActive/status) while its generate still answers 429 quota.
+
 ## [v1.9.73] - 2026-11-09
 
 ## Antigravity verification: the Verifikasi button test-calls the completion API (v1.9.73)
