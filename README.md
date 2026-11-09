@@ -439,15 +439,24 @@ Everyone whose commit landed in the repository is credited on the wiki's [**Owne
 
 ## 📚 Docs
 
-**Full documentation, searchable:** [**axonrouter-go Wiki**](https://luqman-v1.github.io/axonrouter-go/) — installation, usage, API reference, dashboard, providers, architecture, database, CLI, and a screenshot gallery. Every page supports `?q=` search and `#section` deep links.
+**Full documentation, searchable:** [**axonrouter-go Wiki**](https://luqman-v1.github.io/axonrouter-go/) — installation, usage, API reference, dashboard, providers, architecture, database, CLI, and a screenshot gallery.
 
-Repository references:
-
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — routing, providers, data layer, speed layer, cluster topology
+Repository documentation index:
+- [**`docs/README.md`**](docs/README.md) — **Core Documentation Suite**:
+  - [`docs/COMPREHENSIVE.md`](docs/COMPREHENSIVE.md) — Master handbook & end-to-end request lifecycle
+  - [`docs/ADMIN-LOGIN.md`](docs/ADMIN-LOGIN.md) — Dashboard authentication, session cookies, and brute-force protection
+  - [`docs/API.md`](docs/API.md) — Multi-dialect API reference (OpenAI, Claude, Gemini, Ollama)
+  - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — Routing pipeline, AST normalization, and concurrency model
+  - [`docs/DEPLOY.md`](docs/DEPLOY.md) — Single-node, cluster Compose, and systemd deployment
+  - [`docs/HARDENING.md`](docs/HARDENING.md) — Security hardening, IP trust proxy, and credential encryption
+  - [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — Database operations, Prometheus metrics, and maintenance
+  - [`docs/PROVIDERS.md`](docs/PROVIDERS.md) — 35+ provider catalog, account leases, and model combos
+  - [`docs/QUALITY.md`](docs/QUALITY.md) — Quality standards, static analysis, and testing architecture
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — deep technical routing, providers, data layer, speed layer, cluster topology
 - [`DATABASE.md`](DATABASE.md) — PostgreSQL schema, partitioning, backup/restore, degradation model
+- [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) — code hotspots and refactoring targets
 - [`ROADMAP.md`](ROADMAP.md) — proposals only, not current behavior
-- [`CHANGELOG.md`](CHANGELOG.md) — release history (Go **v1.9.15**, upstream baseline `decolua/9router`). Work merged since the last tag lives in [`.changes/`](.changes/) and is folded in at the next release; the dashboard's changelog modal shows both. Check what you are running with `axonrouter-go version`.
-- [`docs/TELEGRAM_RELEASE_NOTIFICATIONS.md`](docs/TELEGRAM_RELEASE_NOTIFICATIONS.md) — one-time setup for the release notice posted to Telegram
+- [`CHANGELOG.md`](CHANGELOG.md) — release history (Go **v1.9.59**, upstream baseline `decolua/9router`). Work merged since the last tag lives in [`.changes/`](.changes/) and is folded in at the next release; the dashboard's changelog modal shows both. Check what you are running with `axonrouter-go version`.
 
 ## Credits
 
