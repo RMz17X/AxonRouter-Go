@@ -2071,7 +2071,7 @@ export const api = {
       '/api/oauth/antigravity/authorize',
     ),
   antigravityExchange: (code: string, state: string) =>
-    request<{ success: boolean; error?: string }>('/api/oauth/antigravity/exchange', {
+    request<{ success: boolean; reactivated?: boolean; error?: string }>('/api/oauth/antigravity/exchange', {
       method: 'POST',
       body: JSON.stringify({ code, state }),
     }),

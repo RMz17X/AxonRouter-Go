@@ -4301,12 +4301,14 @@
                     {/if}
                     <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
                       {#if health?.state === 'validation'}
-                        <!-- Verification-required: the account is parked
-                             until the operator verifies it at Google and
-                             rechecks. The badge names the state, Verify
-                             opens Google's page (manual click), Recheck
-                             re-probes — a pass clears the flag and
-                             reactivates the account. -->
+                        <!-- Verification-required (first-use account):
+                             Google lifts this gate inside a real sign-in —
+                             agy's login is the ceremony — never from the
+                             bare error URL, which errors outside a sign-in
+                             and changes nothing. Re-login re-runs this
+                             provider's OAuth sign-in (the exchange
+                             reactivates the connection on completion),
+                             Recheck re-probes with a real generate. -->
                         <span
                           class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] border bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
                           title={lastErr || 'Google requires account verification before this account can serve again'}
@@ -4314,18 +4316,15 @@
                           <span class="material-symbols-outlined text-[12px]">gpp_maybe</span>
                           needs verification
                         </span>
-                        {#if health.verificationUrl}
-                          <a
-                            href={health.verificationUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
-                            title="Open Google's verification page for this account"
-                          >
-                            verify
-                            <span class="material-symbols-outlined text-[11px]">open_in_new</span>
-                          </a>
-                        {/if}
+                        <button
+                          type="button"
+                          onclick={() => handleAddConnectionClick()}
+                          class="inline-flex items-center gap-1 rounded-full font-semibold px-2 py-0.5 text-[10px] bg-primary/10 text-primary hover:bg-primary/20 transition-colors cursor-pointer"
+                          title="Re-login with this account: Google runs its one-time verification inside the sign-in, like agy — completing the sign-in reactivates the account"
+                        >
+                          <span class="material-symbols-outlined text-[11px]">login</span>
+                          re-login
+                        </button>
                         <button
                           type="button"
                           onclick={() => recheckVerification(conn)}
@@ -4554,15 +4553,14 @@
                         {#if conn.verificationUrl || lastErr.toLowerCase().includes('validation_required') || lastErr.toLowerCase().includes('verify your account')}
                           <div class="flex flex-wrap items-center justify-between gap-2 pt-1.5 mt-0.5 border-t border-red-500/20 text-xs">
                             <span class="text-amber-400 font-medium">Verifikasi akun Google/Antigravity diperlukan:</span>
-                            <a
-                              href={conn.verificationUrl || 'https://antigravity.google'}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm transition-colors"
+                            <button
+                              type="button"
+                              onclick={() => handleAddConnectionClick()}
+                              class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm transition-colors cursor-pointer"
                             >
-                              <span>Buka Link Verifikasi Manual</span>
-                              <span class="material-symbols-outlined text-xs">open_in_new</span>
-                            </a>
+                              <span>Login Ulang untuk Verifikasi</span>
+                              <span class="material-symbols-outlined text-xs">login</span>
+                            </button>
                           </div>
                         {/if}
                       </div>
