@@ -183,6 +183,21 @@
   let setupFields = $derived(selectedTool ? SETUP_FIELDS[selectedTool.id] : undefined)
   let setupApiKey = $derived(apiKeys.find((k) => k.id === setupKeyId)?.key || apiKeys[0]?.key || '')
 
+  // The Claude composer's Auto-Compact preset must reach the generated
+  // installer, not only the copy-paste env snippet: upstream's Claude card
+  // sends the one preset as both CLAUDE_CODE_AUTO_COMPACT_WINDOW (snippet)
+  // and maxContextTokens -> CLAUDE_CODE_MAX_CONTEXT_TOKENS (installer
+  // settings), and the context-tokens variable is what stops Claude Code
+  // warning that an unrecognized gateway model is "assumed to be 200k".
+  // An explicitly typed Max context tokens value wins over the preset.
+  let setupParams = $derived.by(() => {
+    if (selectedTool?.id !== 'claude' || autoCompactWindow === 'default') return mapping
+    if (mapping.maxContextTokens?.trim()) return mapping
+    const preset =
+      autoCompactWindow === '100k' ? '100000' : autoCompactWindow === '150k' ? '150000' : '180000'
+    return { ...mapping, maxContextTokens: preset }
+  })
+
   $effect(() => {
     // Switching tools resets the composer; the key defaults to the
     // first client key.
@@ -1042,7 +1057,7 @@
                 </p>
               {/if}
             </div>
-            <HostSetupCommand toolId={selectedTool.id} baseUrl={localOrigin} apiKey={setupApiKey} params={mapping} />
+            <HostSetupCommand toolId={selectedTool.id} baseUrl={localOrigin} apiKey={setupApiKey} params={setupParams} />
           </div>
         {/if}
 
