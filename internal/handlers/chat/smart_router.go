@@ -72,7 +72,7 @@ type smartRouteStateKey struct{}
 // names the path that produced it.
 type smartDecision struct {
 	Verdict    string   `json:"verdict"` // "easy" | "hard" | "fallback"
-	Source     string   `json:"source"`  // "selected" | "switch" | "retained" | "strict" | "below-threshold" | "no-decision"
+	Source     string   `json:"source"`  // "selected" | "switch" | "retained" | "strict" | "below-threshold" | "no-decision" | "heavy-session"
 	Model      string   `json:"model,omitempty"`
 	Confidence *float64 `json:"confidence,omitempty"`
 	Threshold  float64  `json:"threshold,omitempty"`
@@ -805,6 +805,27 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 	// nothing to decide: no evaluation, no decision record.
 	if easyPool, hardPool := partitionByTier(models, cfg); len(easyPool) == 0 || len(hardPool) == 0 {
 		return ctx, guard(models)
+	}
+
+	if view.info.Heavy {
+		// Heavy working session: the tier is hard by rule, decided
+		// locally without asking the router. The router only ever sees
+		// the last few user turns, and in harness traffic those are
+		// scaffolding — instruction blocks, environment updates, system
+		// notifications — not the task, so its verdict on such a session
+		// is noise (live audit, 2026-11-11: a 70K–383K-token agent
+		// session pinned easy while the heavy-session guard below had
+		// to undo the easy lead on every single turn). Lead with the
+		// hard pool and pin its lead, so the pin, the record, and the
+		// serving model all agree.
+		ordered := orderModelsByTier(models, cfg, "hard")
+		lead := ordered[0]
+		if !isPerTurn && sessionID != "" {
+			h.setSmartStickyModel(comboName, sessionID, lead)
+		}
+		log.Info("combo", "smart-router heavy session: hard by rule", "model", lead)
+		dec := &smartDecision{Verdict: "hard", Source: "heavy-session", Model: lead, Threshold: threshold}
+		return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: lead}), dec), guard(ordered)
 	}
 
 	var activeModel string
