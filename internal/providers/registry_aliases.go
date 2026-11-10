@@ -23,6 +23,7 @@ var RegistryAliases = map[string]string{
 	"byteplus":          "bpm",
 	"chutes":            "ch",
 	"claude":            "cc",
+	"claude-web":        "cweb",
 	"cline":             "cl",
 	"cloudflare-ai":     "cf",
 	"codebuddy-cn":      "cbcn",

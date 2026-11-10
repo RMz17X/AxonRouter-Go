@@ -1264,6 +1264,17 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},
+	// Claude Web: the consumer chat site (claude.ai) reached with a
+	// browser sessionKey cookie, per docs/CLAUDE_WEB_PROVIDER_SPEC.md.
+	// A distinct deployment with its own credential and quota — never
+	// aliased onto the API-key `claude` provider (AGENTS.md section 3.A).
+	// The executor performs the real auth (Cookie header); this row is
+	// the nominal passthrough shape every web-cookie sibling carries.
+	"claude-web": {
+		BaseURL:    "https://api.claude.ai",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+	},
 	// UC web (uncensored.com persona): image + video over the un-metered
 	// internal API; the credential is the full uncensored.com Cookie header
 	// and every request mints a short-lived Clerk session from __client.

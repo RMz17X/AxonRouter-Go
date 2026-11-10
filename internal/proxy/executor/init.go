@@ -81,6 +81,10 @@ func RegisterAll() {
 	// browser Cookie header and answers NDJSON, not an OpenAI stream — the
 	// shared passthrough cannot express the handshake or the wire shape.
 	Register("grok-web", func() Executor { return ForwardGrokWeb })
+	// claude-web drives claude.ai's own API (organization discovery, a
+	// throwaway conversation per turn, an SSE completion stream) behind a
+	// sessionKey cookie — none of which the shared passthrough can express.
+	Register("claude-web", func() Executor { return ForwardClaudeWeb })
 	// One executor serves both Bedrock entries: the registry entry's Format picks the
 	// wire shape (Anthropic Messages vs OpenAI Chat Completions), the way one Vertex
 	// executor serves vertex and vertex-partner.

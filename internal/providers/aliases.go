@@ -28,6 +28,7 @@ var ProviderAliasMap = map[string]string{
 	"cb":             "cerebras",
 	"cbai":           "codebuddy-intl",
 	"cc":             "claude",
+	"cweb":           "claude-web",
 	"cd":             "codebuddy-cn",
 	"cf":             "cloudflare-ai",
 	"ch":             "chutes",

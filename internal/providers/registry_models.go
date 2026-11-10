@@ -90,6 +90,12 @@ var ProviderModels = map[string][]string{
 	// API-key `deepseek` row above: a request naming one of them must reach the
 	// browser-login provider, never the API-key one.
 	"deepseek-web": {"deepseek-v4-pro", "deepseek-v4-pro-think", "deepseek-v4-pro-search", "deepseek-v4-pro-think-search", "deepseek-v4.1-flash", "deepseek-v4-flash", "deepseek-v4-flash-think", "deepseek-v4-flash-search", "deepseek-v4-flash-think-search", "deepseek-chat", "deepseek-reasoner", "DeepSeek-R1", "DeepSeek-R1-Search", "DeepSeek-V3.2", "DeepSeek-Search"},
+	// claude-web is the consumer site's own catalog (docs/CLAUDE_WEB_PROVIDER_SPEC.md
+	// section 7). These ids belong to the browser-session provider and are
+	// deliberately not merged into the API-key `claude` row: a request naming
+	// one of them must reach the web provider, never the API one.
+	"claude-web": {"claude-3-7-sonnet", "claude-3-7-thinking", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-web"},
+	"cweb":       {"claude-3-7-sonnet", "claude-3-7-thinking", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-web"},
 	"hcnsec": {
 		"auto",
 		"DeepSeek-V4-Flash",

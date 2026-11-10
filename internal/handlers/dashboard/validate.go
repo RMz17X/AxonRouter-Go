@@ -459,6 +459,8 @@ func validateProviderKey(ctx context.Context, provider string, cfg providers.Pro
 		return validateXiaomiTokenplan(ctx, apiKey, psd)
 	case "grok-web":
 		return validateGrokWeb(ctx, apiKey)
+	case "claude-web":
+		return validateClaudeWeb(ctx, apiKey, psd)
 	case "uc-web":
 		valid, message := media.ValidateUcWebCookie(ctx, apiKey)
 		return validateOutcome{valid: valid, supported: true, message: message}
@@ -866,6 +868,70 @@ func validateGrokWeb(ctx context.Context, apiKey string) validateOutcome {
 		return validateOutcome{supported: true, message: "Invalid SSO cookie — re-paste from grok.com DevTools → Cookies → sso"}
 	}
 	return validateOutcome{valid: true, supported: true}
+}
+
+// --- claude-web: sessionKey probe (spec case "claude-web") ---
+
+const claudeWebProbeURL = "https://api.claude.ai/api/auth/current_account"
+
+// claudeWebSessionKeyFromPaste pulls the sessionKey value out of what
+// was pasted: a bare key, a sessionKey= pair, or a full cookie header.
+func claudeWebSessionKeyFromPaste(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if lower := strings.ToLower(trimmed); strings.HasPrefix(lower, "cookie:") {
+		trimmed = strings.TrimSpace(trimmed[len("cookie:"):])
+	}
+	for _, part := range strings.Split(trimmed, ";") {
+		part = strings.TrimSpace(part)
+		if value, ok := strings.CutPrefix(part, "sessionKey="); ok {
+			return strings.TrimSpace(value)
+		}
+	}
+	if !strings.Contains(trimmed, "=") && !strings.Contains(trimmed, ";") {
+		return trimmed
+	}
+	return ""
+}
+
+func validateClaudeWeb(ctx context.Context, apiKey string, psd map[string]any) validateOutcome {
+	sessionKey := claudeWebSessionKeyFromPaste(apiKey)
+	if sessionKey == "" {
+		if v, _ := psd["sessionKey"].(string); strings.TrimSpace(v) != "" {
+			sessionKey = strings.TrimSpace(v)
+		}
+	}
+	if sessionKey == "" {
+		return validateOutcome{supported: true, message: "No sessionKey found — paste the sessionKey cookie value from claude.ai"}
+	}
+	cookieHeader := "sessionKey=" + sessionKey
+	if strings.Contains(apiKey, "sessionKey=") {
+		cookieHeader = apiKey // a full pasted header may carry the cf_clearance the session needs
+	}
+	ua := "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+	if v, _ := psd["userAgent"].(string); strings.TrimSpace(v) != "" {
+		ua = strings.TrimSpace(v)
+	}
+	headers := map[string]string{
+		"Accept":          "application/json, text/plain, */*",
+		"Accept-Language": "en-US,en;q=0.9",
+		"Cookie":          cookieHeader,
+		"Origin":          "https://claude.ai",
+		"Referer":         "https://claude.ai/",
+		"User-Agent":      ua,
+	}
+	status, _, err := validateProbeDo(ctx, http.MethodGet, claudeWebProbeURL, headers, nil)
+	if err != nil {
+		return validateOutcome{supported: true, message: err.Error()}
+	}
+	switch status {
+	case http.StatusOK:
+		return validateOutcome{valid: true, supported: true}
+	case http.StatusUnauthorized:
+		return validateOutcome{supported: true, message: "sessionKey rejected (401) — the session is expired. Re-paste it from claude.ai DevTools → Cookies → sessionKey"}
+	case http.StatusForbidden:
+		return validateOutcome{supported: true, message: "claude.ai answered 403 — either the sessionKey is expired or Cloudflare refused this probe; a chat request is the decisive test"}
+	}
+	return validateOutcome{supported: true, message: fmt.Sprintf("claude.ai answered HTTP %d — session not confirmed", status)}
 }
 
 // --- perplexity-web: session cookie probe (upstream `case "perplexity-web"`) ---

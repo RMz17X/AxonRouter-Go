@@ -1944,6 +1944,18 @@ var ProviderRegistry = map[string]ProviderMeta{
 		ServiceKinds: []string{"llm", "image"},
 		Website:      "https://gemini.google.com",
 	},
+	"claude-web": {
+		ID:           "claude-web",
+		Name:         "Claude Web",
+		Alias:        "cweb",
+		Category:     CategoryWebCookie,
+		AuthType:     "cookie",
+		Color:        "#D97706",
+		Icon:         "psychology",
+		AuthHint:     "Paste your sessionKey cookie value from claude.ai (DevTools → Cookies → sessionKey), or the full cookie header if the session needs cf_clearance. Chroma can sync accounts here automatically.",
+		ServiceKinds: []string{"llm"},
+		Website:      "https://claude.ai",
+	},
 	"selfhosted-tts": {
 		ID:           "selfhosted-tts",
 		Name:         "Self-Hosted TTS",
