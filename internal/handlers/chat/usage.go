@@ -16,6 +16,7 @@ import (
 
 	"axonrouter/proxy/internal/constants"
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/detection"
 	"axonrouter/proxy/internal/handlers/shared"
 	"axonrouter/proxy/internal/handlerutil"
@@ -333,21 +334,18 @@ func (h *ChatHandler) LogFailure(
 
 	logDetail := shouldLogRequestDetail(h.Repo, true)
 
-	// The failure detail row is ledger: it rides the never-droppable
-	// ledger lane, not the generic queue (review F2). The daily error
+	// The failure detail record is diagnostics, not ledger: it appends
+	// to the file-backed detail store, fire-and-forget. The daily error
 	// fold accumulates like the success fold does.
 	if logDetail {
-		enqueueLedgerWrite(ledgerWrite{
-			repo: failureRepo,
-			detail: &db.RequestDetailRecord{
-				ID:           failureID,
-				Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
-				Provider:     failureProvider,
-				Model:        failureModel,
-				ConnectionID: failureConn,
-				Status:       "error",
-				Data:         failureData,
-			},
+		detailstore.Append(db.RequestDetailRecord{
+			ID:           failureID,
+			Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+			Provider:     failureProvider,
+			Model:        failureModel,
+			ConnectionID: failureConn,
+			Status:       "error",
+			Data:         failureData,
 		})
 	}
 	if !isProxyBlocked && status != "canceled" && firstDailyErrorFold(middleware.GetRequestIDFromContext(ctx), failureProvider, failureModel) {
@@ -651,19 +649,17 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		log.ErrorCtx(ctx, "usage", "marshal request detail failed", "error", err)
 		return
 	}
-	// The settings read decides the row's fate now; only the write leaves.
+	// The settings read decides the record's fate now; only the write
+	// leaves — to the file-backed detail store, fire-and-forget.
 	if shouldLogRequestDetail(h.Repo, false) {
-		enqueueLedgerWrite(ledgerWrite{
-			repo: h.Repo,
-			detail: &db.RequestDetailRecord{
-				ID:           reqID,
-				Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
-				Provider:     info.Provider,
-				Model:        info.Model,
-				ConnectionID: info.ConnectionID,
-				Status:       "success",
-				Data:         string(reqData),
-			},
+		detailstore.Append(db.RequestDetailRecord{
+			ID:           reqID,
+			Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+			Provider:     info.Provider,
+			Model:        info.Model,
+			ConnectionID: info.ConnectionID,
+			Status:       "success",
+			Data:         string(reqData),
 		})
 	}
 

@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/translator"
 	"axonrouter/proxy/internal/usagetracker"
-	"database/sql"
 	json "encoding/json/v2"
 	"errors"
 	"math"
@@ -584,14 +584,14 @@ func HandleUsageStats(repo *db.Repo) http.HandlerFunc {
 			applyRawAggregate(&resp, agg, nodeNameMap, connMap, keyNames, views)
 			if !window.since.IsZero() {
 				cutoff := window.since.UTC().Format("2006-01-02T15:04:05.000Z")
-				if errCount, err := repo.GetRequestDetailsErrorCountSince(r.Context(), cutoff); err == nil {
+				if errCount, err := detailstore.ErrorCountSince(cutoff); err == nil {
 					resp.TotalErrors = errCount
 				}
 				// Per-provider errors at the same request grain, merged
 				// into buckets the window already has: without them the
 				// breakdown showed every provider at a fake 100% in
 				// sub-day windows while the headline rate said otherwise.
-				if byProv, err := repo.GetRequestDetailsErrorCountByProviderSince(r.Context(), cutoff); err == nil {
+				if byProv, err := detailstore.ErrorCountByProviderSince(cutoff); err == nil {
 					for prov, n := range byProv {
 						if cur, ok := resp.ByProvider[prov]; ok {
 							cur.Errors += n
@@ -795,7 +795,7 @@ func HandleRequestDetails(repo *db.Repo) http.HandlerFunc {
 			}
 		}
 
-		rows, total, err := repo.GetRequestDetailsPaged(r.Context(), limit, offset, detailsSince(r.URL.Query().Get("period"), time.Now()))
+		rows, total, err := detailstore.Page(limit, offset, detailsSince(r.URL.Query().Get("period"), time.Now()))
 		if err != nil {
 			writeDashboardError(w, http.StatusInternalServerError, "Failed to fetch request details")
 			return
@@ -908,11 +908,11 @@ func HandleRequestDetail(repo *db.Repo) http.HandlerFunc {
 			writeDashboardError(w, http.StatusBadRequest, "invalid request id")
 			return
 		}
-		raw, err := repo.GetRequestDetailByID(id)
+		raw, err := detailstore.ByID(id)
 		if err != nil {
 			// A detail that was never recorded, or has since been pruned by
 			// retention, is a 404 rather than a server fault.
-			if errors.Is(err, sql.ErrNoRows) {
+			if errors.Is(err, detailstore.ErrNotFound) {
 				writeDashboardError(w, http.StatusNotFound, "Request detail not found")
 				return
 			}

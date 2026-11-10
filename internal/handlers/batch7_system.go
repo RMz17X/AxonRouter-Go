@@ -21,6 +21,7 @@ import (
 	"axonrouter/proxy/internal/config"
 	"axonrouter/proxy/internal/constants"
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlers/chat"
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/proxy/executor"
@@ -111,7 +112,7 @@ func HandleSystemMemory(repo *db.Repo) http.HandlerFunc {
 			// reachable, so a non-zero value here means the database
 			// was wedged past the enqueue wait — an operator must be
 			// able to see that without reading warning logs.
-			"usageWritesDropped": chat.UsageWritesDropped(),
+			"usageWritesDropped": chat.UsageWritesDropped() + detailstore.Dropped(),
 		})
 	}
 }

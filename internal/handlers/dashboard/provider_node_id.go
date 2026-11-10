@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -230,5 +231,9 @@ func (h *DashboardHandler) applyProviderNodeRename(w http.ResponseWriter, curren
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return "", false
 	}
+	// The request-details half of the rename lives in the file store
+	// now. It is best-effort like the history move inside the rename
+	// itself: a store that cannot rewrite must not refuse the edit.
+	_ = detailstore.RenameProvider(currentID, newID)
 	return newID, true
 }

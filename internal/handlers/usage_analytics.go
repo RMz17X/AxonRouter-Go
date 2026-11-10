@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -374,7 +375,7 @@ func HandleUsageAnalytics(repo *db.Repo) http.HandlerFunc {
 			return
 		}
 
-		rows, err := repo.GetAnalyticsEvents(r.Context(),
+		rows, err := detailstore.AnalyticsEvents(
 			filters.start.UTC().Format("2006-01-02T15:04:05.000Z"),
 			filters.end.UTC().Format("2006-01-02T15:04:05.000Z"),
 			filters.provider, filters.model)

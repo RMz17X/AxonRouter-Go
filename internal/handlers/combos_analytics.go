@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -46,7 +47,7 @@ func HandleCombosAnalytics(repo *db.Repo) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		period := r.URL.Query().Get("period")
 		since := detailsSince(period, time.Now())
-		rows, err := repo.GetComboAnalyticsSince(r.Context(), since)
+		rows, err := detailstore.ComboAnalyticsSince(since)
 		if err != nil {
 			// Axon's flat shape for this route, including its details key.
 			handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{

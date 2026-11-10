@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/providers"
 )
@@ -53,7 +54,7 @@ type ModelMeta struct {
 // smart-rule candidates already carry. Publishing only one would leave the
 // editor unable to match half its own members.
 func (h *DashboardHandler) HandleGetModelMeta(w http.ResponseWriter, r *http.Request) {
-	aggs, err := h.Repo.GetModelLatency()
+	aggs, err := detailstore.ModelLatency()
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return

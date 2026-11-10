@@ -19,6 +19,7 @@ import (
 	"axonrouter/proxy/internal/auth"
 	"axonrouter/proxy/internal/db"
 	"axonrouter/proxy/internal/db/dbtest"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlers"
 	"axonrouter/proxy/internal/handlers/chat"
 )
@@ -81,6 +82,13 @@ func newEnvWithTokenSaver(t *testing.T, build func(*db.Repo) *handlers.TokenSave
 	// so the harness runs the usage writer inline like the synchronous path
 	// it replaced. The async behaviour has its own unit tests.
 	chat.SetUsageWritesSynchronousForTest(true)
+
+	// Request details live in the file-backed store: give every Env a
+	// fresh one and run its writer inline for the same reason.
+	if err := detailstore.OpenForTest(t.TempDir()); err != nil {
+		t.Fatalf("open detail store: %v", err)
+	}
+	detailstore.SetSynchronousForTest(true)
 
 	// DATA_DIR keeps auth.CLIToken() and config.LoadConfig() from reading or
 	// writing the developer's real ~/.9router. JWT_SECRET pins the HS256

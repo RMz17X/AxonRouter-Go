@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -440,7 +441,7 @@ func HandleUsageDashboard(repo *db.Repo) http.HandlerFunc {
 		}()
 		go func() {
 			defer wg.Done()
-			perfRows, perfErr = repo.GetRequestDetailPerf()
+			perfRows, perfErr = detailstore.Perf()
 		}()
 		go func() {
 			defer wg.Done()

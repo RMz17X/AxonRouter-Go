@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -18,6 +19,9 @@ func (h *DashboardHandler) HandleGetDatabaseStats(w http.ResponseWriter, r *http
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to get database stats: "+err.Error())
 		return
 	}
+	// Request details live in the file store now; its count replaces
+	// the table count the stats read used to take.
+	stats.RequestDetailsCount = detailstore.Count()
 	handlerutil.WriteJSON(w, http.StatusOK, stats)
 }
 
@@ -28,19 +32,27 @@ func (h *DashboardHandler) HandlePruneDatabase(w http.ResponseWriter, r *http.Re
 		return
 	}
 	retention := 7 * 24 * time.Hour
-	if settings, err := h.Repo.GetSettings(); err == nil && settings != nil && settings.RetentionDays > 0 {
-		retention = time.Duration(settings.RetentionDays) * 24 * time.Hour
+	maxRows := 0
+	if settings, err := h.Repo.GetSettings(); err == nil && settings != nil {
+		if settings.RetentionDays > 0 {
+			retention = time.Duration(settings.RetentionDays) * 24 * time.Hour
+		}
+		if settings.MaxRequestRecords > 0 {
+			maxRows = settings.MaxRequestRecords
+		}
 	}
-	result, err := h.Repo.PruneRequestDetails(r.Context(), retention)
+	// The prune target is the file-backed request-details store; the
+	// response keeps the old by-age/by-size split.
+	byAge, bySize, err := detailstore.Prune(retention, maxRows)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to prune database: "+err.Error())
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"success": true,
-		"pruned":  result.Total(),
-		"byAge":   result.ByAge,
-		"bySize":  result.BySize,
+		"pruned":  byAge + bySize,
+		"byAge":   byAge,
+		"bySize":  bySize,
 	})
 }
 

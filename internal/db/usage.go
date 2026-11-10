@@ -130,28 +130,34 @@ type RequestDetailRecord struct {
 	Data         string
 }
 
-// InsertRequestDetailBatch is InsertUsageHistoryBatch for request
-// details, keeping the single-row writer's ON CONFLICT DO NOTHING grain
-// (see InsertRequestDetail for why the grain is (id, timestamp)).
-func (r *Repo) InsertRequestDetailBatch(recs []RequestDetailRecord) error {
-	for start := 0; start < len(recs); start += usageInsertChunk {
-		chunk := recs[start:min(start+usageInsertChunk, len(recs))]
-		var sb strings.Builder
-		sb.WriteString(`INSERT INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES `)
-		args := make([]any, 0, len(chunk)*7)
-		for i, rec := range chunk {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteString(`(?, ?, ?, ?, ?, ?, ?)`)
-			args = append(args, rec.ID, rec.Timestamp, rec.Provider, rec.Model, rec.ConnectionID, rec.Status, rec.Data)
-		}
-		sb.WriteString(` ON CONFLICT DO NOTHING`)
-		if _, err := r.Exec(sb.String(), args...); err != nil {
-			return fmt.Errorf("insert request detail batch: %w", err)
-		}
+// SeedRequestDetails exports the newest `limit` rows of the legacy
+// requestDetails table in ascending timestamp order. It exists for
+// exactly one purpose: the file-backed detail store's first boot
+// imports these rows so the Request Details page survives the storage
+// move. Nothing writes to the table any more, and once a deployment's
+// store has files this read never runs again.
+func (r *Repo) SeedRequestDetails(limit int) ([]RequestDetailRecord, error) {
+	rows, err := r.Query(`SELECT id, timestamp, COALESCE(provider, ''), COALESCE(model, ''),
+		COALESCE(connectionId, ''), COALESCE(status, ''), COALESCE(data::text, '')
+		FROM (SELECT * FROM requestDetails ORDER BY timestamp DESC, id DESC LIMIT ?) recent
+		ORDER BY timestamp ASC, id ASC`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("seed request details: %w", err)
 	}
-	return nil
+	defer func() { _ = rows.Close() }()
+	var res []RequestDetailRecord
+	for rows.Next() {
+		var rec RequestDetailRecord
+		if err := rows.Scan(&rec.ID, &rec.Timestamp, &rec.Provider, &rec.Model,
+			&rec.ConnectionID, &rec.Status, &rec.Data); err != nil {
+			return nil, fmt.Errorf("scan seed request detail: %w", err)
+		}
+		res = append(res, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate seed request details: %w", err)
+	}
+	return res, nil
 }
 
 // UpsertUsageDaily inserts or replaces a daily usage aggregation record.
@@ -226,27 +232,6 @@ func (r *Repo) FoldUsageDaily(dateKey string, fold func(existing string) (string
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("%w: %w", ErrDailyFoldWrite, fmt.Errorf("fold daily usage %s: commit: %w", dateKey, err))
-	}
-	return nil
-}
-
-// InsertRequestDetail logs a request detail record for the Recent Requests dashboard tab.
-func (r *Repo) InsertRequestDetail(id, provider, model, connectionID, status string, data string) error {
-	timestamp := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
-	// ON CONFLICT DO NOTHING with no target. The conflict grain is
-	// deliberate and recorded in the P1 fragment: requestDetails is a
-	// partitioned parent whose key is (id, timestamp) — a partitioned
-	// table cannot carry a unique index on id alone — so the skip fires
-	// on the full key. The writers generate one id per request and
-	// insert it once (the chat path's success and failure branches are
-	// exclusive), so the wider grain is not reachable from the current
-	// call graph; a future caller that retries an insert must dedupe
-	// itself.
-	query := `INSERT INTO requestDetails (id, timestamp, provider, model, connectionId, status, data) VALUES (?, ?, ?, ?, ?, ?, ?)
-	 ON CONFLICT DO NOTHING`
-	_, err := r.Exec(query, id, timestamp, provider, model, connectionID, status, data)
-	if err != nil {
-		return fmt.Errorf("insert request detail %s: %w", id, err)
 	}
 	return nil
 }
@@ -534,43 +519,6 @@ type RequestDetailPerfRow struct {
 	OutputTokens     int64
 }
 
-// requestDetailPerfSelect reads the latency and output numbers out of
-// the stored payload. data is jsonb, so no validity guard is needed —
-// an absent path is the same NULL the COALESCE folds to zero. The
-// extractions are the truncating integer form of jsonexpr.go (latency
-// and token counts are integers by construction).
-const requestDetailPerfSelect = `
-	SELECT COALESCE(provider, ''), COALESCE(model, ''),
-	       COALESCE((trunc((data #>> '{latency,ttft}')::numeric)::bigint), 0),
-	       COALESCE((trunc((data #>> '{latency,total}')::numeric)::bigint), 0),
-	       COALESCE((trunc((data #>> '{tokens,completion_tokens}')::numeric)::bigint), 0),
-	       COALESCE((trunc((data #>> '{tokens,output_tokens}')::numeric)::bigint), 0)
-	FROM requestDetails`
-
-// GetRequestDetailPerf returns the latency observation of every request
-// detail. The ring is retention-bounded, so this stays cheap; it is the
-// gateway's only source of per-request latency for the node-health table.
-func (r *Repo) GetRequestDetailPerf() ([]RequestDetailPerfRow, error) {
-	rows, err := r.Query(requestDetailPerfSelect) //nolint:noctx
-	if err != nil {
-		return nil, fmt.Errorf("query request detail perf: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var res []RequestDetailPerfRow
-	for rows.Next() {
-		var row RequestDetailPerfRow
-		if err := rows.Scan(&row.Provider, &row.Model, &row.TTFTMs, &row.TotalMs,
-			&row.CompletionTokens, &row.OutputTokens); err != nil {
-			return nil, fmt.Errorf("scan request detail perf: %w", err)
-		}
-		res = append(res, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate request detail perf: %w", err)
-	}
-	return res, nil
-}
-
 // ModelLatencyAgg is one model's mean responsiveness over the retained window.
 // Either average may be zero — a model whose responses never reported a
 // first-token time has a total but no TTFT — so a consumer must read the
@@ -581,65 +529,6 @@ type ModelLatencyAgg struct {
 	TTFTMs   int64
 	TotalMs  int64
 	Samples  int64
-}
-
-// GetModelLatency aggregates the requestDetails ring into one mean-latency row
-// per provider/model pair. It lives beside the read it summarises so the two
-// cannot disagree about what a buffered flush means: the node-health table
-// folds the same rows in the handler, and a second implementation of that fold
-// would drift the moment either changed its mind.
-//
-// The aggregation is done in Go rather than SQL because the fold has a rule a
-// query cannot express cheaply — a burst faster than 300 tok/s is a buffered
-// flush, so the end-to-end total is the honest duration there, and dampening it
-// keeps fast-but-honest streams from reading as slow ones.
-func (r *Repo) GetModelLatency() ([]ModelLatencyAgg, error) {
-	rows, err := r.GetRequestDetailPerf()
-	if err != nil {
-		return nil, err
-	}
-	type acc struct {
-		total, count    int64
-		ttft, ttftCount int64
-	}
-	byKey := make(map[string]*acc, len(rows))
-	keyOf := func(provider, model string) string { return provider + "|" + model }
-	for _, row := range rows {
-		if row.TotalMs <= 0 {
-			continue
-		}
-		k := keyOf(row.Provider, row.Model)
-		a := byKey[k]
-		if a == nil {
-			a = &acc{}
-			byKey[k] = a
-		}
-		a.total += row.TotalMs
-		a.count++
-		if row.TTFTMs > 0 {
-			a.ttft += row.TTFTMs
-			a.ttftCount++
-		}
-	}
-	out := make([]ModelLatencyAgg, 0, len(byKey))
-	for k, a := range byKey {
-		provider, model := k, ""
-		for i := range len(k) {
-			if k[i] == '|' {
-				provider, model = k[:i], k[i+1:]
-				break
-			}
-		}
-		agg := ModelLatencyAgg{Provider: provider, Model: model, Samples: a.count}
-		if a.count > 0 {
-			agg.TotalMs = a.total / a.count
-		}
-		if a.ttftCount > 0 {
-			agg.TTFTMs = a.ttft / a.ttftCount
-		}
-		out = append(out, agg)
-	}
-	return out, nil
 }
 
 // UsageChartRow is one usageHistory row as the chart needs it: the bucket
@@ -847,229 +736,10 @@ type RequestDetailListRow struct {
 	SmartDecisionJSON string
 }
 
-// The sort carries an id tiebreaker (council round 1, C-3): timestamps
-// are millisecond strings and same-millisecond rows are routine under
-// burst, so timestamp alone leaves page boundaries over ties arbitrary
-// — the Details list and the usage export, which share this select,
-// could show a row twice or never.
-//
-// requestDetailListSelect pulls the renderable values straight out of
-// the stored JSON. The key paths mirror what internal/handlers/chat
-// writes into `latency` and `tokens`; the extraction returns NULL for
-// a path a given row does not carry, which COALESCE folds to the zero
-// the table already renders for "not reported". The validity column is
-// a presence check (data is jsonb, valid by construction); the tokens
-// column is the jsonb sub-document, which the driver returns in
-// jsonb's canonical text form — the document a reader parses out of
-// it is the same.
-const requestDetailListSelect = `
-	SELECT id, timestamp, COALESCE(provider, ''), COALESCE(model, ''), COALESCE(connectionId, ''),
-	       COALESCE(status, ''),
-	       COALESCE((trunc((data #>> '{latency,ttft}')::numeric)::bigint), 0),
-	       COALESCE((trunc((data #>> '{latency,total}')::numeric)::bigint), 0),
-	       COALESCE(data #> '{tokens}', '{}'::jsonb),
-	       COALESCE(data #>> '{account}', ''),
-	       COALESCE((data #>> '{cost}')::float8, 0.0),
-	       COALESCE(data #>> '{combo}', ''),
-	       COALESCE(data #>> '{protocol}', ''),
-	       COALESCE(data #>> '{loopWarning}', COALESCE(data #>> '{anomalies,0,message}', '')),
-	       CASE WHEN data IS NULL THEN 0 ELSE 1 END,
-	       COALESCE(NULLIF(data ->> 'proxy', ''), NULLIF(data ->> 'egress', ''), NULLIF(data #>> '{egress,poolName}', ''), NULLIF(data #>> '{egress,poolId}', ''), NULLIF(data #>> '{egress,PoolID}', ''), NULLIF(data #>> '{egress,target}', ''), 'direct'),
-	       COALESCE((data #>> '{isStream}')::boolean, true),
-	       COALESCE(data #>> '{apiKeyName}', ''),
-	       COALESCE(data #>> '{clientApiKey}', ''),
-	       COALESCE(data #>> '{clientIp}', ''),
-	       COALESCE((data #> '{smartDecision}')::text, '')
-	FROM requestDetails
-	%s
-	ORDER BY timestamp DESC, id DESC
-	LIMIT ? OFFSET ?`
-
-// requestDetailCount counts exactly the rows requestDetailListSelect would page.
-// The two share the predicate slot so a windowed page can never report a total
-// gathered from outside its window.
-const requestDetailCount = `SELECT COUNT(*) FROM requestDetails %s`
-
-// GetRequestDetailsPaged returns one page of detail rows and the total
-// number of recorded requests.
-//
-// The page is collapsed to one row per REQUEST: requestDetails holds one
-// diagnostic row per failed attempt, so paging raw rows showed a single
-// request up to a dozen times and reported the row count as the request
-// total. The representative row per request is its success row when one
-// exists (the request's outcome), otherwise its latest row. Rows group
-// by the middleware request id the writers stamp into the payload,
-// falling back to the row id for rows that predate it.
-//
-// since is the optional timestamp floor behind ?period on the Details tab; an
-// empty string reads the whole table.
-//
-// The count is not allowed to fail quietly. Reporting 0 next to a page that
-// does carry rows is the same "zero that means broken" class this reader's
-// siblings were fixed for, and it reaches the caller looking like a coherent
-// empty page.
-func (r *Repo) GetRequestDetailsPaged(ctx context.Context, limit, offset int, since string) ([]RequestDetailListRow, int, error) {
-	where := ""
-	var args []any
-	if since != "" {
-		where = "WHERE timestamp >= ?"
-		args = append(args, since)
-	}
-	var total int
-	countQuery := `SELECT COUNT(DISTINCT COALESCE(NULLIF(data->>'reqId', ''), id)) FROM requestDetails ` + where
-	if err := r.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count requestDetails: %w", err)
-	}
-
-	listQuery := `WITH picked AS (
-		SELECT DISTINCT ON (COALESCE(NULLIF(data->>'reqId', ''), id)) id, timestamp
-		FROM requestDetails ` + where + `
-		ORDER BY COALESCE(NULLIF(data->>'reqId', ''), id), (status = 'success') DESC, timestamp DESC, id DESC
-	)
-	SELECT rd.id, rd.timestamp, COALESCE(rd.provider, ''), COALESCE(rd.model, ''), COALESCE(rd.connectionId, ''),
-	       COALESCE(rd.status, ''),
-	       COALESCE((trunc((rd.data #>> '{latency,ttft}')::numeric)::bigint), 0),
-	       COALESCE((trunc((rd.data #>> '{latency,total}')::numeric)::bigint), 0),
-	       COALESCE(rd.data #> '{tokens}', '{}'::jsonb),
-	       COALESCE(rd.data #>> '{account}', ''),
-	       COALESCE((rd.data #>> '{cost}')::float8, 0.0),
-	       COALESCE(rd.data #>> '{combo}', ''),
-	       COALESCE(rd.data #>> '{protocol}', ''),
-	       COALESCE(rd.data #>> '{loopWarning}', COALESCE(rd.data #>> '{anomalies,0,message}', '')),
-	       CASE WHEN rd.data IS NULL THEN 0 ELSE 1 END,
-	       COALESCE(NULLIF(rd.data ->> 'proxy', ''), NULLIF(rd.data ->> 'egress', ''), NULLIF(rd.data #>> '{egress,poolName}', ''), NULLIF(rd.data #>> '{egress,poolId}', ''), NULLIF(rd.data #>> '{egress,PoolID}', ''), NULLIF(rd.data #>> '{egress,target}', ''), 'direct'),
-	       COALESCE((rd.data #>> '{isStream}')::boolean, true),
-	       COALESCE(rd.data #>> '{apiKeyName}', ''),
-	       COALESCE(rd.data #>> '{clientApiKey}', ''),
-	       COALESCE(rd.data #>> '{clientIp}', ''),
-	       COALESCE((rd.data #> '{smartDecision}')::text, '')
-	FROM picked p
-	JOIN requestDetails rd ON rd.id = p.id AND rd.timestamp = p.timestamp
-	ORDER BY rd.timestamp DESC, rd.id DESC
-	LIMIT ? OFFSET ?`
-	rows, err := r.QueryContext(ctx, listQuery, append(args, limit, offset)...)
-	if err != nil {
-		return nil, total, fmt.Errorf("query requestDetails paged: %w", err)
-	}
-	defer rows.Close()
-
-	res := make([]RequestDetailListRow, 0, limit)
-	for rows.Next() {
-		var row RequestDetailListRow
-		var dataValid int
-		if err := rows.Scan(&row.ID, &row.Timestamp, &row.Provider, &row.Model,
-			&row.ConnectionID, &row.Status, &row.LatencyTTFT, &row.LatencyTotal, &row.TokensJSON,
-			&row.Account, &row.Cost, &row.Combo, &row.Protocol,
-			&row.LoopWarning,
-			&dataValid,
-			&row.Proxy,
-			&row.IsStream,
-			&row.APIKeyName,
-			&row.ClientAPIKey,
-			&row.ClientIP,
-			&row.SmartDecisionJSON); err != nil {
-			return nil, total, fmt.Errorf("scan requestDetails: %w", err)
-		}
-		// A stored `data` that is NULL or not JSON is a broken read, not an
-		// empty row. The raw-column query this replaced surfaced that as a scan
-		// error; json_extract alone would fold it to the COALESCE defaults above
-		// and render the row as a request with zero tokens and no payload, which
-		// reads as real data. json_valid separates the two cases in the same pass.
-		if dataValid != 1 {
-			return nil, total, fmt.Errorf("requestDetails %s has an unreadable data column", row.ID)
-		}
-		res = append(res, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, total, fmt.Errorf("iterate requestDetails paged: %w", err)
-	}
-	return res, total, nil
-}
-
-// GetRequestDetailByID returns the full stored payload for one request, which
-// is what the inspector shows. It is a primary-key lookup, so opening a row
-// costs the same whether the table holds ten rows or ten million.
-func (r *Repo) GetRequestDetailByID(id string) (string, error) {
-	if id == "" {
-		return "", fmt.Errorf("get request detail: empty id")
-	}
-	var data string
-	if err := r.QueryRow(`SELECT data FROM requestDetails WHERE id = ?`, id).Scan(&data); err != nil {
-		return "", fmt.Errorf("get request detail %s: %w", id, err)
-	}
-	return data, nil
-}
-
-// GetRequestDetailsErrorCountSince returns the count of failed requests recorded in requestDetails since cutoff.
-//
-// requestDetails holds one diagnostic row per failed ATTEMPT (LogFailure),
-// so a row count would report one failed request once per account it
-// tried — and a request that eventually succeeded still leaves error
-// rows behind for its losing attempts. The count therefore groups rows
-// by the request they belong to (the middleware request id in the
-// payload, falling back to the row id for rows that predate it) and
-// counts a group as failed only when no row of it succeeded.
-func (r *Repo) GetRequestDetailsErrorCountSince(ctx context.Context, since string) (int, error) {
-	var count int
-	err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
-		SELECT COALESCE(NULLIF(data->>'reqId', ''), id) AS req_key,
-			BOOL_OR(status = 'error') AS has_error,
-			BOOL_OR(status = 'success') AS has_success
-		FROM requestDetails
-		WHERE timestamp >= ? AND status IN ('error', 'success')
-		GROUP BY req_key
-	) grouped WHERE has_error AND NOT has_success`, since).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("count requestDetails errors since %s: %w", since, err)
-	}
-	return count, nil
-}
-
-// GetRequestDetailsErrorCountByProviderSince returns, per provider, how
-// many requests failed ON that provider since the cutoff — the same
-// request grain as GetRequestDetailsErrorCountSince, split by provider:
-// a request counts once under every provider it attempted and failed
-// on, and not at all when any of its rows succeeded. The per-provider
-// counts can therefore sum to more than the headline failed-request
-// total for cascaded requests; each number answers "how many requests
-// did this provider fail", which is what a breakdown row means.
-func (r *Repo) GetRequestDetailsErrorCountByProviderSince(ctx context.Context, since string) (map[string]int, error) {
-	rows, err := r.QueryContext(ctx, `WITH failed AS (
-		SELECT DISTINCT COALESCE(provider, '') AS prov,
-			COALESCE(NULLIF(data->>'reqId', ''), id) AS req_key
-		FROM requestDetails
-		WHERE timestamp >= ? AND status = 'error'
-	), succ AS (
-		SELECT DISTINCT COALESCE(NULLIF(data->>'reqId', ''), id) AS req_key
-		FROM requestDetails
-		WHERE timestamp >= ? AND status = 'success'
-	)
-	SELECT f.prov, COUNT(*) FROM failed f
-	WHERE f.req_key NOT IN (SELECT req_key FROM succ)
-	GROUP BY f.prov`, since, since)
-	if err != nil {
-		return nil, fmt.Errorf("count requestDetails errors by provider since %s: %w", since, err)
-	}
-	defer rows.Close()
-	res := make(map[string]int)
-	for rows.Next() {
-		var prov string
-		var n int
-		if err := rows.Scan(&prov, &n); err != nil {
-			return nil, fmt.Errorf("scan requestDetails errors by provider since %s: %w", since, err)
-		}
-		res[prov] = n
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate requestDetails errors by provider since %s: %w", since, err)
-	}
-	return res, nil
-}
-
 // ComboAnalyticsRow is one (combo, resolved model, provider) aggregate of the
 // request-details ledger, backing GET /api/combos/analytics. Errors are not
 // carried: the handler derives them as Total - Success, matching how the
-// column vocabulary works — InsertRequestDetail is only ever called with
+// column vocabulary works — detail records are only ever written with
 // "success" or "error", so every non-success row is an error row.
 type ComboAnalyticsRow struct {
 	ComboName   string
@@ -1079,63 +749,4 @@ type ComboAnalyticsRow struct {
 	Success     int
 	AvgLatencyS float64
 	LastSeen    string
-}
-
-// GetComboAnalyticsSince aggregates the request-details ledger by (combo,
-// model, provider) over the window. Only combo-routed rows qualify — the
-// combo name lives in the stored payload ($.combo), like the other values
-// requestDetailListSelect extracts. since is the optional timestamp floor;
-// an empty string reads the whole ledger, mirroring GetRequestDetailsPaged.
-// One grouped statement answers the whole table: averaging latency in SQL
-// keeps a long window from shipping every ledger row to the handler.
-func (r *Repo) GetComboAnalyticsSince(ctx context.Context, since string) ([]ComboAnalyticsRow, error) {
-	// The combo name and the latency live in the stored payload; the two
-	// expressions are the only extraction-bearing parts of the statement.
-	comboExpr := "COALESCE(data #>> '{combo}', '')"
-	latencyAvg := "COALESCE(AVG((data #>> '{latency,total}')::float8), 0) / 1000.0"
-	where := "WHERE " + comboExpr + " <> ''"
-	var args []any
-	if since != "" {
-		where += " AND timestamp >= ?"
-		args = append(args, since)
-	}
-	// Aggregate over one representative row per REQUEST, not over raw
-	// rows: requestDetails holds one row per failed attempt, so counting
-	// rows inflated a combo's total once per account a request tried
-	// and derived its errors (total - success) from attempt volume.
-	// The representative is the request's success row when one exists,
-	// else its latest row; attribution follows that row.
-	query := `WITH picked AS (
-		SELECT DISTINCT ON (COALESCE(NULLIF(data->>'reqId', ''), id)) *
-		FROM requestDetails
-		` + where + `
-		ORDER BY COALESCE(NULLIF(data->>'reqId', ''), id), (status = 'success') DESC, timestamp DESC, id DESC
-	)
-	SELECT ` + comboExpr + ` AS combo,
-	       COALESCE(model, ''), COALESCE(provider, ''),
-	       COUNT(*),
-	       COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0),
-	       ` + latencyAvg + `,
-	       COALESCE(MAX(timestamp), '')
-	FROM picked
-	GROUP BY combo, model, provider
-	ORDER BY combo ASC, model ASC, provider ASC`
-	rows, err := r.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("query combo analytics since %q: %w", since, err)
-	}
-	defer func() { _ = rows.Close() }()
-	res := make([]ComboAnalyticsRow, 0)
-	for rows.Next() {
-		var row ComboAnalyticsRow
-		if err := rows.Scan(&row.ComboName, &row.Model, &row.Provider,
-			&row.Total, &row.Success, &row.AvgLatencyS, &row.LastSeen); err != nil {
-			return nil, fmt.Errorf("scan combo analytics since %q: %w", since, err)
-		}
-		res = append(res, row)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate combo analytics since %q: %w", since, err)
-	}
-	return res, nil
 }

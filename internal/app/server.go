@@ -163,7 +163,8 @@ func ProvideServer(p ServerParams) *http.Server {
 			catalogPath := filepath.Join(config.ResolveDataDir(), "model-catalog.json")
 			providers.StartBackgroundCatalogSync(shutdown.Context(), nil, catalogPath)
 			oauth.StartBackgroundRefresh(shutdown.Context(), p.Repo)
-			db.StartRetentionLoop(shutdown.Context(), p.Repo, db.DefaultRequestDetailRetention)
+			db.StartRetentionLoop(shutdown.Context(), p.Repo)
+			startDetailRetention(shutdown.Context(), p.Repo)
 			// The Gemini Web session cookie is renewed by the site every few
 			// minutes, and the renewed value is what keeps a signed-in
 			// account reaching the models it pays for. Without this loop the
@@ -362,4 +363,3 @@ func startMiniMaxAutoClaimScheduler(ctx context.Context, repo *db.Repo) {
 		}
 	}()
 }
-

@@ -9,6 +9,7 @@ import (
 
 	"axonrouter/proxy/internal/config"
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/speedlayer"
 	"axonrouter/proxy/internal/translator"
@@ -106,6 +107,13 @@ func ProvideDatabase(lc fx.Lifecycle, cfg *config.Config) (*sql.DB, error) {
 // ProvideRepo provides *db.Repo using the database connection.
 func ProvideRepo(conn *sql.DB) *db.Repo {
 	repo := db.NewRepo(conn)
+	// The request-details store lives in files under the data dir
+	// (internal/detailstore), seeded once from the legacy table. Its
+	// Init reports failure by logging and leaving reads erroring —
+	// diagnostics must never block the gateway's boot.
+	_ = detailstore.Init(config.ResolveDataDir(), func() ([]db.RequestDetailRecord, error) {
+		return repo.SeedRequestDetails(6000)
+	})
 	// G26: hydrate thought signatures from the database so a signature written before
 	// a restart is still replayable on the next tool turn. Fail-open — a broken
 	// database only leaves the store process-local, exactly as it was before.

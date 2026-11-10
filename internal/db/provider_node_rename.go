@@ -116,10 +116,12 @@ func (r *Repo) RenameProviderNode(oldID, newID string) (*models.ProviderNode, er
 
 	// History rows are append-only analytics; moving them keeps the renamed
 	// node's past traffic attached to it instead of stranding it under an id
-	// that no longer exists. Both tables can be absent from a database that was
+	// that no longer exists. The table can be absent from a database that was
 	// never fully bootstrapped, and losing analytics is a far better outcome
-	// than refusing the edit.
-	for _, table := range []string{"usageHistory", "requestDetails"} {
+	// than refusing the edit. Request details are not here: they live in the
+	// file-backed detail store, whose half of the rename the dashboard
+	// handler runs after this one lands.
+	for _, table := range []string{"usageHistory"} {
 		if !tableExists(tx, table) {
 			continue
 		}

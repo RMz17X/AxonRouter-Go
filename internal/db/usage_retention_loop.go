@@ -20,25 +20,19 @@ var (
 	retentionStarted bool
 )
 
-// StartRetentionLoop prunes requestDetails on a timer until ctx is cancelled,
-// and prunes usageHistory too when the operator has asked for that (see
-// runRetentionPass).
+// StartRetentionLoop prunes the usage ledger on a timer when the
+// operator has configured a window for it, until ctx is cancelled.
+// Request details used to be pruned here too; they live in the
+// file-backed detail store now, which runs its own retention from
+// the app layer (internal/app) against the same settings.
 //
-// Safe to call more than once; the extra calls are no-ops. Fail-open: a failed
-// pass is logged and the next tick retries, because a pruning failure costs disk
-// and never costs correctness — requestDetails is diagnostics, and a gateway
-// that cannot prune must still serve traffic.
-//
-// The final pass runs PRAGMA optimize, which refreshes the planner's statistics.
-// That matters here because pruning leaves large stretches of freed pages behind
-// and leaves indexes describing a table that no longer has the shape they were
-// built for.
-func StartRetentionLoop(ctx context.Context, repo *Repo, retention time.Duration) {
+// Safe to call more than once; the extra calls are no-ops. Fail-open:
+// a failed pass is logged and the next tick retries, because a
+// pruning failure costs disk and never costs correctness — and a
+// gateway that cannot prune must still serve traffic.
+func StartRetentionLoop(ctx context.Context, repo *Repo) {
 	if repo == nil {
 		return
-	}
-	if retention <= 0 {
-		retention = DefaultRequestDetailRetention
 	}
 
 	retentionMu.Lock()
@@ -60,7 +54,7 @@ func StartRetentionLoop(ctx context.Context, repo *Repo, retention time.Duration
 		defer ticker.Stop()
 
 		for {
-			runRetentionPass(ctx, repo, retention)
+			runRetentionPass(ctx, repo)
 			select {
 			case <-ctx.Done():
 				return
@@ -70,52 +64,24 @@ func StartRetentionLoop(ctx context.Context, repo *Repo, retention time.Duration
 	}()
 }
 
-// runRetentionPass runs one tick of the retention loop: requestDetails always,
-// the usage ledger only when the operator has asked for it.
+// runRetentionPass runs one tick of the retention loop: the usage
+// ledger, only when the operator has asked for it.
 //
-// Both prunes share a deadline. Statistics freshness after a pass is
-// the server's autoanalyze job, so nothing runs here to refresh it.
-func runRetentionPass(ctx context.Context, repo *Repo, defaultRetention time.Duration) {
+// Statistics freshness after a pass is the server's autoanalyze job,
+// so nothing runs here to refresh it.
+func runRetentionPass(ctx context.Context, repo *Repo) {
 	passCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	retention := defaultRetention
-	maxRows := 0
 	ledgerDays := 0
 	if s, err := repo.GetSettings(); err == nil && s != nil {
-		if s.RetentionDays > 0 {
-			retention = time.Duration(s.RetentionDays) * 24 * time.Hour
-		}
-		if s.MaxRequestRecords > 0 {
-			maxRows = s.MaxRequestRecords
-		}
 		ledgerDays = s.UsageHistoryRetentionDays
 	}
 
-	pruneRequestDetailRows(passCtx, ctx, repo, retention, maxRows)
 	pruneUsageLedgerRows(passCtx, ctx, repo, ledgerDays)
 	// No statistics refresh ends the pass: the server's autoanalyze
 	// owns that job (the file backend's PRAGMA optimize had no server
 	// form and was gated off rather than transliterated).
-}
-
-// pruneRequestDetailRows runs the diagnostics prune and reports whether it
-// removed anything. A failure is logged and reported as "no work", because one
-// failing table must not stop the pass from reaching the other.
-func pruneRequestDetailRows(passCtx, ctx context.Context, repo *Repo, retention time.Duration, maxRows int) bool {
-	result, err := repo.PruneRequestDetails(passCtx, retention, maxRows)
-	if err != nil {
-		if ctx.Err() == nil {
-			log.Printf("[RETENTION] prune failed: %v", err)
-		}
-		return false
-	}
-	if result.Total() == 0 {
-		return false
-	}
-	log.Printf("[RETENTION] pruned %d requestDetails rows (by age: %d, by size: %d)",
-		result.Total(), result.ByAge, result.BySize)
-	return true
 }
 
 // pruneUsageLedgerRows runs the ledger prune when the operator has configured a

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -85,8 +86,7 @@ func HandleUsageAnalyticsFailures(repo *db.Repo) http.HandlerFunc {
 		}
 
 		if valid {
-			ctx := r.Context()
-			if rows, err := repo.GetFailureTopModels(ctx, filter); err == nil {
+			if rows, err := detailstore.FailureTopModels(filter); err == nil {
 				for _, row := range rows {
 					resp.TopModels = append(resp.TopModels, failureGroupPoint{
 						Provider:         row.Provider,
@@ -98,7 +98,7 @@ func HandleUsageAnalyticsFailures(repo *db.Repo) http.HandlerFunc {
 					})
 				}
 			}
-			if rows, err := repo.GetFailureTopProviders(ctx, filter); err == nil {
+			if rows, err := detailstore.FailureTopProviders(filter); err == nil {
 				for _, row := range rows {
 					resp.TopProviders = append(resp.TopProviders, failureProviderPoint{
 						Provider:         row.Provider,
@@ -109,7 +109,7 @@ func HandleUsageAnalyticsFailures(repo *db.Repo) http.HandlerFunc {
 					})
 				}
 			}
-			if payloads, err := repo.GetRecentFailurePayloads(ctx, filter, limit); err == nil {
+			if payloads, err := detailstore.RecentFailurePayloads(filter, limit); err == nil {
 				for _, raw := range payloads {
 					// AxonRouter's rowToDetail is the stored payload itself,
 					// parsed; an unreadable payload reads as an empty object.

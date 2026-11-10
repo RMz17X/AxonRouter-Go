@@ -23,14 +23,16 @@ import (
 // None of that work changes what the client sees on the wire, so it runs
 // on a single background worker instead. The worker drains TWO lanes:
 //
-//   - The LEDGER lane (usageHistory + requestDetails inserts) carries
-//     the billing truth. It is never droppable: enqueueing blocks
-//     (bounded) until the worker takes the record, and the worker lands
-//     records as multi-row batch INSERTs, so drain throughput exceeds
-//     burst arrival by orders of magnitude. Review cycle 1 (F2) proved
-//     the previous single droppable queue discarded ~5% of ledger rows
-//     at 2,000-request scale — the two ledger tables even diverged from
-//     each other, because drops hit them independently.
+//   - The LEDGER lane (usageHistory inserts) carries the billing truth.
+//     It is never droppable: enqueueing blocks (bounded) until the
+//     worker takes the record, and the worker lands records as
+//     multi-row batch INSERTs, so drain throughput exceeds burst
+//     arrival by orders of magnitude. Review cycle 1 (F2) proved the
+//     previous single droppable queue discarded ~5% of ledger rows at
+//     2,000-request scale. Request details used to ride this lane too;
+//     they are diagnostics, not billing truth, and since the
+//     detailstore move (2026-11-11) they append to files through
+//     internal/detailstore's own fire-and-forget queue instead.
 //   - The GENERIC lane keeps the old bounded, drop-on-full contract for
 //     work that is allowed to be lost under overload — today that is
 //     compression analytics, a telemetry mirror of the ledger, not the
@@ -76,14 +78,13 @@ const ledgerEnqueueTimeout = 10 * time.Second
 // it verbatim.
 type usageWriteJob func()
 
-// ledgerWrite is one ledger-lane unit: exactly one of history/detail is
-// set, or barrier is set. A barrier is the flush marker FlushUsageWrites
-// sends: the worker lands every pending batch before closing it, which
-// is what makes "enqueued before the call" observable.
+// ledgerWrite is one ledger-lane unit: a history record, or a barrier.
+// A barrier is the flush marker FlushUsageWrites sends: the worker
+// lands every pending batch before closing it, which is what makes
+// "enqueued before the call" observable.
 type ledgerWrite struct {
 	repo    *db.Repo
 	history *db.UsageHistoryRecord
-	detail  *db.RequestDetailRecord
 	barrier chan struct{}
 }
 
@@ -123,7 +124,6 @@ func ensureUsageWorker() {
 // variables in its select races any such reset for its whole lifetime.
 func usageWorkerLoop(genericQueue chan usageWriteJob, ledgerQueue chan ledgerWrite) {
 	var pendingHistory []ledgerWrite
-	var pendingDetails []ledgerWrite
 
 	var timer *time.Timer
 	var timerC <-chan time.Time
@@ -145,12 +145,8 @@ func usageWorkerLoop(genericQueue chan usageWriteJob, ledgerQueue chan ledgerWri
 	flushPending := func() {
 		stopTimer()
 		if len(pendingHistory) > 0 {
-			flushLedgerBatch(pendingHistory, true)
+			flushLedgerBatch(pendingHistory)
 			pendingHistory = nil
-		}
-		if len(pendingDetails) > 0 {
-			flushLedgerBatch(pendingDetails, false)
-			pendingDetails = nil
 		}
 	}
 
@@ -170,13 +166,6 @@ func usageWorkerLoop(genericQueue chan usageWriteJob, ledgerQueue chan ledgerWri
 				} else {
 					armTimer()
 				}
-			case lw.detail != nil:
-				pendingDetails = append(pendingDetails, lw)
-				if len(pendingDetails) >= ledgerBatchMax {
-					flushPending()
-				} else {
-					armTimer()
-				}
 			}
 		case <-timerC:
 			timer = nil
@@ -189,7 +178,7 @@ func usageWorkerLoop(genericQueue chan usageWriteJob, ledgerQueue chan ledgerWri
 // flushLedgerBatch lands one pending run as batch INSERTs. Records are
 // grouped by consecutive repo (in practice the process has exactly one
 // repo; the grouping keeps a multi-repo test honest without a sort).
-func flushLedgerBatch(pending []ledgerWrite, history bool) {
+func flushLedgerBatch(pending []ledgerWrite) {
 	for start := 0; start < len(pending); {
 		repo := pending[start].repo
 		end := start + 1
@@ -197,19 +186,11 @@ func flushLedgerBatch(pending []ledgerWrite, history bool) {
 			end++
 		}
 		if repo != nil {
-			if history {
-				recs := make([]db.UsageHistoryRecord, 0, end-start)
-				for _, lw := range pending[start:end] {
-					recs = append(recs, *lw.history)
-				}
-				insertLedgerHistoryBatch(repo, recs)
-			} else {
-				recs := make([]db.RequestDetailRecord, 0, end-start)
-				for _, lw := range pending[start:end] {
-					recs = append(recs, *lw.detail)
-				}
-				insertLedgerDetailBatch(repo, recs)
+			recs := make([]db.UsageHistoryRecord, 0, end-start)
+			for _, lw := range pending[start:end] {
+				recs = append(recs, *lw.history)
 			}
+			insertLedgerHistoryBatch(repo, recs)
 		}
 		start = end
 	}
@@ -243,27 +224,6 @@ func insertLedgerHistoryBatch(repo *db.Repo, recs []db.UsageHistoryRecord) {
 	}
 }
 
-// insertLedgerDetailBatch is insertLedgerHistoryBatch for request
-// details. The batch writer's ON CONFLICT DO NOTHING grain is preserved
-// per row: a conflicting id is a dedupe, not a loss, and never reaches
-// the counter.
-func insertLedgerDetailBatch(repo *db.Repo, recs []db.RequestDetailRecord) {
-	if err := repo.InsertRequestDetailBatch(recs); err != nil {
-		log.Error("usage", "insert request detail batch failed", "rows", len(recs), "error", err)
-		lost := 0
-		for i := range recs {
-			if err := repo.InsertRequestDetailBatch(recs[i : i+1]); err != nil {
-				lost++
-				log.Error("usage", "insert request detail row failed", "error", err)
-			}
-		}
-		if lost > 0 {
-			dropped := usageWritesDropped.Add(int64(lost))
-			log.Error("usage", "request detail rows lost after per-row retry", "rows", lost, "dropped_total", dropped)
-		}
-	}
-}
-
 // enqueueUsageWrite persists one generic-lane unit off the response
 // goroutine. A full queue drops the job: the warning carries the running
 // total so an operator can tell a one-off burst from a sustained
@@ -291,11 +251,11 @@ func enqueueUsageWrite(job usageWriteJob) {
 // the billing truth, so backpressure belongs here rather than silent
 // loss. The wait is bounded by ledgerEnqueueTimeout (see its comment).
 func enqueueLedgerWrite(lw ledgerWrite) {
-	if lw.history == nil && lw.detail == nil {
+	if lw.history == nil {
 		return
 	}
 	if usageSynchronous.Load() {
-		flushLedgerBatch([]ledgerWrite{lw}, lw.history != nil)
+		flushLedgerBatch([]ledgerWrite{lw})
 		return
 	}
 	ensureUsageWorker()

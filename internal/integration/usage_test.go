@@ -3,9 +3,10 @@
 package integration
 
 import (
-	"context"
 	"net/http"
 	"testing"
+
+	"axonrouter/proxy/internal/detailstore"
 )
 
 // TestSuccessfulRequestIsRecordedInUsageHistory pins the accounting path: a
@@ -76,7 +77,7 @@ func TestFailedRequestIsNotCountedAsSpend(t *testing.T) {
 	}
 
 	// The failure still has to be visible for debugging.
-	details, total, err := env.Repo.GetRequestDetailsPaged(context.Background(), 10, 0, "")
+	details, total, err := detailstore.Page(10, 0, "")
 	if err != nil {
 		t.Fatalf("read request details: %v", err)
 	}

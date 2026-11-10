@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"database/sql"
 	json "encoding/json/v2"
 	"errors"
 	"io"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -41,9 +41,9 @@ func HandleRequestDetailReplay(repo *db.Repo) http.HandlerFunc {
 			return
 		}
 
-		raw, err := repo.GetRequestDetailByID(id)
+		raw, err := detailstore.ByID(id)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+			if errors.Is(err, detailstore.ErrNotFound) {
 				handlerutil.WriteJSON(w, http.StatusNotFound, map[string]any{"error": "Request detail not found"})
 				return
 			}

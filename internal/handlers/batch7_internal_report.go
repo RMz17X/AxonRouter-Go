@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	json "encoding/json/v2"
 
 	"github.com/google/uuid"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -363,7 +365,16 @@ func saveReportDetail(repo *db.Repo, report map[string]any, provider, model, con
 			"outcome": report["outcome"],
 		},
 	}
-	return repo.InsertRequestDetail(id, provider, model, connectionID, status, string(mustJSON(detail)))
+	detailstore.Append(db.RequestDetailRecord{
+		ID:           id,
+		Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		Provider:     provider,
+		Model:        model,
+		ConnectionID: connectionID,
+		Status:       status,
+		Data:         string(mustJSON(detail)),
+	})
+	return nil
 }
 
 // nilOrString maps "" to nil (upstream's `value || null` for strings).

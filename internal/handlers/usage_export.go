@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 )
 
@@ -153,7 +154,7 @@ func streamRows(r *http.Request, repo *db.Repo, since string, emit func(db.Reque
 		if written >= exportMaxRows {
 			return written, true
 		}
-		rows, _, err := repo.GetRequestDetailsPaged(r.Context(), exportPageSize, written, since)
+		rows, _, err := detailstore.Page(exportPageSize, written, since)
 		if err != nil {
 			return written, false
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/models"
 	"axonrouter/proxy/internal/providers"
@@ -418,7 +419,7 @@ func (h *DashboardHandler) HandleProviderProxyStats(w http.ResponseWriter, r *ht
 	stats1h := windowStats{SuccessRate: 100}
 	errorBreakdown := make([]map[string]any, 0)
 	fmtBound := func(t time.Time) string { return t.Format("2006-01-02T15:04:05.000Z") }
-	if rows, err := h.Repo.GetAnalyticsEvents(r.Context(),
+	if rows, err := detailstore.AnalyticsEvents(
 		fmtBound(now.Add(-24*time.Hour)), fmtBound(now), providerID, ""); err == nil {
 		stats24h = summarizeEvents(rows)
 		counts := map[string]int{}
@@ -452,7 +453,7 @@ func (h *DashboardHandler) HandleProviderProxyStats(w http.ResponseWriter, r *ht
 			errorBreakdown = append(errorBreakdown, map[string]any{"category": cc.category, "count": cc.count})
 		}
 	}
-	if rows, err := h.Repo.GetAnalyticsEvents(r.Context(),
+	if rows, err := detailstore.AnalyticsEvents(
 		fmtBound(now.Add(-time.Hour)), fmtBound(now), providerID, ""); err == nil {
 		stats1h = summarizeEvents(rows)
 	}

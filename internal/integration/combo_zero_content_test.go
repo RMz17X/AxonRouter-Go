@@ -3,12 +3,12 @@
 package integration
 
 import (
-	"context"
 	"net/http"
 	"strings"
 	"testing"
 
 	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 )
 
 const zeroContentJSON = `{
@@ -99,7 +99,7 @@ func TestComboSingleMemberZeroContentServedVerbatim(t *testing.T) {
 		t.Errorf("usageHistory rows = %d, want exactly 1 for the served turn", len(rows))
 	}
 
-	details, total, err := env.Repo.GetRequestDetailsPaged(context.Background(), 10, 0, "")
+	details, total, err := detailstore.Page(10, 0, "")
 	if err != nil {
 		t.Fatalf("read request details: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestMessagesComboLastMemberZeroContentInClaudeShape(t *testing.T) {
 		t.Errorf("usageHistory rows = %d, want exactly 1 for the served turn", len(rows))
 	}
 
-	details, total, err := env.Repo.GetRequestDetailsPaged(context.Background(), 10, 0, "")
+	details, total, err := detailstore.Page(10, 0, "")
 	if err != nil {
 		t.Fatalf("read request details: %v", err)
 	}

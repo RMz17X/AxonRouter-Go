@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"axonrouter/proxy/internal/db"
+	"axonrouter/proxy/internal/detailstore"
 )
 
 // The dashboard keys a provider node's custom-model rows with the node id —
@@ -566,18 +569,17 @@ func TestModelMetaPublishesBothSpellings(t *testing.T) {
 		`{"providerAlias":"node-cutad","id":"deepseek-v4-flash","type":"llm","contextWindow":131072,"caps":{"vision":true,"reasoning":true}}`); err != nil {
 		t.Fatalf("seed custom model: %v", err)
 	}
-	// One observation in the ring, recorded against the node id. The
-	// stamp is "now": requestDetails is range-partitioned by month and
-	// the schema only ensures the current and next month's partitions,
-	// so a fixed past date lands outside the window and is rejected.
-	if _, err := env.Repo.RawDB().Exec(
-		`INSERT INTO requestDetails (id, timestamp, provider, model, connectionId, status, data)
-		 VALUES ('req-meta-1', $2, 'node-cutad', 'deepseek-v4-flash', 'conn-cutad', 'success', $1)`,
-		`{"latency":{"ttft":250,"total":900}}`,
-		time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
-	); err != nil {
-		t.Fatalf("seed request detail: %v", err)
-	}
+	// One observation in the ring, recorded against the node id, in
+	// the file-backed detail store the model-meta read now folds.
+	detailstore.Append(db.RequestDetailRecord{
+		ID:           "req-meta-1",
+		Timestamp:    time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		Provider:     "node-cutad",
+		Model:        "deepseek-v4-flash",
+		ConnectionID: "conn-cutad",
+		Status:       "success",
+		Data:         `{"latency":{"ttft":250,"total":900}}`,
+	})
 	res := env.Get(t, "/api/models/meta")
 	if res.Status != http.StatusOK {
 		t.Fatalf("GET meta = %d, want 200 (body: %s)", res.Status, truncate(res.Body))
