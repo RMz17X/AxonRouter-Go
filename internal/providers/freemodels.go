@@ -128,6 +128,13 @@ var freeModelCatalog = []freeBudget{
 	{"gemini", "gemini-3-flash-preview", regimeRecurringDaily, ""},
 	{"gemini", "gemini-3.1-flash-lite", regimeRecurringDaily, ""},
 
+	// Clixad (daily free credits allocation).
+	{"clixad", "gpt-5-nano", regimeRecurringDaily, ""},
+	{"clixad", "gemini-2.5-flash-lite", regimeRecurringDaily, ""},
+	{"clixad", "claude-haiku-5.5", regimeRecurringDaily, ""},
+	{"clixad", "deepseek-v4-flash", regimeRecurringDaily, ""},
+	{"clixad", "gemini-3.5-flash-lite", regimeRecurringDaily, ""},
+
 	// Cloudflare Workers AI (free allocation per day).
 	{"cloudflare-ai", "@cf/mistral/mistral-7b-instruct-v0.2-lora", regimeRecurringDaily, ""},
 	{"cloudflare-ai", "@cf/qwen/qwen2.5-coder-32b-instruct", regimeRecurringDaily, ""},

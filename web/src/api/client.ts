@@ -806,6 +806,45 @@ export interface GLMResetCardRedeemResponse {
   error?: string
 }
 
+// MiniMax Code Daily Rewards Claim
+export interface MiniMaxClaimResult {
+  connectionId: string
+  name: string
+  provider: string
+  status: 'success' | 'already_claimed' | 'error' | 'skipped'
+  claimed: boolean
+  points: number
+  streakDay: number
+  message: string
+  error?: string
+}
+
+export interface MiniMaxClaimSummary {
+  total: number
+  claimed: number
+  alreadyClaimed: number
+  errors: number
+  skipped: number
+  totalPoints: number
+}
+
+export interface MiniMaxClaimAllResponse {
+  success: boolean
+  summary: MiniMaxClaimSummary
+  results: MiniMaxClaimResult[]
+  error?: string
+}
+
+export interface MiniMaxSignInStatus {
+  connectionId: string
+  todayStatus: number // 2 = ready to claim, 3 = already claimed today, 1 = upcoming
+  dayNo: number
+  points: number
+  isClaimed: boolean
+  days?: any[]
+  error?: string
+}
+
 export interface FreebuffSessionSwitchResponse {
   status: 'active'
   currentModel: string
@@ -2380,6 +2419,20 @@ export const api = {
         body: JSON.stringify(payload),
       }
     ),
+  // MiniMax Code Daily Rewards Claim
+  getMiniMaxClaimStatus: (connectionId: string) =>
+    request<MiniMaxSignInStatus>(
+      `/api/usage/${encodeURIComponent(connectionId)}/minimax-claim`
+    ),
+  claimMiniMaxReward: (connectionId: string) =>
+    request<MiniMaxClaimResult>(
+      `/api/usage/${encodeURIComponent(connectionId)}/minimax-claim`,
+      { method: 'POST' }
+    ),
+  claimAllMiniMaxRewards: () =>
+    request<MiniMaxClaimAllResponse>('/api/providers/minimax/claim-all', {
+      method: 'POST',
+    }),
   // Tunnel & Tailscale
   getTunnelStatus: () =>
     request<TunnelStatusResponse>('/api/tunnel/status').catch(() => ({

@@ -67,6 +67,18 @@ func cachedUsageResponse(connID string) ([]byte, bool) {
 	return entry.body, true
 }
 
+// InvalidateUsageCache evicts the cached usage response for connID, or all
+// entries if connID is empty.
+func InvalidateUsageCache(connID string) {
+	usageCacheMu.Lock()
+	defer usageCacheMu.Unlock()
+	if connID == "" {
+		usageCache = make(map[string]usageCacheEntry)
+	} else {
+		delete(usageCache, connID)
+	}
+}
+
 func storeUsageResponse(connID string, body []byte) {
 	usageCacheMu.Lock()
 	defer usageCacheMu.Unlock()

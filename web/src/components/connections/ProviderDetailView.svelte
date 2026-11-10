@@ -3357,6 +3357,7 @@
   const ModelsListURLs = new Set([
     'tokenharbor',
     'sumopod',
+    'clixad',
     'dahl',
     'atria',
     'agnes',

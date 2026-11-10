@@ -74,6 +74,12 @@ func TestAggregatorProviders(t *testing.T) {
 			modelsList: "https://ai.sumopod.com/v1/models", wantFetcher: true,
 		},
 		{
+			id: "clixad", baseURL: "https://clixad.onrender.com/v1/chat/completions",
+			models:     []string{"claude-fable-5.1", "claude-haiku-5.5", "claude-opus-5.5", "claude-sonnet-5.5", "deepseek-v4-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemini-3.8-flash", "glm-5.3-flash", "gpt-5-nano", "gpt-6-sol", "kimi-k2.5", "kimi-k2.7-code", "kimi-k3"},
+			aliases:    []string{"clx"},
+			modelsList: "https://clixad.onrender.com/v1/models", wantFetcher: true,
+		},
+		{
 			id: "tinyfish", baseURL: "https://api.tinyfish.ai",
 			authHeader: "x-api-key", authScheme: "raw",
 		},

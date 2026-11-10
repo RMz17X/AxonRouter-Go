@@ -21,6 +21,7 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "dahl": "dahl",
   "daoxe": "dx",
   "sumopod": "sp",
+  "clixad": "clx",
   "tokenharbor": "tokenharbor",
   "alicode": "alicode",
   "alicode-intl": "alicode-intl",
@@ -1436,6 +1437,69 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "id": "seed-2-0-pro",
       "name": "Seed 2 0 Pro"
     },
+  ],
+  "clixad": [
+    {
+      "id": "gpt-5-nano",
+      "name": "GPT-5 Nano",
+      "isFree": true
+    },
+    {
+      "id": "gemini-2.5-flash-lite",
+      "name": "Gemini 2.5 Flash-Lite",
+      "isFree": true
+    },
+    {
+      "id": "claude-haiku-5.5",
+      "name": "Claude Haiku 5.5",
+      "isFree": true
+    },
+    {
+      "id": "deepseek-v4-flash",
+      "name": "DeepSeek V4 Flash",
+      "isFree": true
+    },
+    {
+      "id": "gemini-3.5-flash-lite",
+      "name": "Gemini 3.5 Flash-Lite",
+      "isFree": true
+    },
+    {
+      "id": "glm-5.3-flash",
+      "name": "GLM 5.3 Flash"
+    },
+    {
+      "id": "kimi-k2.5",
+      "name": "Kimi K2.5"
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "name": "Gemini 3.8 Flash"
+    },
+    {
+      "id": "kimi-k2.7-code",
+      "name": "Kimi K2.7 Code"
+    },
+    {
+      "id": "claude-sonnet-5.5",
+      "name": "Claude Sonnet 5.5"
+    },
+    {
+      "id": "gpt-6-sol",
+      "name": "GPT-6 Sol"
+    },
+    {
+      "id": "kimi-k3",
+      "name": "Kimi K3"
+    },
+    {
+      "id": "claude-opus-5.5",
+      "name": "Claude Opus 5.5"
+    },
+    {
+      "id": "claude-fable-5.1",
+      "name": "Claude Fable 5.1"
+    }
   ],
   "dahl": [
     {

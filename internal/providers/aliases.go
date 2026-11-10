@@ -36,6 +36,7 @@ var ProviderAliasMap = map[string]string{
 	"cp":             "clinepass",
 	"cu":             "cursor",
 	"cx":             "codex",
+	"clx":            "clixad",
 	"dg":             "deepgram",
 	"ds":             "deepseek",
 	"ds-web":         "deepseek-web",

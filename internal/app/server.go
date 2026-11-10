@@ -9,14 +9,16 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"go.uber.org/fx"
 
 	"axonrouter/proxy/internal/config"
 	"axonrouter/proxy/internal/db"
-	applog "axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/handlers/chat"
+	"axonrouter/proxy/internal/handlers/dashboard"
+	applog "axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/middleware"
 	"axonrouter/proxy/internal/providers"
 	"axonrouter/proxy/internal/proxy/executor"
@@ -171,6 +173,7 @@ func ProvideServer(p ServerParams) *http.Server {
 			startIdleProbe(shutdown.Context(), p.Repo, p.ChatHandler)
 			startModelHealthScheduler(shutdown.Context(), p.Repo, p.ChatHandler)
 			startUptimeHeartbeat(shutdown.Context(), p.Repo)
+			startMiniMaxAutoClaimScheduler(shutdown.Context(), p.Repo)
 			if p.Repo != nil {
 				smart.NewCanaryWorker(p.Repo, nil).Start(shutdown.Context())
 			}
@@ -317,3 +320,46 @@ func startUptimeHeartbeat(ctx context.Context, repo *db.Repo) {
 	go loop.Run(ctx)
 	log.Println("[uptime] heartbeat loop started")
 }
+
+// startMiniMaxAutoClaimScheduler periodically claims daily check-in rewards
+// for all active MiniMax Code Global / China accounts.
+func startMiniMaxAutoClaimScheduler(ctx context.Context, repo *db.Repo) {
+	if repo == nil {
+		return
+	}
+	intervalStr := strings.TrimSpace(os.Getenv("MINIMAX_AUTO_CLAIM_INTERVAL"))
+	if intervalStr == "off" || intervalStr == "0" {
+		log.Println("[minimax-claim] auto-claim scheduler disabled by MINIMAX_AUTO_CLAIM_INTERVAL")
+		return
+	}
+	interval := 6 * time.Hour
+	if d, err := time.ParseDuration(intervalStr); err == nil && d > 0 {
+		interval = d
+	}
+
+	go func() {
+		log.Printf("[minimax-claim] scheduler started (interval: %v, initial delay: 1m)", interval)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(1 * time.Minute):
+		}
+
+		log.Println("[minimax-claim] running initial scheduled claim sweep...")
+		_, _, _ = dashboard.ClaimAllMiniMaxConnections(ctx, repo)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				log.Println("[minimax-claim] running periodic scheduled claim sweep...")
+				_, _, _ = dashboard.ClaimAllMiniMaxConnections(ctx, repo)
+			}
+		}
+	}()
+}
+
