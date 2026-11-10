@@ -31,10 +31,10 @@ Dokumen ini mendefinisikan arsitektur dan panduan implementasi untuk menambahkan
 ## 2. Parameter Kredensial & Autentikasi
 
 ### 2.1 Format Data Koneksi
-Setiap koneksi `claude-web` di AxonRouter disimpan dalam tabel SQLite `provider_connections`:
+Setiap koneksi `claude-web` di AxonRouter disimpan dalam tabel PostgreSQL `providerConnections`:
 - **`provider`**: `"claude-web"`
-- **`auth_type`**: `"cookie"`
-- **`data`** (JSON payload):
+- **`authType`**: `"cookie"`
+- **`data`** (JSON / JSONB payload):
   ```json
   {
     "cookie": "sessionKey=sk-ant-sid01-xxxxxxxxxx; cf_clearance=yyyyy",

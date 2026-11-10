@@ -32,10 +32,10 @@ Dokumen ini mendefinisikan arsitektur dan panduan implementasi untuk menambahkan
 ## 2. Parameter Kredensial & Autentikasi
 
 ### 2.1 Format Data Koneksi
-Setiap koneksi `kimi-web` di AxonRouter disimpan dalam tabel SQLite `provider_connections`:
+Setiap koneksi `kimi-web` di AxonRouter disimpan dalam tabel PostgreSQL `providerConnections`:
 - **`provider`**: `"kimi-web"`
-- **`auth_type`**: `"cookie"` (atau `"token"`)
-- **`data`** (JSON payload):
+- **`authType`**: `"token"` (atau `"cookie"`)
+- **`data`** (JSON / JSONB payload):
   ```json
   {
     "refreshToken": "eyJhbGciOi...",
