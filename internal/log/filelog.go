@@ -17,8 +17,8 @@ import (
 // ring buffer is long gone.
 
 const (
-	defaultLogFileMaxBytes = 20 << 20 // 20 MiB per file
-	defaultLogFileBackups  = 5        // ~100 MiB retained per node
+	defaultLogFileMaxBytes = 4 << 20 // 4 MiB per file (operator rule: every log rotation is 4 MB)
+	defaultLogFileBackups  = 5       // ~24 MiB retained per node
 )
 
 var (

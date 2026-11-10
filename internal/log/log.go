@@ -110,6 +110,7 @@ func captureConsole(l Level, raw string) {
 		subs = append(subs, ch)
 	}
 	consoleMu.Unlock()
+	persistConsoleEntry(entry)
 	for _, ch := range subs {
 		select {
 		case ch <- consoleEvent{kind: "line", entry: entry}:
@@ -127,8 +128,11 @@ func ConsoleEntries() []ConsoleEntry {
 	return out
 }
 
-// ClearConsoleLogs empties the buffer and notifies subscribers.
+// ClearConsoleLogs empties the buffer and notifies subscribers. The
+// console file store is reset alongside, so cleared lines stay cleared
+// across restarts and file searches.
 func ClearConsoleLogs() {
+	resetConsoleFile()
 	consoleMu.Lock()
 	consoleLogs = consoleLogs[:0]
 	subs := make([]chan consoleEvent, 0, len(consoleSubs))

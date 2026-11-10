@@ -45,8 +45,22 @@ func filterConsoleEntries(entries []log.ConsoleEntry, requestID string) []log.Co
 // filterConsoleEntries); optional ?n= caps the result to the last n entries.
 // The filter runs first and the cap second, so ?n= always means "the last n
 // lines of the (possibly filtered) trail", never "filter within the last n".
+//
+// A requestId search runs against the console file store when it is
+// enabled: a trail is usually far older than the 200-line ring, and the
+// rotated files are exactly what the ring forgot. Without a requestId
+// the ring answers, as before.
 func HandleConsoleLogsGet(w http.ResponseWriter, r *http.Request) {
-	entries := filterConsoleEntries(log.ConsoleEntries(), r.URL.Query().Get("requestId"))
+	var entries []log.ConsoleEntry
+	if requestID := r.URL.Query().Get("requestId"); requestID != "" {
+		if found, ok := log.SearchConsoleFile(requestID); ok {
+			entries = found
+		} else {
+			entries = filterConsoleEntries(log.ConsoleEntries(), requestID)
+		}
+	} else {
+		entries = log.ConsoleEntries()
+	}
 	if q := r.URL.Query().Get("n"); q != "" {
 		if n, err := strconv.Atoi(q); err == nil && n > 0 && len(entries) > n {
 			entries = entries[len(entries)-n:]

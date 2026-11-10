@@ -146,6 +146,19 @@ func ProvideServer(p ServerParams) *http.Server {
 				} else {
 					log.Printf("[log] routing log file: %s", logFile)
 				}
+				// The console ring is memory-only and shallow (200
+				// lines), so the structured console entries get their
+				// own file beside the routing log: same 4 MiB
+				// rotation, rehydrated into the ring at boot and
+				// searched by the console-logs handler, which makes a
+				// request's trail readable long after the ring has
+				// rolled past it.
+				consoleFile := filepath.Join(filepath.Dir(logFile), "console.jsonl")
+				if err := applog.EnableConsoleFileLog(consoleFile); err != nil {
+					log.Printf("[log] console file log disabled: %v", err)
+				} else {
+					log.Printf("[log] console log file: %s", consoleFile)
+				}
 			}
 
 			updater.StartBackgroundCheck(shutdown.Context(), autoUpdate)

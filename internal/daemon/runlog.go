@@ -15,7 +15,7 @@ import (
 // Nothing else ever bounds the file: the daemon holds the descriptor for as
 // long as it lives and appends to it every request it logs, so without a cap
 // one long-lived install fills the data dir with a log nobody will read.
-const RunLogMaxBytes int64 = 16 << 20
+const RunLogMaxBytes int64 = 4 << 20
 
 // logTailMaxBytes is how much of the tail a LogTail call may read. The lines a
 // user asked for are the newest ones, and a busy daemon writes far more between
