@@ -336,7 +336,12 @@
               </span>
             </div>
             <div class="flex flex-wrap gap-1.5">
-              {#each group.models as model (model.value)}
+              <!-- Keyed by name + value, not value alone: two aliases can
+                   resolve to one servable model (step-5 and step-5-preview
+                   both → trust/tig/step-5-preview), and duplicate keys in a
+                   keyed each corrupt the list update — the picker froze on
+                   its pre-extras snapshot and would not reopen. -->
+              {#each group.models as model (model.name + '|' + model.value)}
                 <ModelPill
                   label={model.name}
                   value={model.value}
