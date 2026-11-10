@@ -889,7 +889,7 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 			// than it would without the setting (#744).
 			var timeoutGate *comboResponseTimeout
 			if responseTimeout > 0 && !isLastModel {
-				timeoutGate = newComboResponseTimeout(ctx, cw, responseTimeout)
+				timeoutGate = newComboResponseTimeout(ctx, cw, candidateStallTimeout(modelInfo.Provider, responseTimeout))
 				defer timeoutGate.finish()
 				candidateCtx, candidateWriter = timeoutGate.ctx, timeoutGate
 			}
@@ -926,6 +926,19 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 								if errors.As(fwdErr, &ue) {
 									retry.note(ue)
 									lastErr = ue
+								}
+								// A stalled hedged candidate benches exactly
+								// like a stalled sequential one; this branch
+								// used to continue without benching, so a
+								// stalling hedged provider (dahl above all)
+								// was retried at full price by every request.
+								if timeoutGate != nil && timeoutGate.timedOut() && ctx.Err() == nil {
+									lastErr = comboTimeoutError()
+									modelTimedOut = true
+									h.noteGateTimeout(comboName, models, entry, modelInfo.Provider, timeoutGrace)
+								}
+								if ctx.Err() == nil {
+									h.noteVolatileFailure(comboName, models, modelInfo.Provider, 1, lastErr)
 								}
 								continue
 							}
@@ -1222,7 +1235,10 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 				lastErr = comboTimeoutError()
 				modelTimedOut = true
 				entrySuccess = false
-				h.benchTimedOutModel(comboName, entry, timeoutGrace)
+				h.noteGateTimeout(comboName, models, entry, modelInfo.Provider, timeoutGrace)
+			}
+			if !entrySuccess && ctx.Err() == nil {
+				h.noteVolatileFailure(comboName, models, modelInfo.Provider, memberAttempts, lastErr)
 			}
 
 			// A failed smart-pinned model loses its session pin, so the next
@@ -1434,7 +1450,7 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 			// See the chat loop: the candidate tried last keeps the global deadline.
 			var timeoutGate *comboResponseTimeout
 			if responseTimeout > 0 && !isLastModel {
-				timeoutGate = newComboResponseTimeout(ctx, cw, responseTimeout)
+				timeoutGate = newComboResponseTimeout(ctx, cw, candidateStallTimeout(modelInfo.Provider, responseTimeout))
 				defer timeoutGate.finish()
 				candidateCtx, candidateWriter = timeoutGate.ctx, timeoutGate
 			}
@@ -1468,6 +1484,16 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 								if errors.As(fwdErr, &ue) {
 									retry.note(ue)
 									lastErr = ue
+								}
+								// See the chat loop: a stalled hedged
+								// candidate benches like a sequential one.
+								if timeoutGate != nil && timeoutGate.timedOut() && ctx.Err() == nil {
+									lastErr = comboTimeoutError()
+									modelTimedOut = true
+									h.noteGateTimeout(comboName, models, entry, modelInfo.Provider, timeoutGrace)
+								}
+								if ctx.Err() == nil {
+									h.noteVolatileFailure(comboName, models, modelInfo.Provider, 1, lastErr)
 								}
 								continue
 							}
@@ -1704,7 +1730,10 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 				lastErr = comboTimeoutError()
 				modelTimedOut = true
 				entrySuccess = false
-				h.benchTimedOutModel(comboName, entry, timeoutGrace)
+				h.noteGateTimeout(comboName, models, entry, modelInfo.Provider, timeoutGrace)
+			}
+			if !entrySuccess && ctx.Err() == nil {
+				h.noteVolatileFailure(comboName, models, modelInfo.Provider, memberAttempts, lastErr)
 			}
 
 			// A failed smart-pinned model loses its session pin, so the next

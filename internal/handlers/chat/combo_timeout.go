@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
 	"time"
@@ -134,6 +135,101 @@ func (t *comboResponseTimeout) timedOut() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.expired
+}
+
+// Volatile free-tier providers (owner directive, 2026-11-10): the
+// client must stay fast, and the free tiers that are slow or
+// error-prone — dahl, apinex — get a special system instead of the
+// generic combo treatment:
+//
+//   - a short upstream-silence window per candidate (their failure
+//     mode is the network-wide stall: connection accepted, no token
+//     ever arrives; dahl burned the full 300 s combo window per stall,
+//     measured 341-354 s, before the chain moved on), and
+//   - a provider-wide circuit breaker: one member's stall OR a member
+//     that burns its attempts on upstream errors benches every entry
+//     of that provider in the combo for a few minutes, so subsequent
+//     requests skip the sick provider entirely instead of paying its
+//     tax one by one. Re-admission is automatic and cheap: the first
+//     request after the bench pays at most the short silence window.
+//
+// Thirty seconds of total silence is already generous for these
+// providers; progress signals restart the window as usual, so a
+// slow-but-alive stream is never cut.
+type volatilePolicy struct {
+	stallTimeout  time.Duration
+	benchDuration time.Duration
+}
+
+// volatilePolicyFor returns the special-system policy for a provider,
+// or false when the provider gets the generic treatment. Provider ids
+// are the resolved ids the serving path carries (apinex resolves to
+// its openai-compatible id), matching how hedging keys its policies.
+func volatilePolicyFor(provider string) (volatilePolicy, bool) {
+	switch provider {
+	case "dahl", "openai-compatible-chat-apinex":
+		return volatilePolicy{stallTimeout: 30 * time.Second, benchDuration: 3 * time.Minute}, true
+	}
+	return volatilePolicy{}, false
+}
+
+// candidateStallTimeout returns the silence window for one combo
+// candidate: the combo's configured window, shortened for volatile
+// free-tier providers.
+func candidateStallTimeout(provider string, comboTimeout time.Duration) time.Duration {
+	if pol, ok := volatilePolicyFor(provider); ok && comboTimeout > pol.stallTimeout {
+		return pol.stallTimeout
+	}
+	return comboTimeout
+}
+
+// benchProviderModels benches every entry of one provider in a combo
+// for the grace period. benchTimedOutModel keys on single entries,
+// which is right for a slow model, but a provider-wide failure (a dahl
+// network stall) would otherwise leave the provider's other entries in
+// the chain to stall one after another.
+func (h *ChatHandler) benchProviderModels(comboName string, models []string, provider string, grace time.Duration) {
+	for _, m := range models {
+		if info := h.resolveModelEntry(m); info != nil && info.Provider == provider {
+			h.benchTimedOutModel(comboName, m, grace)
+		}
+	}
+}
+
+// noteGateTimeout benches a candidate whose stall gate fired:
+// provider-wide for volatile providers, whose stalls are a network
+// property, and per-entry otherwise. Callers pair it with setting
+// their lastErr to comboTimeoutError() and modelTimedOut to true.
+func (h *ChatHandler) noteGateTimeout(comboName string, models []string, entry string, provider string, grace time.Duration) {
+	if pol, ok := volatilePolicyFor(provider); ok {
+		h.benchProviderModels(comboName, models, provider, pol.benchDuration)
+		return
+	}
+	h.benchTimedOutModel(comboName, entry, grace)
+}
+
+// noteVolatileFailure benches a volatile provider whose member just
+// failed on upstream errors (as opposed to a stall, which
+// noteGateTimeout covers): the member sent at least one attempt, none
+// succeeded, and the final error is an upstream-class failure (5xx,
+// 429, or a wrapped transport error, which the chain records as 502),
+// never a client-class 4xx — a bad request must not park a provider.
+// The bench is provider-wide, like the stall bench: apinex answering
+// every account with the same instant 499 is a provider outage, and
+// the next requests should skip it until it recovers.
+func (h *ChatHandler) noteVolatileFailure(comboName string, models []string, provider string, attempts int, lastErr error) {
+	pol, ok := volatilePolicyFor(provider)
+	if !ok || attempts <= 0 || lastErr == nil {
+		return
+	}
+	var ue *upstreamError
+	if !errors.As(lastErr, &ue) || ue == nil {
+		return
+	}
+	if ue.StatusCode < 500 && ue.StatusCode != http.StatusTooManyRequests {
+		return
+	}
+	h.benchProviderModels(comboName, models, provider, pol.benchDuration)
 }
 
 // comboTimeoutPolicy returns the per-candidate upstream-silence window and
