@@ -902,6 +902,7 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 			// Account attempts actually sent upstream for this entry,
 			// capped per provider (comboMemberAttemptCap).
 			memberAttempts := 0
+			memberDecoyFails := 0
 			attemptCap := comboMemberAttemptCap(modelInfo.Provider)
 
 			if shouldHedge, hedgeDelay, maxAttempts := h.shouldHedgeProvider(modelInfo.Provider); shouldHedge && modelInfo.ConnectionID == "" && h.Repo != nil {
@@ -1054,6 +1055,20 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 						log.Warn("combo", "zero usable content, falling back to next model", "provider", modelInfo.Provider, "model", modelInfo.Model)
 						lastErr = &upstreamError{StatusCode: http.StatusOK, Body: zcErr.Body}
 						break
+					}
+					if errors.Is(fwdErr, translator.ErrDecoyOnlyResponse) {
+						// A decoy-only answer is a model-behaviour mismatch
+						// for this request shape, not an account fault: the
+						// model reaches for the same cloaked decoy name on
+						// every account (17 of 17 draws measured live on
+						// 2026-11-10). One redraw covers variance; the
+						// second ends this member's account loop.
+						memberDecoyFails++
+						if memberDecoyFails >= 2 {
+							log.Warn("combo", "decoy-only responses repeated, falling back to next model", "provider", modelInfo.Provider, "model", modelInfo.Model)
+							lastErr = &upstreamError{StatusCode: http.StatusBadGateway, Body: []byte(`{"error":{"message":"member answered only with decoy tool calls"}}`)}
+							break
+						}
 					}
 					if ctx.Err() != nil {
 						lastErr = &upstreamError{StatusCode: StatusClientClosedRequest, Body: []byte(clientClosedBody)}
@@ -1431,6 +1446,7 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 			// Account attempts actually sent upstream for this entry,
 			// capped per provider (comboMemberAttemptCap).
 			memberAttempts := 0
+			memberDecoyFails := 0
 			attemptCap := comboMemberAttemptCap(modelInfo.Provider)
 
 			if shouldHedge, hedgeDelay, maxAttempts := h.shouldHedgeProvider(modelInfo.Provider); shouldHedge && modelInfo.ConnectionID == "" && h.Repo != nil {
@@ -1571,6 +1587,18 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 						log.Warn("combo", "zero usable content, falling back to next model", "provider", modelInfo.Provider, "model", modelInfo.Model)
 						lastErr = &upstreamError{StatusCode: http.StatusOK, Body: zcErr.Body}
 						break
+					}
+					if errors.Is(fwdErr, translator.ErrDecoyOnlyResponse) {
+						// See the chat branch above: a decoy-only answer is
+						// a model-behaviour mismatch, not an account fault;
+						// one redraw covers variance, the second ends this
+						// member's account loop.
+						memberDecoyFails++
+						if memberDecoyFails >= 2 {
+							log.Warn("combo", "decoy-only responses repeated, falling back to next model", "provider", modelInfo.Provider, "model", modelInfo.Model)
+							lastErr = &upstreamError{StatusCode: http.StatusBadGateway, Body: []byte(`{"error":{"message":"member answered only with decoy tool calls"}}`)}
+							break
+						}
 					}
 					if ctx.Err() != nil {
 						lastErr = &upstreamError{StatusCode: StatusClientClosedRequest, Body: []byte(clientClosedBody)}
