@@ -32,6 +32,16 @@ const thinkingHeadroomTokens = 8192
 // without tools keep the client's exact cap.
 const minToolCallOutputTokens = 1024
 
+// flooredThinkingBudget caps thinking on requests whose output cap had to
+// be floored: the floor alone made each attempt deliberate up to the whole
+// raised budget (a trivial tool call took 111 s through the fallback
+// cascade, measured live on 2026-11-10). A client that asked for a tiny
+// response asked for a cheap, quick one — pinning the thinking budget on
+// exactly those requests keeps the call fast while the floor leaves room
+// to emit it. Requests at or above the floor keep their thinking config
+// untouched.
+const flooredThinkingBudget = 256
+
 // Decoy tools carry functional descriptions, not "currently unavailable".
 // Deliberate divergence from upstream decolua/9router (which describes every
 // decoy as unavailable): measured live on 2026-11-10, a model dressed as the
@@ -739,11 +749,25 @@ func hardenAntigravityRequest(geminiBody []byte) []byte {
 		}
 		// Floor the output budget on tool-bearing requests so dynamic
 		// thinking cannot consume it before any tool call is emitted
-		// (see minToolCallOutputTokens).
+		// (see minToolCallOutputTokens), and pin the thinking budget on
+		// those same requests so the raised cap is not spent deliberating
+		// (see flooredThinkingBudget). A thinkingLevel config is left
+		// alone: level and budget are alternative knobs and Google
+		// rejects requests that carry both.
 		if tools, ok := m["tools"].([]any); ok && len(tools) > 0 {
 			if v, ok := gc["maxOutputTokens"].(float64); ok && v > 0 && v < minToolCallOutputTokens {
 				gc["maxOutputTokens"] = float64(minToolCallOutputTokens)
 				changed = true
+				tc, _ := gc["thinkingConfig"].(map[string]any)
+				if tc == nil {
+					tc = map[string]any{}
+					gc["thinkingConfig"] = tc
+				}
+				if _, hasLevel := tc["thinkingLevel"]; !hasLevel {
+					if tb, ok := tc["thinkingBudget"].(float64); !ok || tb > flooredThinkingBudget {
+						tc["thinkingBudget"] = float64(flooredThinkingBudget)
+					}
+				}
 			}
 		}
 	}
