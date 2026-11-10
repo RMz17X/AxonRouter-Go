@@ -243,6 +243,7 @@ func (h *ChatHandler) handleAccountFallback(
 	excludedPools := map[string]bool{}
 	var lastErr error
 	attemptsSent := 0
+	decoyOnlyFails := 0
 	maxAccountAttempts := 10
 	if providers.ResolveAlias(provider) == "tokenharbor" {
 		maxAccountAttempts = 2
@@ -308,6 +309,20 @@ func (h *ChatHandler) handleAccountFallback(
 			log.WarnCtx(attemptCtx, "fallback", "max account attempts reached for provider",
 				"provider", provider, "model", model, "attempts", attemptsSent)
 			break
+		}
+		// A decoy-only response is a model-behaviour mismatch for this
+		// request shape, not an account fault: the model keeps reaching
+		// for a cloaked decoy name on every account (17 of 17 draws
+		// measured live on 2026-11-10, one request). One redraw covers
+		// variance; beyond that, stop burning accounts on this member
+		// and let the caller's fallback move on to the next one.
+		if errors.Is(lastErr, translator.ErrDecoyOnlyResponse) {
+			decoyOnlyFails++
+			if decoyOnlyFails >= 2 {
+				log.WarnCtx(attemptCtx, "fallback", "decoy-only responses repeated, giving up on this member",
+					"provider", provider, "model", model, "attempts", decoyOnlyFails)
+				break
+			}
 		}
 		// A node-state refusal (contract ended, lifetime quota spent) answers 403, which
 		// is a retryable status, so without this it would fall into the generic branch

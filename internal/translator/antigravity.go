@@ -751,9 +751,11 @@ func hardenAntigravityRequest(geminiBody []byte) []byte {
 		// thinking cannot consume it before any tool call is emitted
 		// (see minToolCallOutputTokens), and pin the thinking budget on
 		// those same requests so the raised cap is not spent deliberating
-		// (see flooredThinkingBudget). A thinkingLevel config is left
-		// alone: level and budget are alternative knobs and Google
-		// rejects requests that carry both.
+		// (see flooredThinkingBudget). thinkingLevel and thinkingBudget
+		// are alternative knobs and Google rejects requests carrying
+		// both, so a level config is CONVERTED to the pinned budget:
+		// measured live, the level-driven attempts on floored requests
+		// still thought 300-490 tokens and blew the client's timeout.
 		if tools, ok := m["tools"].([]any); ok && len(tools) > 0 {
 			if v, ok := gc["maxOutputTokens"].(float64); ok && v > 0 && v < minToolCallOutputTokens {
 				gc["maxOutputTokens"] = float64(minToolCallOutputTokens)
@@ -763,10 +765,11 @@ func hardenAntigravityRequest(geminiBody []byte) []byte {
 					tc = map[string]any{}
 					gc["thinkingConfig"] = tc
 				}
-				if _, hasLevel := tc["thinkingLevel"]; !hasLevel {
-					if tb, ok := tc["thinkingBudget"].(float64); !ok || tb > flooredThinkingBudget {
-						tc["thinkingBudget"] = float64(flooredThinkingBudget)
-					}
+				if _, hasLevel := tc["thinkingLevel"]; hasLevel {
+					delete(tc, "thinkingLevel")
+					tc["thinkingBudget"] = float64(flooredThinkingBudget)
+				} else if tb, ok := tc["thinkingBudget"].(float64); !ok || tb > flooredThinkingBudget {
+					tc["thinkingBudget"] = float64(flooredThinkingBudget)
 				}
 			}
 		}
