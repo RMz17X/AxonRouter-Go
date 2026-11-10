@@ -1,2 +1,0 @@
-## Fixed
-- Requests whose output cap was floored by fragment 1091 now also get a pinned thinking budget (256) when their thinking config carries no thinkingLevel: the floor alone let each Antigravity attempt deliberate up to the whole raised budget, and a trivial tool call measured 111 s through the fallback cascade (one probe timed out at 120 s). A client that asked for a tiny response asked for a cheap, quick one; requests at or above the floor keep their thinking configuration untouched.
