@@ -754,24 +754,25 @@ func last30MinuteBuckets(repo *db.Repo, now time.Time) ([]MinuteRequestCount, er
 
 // detailListItem is one collapsed Details-tab row.
 type detailListItem struct {
-	ID           string           `json:"id"`
-	Timestamp    string           `json:"timestamp"`
-	Provider     string           `json:"provider"`
-	Model        string           `json:"model"`
-	ConnectionID string           `json:"connectionId,omitempty"`
-	Status       string           `json:"status"`
-	Latency      map[string]int64 `json:"latency"`
-	Tokens       map[string]any   `json:"tokens"`
-	Account      string           `json:"account,omitempty"`
-	Cost         float64          `json:"cost,omitempty"`
-	Combo        string           `json:"combo,omitempty"`
-	Protocol     string           `json:"protocol,omitempty"`
-	LoopWarning  string           `json:"loopWarning,omitempty"`
-	Proxy        string           `json:"proxy"`
-	IsStream     bool             `json:"isStream"`
-	APIKeyName   string           `json:"apiKeyName,omitempty"`
-	ClientAPIKey string           `json:"clientApiKey,omitempty"`
-	ClientIP     string           `json:"clientIp,omitempty"`
+	ID            string           `json:"id"`
+	Timestamp     string           `json:"timestamp"`
+	Provider      string           `json:"provider"`
+	Model         string           `json:"model"`
+	ConnectionID  string           `json:"connectionId,omitempty"`
+	Status        string           `json:"status"`
+	Latency       map[string]int64 `json:"latency"`
+	Tokens        map[string]any   `json:"tokens"`
+	Account       string           `json:"account,omitempty"`
+	Cost          float64          `json:"cost,omitempty"`
+	Combo         string           `json:"combo,omitempty"`
+	Protocol      string           `json:"protocol,omitempty"`
+	LoopWarning   string           `json:"loopWarning,omitempty"`
+	Proxy         string           `json:"proxy"`
+	IsStream      bool             `json:"isStream"`
+	APIKeyName    string           `json:"apiKeyName,omitempty"`
+	ClientAPIKey  string           `json:"clientApiKey,omitempty"`
+	ClientIP      string           `json:"clientIp,omitempty"`
+	SmartDecision any              `json:"smartDecision,omitempty"`
 }
 
 // HandleRequestDetails returns paged request detail objects for the Details tab.
@@ -846,6 +847,13 @@ func newDetailListItem(row db.RequestDetailListRow) detailListItem {
 	if rawTokens, err := json.Marshal(tokens); err == nil {
 		tokens["cached_tokens"] = float64(translator.CachedTokensFromJSON(rawTokens))
 	}
+	var smartDecision any
+	if row.SmartDecisionJSON != "" {
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(row.SmartDecisionJSON), &parsed); err == nil {
+			smartDecision = parsed
+		}
+	}
 	account := row.Account
 	if account == "" {
 		if row.ConnectionID != "" {
@@ -863,24 +871,25 @@ func newDetailListItem(row db.RequestDetailListRow) detailListItem {
 		proxy = "direct"
 	}
 	return detailListItem{
-		ID:           row.ID,
-		Timestamp:    row.Timestamp,
-		Provider:     row.Provider,
-		Model:        row.Model,
-		ConnectionID: row.ConnectionID,
-		Status:       row.Status,
-		Latency:      map[string]int64{"ttft": row.LatencyTTFT, "total": row.LatencyTotal},
-		Tokens:       tokens,
-		Account:      account,
-		Cost:         row.Cost,
-		Combo:        row.Combo,
-		Protocol:     protocol,
-		LoopWarning:  row.LoopWarning,
-		Proxy:        proxy,
-		IsStream:     row.IsStream,
-		APIKeyName:   row.APIKeyName,
-		ClientAPIKey: row.ClientAPIKey,
-		ClientIP:     row.ClientIP,
+		ID:            row.ID,
+		Timestamp:     row.Timestamp,
+		Provider:      row.Provider,
+		Model:         row.Model,
+		ConnectionID:  row.ConnectionID,
+		Status:        row.Status,
+		Latency:       map[string]int64{"ttft": row.LatencyTTFT, "total": row.LatencyTotal},
+		Tokens:        tokens,
+		Account:       account,
+		Cost:          row.Cost,
+		Combo:         row.Combo,
+		Protocol:      protocol,
+		LoopWarning:   row.LoopWarning,
+		Proxy:         proxy,
+		IsStream:      row.IsStream,
+		APIKeyName:    row.APIKeyName,
+		ClientAPIKey:  row.ClientAPIKey,
+		ClientIP:      row.ClientIP,
+		SmartDecision: smartDecision,
 	}
 }
 

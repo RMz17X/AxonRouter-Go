@@ -841,6 +841,10 @@ type RequestDetailListRow struct {
 	APIKeyName   string
 	ClientAPIKey string
 	ClientIP     string
+	// SmartDecisionJSON is the smart router's recorded decision
+	// sub-document, verbatim; empty when the request was not routed by a
+	// smart combo (or predates the recording).
+	SmartDecisionJSON string
 }
 
 // The sort carries an id tiebreaker (council round 1, C-3): timestamps
@@ -874,7 +878,8 @@ const requestDetailListSelect = `
 	       COALESCE((data #>> '{isStream}')::boolean, true),
 	       COALESCE(data #>> '{apiKeyName}', ''),
 	       COALESCE(data #>> '{clientApiKey}', ''),
-	       COALESCE(data #>> '{clientIp}', '')
+	       COALESCE(data #>> '{clientIp}', ''),
+	       COALESCE((data #> '{smartDecision}')::text, '')
 	FROM requestDetails
 	%s
 	ORDER BY timestamp DESC, id DESC
@@ -960,7 +965,8 @@ func (r *Repo) GetRequestDetailsPaged(ctx context.Context, limit, offset int, si
 			&row.IsStream,
 			&row.APIKeyName,
 			&row.ClientAPIKey,
-			&row.ClientIP); err != nil {
+			&row.ClientIP,
+			&row.SmartDecisionJSON); err != nil {
 			return nil, total, fmt.Errorf("scan requestDetails: %w", err)
 		}
 		// A stored `data` that is NULL or not JSON is a broken read, not an
