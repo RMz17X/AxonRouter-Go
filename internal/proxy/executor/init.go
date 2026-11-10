@@ -85,6 +85,12 @@ func RegisterAll() {
 	// throwaway conversation per turn, an SSE completion stream) behind a
 	// sessionKey cookie — none of which the shared passthrough can express.
 	Register("claude-web", func() Executor { return ForwardClaudeWeb })
+	// kimi-web drives kimi.moonshot.cn's own API: a refresh_token from
+	// the browser's Local Storage exchanged for short-lived access
+	// tokens, a throwaway chat per turn, and an SSE completion stream
+	// whose events are named by a "type" field — the passthrough can
+	// express none of that.
+	Register("kimi-web", func() Executor { return ForwardKimiWeb })
 	// One executor serves both Bedrock entries: the registry entry's Format picks the
 	// wire shape (Anthropic Messages vs OpenAI Chat Completions), the way one Vertex
 	// executor serves vertex and vertex-partner.

@@ -1956,6 +1956,18 @@ var ProviderRegistry = map[string]ProviderMeta{
 		ServiceKinds: []string{"llm"},
 		Website:      "https://claude.ai",
 	},
+	"kimi-web": {
+		ID:           "kimi-web",
+		Name:         "Kimi Web (Moonshot)",
+		Alias:        "kweb",
+		Category:     CategoryWebCookie,
+		AuthType:     "token",
+		Color:        "#2563EB",
+		Icon:         "psychology",
+		AuthHint:     "Paste your refresh_token value from kimi.moonshot.cn Local Storage (DevTools → Application → Local Storage → refresh_token). Chroma can sync accounts here automatically.",
+		ServiceKinds: []string{"llm", "webSearch"},
+		Website:      "https://kimi.moonshot.cn",
+	},
 	"selfhosted-tts": {
 		ID:           "selfhosted-tts",
 		Name:         "Self-Hosted TTS",

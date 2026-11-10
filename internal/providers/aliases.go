@@ -68,6 +68,7 @@ var ProviderAliasMap = map[string]string{
 	"kc":             "kilocode",
 	"kcf":            "kilocode-free",
 	"km":             "kimi",
+	"kweb":           "kimi-web",
 	"kr":             "kiro",
 	"mimo":           "xiaomi-mimo",
 	"mm":             "minimax",

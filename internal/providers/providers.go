@@ -872,6 +872,17 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},
+	// Kimi Web: the consumer chat site (kimi.moonshot.cn) reached with a
+	// browser refresh_token, per docs/KIMI_WEB_PROVIDER_SPEC.md. A
+	// distinct deployment with its own credential and quota — never
+	// aliased onto the API-key `kimi` above (AGENTS.md section 3.A). The
+	// executor performs the real auth (Bearer access token it refreshes
+	// itself); this row is the nominal shape the web siblings carry.
+	"kimi-web": {
+		BaseURL:    "https://kimi.moonshot.cn",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+	},
 	"clinepass": {
 		BaseURL:    "https://api.cline.bot/api/v1/chat/completions",
 		AuthHeader: "Authorization",

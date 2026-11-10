@@ -461,6 +461,8 @@ func validateProviderKey(ctx context.Context, provider string, cfg providers.Pro
 		return validateGrokWeb(ctx, apiKey)
 	case "claude-web":
 		return validateClaudeWeb(ctx, apiKey, psd)
+	case "kimi-web":
+		return validateKimiWeb(ctx, apiKey, psd)
 	case "uc-web":
 		valid, message := media.ValidateUcWebCookie(ctx, apiKey)
 		return validateOutcome{valid: valid, supported: true, message: message}
@@ -932,6 +934,79 @@ func validateClaudeWeb(ctx context.Context, apiKey string, psd map[string]any) v
 		return validateOutcome{supported: true, message: "claude.ai answered 403 — either the sessionKey is expired or Cloudflare refused this probe; a chat request is the decisive test"}
 	}
 	return validateOutcome{supported: true, message: fmt.Sprintf("claude.ai answered HTTP %d — session not confirmed", status)}
+}
+
+// --- kimi-web: refresh_token probe (spec case "kimi-web") ---
+
+const kimiWebProbeURL = "https://kimi.moonshot.cn/api/auth/token/refresh"
+
+// kimiWebRefreshTokenFromPaste pulls the refresh token out of what
+// was pasted: the bare token, a refresh_token= pair, or the JSON
+// object Chroma's storage carries.
+func kimiWebRefreshTokenFromPaste(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "{") {
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(trimmed), &obj); err == nil {
+			for _, key := range []string{"refreshToken", "refresh_token"} {
+				if v, _ := obj[key].(string); strings.TrimSpace(v) != "" {
+					return strings.TrimSpace(v)
+				}
+			}
+		}
+	}
+	for _, part := range strings.Split(trimmed, ";") {
+		part = strings.TrimSpace(part)
+		for _, name := range []string{"refresh_token=", "refreshToken="} {
+			if value, ok := strings.CutPrefix(part, name); ok {
+				return strings.TrimSpace(value)
+			}
+		}
+	}
+	if !strings.Contains(trimmed, "=") && !strings.Contains(trimmed, ";") {
+		return trimmed
+	}
+	return ""
+}
+
+func validateKimiWeb(ctx context.Context, apiKey string, psd map[string]any) validateOutcome {
+	refreshToken := kimiWebRefreshTokenFromPaste(apiKey)
+	if refreshToken == "" {
+		if v, _ := psd["refreshToken"].(string); strings.TrimSpace(v) != "" {
+			refreshToken = strings.TrimSpace(v)
+		}
+	}
+	if refreshToken == "" {
+		return validateOutcome{supported: true, message: "No refresh_token found — paste the refresh_token value from kimi.moonshot.cn Local Storage"}
+	}
+	ua := "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+	if v, _ := psd["userAgent"].(string); strings.TrimSpace(v) != "" {
+		ua = strings.TrimSpace(v)
+	}
+	headers := map[string]string{
+		"Accept":          "application/json, text/plain, */*",
+		"Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+		"Authorization":   "Bearer " + refreshToken,
+		"Origin":          "https://kimi.moonshot.cn",
+		"Referer":         "https://kimi.moonshot.cn/",
+		"User-Agent":      ua,
+	}
+	// The probe performs the real exchange: a 200 both proves the
+	// refresh token and mints the access token the next chat would use.
+	status, _, err := validateProbeDo(ctx, http.MethodGet, kimiWebProbeURL, headers, nil)
+	if err != nil {
+		return validateOutcome{supported: true, message: err.Error()}
+	}
+	switch status {
+	case http.StatusOK:
+		return validateOutcome{valid: true, supported: true}
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return validateOutcome{supported: true, message: "refresh_token rejected — it may be expired or revoked. Re-copy it from kimi.moonshot.cn Local Storage (refresh_token), or re-sync from Chroma"}
+	}
+	return validateOutcome{supported: true, message: fmt.Sprintf("kimi.moonshot.cn answered HTTP %d — token not confirmed", status)}
 }
 
 // --- perplexity-web: session cookie probe (upstream `case "perplexity-web"`) ---

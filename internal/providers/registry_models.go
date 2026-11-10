@@ -96,6 +96,12 @@ var ProviderModels = map[string][]string{
 	// one of them must reach the web provider, never the API one.
 	"claude-web": {"claude-3-7-sonnet", "claude-3-7-thinking", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-web"},
 	"cweb":       {"claude-3-7-sonnet", "claude-3-7-thinking", "claude-3-5-sonnet", "claude-3-5-haiku", "claude-web"},
+	// kimi-web is the consumer site's own catalog (docs/KIMI_WEB_PROVIDER_SPEC.md
+	// section 7). These ids belong to the browser-session provider and are
+	// deliberately not merged into the API-key `kimi` rows: a request naming
+	// one of them must reach the web provider, never the API one.
+	"kimi-web": {"kimi-latest", "kimi-search", "kimi-k2.5", "kimi-web"},
+	"kweb":     {"kimi-latest", "kimi-search", "kimi-k2.5", "kimi-web"},
 	"hcnsec": {
 		"auto",
 		"DeepSeek-V4-Flash",
