@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.10.26] - 2026-11-11
+
+---
+type: added
+---
+
+New provider: **kimi-web** — kimi.moonshot.cn's consumer chat reached with the `refresh_token` a browser login leaves in Local Storage, implemented from `docs/KIMI_WEB_PROVIDER_SPEC.md`. Chroma (or a manual paste) supplies the refresh token; the executor exchanges it for short-lived access tokens (`GET /api/auth/token/refresh`, lazily — only when the cached token is missing or inside its last 30 seconds; refreshes are serialized per account and a rotated refresh token replaces the cached one), opens a throwaway chat per request (`POST /api/chat`, deleted best-effort after the turn), posts the message list, and translates the SSE stream back to OpenAI chunks — `cmpl` deltas as content, thinking deltas as `reasoning_content`, `all_done` as the finish. System turns fold into the first user turn, since the web client has no system channel. Transport is the sibling web providers' impersonating TLS stack with the Chrome_133 profile matching the spec's User-Agent, honoring the connection's proxy pool (or the synced `proxyUrl`); `KIMI_WEB_PLAIN_HTTP=1` is the escape hatch. Catalog: `kimi-latest`, `kimi-search` (sets `use_search`), `kimi-k2.5`, `kimi-web` under the `kweb/` alias — a distinct provider from the API-key `kimi`/`kimi-coding`, never aliased onto them. The connection test performs the real token exchange. Chroma syncs accounts through `POST /api/providers/kimi-web/connections` (`{name, refreshToken, accessToken, tokenExpiresAt, userAgent, proxyUrl, replace}`), translated into the one generic connection write path; the dashboard's generic create works too. Two notes: refreshed tokens are cached in-process (the connection row keeps the refresh token Chroma last synced; if upstream rotation ever invalidates it, a re-sync restores the account), the completion body also carries the mapped `model` id alongside the spec's messages/refs/use_search fields, and the provider artwork ships as `web/public/providers/kimi-web.png`. Live verification against a real account is still pending — no Kimi session was available at implementation time; the upstream host and refresh endpoint were confirmed live (401 without a token).
+
 ## [v1.10.25] - 2026-11-11
 
 ---
