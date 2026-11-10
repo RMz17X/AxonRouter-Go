@@ -91,6 +91,35 @@
     detailError = ''
   }
 
+  type SmartDecision = NonNullable<RequestDetailItem['smartDecision']>
+
+  function smartDecisionLabel(d: SmartDecision): string {
+    const conf = d.confidence !== undefined ? ` ${Math.round(d.confidence * 100)}%` : ''
+    if (d.verdict === 'easy') return `AI Easy${conf}`
+    if (d.verdict === 'hard') return `AI Hard${conf}`
+    return 'Fallback'
+  }
+
+  function smartDecisionIcon(d: SmartDecision): string {
+    if (d.verdict === 'easy') return 'bolt'
+    if (d.verdict === 'hard') return 'psychology'
+    return 'alt_route'
+  }
+
+  function smartDecisionClasses(d: SmartDecision): string {
+    if (d.verdict === 'easy') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500'
+    if (d.verdict === 'hard') return 'border-purple-500/20 bg-purple-500/10 text-purple-400'
+    return 'border-border bg-surface-2 text-text-muted'
+  }
+
+  function smartDecisionTitle(d: SmartDecision): string {
+    const parts = [`Smart router decision: ${d.source}`]
+    if (d.model) parts.push(`led with ${d.model}`)
+    if (d.confidence !== undefined) parts.push(`confidence ${Math.round(d.confidence * 100)}%`)
+    if (d.threshold) parts.push(`threshold ${Math.round(d.threshold * 100)}%`)
+    return parts.join(' · ')
+  }
+
   function resolveAccount(item: RequestDetailItem | null | undefined): { name: string; email?: string } {
     if (!item) return { name: 'Default' }
     if (item.account) {
@@ -249,6 +278,12 @@
                   {/if}
                   <span class="truncate block">{item.model}</span>
                 </div>
+                {#if item.smartDecision}
+                  <span class="mt-1 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px font-sans text-[9px] font-semibold {smartDecisionClasses(item.smartDecision)}" title={smartDecisionTitle(item.smartDecision)}>
+                    <span class="material-symbols-outlined text-[10px]">{smartDecisionIcon(item.smartDecision)}</span>
+                    {smartDecisionLabel(item.smartDecision)}
+                  </span>
+                {/if}
               </td>
               <td class="py-3 px-4 text-right">
                 {item.latency?.ttft && item.latency.ttft > 0 ? formatDuration(item.latency.ttft) : '—'}
@@ -352,6 +387,12 @@
             <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-[11px] font-mono font-medium text-purple-400">
               <span class="material-symbols-outlined text-[12px]">layers</span>
               {selectedDetail.combo}
+            </span>
+          {/if}
+          {#if selectedDetail.smartDecision}
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium {smartDecisionClasses(selectedDetail.smartDecision)}" title={smartDecisionTitle(selectedDetail.smartDecision)}>
+              <span class="material-symbols-outlined text-[12px]">{smartDecisionIcon(selectedDetail.smartDecision)}</span>
+              {smartDecisionLabel(selectedDetail.smartDecision)}
             </span>
           {/if}
         </div>
@@ -599,6 +640,17 @@
               {selectedDetail.combo || 'Direct (None)'}
             </div>
           </div>
+          {#if selectedDetail.smartDecision}
+            <div class="p-3 rounded-xl bg-surface-2 border border-border space-y-1">
+              <div class="text-text-muted text-[10px] uppercase font-bold tracking-wider">Smart Router</div>
+              <div class="font-code text-xs text-text-main font-mono font-medium">
+                {smartDecisionLabel(selectedDetail.smartDecision)} · {selectedDetail.smartDecision.source}
+              </div>
+              {#if selectedDetail.smartDecision.model}
+                <div class="text-[11px] text-text-muted break-all">Led with {selectedDetail.smartDecision.model}</div>
+              {/if}
+            </div>
+          {/if}
           <div class="p-3 rounded-xl bg-surface-2 border border-border space-y-1">
             <div class="text-text-muted text-[10px] uppercase font-bold tracking-wider">Est. Cost</div>
             <div class="font-code text-xs text-emerald-500 font-bold">

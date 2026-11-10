@@ -489,7 +489,19 @@
   }
 
   function removeModel(idx: number) {
+    const removed = models[idx]
     onUpdateModels(models.filter((_, i) => i !== idx))
+    // A smart combo's saved list is rebuilt from the pools on save, so a
+    // pooled model must leave its pool here too — otherwise the removal
+    // silently resurrects when the modal saves.
+    if (removed) {
+      if (easyModels.includes(removed)) {
+        onUpdateEasyModels?.(easyModels.filter((m) => m !== removed))
+      }
+      if (hardModels.includes(removed)) {
+        onUpdateHardModels?.(hardModels.filter((m) => m !== removed))
+      }
+    }
     if (editingIdx === idx) editingIdx = null
   }
 

@@ -112,6 +112,18 @@ func requestIDDetailField(ctx context.Context) map[string]any {
 	return nil
 }
 
+// smartDecisionDetailField returns the detail-payload field carrying the
+// smart router's decision for this request (see smart_router.go): the
+// tier the AI led with, or the fallback verdict when it did not decide.
+// Absent on non-smart requests and single-model combos, never
+// zero-filled, like requestIDDetailField above.
+func smartDecisionDetailField(ctx context.Context) map[string]any {
+	if d := smartDecisionFrom(ctx); d != nil {
+		return map[string]any{"smartDecision": d}
+	}
+	return nil
+}
+
 // dailyErrorFoldSeen remembers which requests already folded a daily
 // error delta in this process, and under which provider/model/day, so a
 // request that later SUCCEEDS can retract the fold (see LogUsage).
@@ -301,6 +313,9 @@ func (h *ChatHandler) LogFailure(
 		failurePayload[k] = v
 	}
 	for k, v := range requestIDDetailField(ctx) {
+		failurePayload[k] = v
+	}
+	for k, v := range smartDecisionDetailField(ctx) {
 		failurePayload[k] = v
 	}
 	reqData, marshalErr := json.Marshal(failurePayload)
@@ -626,6 +641,9 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		detailPayload[k] = v
 	}
 	for k, v := range requestIDDetailField(ctx) {
+		detailPayload[k] = v
+	}
+	for k, v := range smartDecisionDetailField(ctx) {
 		detailPayload[k] = v
 	}
 	reqData, err := json.Marshal(detailPayload)

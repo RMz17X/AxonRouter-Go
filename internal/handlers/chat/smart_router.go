@@ -60,6 +60,41 @@ type smartRouteState struct {
 
 type smartRouteStateKey struct{}
 
+// smartDecision is the per-request record of what the smart router did,
+// merged into the request detail (see smartDecisionDetailField) so the
+// usage page can show whether the AI sent the request to the easy tier
+// or the hard tier, or whether routing fell back to the combo's stored
+// order. Verdict is the tier of the model the router led with; Source
+// names the path that produced it.
+type smartDecision struct {
+	Verdict    string   `json:"verdict"` // "easy" | "hard" | "fallback"
+	Source     string   `json:"source"`  // "selected" | "switch" | "retained" | "strict" | "below-threshold" | "no-decision"
+	Model      string   `json:"model,omitempty"`
+	Confidence *float64 `json:"confidence,omitempty"`
+	Threshold  float64  `json:"threshold,omitempty"`
+}
+
+type smartDecisionKey struct{}
+
+func withSmartDecision(ctx context.Context, d *smartDecision) context.Context {
+	return context.WithValue(ctx, smartDecisionKey{}, d)
+}
+
+func smartDecisionFrom(ctx context.Context) *smartDecision {
+	d, _ := ctx.Value(smartDecisionKey{}).(*smartDecision)
+	return d
+}
+
+// smartTierOf names the tier a model belongs to for the decision record:
+// the operator's pool lists win; unlisted models fall to the routing
+// heuristic inside isEasyTierModel.
+func smartTierOf(model string, cfg db.ComboStrategy) string {
+	if isEasyTierModel(model, cfg) {
+		return "easy"
+	}
+	return "hard"
+}
+
 // smartHeavySessionChars is the conversation-text size past which a
 // session counts as a heavy working session on its own, regardless of
 // tool use: far beyond casual chat, far below a real coding session
@@ -810,12 +845,15 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 		// The heavy-session guard still applies: a pin earned while the
 		// session was light must not lead once the session turned heavy.
 		log.Info("combo", "smart-router [strict] locked session", "session", sessionID, "model", activeModel)
-		return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), guard(pinFirst(activeModel))
+		dec := &smartDecision{Verdict: smartTierOf(activeModel, cfg), Source: "strict", Model: activeModel, Threshold: threshold}
+		return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), dec), guard(pinFirst(activeModel))
 	}
 
 	if activeModel != "" {
 		// Smart Switch: re-evaluate, and switch only above the floor.
+		var evalChoice *smartChoice
 		if choice := h.resolveSmartChoice(ctx, body, models, cfg); choice != nil {
+			evalChoice = choice
 			conf := -1.0
 			if choice.Confidence != nil {
 				conf = *choice.Confidence
@@ -823,19 +861,24 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 			if choice.Choice != activeModel && containsString(models, choice.Choice) && conf >= threshold {
 				log.Info("combo", "smart-router [smart-switch] task changed", "from", activeModel, "to", choice.Choice, "confidence", conf, "threshold", threshold)
 				h.setSmartStickyModel(comboName, sessionID, choice.Choice)
-				return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), guard(orderModelsBySmartChoice(models, choice))
+				dec := &smartDecision{Verdict: smartTierOf(choice.Choice, cfg), Source: "switch", Model: choice.Choice, Confidence: choice.Confidence, Threshold: threshold}
+				return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), dec), guard(orderModelsBySmartChoice(models, choice))
 			}
 		}
 		// Below the floor, on no decision, or on error: keep the warm cache.
 		log.Info("combo", "smart-router [smart-switch] retained model", "model", activeModel)
-		return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), guard(pinFirst(activeModel))
+		dec := &smartDecision{Verdict: smartTierOf(activeModel, cfg), Source: "retained", Model: activeModel, Threshold: threshold}
+		if evalChoice != nil {
+			dec.Confidence = evalChoice.Confidence
+		}
+		return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), dec), guard(pinFirst(activeModel))
 	}
 
 	// Turn 1 or per-turn: evaluate and order by the choice.
 	choice := h.resolveSmartChoice(ctx, body, models, cfg)
 	if choice == nil || !containsString(models, choice.Choice) {
 		log.Info("combo", "smart-router no decision, fallback to order", "combo", comboName)
-		return ctx, guard(models)
+		return withSmartDecision(ctx, &smartDecision{Verdict: "fallback", Source: "no-decision", Threshold: threshold}), guard(models)
 	}
 	conf := -1.0
 	if choice.Confidence != nil {
@@ -843,13 +886,14 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 	}
 	if threshold > 0 && conf >= 0 && conf < threshold {
 		log.Info("combo", "smart-router confidence below threshold", "confidence", conf, "threshold", threshold)
-		return ctx, guard(models)
+		return withSmartDecision(ctx, &smartDecision{Verdict: "fallback", Source: "below-threshold", Confidence: choice.Confidence, Threshold: threshold}), guard(models)
 	}
 	log.Info("combo", "smart-router selected", "model", choice.Choice, "confidence", conf)
 	if !isPerTurn && sessionID != "" {
 		h.setSmartStickyModel(comboName, sessionID, choice.Choice)
 	}
-	return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), guard(orderModelsBySmartChoice(models, choice))
+	dec := &smartDecision{Verdict: smartTierOf(choice.Choice, cfg), Source: "selected", Model: choice.Choice, Confidence: choice.Confidence, Threshold: threshold}
+	return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), dec), guard(orderModelsBySmartChoice(models, choice))
 }
 
 // withSmartRouteState attaches the smart routing state to the context.

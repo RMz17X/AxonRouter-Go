@@ -107,6 +107,14 @@ export interface RequestDetailItem {
   account?: string
   apiKey?: string
   combo?: string
+  /** Smart-router decision for this request, recorded when a smart combo served it: the tier the AI led with, or the fallback verdict. Absent on non-smart requests and on rows written before it was recorded. */
+  smartDecision?: {
+    verdict: 'easy' | 'hard' | 'fallback'
+    source: string
+    model?: string
+    confidence?: number
+    threshold?: number
+  }
   protocol?: string
   /** Response mode the client asked for; absent on payloads written before it was recorded (the API reads those as streamed, upstream's default). */
   isStream?: boolean
