@@ -6,6 +6,7 @@
     ExternalLink,
     Key,
     ListFilter,
+    LoaderCircle,
     RefreshCw,
     Search,
     Terminal,
@@ -109,32 +110,63 @@
   let pickerConnections = $state<ProviderConnection[]>([])
   let pickerCombos = $state<Combo[]>([])
   let pickerNodes = $state<ProviderNode[]>([])
-  let pickerLoaded = $state(false)
-  $effect(() => {
-    if (pickerField && !pickerLoaded) {
-      pickerLoaded = true
-      void (async () => {
+  // The picker opens only once its data is actually in hand. Opening it
+  // cold — the way this page first wired it — rendered a half-empty
+  // picker (catalog groups only, counts climbing as the connections,
+  // combos and provider nodes landed one by one), and a failed load
+  // latched the picker into that state for the whole session. The combo
+  // editor never hits this because its page preloads everything; here
+  // the first Pick click pays the load, with the button showing it.
+  let pickerOpeningField = $state<string | null>(null)
+  let pickerDataPromise: Promise<void> | null = null
+  const pickerDataDone = { connections: false, combos: false, nodes: false }
+  function ensurePickerData(): Promise<void> {
+    if (pickerDataDone.connections && pickerDataDone.combos && pickerDataDone.nodes) {
+      return Promise.resolve()
+    }
+    if (pickerDataPromise) return pickerDataPromise
+    pickerDataPromise = (async () => {
+      if (!pickerDataDone.connections) {
         try {
           pickerConnections = await api.getConnections()
+          pickerDataDone.connections = true
         } catch {
-          /* picker still offers combos/customs without connections */
+          /* retried on the next open; picker still offers the rest */
         }
+      }
+      if (!pickerDataDone.combos) {
         try {
           pickerCombos = await api.getCombos()
+          pickerDataDone.combos = true
         } catch {
-          /* best-effort */
+          /* retried on the next open */
         }
-        // Without the provider nodes the picker shows only catalog
-        // providers — the custom-node groups (apinex, dahl, trust, wz, …)
-        // that the combo editor's picker has would be missing here.
+      }
+      // Without the provider nodes the picker shows only catalog
+      // providers — the custom-node groups (apinex, dahl, trust, wz, …)
+      // that the combo editor's picker has would be missing here.
+      if (!pickerDataDone.nodes) {
         try {
           pickerNodes = await api.getProviderNodes()
+          pickerDataDone.nodes = true
         } catch {
-          /* best-effort */
+          /* retried on the next open */
         }
-      })()
+      }
+      pickerDataPromise = null
+    })()
+    return pickerDataPromise
+  }
+  async function openModelPicker(field: string) {
+    if (pickerOpeningField) return
+    pickerOpeningField = field
+    try {
+      await ensurePickerData()
+    } finally {
+      pickerOpeningField = null
     }
-  })
+    pickerField = field
+  }
   function pickModel(value: string) {
     if (pickerField) mapping = { ...mapping, [pickerField]: value }
     pickerField = null
@@ -989,10 +1021,15 @@
                     {#if field.model}
                       <button
                         type="button"
-                        onclick={() => (pickerField = field.key)}
-                        class="h-8 px-2.5 rounded bg-surface border border-border text-xs font-semibold text-text-main hover:border-brand-500/50 transition cursor-pointer shrink-0 inline-flex items-center gap-1"
+                        onclick={() => void openModelPicker(field.key)}
+                        disabled={pickerOpeningField !== null}
+                        class="h-8 px-2.5 rounded bg-surface border border-border text-xs font-semibold text-text-main hover:border-brand-500/50 transition cursor-pointer shrink-0 inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-wait"
                       >
-                        <ListFilter class="w-3.5 h-3.5" />
+                        {#if pickerOpeningField === field.key}
+                          <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+                        {:else}
+                          <ListFilter class="w-3.5 h-3.5" />
+                        {/if}
                         <span>Pick</span>
                       </button>
                     {/if}
