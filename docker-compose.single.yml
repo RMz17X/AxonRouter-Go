@@ -8,7 +8,13 @@
 # app boot against an existing database volume:
 #   docker compose -f docker-compose.single.yml --profile migrate run --rm migrate
 services:
+  # STAGING (hijilaptop): this bundled PostgreSQL is DISABLED via
+  # the local-pg profile - the gateway uses the shared
+  # global-postgres, which owns the `postgres` network alias.
+  # Start this service only with --profile local-pg. Its pgdata
+  # volume is preserved untouched.
   postgres:
+    profiles: ["local-pg"]
     image: postgres:17
     # max_connections is set explicitly so the pool equation has both
     # sides in one file: APP_REPLICAS × PG_POOL_MAX_OPEN + 10 headroom
@@ -42,9 +48,6 @@ services:
       context: .
       dockerfile: Dockerfile
     image: ${AXONROUTER_IMAGE:-ghcr.io/rmz17x/axonrouter-go:latest}
-    depends_on:
-      postgres:
-        condition: service_healthy
     environment:
       # Assembled from the POSTGRES_* parts so the password has one home (.env).
       DATABASE_URL: postgres://${POSTGRES_USER:-axonrouter}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-axonrouter}?sslmode=disable
