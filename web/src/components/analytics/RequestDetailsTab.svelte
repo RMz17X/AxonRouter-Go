@@ -256,8 +256,7 @@
                   <span class="truncate block">{item.model}</span>
                 </div>
                 {#if item.smartDecision}
-                  <span class="mt-1 inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px font-sans text-[9px] font-semibold {smartDecisionClasses(item.smartDecision)}" title={smartDecisionTitle(item.smartDecision)}>
-                    <span class="material-symbols-outlined text-[10px]">{smartDecisionIcon(item.smartDecision)}</span>
+                  <span class="mt-0.5 inline-flex items-center rounded-full border px-1 py-0 font-sans text-[9px] leading-[1.5] font-semibold {smartDecisionClasses(item.smartDecision)}" title={smartDecisionTitle(item.smartDecision)}>
                     {smartDecisionLabel(item.smartDecision)}
                   </span>
                 {/if}
@@ -367,8 +366,8 @@
             </span>
           {/if}
           {#if selectedDetail.smartDecision}
-            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-medium {smartDecisionClasses(selectedDetail.smartDecision)}" title={smartDecisionTitle(selectedDetail.smartDecision)}>
-              <span class="material-symbols-outlined text-[12px]">{smartDecisionIcon(selectedDetail.smartDecision)}</span>
+            <span class="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px text-[10px] font-medium {smartDecisionClasses(selectedDetail.smartDecision)}" title={smartDecisionTitle(selectedDetail.smartDecision)}>
+              <span class="material-symbols-outlined text-[11px]">{smartDecisionIcon(selectedDetail.smartDecision)}</span>
               {smartDecisionLabel(selectedDetail.smartDecision)}
             </span>
           {/if}

@@ -21,7 +21,6 @@
   } from './types'
   import {
     smartDecisionClasses,
-    smartDecisionIcon,
     smartDecisionLabel,
     smartDecisionTitle,
   } from './smartDecision'
@@ -360,8 +359,7 @@
                   {@render modeBadge(row.isStream !== false)}
                   <span class="inline-block rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
                   {#if row.smartDecision}
-                    <span class="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px font-sans text-[9px] font-semibold {smartDecisionClasses(row.smartDecision)}" title={smartDecisionTitle(row.smartDecision)}>
-                      <span class="material-symbols-outlined text-[10px]">{smartDecisionIcon(row.smartDecision)}</span>
+                    <span class="inline-flex items-center rounded-full border px-1 py-0 font-sans text-[9px] leading-[1.5] font-semibold {smartDecisionClasses(row.smartDecision)}" title={smartDecisionTitle(row.smartDecision)}>
                       {smartDecisionLabel(row.smartDecision)}
                     </span>
                   {/if}
@@ -412,8 +410,7 @@
             {@render modeBadge(row.isStream !== false)}
             <span class="inline-block rounded-full border border-border bg-surface px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
             {#if row.smartDecision}
-              <span class="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px font-sans text-[9px] font-semibold {smartDecisionClasses(row.smartDecision)}" title={smartDecisionTitle(row.smartDecision)}>
-                <span class="material-symbols-outlined text-[10px]">{smartDecisionIcon(row.smartDecision)}</span>
+              <span class="inline-flex items-center rounded-full border px-1 py-0 font-sans text-[9px] leading-[1.5] font-semibold {smartDecisionClasses(row.smartDecision)}" title={smartDecisionTitle(row.smartDecision)}>
                 {smartDecisionLabel(row.smartDecision)}
               </span>
             {/if}
