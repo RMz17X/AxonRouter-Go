@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"axonrouter/proxy/internal/models"
 )
 
 const modelLockPrefix = "modelLock_"
@@ -216,7 +218,10 @@ func (r *Repo) LockConnectionModel(connID, model string, durationSec int, backof
 	if err != nil {
 		return fmt.Errorf("lock connection model %s/%s: %w", connID, model, err)
 	}
-	r.invalidateProviderConnections()
+	r.patchCachedConnectionData(connID, func(_ *models.ProviderConnection, raw map[string]any) {
+		raw[modelLockPrefix+model] = lockedUntil
+		raw["backoffLevel"] = backoffLevel
+	})
 	// Mirror the lock into the speed layer so the selector's per-model
 	// check can answer from the shared cache instead of a SELECT per
 	// candidate (see speed.go). The row above stays the truth.
@@ -247,7 +252,11 @@ func (r *Repo) LockConnectionModelGone(connID, model string, durationSec int, ba
 	if err != nil {
 		return fmt.Errorf("lock connection model gone %s/%s: %w", connID, model, err)
 	}
-	r.invalidateProviderConnections()
+	r.patchCachedConnectionData(connID, func(_ *models.ProviderConnection, raw map[string]any) {
+		raw[modelLockPrefix+model] = lockedUntil
+		raw[modelGonePrefix+model] = lockedUntil
+		raw["backoffLevel"] = backoffLevel
+	})
 	if until, perr := time.Parse(time.RFC3339, lockedUntil); perr == nil {
 		r.publishModelLock(connID, model, until)
 	}
@@ -315,7 +324,11 @@ func (r *Repo) RecordConnectionScopedError(connID, model, source string, status 
 	if err != nil {
 		return fmt.Errorf("record connection error %s: %w", connID, err)
 	}
-	r.invalidateProviderConnections()
+	r.patchCachedConnectionData(connID, func(_ *models.ProviderConnection, raw map[string]any) {
+		raw["backoffLevel"] = backoffLevel
+		raw["lastError"] = lastError
+		raw["status"] = "error"
+	})
 	return nil
 }
 
@@ -349,10 +362,13 @@ func (r *Repo) LockConnectionRateLimit(connID string, until time.Time, backoffLe
 		jsonSetPairAt(jsonDocParam(), "lastError"),
 		jsonSetPairAt(jsonStringLiteral("error"), "status"),
 	}
-	args := []any{until.UTC().Format(time.RFC3339), backoffLevel, string(payload)}
+	untilStr := until.UTC().Format(time.RFC3339)
+	var eligibleVal any
+	args := []any{untilStr, backoffLevel, string(payload)}
 	if eligibleAt, ok := r.reentryEligibleAt(connID, nowT, until); ok {
 		eligiblePair = jsonSetPairAt(jsonStringParam(), keyRateLimitEligibleAt)
-		args = append(args, eligibleAt.UTC().Format(time.RFC3339))
+		eligibleVal = eligibleAt.UTC().Format(time.RFC3339)
+		args = append(args, eligibleVal)
 	}
 	pairs = append(pairs, eligiblePair)
 	args = append(args, now, connID)
@@ -366,7 +382,13 @@ func (r *Repo) LockConnectionRateLimit(connID string, until time.Time, backoffLe
 	if err != nil {
 		return fmt.Errorf("lock connection rate limit %s: %w", connID, err)
 	}
-	r.invalidateProviderConnections()
+	r.patchCachedConnectionData(connID, func(_ *models.ProviderConnection, raw map[string]any) {
+		raw["rateLimitedUntil"] = untilStr
+		raw["backoffLevel"] = backoffLevel
+		raw["lastError"] = lastError
+		raw["status"] = "error"
+		raw[keyRateLimitEligibleAt] = eligibleVal
+	})
 	return nil
 }
 
@@ -394,7 +416,13 @@ func (r *Repo) ClearConnectionRateLimit(connID string) error {
 	if err != nil {
 		return fmt.Errorf("clear connection rate limit %s: %w", connID, err)
 	}
-	r.invalidateProviderConnections()
+	r.patchCachedConnectionData(connID, func(_ *models.ProviderConnection, raw map[string]any) {
+		raw["rateLimitedUntil"] = nil
+		raw[keyRateLimitEligibleAt] = nil
+		raw["lastError"] = nil
+		raw["status"] = "active"
+		raw["backoffLevel"] = 0
+	})
 	return nil
 }
 
@@ -484,7 +512,22 @@ func (r *Repo) ClearConnectionSuccessState(connID, lockKey, model string) error 
 		r.deleteModelLockOverlay(connID, k)
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		r.invalidateProviderConnections()
+		r.patchCachedConnectionData(connID, func(conn *models.ProviderConnection, raw map[string]any) {
+			for _, k := range keys {
+				raw[modelLockPrefix+k] = nil
+				raw[modelGonePrefix+k] = nil
+			}
+			raw["rateLimitedUntil"] = nil
+			raw[keyRateLimitEligibleAt] = nil
+			raw["lastError"] = nil
+			raw["backoffLevel"] = 0
+			// Mirror the SQL's conditional status stamp (C-4): a
+			// disabled row keeps its stored status.
+			testStatus, _ := raw["testStatus"].(string)
+			if conn.IsActive == 1 && raw["disabledAt"] == nil && testStatus != "disabled" {
+				raw["status"] = "active"
+			}
+		})
 	}
 	return nil
 }
@@ -597,7 +640,11 @@ func (r *Repo) UnlockConnectionModel(connID, model string) error {
 	if err != nil {
 		return fmt.Errorf("unlock connection model %s/%s: %w", connID, model, err)
 	}
-	r.invalidateProviderConnections()
+	r.patchCachedConnectionData(connID, func(_ *models.ProviderConnection, raw map[string]any) {
+		raw[modelLockPrefix+model] = nil
+		raw[modelGonePrefix+model] = nil
+		raw["backoffLevel"] = 0
+	})
 	r.deleteModelLockOverlay(connID, model)
 	return nil
 }

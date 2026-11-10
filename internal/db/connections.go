@@ -201,6 +201,17 @@ type providerConnsKey struct {
 type providerConnsEntry struct {
 	rows    []*models.ProviderConnection
 	expires time.Time
+	// ids lists the connection ids in rows, so storeProviderConnections
+	// can retire exactly this entry's rows from the by-id index when
+	// the entry is replaced or invalidated.
+	ids []string
+}
+
+// providerConnsIndexEntry points at one snapshot's master row for a
+// connection id, with the expiry of the snapshot it belongs to.
+type providerConnsIndexEntry struct {
+	row     *models.ProviderConnection
+	expires time.Time
 }
 
 // providerConnsTTL bounds how long a connection snapshot may be
@@ -223,37 +234,19 @@ func (r *Repo) CachedProviderConnections(provider string, activeOnly bool) ([]*m
 // GetCachedConnectionByID returns a connection from the in-memory cache if present and fresh,
 // avoiding hitting PostgreSQL for point lookups during rotation and fallback loops.
 func (r *Repo) GetCachedConnectionByID(provider, id string) (*models.ProviderConnection, bool) {
-	if provider != "" {
-		if conns, ok := r.CachedProviderConnections(provider, true); ok {
-			for _, c := range conns {
-				if c != nil && c.ID == id {
-					return c, true
-				}
-			}
-		}
-		if conns, ok := r.CachedProviderConnections(provider, false); ok {
-			for _, c := range conns {
-				if c != nil && c.ID == id {
-					return c, true
-				}
-			}
-		}
+	r.providerConnsMu.RLock()
+	entry, ok := r.providerConnsIndex[id]
+	r.providerConnsMu.RUnlock()
+	if !ok || entry.row == nil || time.Now().After(entry.expires) {
 		return nil, false
 	}
-
-	r.providerConnsMu.RLock()
-	defer r.providerConnsMu.RUnlock()
-	for _, entry := range r.providerConns {
-		if time.Now().After(entry.expires) {
-			continue
-		}
-		for _, c := range entry.rows {
-			if c != nil && c.ID == id {
-				return c, true
-			}
-		}
+	if provider != "" && entry.row.Provider != provider {
+		return nil, false
 	}
-	return nil, false
+	// A clone, as before: callers may hold and mutate the row (the
+	// pinned-connection path forwards with it), and the index points
+	// at the snapshot's master copy.
+	return cloneProviderConnections([]*models.ProviderConnection{entry.row})[0], true
 }
 
 // cachedProviderConnections returns a clone of the snapshot for key
@@ -275,14 +268,32 @@ func (r *Repo) cachedProviderConnections(key providerConnsKey) ([]*models.Provid
 // its own clones: the slice being returned to the caller stays theirs.
 func (r *Repo) storeProviderConnections(key providerConnsKey, rows []*models.ProviderConnection) {
 	cloned := cloneProviderConnections(rows)
+	expires := time.Now().Add(providerConnsTTL)
 	r.providerConnsMu.Lock()
 	defer r.providerConnsMu.Unlock()
 	if r.providerConns == nil {
 		r.providerConns = make(map[providerConnsKey]providerConnsEntry)
 	}
+	if r.providerConnsIndex == nil {
+		r.providerConnsIndex = make(map[string]providerConnsIndexEntry)
+	}
+	if old, ok := r.providerConns[key]; ok {
+		for _, id := range old.ids {
+			delete(r.providerConnsIndex, id)
+		}
+	}
+	ids := make([]string, 0, len(cloned))
+	for _, row := range cloned {
+		if row == nil || row.ID == "" {
+			continue
+		}
+		ids = append(ids, row.ID)
+		r.providerConnsIndex[row.ID] = providerConnsIndexEntry{row: row, expires: expires}
+	}
 	r.providerConns[key] = providerConnsEntry{
 		rows:    cloned,
-		expires: time.Now().Add(providerConnsTTL),
+		expires: expires,
+		ids:     ids,
 	}
 }
 
@@ -293,7 +304,40 @@ func (r *Repo) storeProviderConnections(key providerConnsKey, rows []*models.Pro
 func (r *Repo) invalidateProviderConnections() {
 	r.providerConnsMu.Lock()
 	r.providerConns = nil
+	r.providerConnsIndex = nil
 	r.providerConnsMu.Unlock()
+}
+
+// patchCachedConnectionData mirrors one connection's freshly persisted
+// data-blob change into every live snapshot, instead of invalidating
+// them. The per-attempt state writers (model locks, rate-limit
+// cooldowns, recorded errors, and their clears) call this: during a
+// provider error storm those writes fire per attempt, and dropping
+// every snapshot per write made the next selection re-read and
+// re-hydrate the provider's whole table — tens of thousands of fat
+// rows for the biggest providers — per attempt, which is what pinned
+// Postgres and the app during storms. The mutation is synchronous and
+// in-process, so selection freshness is identical to invalidation;
+// structural writers (create, delete, disable, credential edits) keep
+// full invalidation.
+func (r *Repo) patchCachedConnectionData(connID string, mutate func(conn *models.ProviderConnection, raw map[string]any)) {
+	r.providerConnsMu.Lock()
+	defer r.providerConnsMu.Unlock()
+	for _, entry := range r.providerConns {
+		for _, conn := range entry.rows {
+			if conn == nil || conn.ID != connID {
+				continue
+			}
+			raw, ok := parseConnData(conn.Data)
+			if !ok {
+				continue
+			}
+			mutate(conn, raw)
+			if encoded, err := json.Marshal(raw); err == nil {
+				conn.Data = string(encoded)
+			}
+		}
+	}
 }
 
 // patchCachedConnectionStamp mirrors a rotation stamp this process
@@ -378,13 +422,27 @@ func (r *Repo) GetProviderConnections(provider string, activeOnly bool) ([]*mode
 	}
 	query += connectionSortOrder
 
-	connections, err := r.listProviderConnections(query, args)
+	// Collapse concurrent misses for the same key into one load: a
+	// burst arriving just after an invalidation otherwise fires this
+	// query once per waiter against the 4-connection pool. Every
+	// caller clones the shared result, preserving the mutation
+	// isolation the uncached path had.
+	loadKey := fmt.Sprintf("%s\x1f%t", provider, activeOnly)
+	loaded, err, _ := r.providerConnsLoads.Do(loadKey, func() (any, error) {
+		if snapshot, ok := r.cachedProviderConnections(cacheKey); ok {
+			return snapshot, nil
+		}
+		connections, err := r.listProviderConnections(query, args)
+		if err != nil {
+			return nil, err
+		}
+		r.storeProviderConnections(cacheKey, connections)
+		return connections, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	r.storeProviderConnections(cacheKey, connections)
-	return connections, nil
+	return cloneProviderConnections(loaded.([]*models.ProviderConnection)), nil
 }
 
 // GetConnectionsWithProxyPool queries only rows that have proxyPoolId set in their data JSON,

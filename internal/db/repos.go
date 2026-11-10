@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // Repo wraps the database handle and groups all persistence queries.
@@ -69,6 +71,17 @@ type Repo struct {
 	// slices handed to callers.
 	providerConnsMu sync.RWMutex
 	providerConns   map[providerConnsKey]providerConnsEntry
+	// providerConnsIndex resolves a connection id to its snapshot row
+	// in O(1). The selection hot path asks "is this one connection
+	// locked?" per candidate; scanning a 31k-row snapshot per question
+	// cost more CPU than the queries the snapshot exists to avoid.
+	// Entries carry their snapshot's expiry and are dropped with it.
+	providerConnsIndex map[string]providerConnsIndexEntry
+	// providerConnsLoads collapses concurrent snapshot misses for the
+	// same key into one database load: a burst arriving just after an
+	// invalidation used to fire the same full provider query once per
+	// waiter, serialised on the 4-connection pool.
+	providerConnsLoads singleflight.Group
 	// speed is the optional cluster speed layer (P3), installed by the
 	// app wiring via SetSpeedStore. It is stored rather
 	// than held by value so the wiring can install it after the Repo is
