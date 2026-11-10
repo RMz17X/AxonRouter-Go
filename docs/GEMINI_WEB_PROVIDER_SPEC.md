@@ -198,3 +198,240 @@ Jika respon Google mengembalikan kode status HTTP 429 atau pesan mengandung indi
 /rate\s*limit|quota\s*exceeded|resource_exhausted|limit\s*reached|reached\s*(?:your|the)?\s*(?:daily\s*)?limit|too\s*many\s*requests|coba\s*lagi\s*nanti|batas(?:an)?[\s\w]*tercapai/i
 ```
 AxonRouter menandai sesi dan koneksi sebagai `RATE_LIMITED` dan memberlakukan cooldown 1 jam secara deterministik sebelum mencoba kembali, secara mulus mengalihkan request berikutnya ke koneksi cadangan di rotation pool.
+
+---
+
+## 7. Arsitektur & Panduan Implementasi Image Generation (`/v1/images/generations`)
+
+### A. Analisis Status Saat Ini
+1. **Vision / Multimodal Input (Menganalisis Gambar):**
+   * **Status: 100% SUKSES.**
+   * Ditangani oleh [`internal/proxy/executor/gemini_web_image.go`](file:///workspaces/AxonRouter-Go/internal/proxy/executor/gemini_web_image.go). Gambar diunggah ke Google push service (`https://content-push.googleapis.com/upload`) dengan tenant `bard-storage`, kemudian disematkan pada array slot 0 request chat.
+2. **Image Generation (Pembuatan Gambar Baru via Imagen 3):**
+   * **Status Saat Ini: HTTP 404 pada `/v1/images/generations`.**
+   * **Penyebab:** Pada [`internal/handlers/media/media.go`](file:///workspaces/AxonRouter-Go/internal/handlers/media/media.go#L1150), belum ada cabang penanganan untuk `modelInfo.Provider == "gemini-web"` atau `"gweb"`. Permintaan saat ini diteruskan secara literal ke `https://gemini.google.com/images/generations` yang menghasilkan error 404.
+   * Model di balik layar sebenarnya **sudah mampu merespon pembuatan gambar** ketika ditanya lewat chat completions (menghasilkan tautan Google Imagen: `http://googleusercontent.com/image_generation_content/...`). Namun URL ini merupakan stub internal berotentikasi yang memerlukan sesi Google yang sama untuk dapat diunduh.
+
+---
+
+### B. Blueprint Implementasi (Mengikuti Pola `grok-web`)
+
+AxonRouter-Go telah memiliki pola baku untuk provider web headless yang menghasilkan media, yaitu pada [`internal/handlers/media/grok_web.go`](file:///workspaces/AxonRouter-Go/internal/handlers/media/grok_web.go) (`useExecutor: true`). Implementasi untuk `gemini-web` mengikuti pola yang sama persis:
+
+```
++-------------------------------------------------------------------------------+
+|                     Klien OpenAI SDK (/v1/images/generations)                 |
++---------------------------------------|---------------------------------------+
+                                        | POST {"prompt": "...", "model": "..."}
+                                        v
++-------------------------------------------------------------------------------+
+| media.HandleImages -> internal/handlers/media/media.go                        |
+|                                                                               |
+|   if (endpoint == "/v1/images/generations") &&                                |
+|      (modelInfo.Provider == "gemini-web" || modelInfo.Provider == "gweb") {   |
+|       return h.handleGeminiWebImage(w, r, body, modelInfo)                    |
+|   }                                                                           |
++---------------------------------------|---------------------------------------+
+                                        |
+                                        v
++-------------------------------------------------------------------------------+
+| internal/handlers/media/gemini_web.go (Handler)                               |
+|                                                                               |
+|   1. Parse prompt & ukuran                                                    |
+|   2. Ambil koneksi aktif via GetBestConnectionWithContext                     |
+|   3. Panggil executor.GenerateGeminiWebImage(ctx, session, prompt)            |
+|   4. Format output OpenAI {"created": ..., "data": [{"b64_json": "..."}]}     |
++---------------------------------------|---------------------------------------+
+                                        |
+                                        v
++-------------------------------------------------------------------------------+
+| internal/proxy/executor/gemini_web_image_gen.go (Eksekutor)                   |
+|                                                                               |
+|   1. Kirim turn ke StreamGenerate: "Generate an image of " + prompt           |
+|   2. Ambil URL stub dari respon: googleusercontent.com/image_generation_content|
+|   3. Download byte gambar menggunakan TLS Session & Cookies akun Google yang  |
+|      sama (agar tidak 404/401)                                                |
+|   4. Encode byte gambar ke Base64 (b64_json)                                  |
++-------------------------------------------------------------------------------+
+```
+
+---
+
+### C. File-File yang Disentuh & Contoh Kode
+
+#### 1. Tambahkan Routing di [`internal/handlers/media/media.go`](file:///workspaces/AxonRouter-Go/internal/handlers/media/media.go)
+Sekitar baris 1150 (berdampingan dengan `grok-web`):
+```go
+// Gemini Web Imagen 3: endpoint media /v1/images/generations
+if (endpoint == "/v1/images/generations" || endpoint == "/images/generations") &&
+    (modelInfo.Provider == "gemini-web" || modelInfo.Provider == "gweb") {
+    if err := h.handleGeminiWebImage(w, r, body, modelInfo); err != nil {
+        handlerutil.WriteJSONError(w, http.StatusBadGateway, err.Error())
+    }
+    return
+}
+```
+
+#### 2. Buat Handler Baru: [`internal/handlers/media/gemini_web.go`](file:///workspaces/AxonRouter-Go/internal/handlers/media/gemini_web.go)
+```go
+package media
+
+import (
+    "fmt"
+    "net/http"
+    "strings"
+    "time"
+
+    json "encoding/json/v2"
+
+    "axonrouter/proxy/internal/handlers/chat"
+    "axonrouter/proxy/internal/proxy/executor"
+)
+
+// handleGeminiWebImage menangani endpoint /v1/images/generations untuk provider gemini-web.
+func (h *MediaHandler) handleGeminiWebImage(w http.ResponseWriter, r *http.Request, body []byte, modelInfo *chat.ModelInfo) error {
+    var req struct {
+        Prompt         string `json:"prompt"`
+        Model          string `json:"model"`
+        ResponseFormat string `json:"response_format"` // "b64_json" atau "url"
+    }
+    _ = json.Unmarshal(body, &req)
+    prompt := strings.TrimSpace(req.Prompt)
+    if prompt == "" {
+        return fmt.Errorf("missing required field: prompt")
+    }
+
+    // Ambil koneksi Google aktif dengan sesi cookies valid
+    conn, _, err := h.ChatH.GetBestConnectionWithContext(r.Context(), "gemini-web", modelInfo.ConnectionID, nil, modelInfo.Model)
+    if err != nil {
+        return fmt.Errorf("gemini-web: no active Google connection available: %w", err)
+    }
+
+    // Panggil eksekutor untuk membuat dan mengunduh gambar
+    b64Image, err := executor.GenerateGeminiWebImage(r.Context(), conn, prompt)
+    if err != nil {
+        return err
+    }
+
+    // Kembalikan format standar OpenAI Images API
+    data := []map[string]any{
+        {
+            "b64_json":       b64Image,
+            "revised_prompt": prompt,
+        },
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusOK)
+    return json.NewEncoder(w).Encode(map[string]any{
+        "created": time.Now().Unix(),
+        "data":    data,
+    })
+}
+```
+
+#### 3. Buat Fungsi Eksekutor: [`internal/proxy/executor/gemini_web_image_gen.go`](file:///workspaces/AxonRouter-Go/internal/proxy/executor/gemini_web_image_gen.go)
+```go
+package executor
+
+import (
+    "context"
+    "encoding/base64"
+    "fmt"
+    "io"
+    "net/http"
+    "regexp"
+    "strings"
+
+    "axonrouter/proxy/internal/db"
+)
+
+var imagenURLPattern = regexp.MustCompile(`https?://[^\s"'\\]*(?:googleusercontent\.com|gstatic\.com)[^\s"'\\]*`)
+
+// GenerateGeminiWebImage mengirim prompt pembuatan gambar ke Google Imagen 3,
+// mengekstrak URL hasil, dan mengunduh aset gambar dengan cookies sesi yang sama.
+func GenerateGeminiWebImage(ctx context.Context, conn *db.ProviderConnection, prompt string) (string, error) {
+    session := geminiWebSessionForConn(conn)
+    if session == nil {
+        return "", fmt.Errorf("gemini-web: failed to establish authenticated TLS session")
+    }
+
+    enrichedPrompt := fmt.Sprintf("Generate an image of %s, high quality photographic detail", prompt)
+    turnReq := &geminiWebTurnRequest{
+        Prompt:      enrichedPrompt,
+        ModelNumber: 1, // Standar Flash / Web image generator
+    }
+
+    // 1. Eksekusi turn RPC StreamGenerate
+    respText, err := session.executeTurn(ctx, turnReq)
+    if err != nil {
+        return "", fmt.Errorf("gemini-web image generation failed: %w", err)
+    }
+
+    // 2. Cari URL gambar pada respon
+    match := imagenURLPattern.FindString(respText)
+    if match == "" {
+        return "", fmt.Errorf("gemini-web: model did not return a valid Imagen URL (response: %s)", respText)
+    }
+
+    // 3. Unduh gambar menggunakan client TLS yang membawa header Cookie Google
+    getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, match, nil)
+    if err != nil {
+        return "", err
+    }
+    getReq.Header.Set("User-Agent", geminiWebUserAgent)
+    getReq.Header.Set("Cookie", conn.APIKey)
+    getReq.Header.Set("Referer", "https://gemini.google.com/")
+
+    resp, err := session.client.Do(getReq)
+    if err != nil {
+        return "", fmt.Errorf("gemini-web: failed to download generated image: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return "", fmt.Errorf("gemini-web: download image answered HTTP %d", resp.StatusCode)
+    }
+
+    imgBytes, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return "", fmt.Errorf("gemini-web: read image bytes failed: %w", err)
+    }
+
+    // 4. Return string base64 untuk b64_json
+    return base64.StdEncoding.EncodeToString(imgBytes), nil
+}
+```
+
+#### 4. Registrasi Model di [`internal/providers/registry_models.go`](file:///workspaces/AxonRouter-Go/internal/providers/registry_models.go)
+Pastikan model `imagen-3` terdaftar pada provider `gemini-web`:
+```go
+"gemini-web": {
+    "gemini-web",
+    "gemini-web-advanced",
+    "gemini-web-thinking",
+    "imagen-3", // <-- Model khusus image generation
+    "gemini-3.1-pro",
+    "gemini-3.1-flash-lite",
+    "gemini-4-argon",
+},
+```
+
+---
+
+### D. Hasil yang Diharapkan
+Setelah implementasi di atas selesai:
+1. Permintaan dari aplikasi apa pun yang menggunakan OpenAI Python/Node SDK:
+   ```python
+   from openai import OpenAI
+   client = OpenAI(base_url="http://127.0.0.1:3177/v1", api_key="sk-...")
+   
+   response = client.images.generate(
+       model="gweb/imagen-3", # atau gweb/gemini-3.1-pro
+       prompt="A cute neon blue origami robot",
+       response_format="b64_json"
+   )
+   image_base64 = response.data[0].b64_json
+   ```
+2. AxonRouter akan mengembalikan objek standar `{ "created": ..., "data": [{ "b64_json": "..." }] }` secara instan tanpa error 404 lagi.
+

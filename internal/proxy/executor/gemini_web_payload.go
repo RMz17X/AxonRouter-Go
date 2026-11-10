@@ -265,6 +265,16 @@ func geminiWebModelMatches(model geminiWebModel, alias string) bool {
 // reports with the list it does offer.
 func geminiWebResolveModel(models []geminiWebModel, requested string) *geminiWebModel {
 	alias := geminiWebCatalogAlias(requested)
+	if strings.HasPrefix(alias, "imagen") || strings.Contains(alias, "image") {
+		for i := range models {
+			if strings.EqualFold(models[i].Category, "Flash") {
+				return &models[i]
+			}
+		}
+		if len(models) > 0 {
+			return &models[0]
+		}
+	}
 	for i := range models {
 		if geminiWebModelMatches(models[i], alias) {
 			return &models[i]

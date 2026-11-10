@@ -742,6 +742,7 @@ func init() {
 	// thinking level for a model that has none is the outcome the override
 	// exists to prevent.
 	geminiWebLiteCaps := Capabilities{Vision: true, Tools: true, ThinkingFormat: "gemini-level", ThinkingCanDisable: new(false)}
+	geminiWebImageCaps := Capabilities{Vision: true, Tools: true, ImageOutput: true, ThinkingFormat: "gemini-level", ThinkingCanDisable: new(false)}
 	providerCapabilities["gemini-web"] = map[string]Capabilities{
 		"gemini-3.1-pro":        geminiWebCaps,
 		"gemini-3.7-flash":      geminiWebCaps,
@@ -752,6 +753,8 @@ func init() {
 		"gemini-argon":          geminiWebCaps,
 		"gemini-3-pro":          geminiWebCaps,
 		"gemini-4-argon":        geminiWebCaps,
+		"imagen-3":              geminiWebImageCaps,
+		"imagen-3.0-generate-002": geminiWebImageCaps,
 	}
 
 	providerCapabilities["opencode-go"] = map[string]Capabilities{

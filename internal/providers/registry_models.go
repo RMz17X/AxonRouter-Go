@@ -165,6 +165,7 @@ var ProviderModels = map[string][]string{
 		"gemini-3.1-pro", "gemini-3.1-flash-lite",
 		"gemini-pro", "gemini-flash", "gemini-flash-lite", "gemini-argon",
 		"gemini-3-pro", "gemini-4-argon",
+		"imagen-3", "imagen-3.0-generate-002",
 	},
 	"gh":                  {"gpt-5-mini", "gpt-5.3-codex", "gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "claude-fable-5", "claude-fable-5.1", "claude-haiku-4.5", "claude-haiku-5.5", "claude-opus-4.8", "claude-opus-4.8-fast", "claude-opus-5", "claude-opus-5.5", "claude-sonnet-4.6", "claude-sonnet-5", "claude-sonnet-5.5", "gemini-3.8-flash", "gemini-4-argon", "kimi-k3", "mai-code-1.1-flash", "text-embedding-3-small", "text-embedding-ada-002"},
 	"github":              {"gpt-5-mini", "gpt-5.3-codex", "gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol", "claude-fable-5", "claude-fable-5.1", "claude-haiku-4.5", "claude-haiku-5.5", "claude-opus-4.8", "claude-opus-4.8-fast", "claude-opus-5", "claude-opus-5.5", "claude-sonnet-4.6", "claude-sonnet-5", "claude-sonnet-5.5", "gemini-3.8-flash", "gemini-4-argon", "kimi-k3", "mai-code-1.1-flash", "text-embedding-3-small", "text-embedding-ada-002"},
