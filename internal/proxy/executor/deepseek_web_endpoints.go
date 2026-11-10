@@ -16,6 +16,8 @@ type deepSeekEndpoints struct {
 	sessionDelete string
 	powChallenge  string
 	completion    string
+	uploadFile    string
+	fetchFiles    string
 }
 
 // deepSeekEndpointsFor derives the endpoint set from a configured base URL.
@@ -38,6 +40,8 @@ func deepSeekEndpointsFor(baseURL string) deepSeekEndpoints {
 		sessionDelete: root + "/chat_session/delete",
 		powChallenge:  root + "/chat/create_pow_challenge",
 		completion:    completion,
+		uploadFile:    root + "/file/upload_file",
+		fetchFiles:    root + "/file/fetch_files",
 	}
 }
 

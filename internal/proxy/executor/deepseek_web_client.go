@@ -560,7 +560,13 @@ func solveDeepSeekPow(ctx context.Context, challenge deepSeekPowChallenge) (stri
 // it from that conversation's page, so the Referer names the page rather
 // than the site root.
 func (t deepSeekTurn) requestPow(ctx context.Context, accessToken, chatSessionID string) (string, error) {
-	payload := map[string]any{"target_path": deepSeekCompletionPath}
+	return t.requestPowForTarget(ctx, accessToken, chatSessionID, deepSeekCompletionPath)
+}
+
+// requestPowForTarget fetches and answers a challenge for an arbitrary endpoint path,
+// such as /api/v0/chat/completion or /api/v0/file/upload_file.
+func (t deepSeekTurn) requestPowForTarget(ctx context.Context, accessToken, chatSessionID, targetPath string) (string, error) {
+	payload := map[string]any{"target_path": targetPath}
 	data, err := t.do(ctx, http.MethodPost, t.endpoints.powChallenge, accessToken, map[string]string{
 		"referer": deepSeekChatPageURL(t.origin, chatSessionID),
 	}, payload)

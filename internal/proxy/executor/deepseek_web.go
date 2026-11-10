@@ -76,9 +76,20 @@ func ForwardDeepSeekWeb(w http.ResponseWriter, req *Request) error {
 	}
 
 	stealth := deepSeekStealthFor(req.ConnData)
+
+	// Collect any image / file attachments across the messages
+	files, err := deepSeekCollectFiles(ctx, envelope.Messages)
+	if err != nil {
+		return deepSeekFailure(http.StatusBadRequest, "deepseek-web: resolve attachments: "+err.Error())
+	}
+
 	prompt := deepSeekTurnPrompt(envelope, req, stealth)
 	if prompt == "" {
-		return deepSeekFailure(http.StatusBadRequest, "deepseek-web received a request with no text content")
+		if len(files) > 0 {
+			prompt = "Analyze the attached file."
+		} else {
+			return deepSeekFailure(http.StatusBadRequest, "deepseek-web received a request with no text content")
+		}
 	}
 
 	options := resolveDeepSeekModelOptions(envelope.Model, envelope)
@@ -112,12 +123,21 @@ func ForwardDeepSeekWeb(w http.ResponseWriter, req *Request) error {
 	}
 	deepSeekStealthLog(stealth, session.claim.reuse)
 
+	refFileIDs := make([]string, 0, len(files))
+	for _, f := range files {
+		fileID, err := turn.uploadFile(ctx, accessToken, session.id, f)
+		if err != nil {
+			return deepSeekFailure(http.StatusBadGateway, "deepseek-web: upload attachment: "+err.Error())
+		}
+		refFileIDs = append(refFileIDs, fileID)
+	}
+
 	response, err := turn.completion(ctx, accessToken, deepSeekCompletionRequest{
 		ChatSessionID:   session.id,
 		ParentMessageID: session.claim.parentMessageID,
 		ModelType:       options.modelType,
 		Prompt:          session.claim.tail,
-		RefFileIDs:      []string{},
+		RefFileIDs:      refFileIDs,
 		ThinkingEnabled: options.thinking,
 		SearchEnabled:   options.search,
 		// The site's own client has no non-streaming mode: every completion it
@@ -147,7 +167,7 @@ func ForwardDeepSeekWeb(w http.ResponseWriter, req *Request) error {
 				ParentMessageID: nil,
 				ModelType:       options.modelType,
 				Prompt:          prompt,
-				RefFileIDs:      []string{},
+				RefFileIDs:      refFileIDs,
 				ThinkingEnabled: options.thinking,
 				SearchEnabled:   options.search,
 				Stream:          true,

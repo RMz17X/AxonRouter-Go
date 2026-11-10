@@ -91,10 +91,10 @@ type deepSeekTurnLine struct {
 // reaches the model.
 const deepSeekDefaultAutoHistoryWindow = 20
 
-// deepSeekMessageText extracts the plain text of one message. This format has
-// no image or attachment slot, so only text parts survive; non-text parts are
-// dropped rather than serialized as JSON the model would have to be told to
-// ignore.
+// deepSeekMessageText extracts the plain text of one message.
+// Image and file blocks are extracted separately via deepSeekCollectFiles
+// and referenced via ref_file_ids. Non-text parts are skipped here so they
+// are not serialized into the text transcript.
 func deepSeekMessageText(content jsontext.Value) string {
 	var asString string
 	if err := json.Unmarshal(content, &asString); err == nil {
