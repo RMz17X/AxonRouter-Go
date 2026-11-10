@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.7] - 2026-11-10
+
+### Fixed
+- Connection snapshots no longer collapse during provider error storms: the per-attempt state writers (model locks, model-gone locks, rate-limit cooldowns, recorded errors, unlocks, and the success-path clear) used to invalidate every cached `GetProviderConnections` snapshot on each write, so under a 429 storm the next selection re-read and re-hydrated the provider's whole table — 31k fat rows for the largest provider — per attempt, pinning Postgres (~98% CPU) and the app (~109%) in bursts (owner audit, 2026-11-10). Those writers now patch the affected row inside the live snapshots synchronously (the pattern the rotation-stamp writer already used), keeping selection exactly as fresh as invalidation did; structural writers (create, delete, disable, credential edits) still invalidate fully. Snapshot loads are additionally collapsed per key through singleflight so a burst arriving just after an invalidation fires the full provider query once instead of once per waiter, and `GetCachedConnectionByID` resolves through an O(1) by-id index instead of scanning snapshot rows per lock check.
+
 ## [v1.10.6] - 2026-11-10
 
 ## Fixed
