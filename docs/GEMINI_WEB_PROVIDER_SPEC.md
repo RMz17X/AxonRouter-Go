@@ -208,9 +208,10 @@ AxonRouter menandai sesi dan koneksi sebagai `RATE_LIMITED` dan memberlakukan co
    * **Status: 100% SUKSES.**
    * Ditangani oleh [`internal/proxy/executor/gemini_web_image.go`](file:///workspaces/AxonRouter-Go/internal/proxy/executor/gemini_web_image.go). Gambar diunggah ke Google push service (`https://content-push.googleapis.com/upload`) dengan tenant `bard-storage`, kemudian disematkan pada array slot 0 request chat.
 2. **Image Generation (Pembuatan Gambar Baru via Imagen 3):**
-   * **Status Saat Ini: HTTP 404 pada `/v1/images/generations`.**
-   * **Penyebab:** Pada [`internal/handlers/media/media.go`](file:///workspaces/AxonRouter-Go/internal/handlers/media/media.go#L1150), belum ada cabang penanganan untuk `modelInfo.Provider == "gemini-web"` atau `"gweb"`. Permintaan saat ini diteruskan secara literal ke `https://gemini.google.com/images/generations` yang menghasilkan error 404.
-   * Model di balik layar sebenarnya **sudah mampu merespon pembuatan gambar** ketika ditanya lewat chat completions (menghasilkan tautan Google Imagen: `http://googleusercontent.com/image_generation_content/...`). Namun URL ini merupakan stub internal berotentikasi yang memerlukan sesi Google yang sama untuk dapat diunduh.
+   * **Status: 100% SUKSES (Implemented & Verified).**
+   * Ditangani oleh [`internal/handlers/media/gemini_web.go`](file:///workspaces/AxonRouter-Go/internal/handlers/media/gemini_web.go) dan [`internal/proxy/executor/gemini_web_image_gen.go`](file:///workspaces/AxonRouter-Go/internal/proxy/executor/gemini_web_image_gen.go).
+   * Mendukung panggilan langsung ke `/v1/images/generations` (`imagen-3`, `imagen-3.0-generate-002`, `gweb/imagen-3`), Combo model fallback chaining, serta Image Edits (`/v1/images/edits`) dengan input gambar referensi.
+   * Model mengalirkan turn Imagen 3 dan mengunduh asset gambar menggunakan sesi Google berotentikasi (uTLS + cookies) untuk mencegah error 401/403/404 CDN Google, lalu mengembalikan payload standar OpenAI `{ "created": ..., "data": [{"b64_json": "..."}] }`.
 
 ---
 

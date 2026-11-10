@@ -15,11 +15,13 @@ import (
 // handleGeminiWebImage serves /v1/images/generations and /images/edits for provider gemini-web.
 func (h *MediaHandler) handleGeminiWebImage(w http.ResponseWriter, r *http.Request, body []byte, modelInfo *chat.ModelInfo) error {
 	var req struct {
-		Prompt         string `json:"prompt"`
-		Model          string `json:"model"`
-		N              int    `json:"n"`
-		Size           string `json:"size"`
-		ResponseFormat string `json:"response_format"`
+		Prompt         string   `json:"prompt"`
+		Model          string   `json:"model"`
+		Image          string   `json:"image"`
+		Images         []string `json:"images"`
+		N              int      `json:"n"`
+		Size           string   `json:"size"`
+		ResponseFormat string   `json:"response_format"`
 	}
 	_ = json.Unmarshal(body, &req)
 	prompt := strings.TrimSpace(req.Prompt)
@@ -40,7 +42,12 @@ func (h *MediaHandler) handleGeminiWebImage(w http.ResponseWriter, r *http.Reque
 		n = 4
 	}
 
-	results, err := executor.GenerateGeminiWebImage(r.Context(), cookie, prompt, n)
+	inputImage := req.Image
+	if inputImage == "" && len(req.Images) > 0 {
+		inputImage = req.Images[0]
+	}
+
+	results, err := executor.GenerateGeminiWebImage(r.Context(), cookie, prompt, n, inputImage)
 	if err != nil {
 		return err
 	}
@@ -77,6 +84,10 @@ func (h *MediaHandler) handleGeminiWebImage(w http.ResponseWriter, r *http.Reque
 // geminiWebCookie resolves an active gemini-web connection and returns its cookie header.
 func (h *MediaHandler) geminiWebCookie(ctx context.Context, preferredConnID, model string) (string, error) {
 	conn, connData, err := h.ChatH.GetBestConnectionWithContext(ctx, "gemini-web", preferredConnID, nil, model)
+	if (err != nil || connData == nil) && model != "" {
+		// Fallback to unconstrained connection lookup if model-specific constraint failed
+		conn, connData, err = h.ChatH.GetBestConnectionWithContext(ctx, "gemini-web", preferredConnID, nil, "")
+	}
 	if err != nil || connData == nil {
 		return "", fmt.Errorf("no active connection for gemini-web: %w", err)
 	}

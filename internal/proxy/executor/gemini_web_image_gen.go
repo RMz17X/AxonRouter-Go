@@ -26,17 +26,17 @@ var geminiWebImagenURLRe = regexp.MustCompile(`https?://[^\s"'<>\)]*(?:googleuse
 // GenerateGeminiWebImage runs a turn on Gemini Web with an image generation prompt,
 // extracts the resulting Imagen 3 image URLs, downloads the asset using the session's
 // TLS client and authenticated cookies, and returns the base64-encoded images.
-func GenerateGeminiWebImage(ctx context.Context, cookie, prompt string, n int) ([]GeminiWebImageResult, error) {
+func GenerateGeminiWebImage(ctx context.Context, cookie, prompt string, n int, inputImage ...string) ([]GeminiWebImageResult, error) {
 	cookie = strings.TrimSpace(cookie)
 	session := geminiWebSessionForCredential(cookie)
 	if session == nil {
 		return nil, fmt.Errorf("gemini-web: failed to initialize session for image generation")
 	}
-	return GenerateGeminiWebImageWithSession(ctx, session, prompt, n)
+	return GenerateGeminiWebImageWithSession(ctx, session, prompt, n, inputImage...)
 }
 
 // GenerateGeminiWebImageWithSession executes image generation on a prepared session.
-func GenerateGeminiWebImageWithSession(ctx context.Context, session *geminiWebSession, prompt string, n int) ([]GeminiWebImageResult, error) {
+func GenerateGeminiWebImageWithSession(ctx context.Context, session *geminiWebSession, prompt string, n int, inputImage ...string) ([]GeminiWebImageResult, error) {
 	if session == nil {
 		return nil, fmt.Errorf("gemini-web: nil session")
 	}
@@ -45,11 +45,27 @@ func GenerateGeminiWebImageWithSession(ctx context.Context, session *geminiWebSe
 		n = 1
 	}
 
+	// Optional input image for image editing
+	var attachments []geminiWebAttachment
+	if len(inputImage) > 0 && strings.TrimSpace(inputImage[0]) != "" {
+		imgSrc := geminiWebImageSource{URL: strings.TrimSpace(inputImage[0])}
+		resolvedImg, err := geminiWebResolveImage(ctx, imgSrc)
+		if err == nil && resolvedImg != nil {
+			if att, err := session.uploadImage(ctx, *resolvedImg); err == nil {
+				attachments = append(attachments, att)
+			}
+		}
+	}
+
 	// Enrich the prompt so Gemini Web's conversational model reliably triggers
 	// the Imagen 3 tool rather than describing an image in text.
 	genPrompt := strings.TrimSpace(prompt)
 	lower := strings.ToLower(genPrompt)
-	if !strings.HasPrefix(lower, "generate an image") &&
+	if len(attachments) > 0 {
+		if !strings.HasPrefix(lower, "edit") && !strings.HasPrefix(lower, "modify") && !strings.HasPrefix(lower, "generate") {
+			genPrompt = "Edit this image: " + genPrompt
+		}
+	} else if !strings.HasPrefix(lower, "generate an image") &&
 		!strings.HasPrefix(lower, "create an image") &&
 		!strings.HasPrefix(lower, "draw ") {
 		genPrompt = "Generate an image of " + genPrompt
@@ -58,7 +74,7 @@ func GenerateGeminiWebImageWithSession(ctx context.Context, session *geminiWebSe
 	var accumulatedText string
 	var lastRPCError *geminiWebRPCError
 
-	err := session.streamTurn(ctx, genPrompt, 1, nil, nil, func(line *geminiWebLine) error {
+	err := session.streamTurn(ctx, genPrompt, 1, nil, attachments, func(line *geminiWebLine) error {
 		if line == nil {
 			return nil
 		}
