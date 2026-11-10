@@ -1,3 +1,0 @@
-## Fixed
-- Decoy-only responses now exhaust a combo member after two draws instead of rotating through every account: the behaviour is a model-side mismatch for the request shape, not an account fault (measured 17 of 17 attempts on one request calling the same decoy across accounts, ~120 s). `handleAccountFallback` counts `translator.ErrDecoyOnlyResponse` failures and breaks the account loop at two, so the caller's fallback moves to the next member.
-- Floored requests (fragment 1091/1092) whose thinking config carries a thinkingLevel now have the level converted to the pinned thinking budget: level and budget cannot be sent together, and leaving the level in place let those attempts think 300-490 tokens anyway, defeating the pin.
