@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
@@ -22,8 +23,16 @@ const maxAntigravityOutputTokens = 64000
 // maxOutputTokens strictly exceeds it (parity across chat and image paths).
 const thinkingHeadroomTokens = 8192
 
-// antigravityDecoyUnavailable is the placeholder description for injected decoy tools.
-const antigravityDecoyUnavailable = "This tool is currently unavailable."
+// Decoy tools carry functional descriptions, not "currently unavailable".
+// Deliberate divergence from upstream decolua/9router (which describes every
+// decoy as unavailable): measured live on 2026-11-10, a model dressed as the
+// Antigravity IDE reaches for the canonical decoy names (run_command above
+// all) and, told they are unavailable, refuses the task in plain text even
+// though the client's own tools could do it — the client's session derails
+// with a fake unavailability notice. The fingerprint surface is the decoy
+// names, schemas and count, which are unchanged; the real IDE also never
+// describes its own tools as unavailable. Calls to decoys the client did not
+// declare are dropped on the response side instead (LiveDecoyTools).
 
 // antigravityRequestBlacklist are fields Google generateContent rejects when
 // present at the request root (thinking/reasoning fields set by upstream clients).
@@ -90,27 +99,66 @@ var AntigravityDecoyPlaceholderParams = map[string]any{
 
 // AntigravityDecoyTools are the 21 decoy tools matching official IDE defaults.
 var AntigravityDecoyTools = []GeminiFunctionDecl{
-	{Name: "browser_subagent", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "command_status", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "find_by_name", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "generate_image", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "grep_search", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "list_dir", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "list_resources", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "mcp_sequential-thinking_sequentialthinking", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "multi_replace_file_content", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "notify_user", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "read_resource", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "read_terminal", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "read_url_content", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "replace_file_content", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "run_command", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "search_web", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "send_command_input", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "task_boundary", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "view_content_chunk", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "view_file", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
-	{Name: "write_to_file", Description: antigravityDecoyUnavailable, Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "browser_subagent", Description: "Delegate a web browsing or research task to a browser subagent and get back a summary of what it finds.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "command_status", Description: "Check the status of a previously started background command.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "find_by_name", Description: "Search the workspace for files matching a name pattern.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "generate_image", Description: "Generate an image from a text description.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "grep_search", Description: "Search file contents in the workspace with a regular expression.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "list_dir", Description: "List the files and folders in a directory.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "list_resources", Description: "List the resources exposed by connected MCP servers.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "mcp_sequential-thinking_sequentialthinking", Description: "Break a complex problem into a sequence of reasoning steps.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "multi_replace_file_content", Description: "Apply several targeted replacements to a file in one operation.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "notify_user", Description: "Send a notification message to the user.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "read_resource", Description: "Read the contents of a resource exposed by an MCP server.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "read_terminal", Description: "Read recent output from a terminal.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "read_url_content", Description: "Fetch a web page and return its readable content.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "replace_file_content", Description: "Replace a targeted section of a file with new content.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "run_command", Description: "Run a shell command in the workspace terminal and return its output.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "search_web", Description: "Search the web for current information.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "send_command_input", Description: "Send input to a running interactive command.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "task_boundary", Description: "Mark the boundary between major steps of a long task.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "view_content_chunk", Description: "View one chunk of a large file or document.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "view_file", Description: "View the contents of a file, optionally a specific line range.", Parameters: AntigravityDecoyPlaceholderParams},
+	{Name: "write_to_file", Description: "Create a new file with the given content.", Parameters: AntigravityDecoyPlaceholderParams},
+}
+
+// LiveDecoyTools returns the decoy names a response may not legitimately
+// use for this request: every Antigravity decoy the client did NOT declare
+// itself. CloakAntigravityRequest keeps a client tool that shares a decoy's
+// name under that name, so a call to a declared name is the client's real
+// tool; a call to any other decoy names a tool the client never offered and
+// must not be forwarded to it.
+func LiveDecoyTools(declared map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(AntigravityDecoyTools))
+	for _, d := range AntigravityDecoyTools {
+		if !declared[d.Name] {
+			out[d.Name] = true
+		}
+	}
+	return out
+}
+
+type liveDecoysCtxKey struct{}
+
+// WithLiveDecoys carries the request's live decoy set (LiveDecoyTools) to
+// the response translators, which run without sight of the request.
+func WithLiveDecoys(ctx context.Context, decoys map[string]bool) context.Context {
+	if ctx == nil || len(decoys) == 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, liveDecoysCtxKey{}, decoys)
+}
+
+// LiveDecoysFrom returns the live decoy set installed by WithLiveDecoys, or
+// nil when the request never went through Antigravity cloaking.
+func LiveDecoysFrom(ctx context.Context) map[string]bool {
+	if ctx == nil {
+		return nil
+	}
+	if v, ok := ctx.Value(liveDecoysCtxKey{}).(map[string]bool); ok {
+		return v
+	}
+	return nil
 }
 
 // CloakAntigravityRequest cloaks tool names with `_ide` suffix and appends decoy tools.

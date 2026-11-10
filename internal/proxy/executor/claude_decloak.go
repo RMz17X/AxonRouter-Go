@@ -43,6 +43,20 @@ func isDecoyTool(name string) bool {
 // executor package cannot import chat without a cycle.
 const claudeToolSuffix = "_ide"
 
+// clientDeclaredTool reports whether the client declared a tool under this
+// exact name: the cloak renamed the declaration to name+"_ide", so the map
+// holds the suffixed key. A model call to the bare name then means the
+// client's own tool used under its natural name, not the decoy of the same
+// name — it must be kept as a tool call, not converted into an "unavailable"
+// notice for a tool the client demonstrably has.
+func clientDeclaredTool(name string, toolNameMap map[string]string) bool {
+	if toolNameMap == nil {
+		return false
+	}
+	_, ok := toolNameMap[name+claudeToolSuffix]
+	return ok
+}
+
 // stripCloakSuffix recovers a tool name from a cloaked one when the map misses
 // it — the map is built per request, so a retry or a reconnect can lose it and
 // leave the client holding an unresolvable "<tool>_ide". Decoy names are
@@ -82,7 +96,7 @@ func DecloakClaudeResponseBody(body []byte, toolNameMap map[string]string) []byt
 				block["name"] = orig
 				hasValidTools = true
 				changed = true
-			} else if isDecoyTool(name) {
+			} else if isDecoyTool(name) && !clientDeclaredTool(name, toolNameMap) {
 				block["type"] = "text"
 				block["text"] = fmt.Sprintf("[Tool %s is unavailable]", name)
 				delete(block, "name")
@@ -90,6 +104,10 @@ func DecloakClaudeResponseBody(body []byte, toolNameMap map[string]string) []byt
 				delete(block, "id")
 				sawDecoy = true
 				changed = true
+			} else if isDecoyTool(name) {
+				// The client's own tool called by its natural name: the
+				// block already carries the correct name.
+				hasValidTools = true
 			} else if stripped, ok := stripCloakSuffix(name); ok {
 				// toolNameMap missed (lost across a retry) — strip the literal
 				// suffix rather than forwarding an unresolvable "<tool>_ide".
@@ -238,6 +256,10 @@ func (d *ClaudeStreamDecloaker) Events(chunk []byte) []SSEEvent {
 					block["name"] = orig
 					d.hasValidTools = true
 					changed = true
+				} else if isDecoyTool(name) && clientDeclaredTool(name, d.toolNameMap) {
+					// The client's own tool called by its natural name:
+					// the block already carries the correct name.
+					d.hasValidTools = true
 				} else if isDecoyTool(name) {
 					d.decoyBlocks[blockIdx] = true
 					d.sawDecoy = true

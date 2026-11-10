@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -225,6 +226,14 @@ func (h *ChatHandler) forwardGeminiNativeRequest(
 	// The response headers are in, so the upstream is alive: restart the
 	// combo stall window here rather than letting it run from attempt start.
 	noteUpstreamProgress(ctx)
+
+	if projectID != "" {
+		// The response translators run without sight of the request; hand
+		// them the decoy names this request may not be answered with, so a
+		// decoy call is dropped instead of reaching the client as a call to
+		// a tool it never declared.
+		ctx = translator.WithLiveDecoys(ctx, translator.LiveDecoyTools(clientToolNamesFromBody(body)))
+	}
 
 	// ForwardGemini does not ride the shared DoRequest sender, so wrap the
 	// body at this receipt point: every later read — the stream scan, the
@@ -656,7 +665,7 @@ func (h *ChatHandler) handleGeminiStream(ctx context.Context, w http.ResponseWri
 	hw := proxy.NewHeartbeatWriter(ctx, w, 0)
 	defer hw.Close()
 	flusher := proxy.WriteSSEHeaders(hw)
-	geminiState := &translator.GeminiStreamState{SessionID: handlerutil.GetSessionID(ctx)}
+	geminiState := &translator.GeminiStreamState{SessionID: handlerutil.GetSessionID(ctx), DecoyTools: translator.LiveDecoysFrom(ctx)}
 	start := time.Now()
 	// A /v1/responses client is one hop further out: Gemini events become
 	// OpenAI chunks here and those chunks become Responses events, so the
@@ -781,7 +790,18 @@ func (h *ChatHandler) handleGeminiNonStream(ctx context.Context, w http.Response
 	}
 
 	// Use the full translator which handles tool calls, thinking, etc.
-	openaiResp, usage, err := translator.TranslateGeminiResponseToOpenAI(body)
+	openaiResp, usage, err := translator.TranslateGeminiResponseToOpenAIWithDecoys(body, translator.LiveDecoysFrom(ctx))
+	if errors.Is(err, translator.ErrDecoyOnlyResponse) {
+		// The model answered only with decoy calls. Returning an error
+		// fails this attempt so the fallback chain retries elsewhere
+		// instead of handing the client an empty completion or a call to
+		// a tool it does not have.
+		if usage != nil {
+			translator.SetUsage(ctx, usage)
+		}
+		log.WarnCtx(ctx, "gemini", "decoy-only response dropped, failing attempt for fallback retry")
+		return fmt.Errorf("gemini decoy-only response: %w", err)
+	}
 	if err == nil && usage != nil {
 		translator.SetUsage(ctx, usage)
 	}
@@ -821,4 +841,30 @@ func (h *ChatHandler) handleGeminiNonStream(ctx context.Context, w http.Response
 	w.WriteHeader(http.StatusOK)
 	w.Write(openaiResp)
 	return nil
+}
+
+// clientToolNamesFromBody extracts the tool names a client declared, from
+// either wire shape the working body can carry here: OpenAI chat tools
+// (tools[].function.name), flat Responses/Claude tools (tools[].name).
+func clientToolNamesFromBody(body []byte) map[string]bool {
+	names := map[string]bool{}
+	var parsed struct {
+		Tools []struct {
+			Name     string `json:"name"`
+			Function struct {
+				Name string `json:"name"`
+			} `json:"function"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return names
+	}
+	for _, t := range parsed.Tools {
+		if t.Function.Name != "" {
+			names[t.Function.Name] = true
+		} else if t.Name != "" {
+			names[t.Name] = true
+		}
+	}
+	return names
 }

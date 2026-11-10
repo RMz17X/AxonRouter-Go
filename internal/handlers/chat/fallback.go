@@ -17,6 +17,7 @@ import (
 	"axonrouter/proxy/internal/usagetracker"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	json "encoding/json/v2"
 	"errors"
 	"fmt"
@@ -73,6 +74,7 @@ func (h *ChatHandler) handleAccountFallback(
 	if FallbackAttemptRecorderFrom(ctx) == nil {
 		ctx = WithFallbackAttemptRecorder(ctx, NewFallbackAttemptRecorder())
 	}
+	ctx = withTokenSaverCache(ctx)
 	body = repairToolCallIDsInJSON(body)
 	if pinnedConnectionID != "" {
 		connObj, connData, err := h.getBestConnectionWithContext(ctx, provider, pinnedConnectionID, nil, model)
@@ -1660,7 +1662,25 @@ func isClientCanceled(ctx context.Context, err error) bool {
 // /v1/messages): system prompts must go to the top-level "system" field —
 // a role:"system" message is rejected by the Anthropic API.
 // false from compress/inject means nothing changed (or unparseable) — keep original, not a failure.
+//
+// Results are cached per request (token_saver_cache.go): every fallback
+// attempt receives the same client body, so only the first attempt for a
+// given (body, claudeNative) pays the compression cost.
 func (h *ChatHandler) applyTokenSavers(ctx context.Context, body []byte, claudeNative bool) ([]byte, int, int, int) {
+	cache := tokenSaverCacheFrom(ctx)
+	if cache == nil {
+		return h.applyTokenSaversUncached(ctx, body, claudeNative)
+	}
+	key := tokenSaverCacheKey{bodyHash: sha256.Sum256(body), claudeNative: claudeNative}
+	if e, ok := cache.get(key); ok {
+		return e.body, e.origTokens, e.savedTokens, e.savedPct
+	}
+	out, origTokens, savedTokens, savedPct := h.applyTokenSaversUncached(ctx, body, claudeNative)
+	cache.put(key, tokenSaverCacheEntry{body: out, origTokens: origTokens, savedTokens: savedTokens, savedPct: savedPct})
+	return out, origTokens, savedTokens, savedPct
+}
+
+func (h *ChatHandler) applyTokenSaversUncached(ctx context.Context, body []byte, claudeNative bool) ([]byte, int, int, int) {
 	if h.TokenSaver == nil {
 		return body, 0, 0, 0
 	}

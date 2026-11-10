@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -33,6 +34,12 @@ type GeminiStreamState struct {
 	// and turns a Gemini STOP into finish_reason "tool_calls" so clients like
 	// Zed run the tools instead of ending the turn.
 	ToolCallCount int
+	// DecoyTools, when set, names Antigravity decoy tools the client never
+	// declared (LiveDecoyTools). A functionCall to one is dropped instead of
+	// being forwarded as a call to a tool the client does not have.
+	DecoyTools map[string]bool
+	// DroppedDecoyCalls counts functionCalls dropped for matching DecoyTools.
+	DroppedDecoyCalls int
 }
 
 // GeminiFileData represents remote or uploaded files referenced by URI.
@@ -587,8 +594,27 @@ func geminiToolCallID(geminiID, name string, index int) string {
 
 // ─── Gemini Response → OpenAI ───
 
+// ErrDecoyOnlyResponse reports a Gemini response whose only actionable
+// content was calls to Antigravity decoy tools the client never declared.
+// Forwarding it would hand the client either an empty completion or a call
+// to a tool it does not have; callers that can retry the attempt (the chat
+// fallback chain) should treat it as an upstream failure instead.
+var ErrDecoyOnlyResponse = errors.New("gemini response contains only decoy tool calls")
+
 // TranslateGeminiResponseToOpenAI converts a non-stream Gemini response to OpenAI format.
 func TranslateGeminiResponseToOpenAI(geminiBody []byte) ([]byte, *OpenAIUsage, error) {
+	return translateGeminiResponseToOpenAI(geminiBody, nil)
+}
+
+// TranslateGeminiResponseToOpenAIWithDecoys is TranslateGeminiResponseToOpenAI
+// with decoy-call dropping: functionCalls naming a live decoy (LiveDecoyTools)
+// are removed, and a response left with no text and no real tool calls fails
+// with ErrDecoyOnlyResponse.
+func TranslateGeminiResponseToOpenAIWithDecoys(geminiBody []byte, decoys map[string]bool) ([]byte, *OpenAIUsage, error) {
+	return translateGeminiResponseToOpenAI(geminiBody, decoys)
+}
+
+func translateGeminiResponseToOpenAI(geminiBody []byte, decoys map[string]bool) ([]byte, *OpenAIUsage, error) {
 	var geminiResp GeminiResponse
 	if err := json.Unmarshal(geminiBody, &geminiResp); err != nil {
 		return nil, nil, fmt.Errorf("parse Gemini response: %w", err)
@@ -604,6 +630,7 @@ func TranslateGeminiResponseToOpenAI(geminiBody []byte) ([]byte, *OpenAIUsage, e
 	var openaiContent string
 	var reasoningContent string
 	var toolCalls []OpenAIToolCall
+	droppedDecoys := 0
 
 	if content != nil {
 		var lastSig string
@@ -622,11 +649,17 @@ func TranslateGeminiResponseToOpenAI(geminiBody []byte) ([]byte, *OpenAIUsage, e
 				reasoningContent += part.Text
 			}
 			if part.FunctionCall != nil {
+				fnName := UncloakToolName(part.FunctionCall.Name, nil)
+				if decoys[fnName] {
+					// A decoy the client never declared: dropping the call
+					// keeps an undeclared tool out of the client's session.
+					droppedDecoys++
+					continue
+				}
 				args, err := json.Marshal(part.FunctionCall.Args, json.Deterministic(true))
 				if err != nil {
 					args = []byte("{}")
 				}
-				fnName := UncloakToolName(part.FunctionCall.Name, nil)
 				id := geminiToolCallID(part.FunctionCall.ID, fnName, len(toolCalls))
 				StoreGeminiToolCallName(id, fnName, "")
 				sig := part.ThoughtSignature
@@ -676,6 +709,9 @@ func TranslateGeminiResponseToOpenAI(geminiBody []byte) ([]byte, *OpenAIUsage, e
 		CompletionTokensDetails: &CompletionTokensDetails{
 			ReasoningTokens: reasoningTokens,
 		},
+	}
+	if droppedDecoys > 0 && len(toolCalls) == 0 && openaiContent == "" {
+		return nil, usage, ErrDecoyOnlyResponse
 	}
 	resp := map[string]any{
 		"id":      fmt.Sprintf("chatcmpl-%d", time.Now().UnixNano()),
@@ -778,47 +814,55 @@ func TranslateGeminiChunkToOpenAI(chunk []byte, state *GeminiStreamState) ([]byt
 					delta["reasoning_content"] = part.Text
 				}
 				if part.FunctionCall != nil {
-					args, err := json.Marshal(part.FunctionCall.Args, json.Deterministic(true))
-					if err != nil {
-						args = []byte("{}")
-					}
 					fnName := UncloakToolName(part.FunctionCall.Name, nil)
-					id := geminiToolCallID(part.FunctionCall.ID, fnName, state.ToolCallCount)
-					// The id is opaque (it may be Gemini's own token), so the tool
-					// it belongs to is recorded rather than encoded in it: a client
-					// that echoes only role:"tool" messages leaves the reverse
-					// direction with nothing else to pair the result by. The index
-					// in the generated form keeps parallel calls distinct —
-					// UnixNano alone does not, it does not tick within a chunk.
-					StoreGeminiToolCallName(id, fnName, state.MessageId)
-					sig := part.ThoughtSignature
-					if sig == "" {
-						sig = state.LastThoughtSignature
-					}
-					if sig != "" {
-						// Keyed by the conversation, not by this response's id:
-						// the response id changes on every turn, so it could
-						// never be looked up on the next one, and the lookup
-						// fell back to a global key another conversation shares.
-						storeSession := state.SessionID
-						if storeSession == "" {
-							storeSession = state.MessageId
+					if state.DecoyTools[fnName] {
+						// A decoy the client never declared: never emit it
+						// as a tool call. The stream simply carries no call
+						// for this part, so a decoy-only stream ends as
+						// zero content and the fallback chain can retry.
+						state.DroppedDecoyCalls++
+					} else {
+						args, err := json.Marshal(part.FunctionCall.Args, json.Deterministic(true))
+						if err != nil {
+							args = []byte("{}")
 						}
-						StoreGeminiThoughtSignature(id, sig, storeSession, state.Model)
-						id += "__ts__" + sig
-					}
-					delta["tool_calls"] = []map[string]any{
-						{
-							"index": state.ToolCallCount,
-							"id":    id,
-							"type":  "function",
-							"function": map[string]any{
-								"name":      fnName,
-								"arguments": string(args),
+						id := geminiToolCallID(part.FunctionCall.ID, fnName, state.ToolCallCount)
+						// The id is opaque (it may be Gemini's own token), so the tool
+						// it belongs to is recorded rather than encoded in it: a client
+						// that echoes only role:"tool" messages leaves the reverse
+						// direction with nothing else to pair the result by. The index
+						// in the generated form keeps parallel calls distinct —
+						// UnixNano alone does not, it does not tick within a chunk.
+						StoreGeminiToolCallName(id, fnName, state.MessageId)
+						sig := part.ThoughtSignature
+						if sig == "" {
+							sig = state.LastThoughtSignature
+						}
+						if sig != "" {
+							// Keyed by the conversation, not by this response's id:
+							// the response id changes on every turn, so it could
+							// never be looked up on the next one, and the lookup
+							// fell back to a global key another conversation shares.
+							storeSession := state.SessionID
+							if storeSession == "" {
+								storeSession = state.MessageId
+							}
+							StoreGeminiThoughtSignature(id, sig, storeSession, state.Model)
+							id += "__ts__" + sig
+						}
+						delta["tool_calls"] = []map[string]any{
+							{
+								"index": state.ToolCallCount,
+								"id":    id,
+								"type":  "function",
+								"function": map[string]any{
+									"name":      fnName,
+									"arguments": string(args),
+								},
 							},
-						},
+						}
+						state.ToolCallCount++
 					}
-					state.ToolCallCount++
 				}
 				if len(delta) > 0 {
 					results = append(results, map[string]any{
