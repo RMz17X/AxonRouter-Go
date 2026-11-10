@@ -798,9 +798,12 @@
     {editingCombo}
     models={modalModels}
     initialStrategy={editingCombo ? comboStrategies[editingCombo.name]?.fallbackStrategy || 'fallback' : 'fallback'}
-    initialEasyModels={editingCombo ? comboStrategies[editingCombo.name]?.easyModels || [] : []}
-    initialHardModels={editingCombo ? comboStrategies[editingCombo.name]?.hardModels || [] : []}
-    initialRouterModel={editingCombo ? comboStrategies[editingCombo.name]?.routerModel || '' : ''}
+    easyModels={modalEasyModels}
+    hardModels={modalHardModels}
+    routerModel={modalRouterModel}
+    onUpdateEasyModels={(next) => (modalEasyModels = next)}
+    onUpdateHardModels={(next) => (modalHardModels = next)}
+    onUpdateRouterModel={(next) => (modalRouterModel = next)}
     globalStrategy={globalComboStrategy}
     isSaving={isSavingCombo}
     saveError={comboSaveError}

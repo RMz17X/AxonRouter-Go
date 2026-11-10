@@ -9,7 +9,6 @@
     Layers,
     Plus,
     RotateCcw,
-    Sparkles,
     Wand2,
     X,
     Zap
@@ -155,34 +154,27 @@
     onUpdateEasyModels?.(nextEasy)
   }
 
-  function removeEasyModel(model: string) {
-    onUpdateEasyModels?.(easyModels.filter((m) => m !== model))
-    onUpdateModels(models.filter((m) => m !== model))
-  }
-
-  function removeHardModel(model: string) {
-    onUpdateHardModels?.(hardModels.filter((m) => m !== model))
-    onUpdateModels(models.filter((m) => m !== model))
-  }
-
-  function moveEasyOrder(idx: number, delta: number) {
-    const arr = [...easyModels]
-    const target = idx + delta
-    if (target < 0 || target >= arr.length) return
-    const temp = arr[idx]
-    arr[idx] = arr[target]
-    arr[target] = temp
-    onUpdateEasyModels?.(arr)
-  }
-
-  function moveHardOrder(idx: number, delta: number) {
-    const arr = [...hardModels]
-    const target = idx + delta
-    if (target < 0 || target >= arr.length) return
-    const temp = arr[idx]
-    arr[idx] = arr[target]
-    arr[target] = temp
-    onUpdateHardModels?.(arr)
+  // Per-row three-state toggle (Easy / Hard / Auto). Auto means the model
+  // sits in neither pool and the smart router classifies it at request
+  // time; toggling the active tier returns the model to Auto. The model
+  // itself stays in the combo either way — pool membership only.
+  function toggleModelTier(model: string, tier: 'easy' | 'hard' | 'auto') {
+    if (tier === 'easy') {
+      if (easyModels.includes(model)) {
+        onUpdateEasyModels?.(easyModels.filter((m) => m !== model))
+      } else {
+        moveToEasy(model)
+      }
+    } else if (tier === 'hard') {
+      if (hardModels.includes(model)) {
+        onUpdateHardModels?.(hardModels.filter((m) => m !== model))
+      } else {
+        moveToHard(model)
+      }
+    } else {
+      onUpdateEasyModels?.(easyModels.filter((m) => m !== model))
+      onUpdateHardModels?.(hardModels.filter((m) => m !== model))
+    }
   }
 
   let unassignedModels = $derived(
@@ -849,7 +841,7 @@
           {/if}
           <button
             type="button"
-            onclick={onOpenModelPicker}
+            onclick={() => onOpenModelPicker('combo')}
             class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-brand-500 hover:bg-brand-500/10 transition-colors cursor-pointer shrink-0 whitespace-nowrap"
           >
             <Plus class="w-3 h-3 shrink-0" />
