@@ -14,6 +14,7 @@
   import { copyToClipboard } from '../lib/clipboard'
   import { api, type APIKey, type Combo, type ProviderConnection } from '../api/client'
   import ModelPickerModal from './combos/ModelPickerModal.svelte'
+  import type { PickerModel } from './combos/pickerData'
   import HermesToolCard from './cli-tools/HermesToolCard.svelte'
   import HostSetupCommand from './cli-tools/HostSetupCommand.svelte'
 
@@ -127,6 +128,13 @@
   })
   function pickModel(value: string) {
     if (pickerField) mapping = { ...mapping, [pickerField]: value }
+    pickerField = null
+  }
+  // The name written is the name the operator picked: for an alias entry
+  // that is the alias itself (the gateway resolves aliases on the wire),
+  // not the full model hiding behind it.
+  function pickModelEntry(entry: PickerModel) {
+    if (pickerField) mapping = { ...mapping, [pickerField]: entry.isAlias ? entry.name : entry.value }
     pickerField = null
   }
   let setupKeyId = $state('')
@@ -1127,6 +1135,7 @@
     combos={pickerCombos}
     addedModelValues={pickerField ? [mapping[pickerField] ?? ''] : []}
     onSelect={pickModel}
+    onSelectEntry={pickModelEntry}
     onClose={() => (pickerField = null)}
   />
 {/if}
