@@ -941,7 +941,8 @@ func (r *Repo) GetRequestDetailsPaged(ctx context.Context, limit, offset int, si
 	       COALESCE((rd.data #>> '{isStream}')::boolean, true),
 	       COALESCE(rd.data #>> '{apiKeyName}', ''),
 	       COALESCE(rd.data #>> '{clientApiKey}', ''),
-	       COALESCE(rd.data #>> '{clientIp}', '')
+	       COALESCE(rd.data #>> '{clientIp}', ''),
+	       COALESCE((rd.data #> '{smartDecision}')::text, '')
 	FROM picked p
 	JOIN requestDetails rd ON rd.id = p.id AND rd.timestamp = p.timestamp
 	ORDER BY rd.timestamp DESC, rd.id DESC
