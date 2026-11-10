@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.9.94] - 2026-11-10
+
+### Fixed
+- The CLI Tools model picker now receives the provider nodes (loaded lazily alongside connections and combos, the way the combos page wires its picker). Without them it silently showed only the catalog providers — 145 models in 15 groups instead of the full 354 in 23 — so custom-node models (apinex, Dahl, Token Harbor, trust, wz, …) could not be picked for a tool setup at all.
+- Model picker: a custom node's alias entries now actually surface as pills. Alias targets are stored in servable "<prefix>/<model>" form, but the node branch of pickerData matched them against the node's internal id ("openai-compatible-chat-<slug>"), which never matches — a node with only aliases (e.g. TIG Upstream) rendered just its "trust/model-id" placeholder and the operator's aliases (step-5, gpt-6-luna, …) were invisible in every picker. The filter now matches the node's display prefix as well as its id, and the model id is stripped from whichever form matched.
+
 ## [v1.9.93] - 2026-11-10
 
 ### Fixed
