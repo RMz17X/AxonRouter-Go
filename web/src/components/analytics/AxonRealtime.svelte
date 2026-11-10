@@ -92,7 +92,7 @@
   // ("ag/gemini-…"), not a detached grey pill. A model that already carries
   // the alias (or the raw provider id) as its own prefix loses the
   // duplicate, exactly as upstream strips it.
-  function activeModelParts(r: ActiveRequestItem): { alias: string; label: string } {
+  function activeModelParts(r: ActiveRequestItem): { alias: string; label: string; combo: string } {
     const alias = providerAlias(r.provider)
     let model = r.model || r.requestedModel || '—'
     const lowerModel = model.toLowerCase()
@@ -102,7 +102,10 @@
       const p = (r.provider || '').toLowerCase()
       if (p && lowerModel.startsWith(`${p}/`)) model = model.slice(p.length + 1)
     }
-    return { alias, label: r.comboName ? `${r.comboName} -> ${model}` : model }
+    // The combo name rides separately so the card can show it as a small
+    // "via" line and give the resolved model the full width — embedding it
+    // in the label truncated the model name away in narrow grid cells.
+    return { alias, label: model, combo: r.comboName || '' }
   }
   function proxyLabel(row: RequestDetailItem): string {
     const p = row.proxy
@@ -132,6 +135,28 @@
   }
 
   let activeTotal = $derived(activeRequests.reduce((sum, r) => sum + (r.count || 1), 0))
+  // In-flight modal: longest-running first (the requests most worth
+  // watching), undated rows last in their original order.
+  let sortedActiveRequests = $derived(
+    [...activeRequests].sort((a, b) => {
+      const sa = activeStartedAt(a)
+      const sb = activeStartedAt(b)
+      const ta = sa ? new Date(sa).getTime() : Number.POSITIVE_INFINITY
+      const tb = sb ? new Date(sb).getTime() : Number.POSITIVE_INFINITY
+      return ta - tb
+    })
+  )
+  let activeStreamTotal = $derived(
+    activeRequests.reduce((sum, r) => sum + (r.isStream === true ? (r.count || 1) : 0), 0)
+  )
+  let longestActiveMs = $derived.by(() => {
+    let earliest = Number.POSITIVE_INFINITY
+    for (const r of activeRequests) {
+      const s = activeStartedAt(r)
+      if (s) earliest = Math.min(earliest, new Date(s).getTime())
+    }
+    return earliest === Number.POSITIVE_INFINITY ? null : nowMs - earliest
+  })
   let successCount = $derived(rows.filter(isSuccess).length)
   let failedCount = $derived(rows.filter(isFailed).length)
   // Detail rows record the mode the client asked for; rows stored before
@@ -418,39 +443,60 @@
   {#if activeRequests.length === 0}
     <div class="py-8 text-center text-xs text-text-muted">No active in-flight requests</div>
   {:else}
-    <div class="grid max-h-[72vh] grid-cols-1 gap-2 overflow-y-auto p-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {#each activeRequests as r, i (i)}
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pb-2 text-[11px] text-text-muted">
+      <span class="inline-flex items-center gap-1.5">
+        <span class="relative flex h-2 w-2">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75"></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-success"></span>
+        </span>
+        <span><span class="font-semibold text-text-main">{activeTotal}</span> in-flight</span>
+      </span>
+      <span>{activeRequests.length} groups</span>
+      <span>{activeStreamTotal} streaming</span>
+      {#if longestActiveMs !== null}
+        <span>longest <span class="font-mono text-text-main tabular-nums">{formatDuration(longestActiveMs)}</span></span>
+      {/if}
+    </div>
+    <div class="grid max-h-[72vh] auto-rows-fr grid-cols-1 gap-2.5 overflow-y-auto p-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      {#each sortedActiveRequests as r (r.provider + '|' + r.model + '|' + (r.account || ''))}
         {@const parts = activeModelParts(r)}
-        <div class="flex min-w-0 flex-col justify-between gap-1.5 rounded-brand border border-border bg-surface-2/30 px-3 py-2 transition-colors hover:bg-surface-2/50">
-          <div class="flex items-start justify-between gap-1.5">
-            <div class="min-w-0 flex-1">
-              <div class="flex items-center gap-1 text-[9px] font-medium tracking-wider text-text-muted uppercase">
-                <span class="material-symbols-outlined shrink-0 text-[10px] text-text-muted/70" aria-hidden="true">memory</span>
-                <span>Model</span>
+        <div class="flex h-full min-w-0 flex-col gap-2 rounded-brand border border-border bg-surface-2/30 px-3 py-2.5 transition-colors hover:bg-surface-2/50">
+          <div class="flex items-center justify-between gap-2">
+            <span class="truncate text-[11px] text-text-muted" title={providerDisplayName(r.provider)}>
+              {providerDisplayName(r.provider)}
+            </span>
+            {@render modeBadge(r.isStream === true)}
+          </div>
+          <div class="min-w-0">
+            {#if parts.combo}
+              <div class="flex items-center gap-1 text-[10px] text-text-muted">
+                <span class="material-symbols-outlined text-[11px]" aria-hidden="true">arrow_forward</span>
+                <span class="truncate">via <span class="font-medium text-text-main">{parts.combo}</span></span>
               </div>
-              <div
-                class="mt-0.5 truncate font-mono text-[11px] font-medium text-text-main"
-                title="{providerDisplayName(r.provider)} · {activeLabel(r)}"
-              >
-                {#if parts.alias}<span class="font-semibold text-primary">{parts.alias}/</span>{/if}<span>{parts.label}</span>
-              </div>
-            </div>
-            <div class="pt-0.5">
-              {@render modeBadge(r.isStream === true)}
+            {/if}
+            <div
+              class="mt-0.5 font-mono text-xs font-medium break-all text-text-main"
+              title="{providerDisplayName(r.provider)} · {activeLabel(r)}"
+            >
+              {#if parts.alias}<span class="font-semibold text-primary">{parts.alias}/</span>{/if}<span>{parts.label}</span>
             </div>
           </div>
-          <div class="flex items-center justify-between gap-1.5 border-t border-border/50 pt-1.5 text-[11px]">
-            <div class="flex min-w-0 flex-1 items-center gap-1" title={r.account || 'Direct (Free)'}>
-              <span class="material-symbols-outlined shrink-0 text-[11px] text-text-muted/70" aria-hidden="true">account_circle</span>
-              <span class="shrink-0 text-[9px] tracking-wider text-text-muted uppercase">Account:</span>
+          <div class="mt-auto flex items-center justify-between gap-2 border-t border-border/50 pt-2">
+            <div class="flex min-w-0 flex-1 items-center gap-1.5" title={r.account || 'Direct (Free)'}>
+              <span class="material-symbols-outlined shrink-0 text-[13px] text-text-muted/70" aria-hidden="true">account_circle</span>
               <span class="truncate text-[11px] text-text-main">{r.account || 'Direct (Free)'}</span>
             </div>
-            {#if (r.count || 1) > 1}
-              <span class="shrink-0 text-[10px] text-text-muted">×{r.count}</span>
-            {/if}
-            {#if activeStartedAt(r)}
-              <span class="shrink-0 font-mono text-[10px] text-text-muted tabular-nums">{formatDuration(nowMs - new Date(activeStartedAt(r)!).getTime())}</span>
-            {/if}
+            <div class="flex shrink-0 items-center gap-1.5">
+              {#if (r.count || 1) > 1}
+                <span class="rounded-full border border-border bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-text-main tabular-nums" title="{r.count} concurrent requests in this group">×{r.count}</span>
+              {/if}
+              {#if activeStartedAt(r)}
+                <span class="inline-flex items-center gap-1 font-mono text-[10px] text-text-muted tabular-nums" title="Elapsed">
+                  <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-success"></span>
+                  {formatDuration(nowMs - new Date(activeStartedAt(r)!).getTime())}
+                </span>
+              {/if}
+            </div>
           </div>
         </div>
       {/each}
