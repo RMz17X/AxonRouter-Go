@@ -1,5 +1,0 @@
----
-type: changed
----
-
-Console logs are now durable in files, and every log rotation in the tree is 4 MiB. The console view used to read a 200-line in-memory ring: a restart blanked it, and a request's trail became unfindable minutes after it happened on a busy node. Every captured console entry is now also appended in its exact `{time, level, line}` shape to a size-rotated JSONL file (`logs/console.jsonl` under the data dir, beside the routing log), riding the same rotating writer as the routing mirror and failing silent so logging never breaks the path that emitted the line. The ring rehydrates from the retained files at boot, `GET /api/translator/console-logs?requestId=` searches the files (newest 1,000 matches) instead of only the ring, and clearing the console resets the file too, so cleared lines stay cleared. Rotation sizes are unified at the operator's 4 MB rule: the routing-log mirror drops from 20 MiB to 4 MiB per file (five backups, ~24 MiB retained) and the daemon run log cap drops from 16 MiB to 4 MiB. Console logs were never stored in PostgreSQL; the usage ledger is untouched.
