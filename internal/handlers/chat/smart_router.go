@@ -18,11 +18,15 @@ import (
 
 // Smart Router (System One) combo strategy, ported from upstream
 // open-sse/services/systemoneRouter.js + src/sse/services/systemoneRouter.js
-// (f3f86fdd, #4975): a decision model evaluates the request before dispatch
-// and orders the combo's models by its choice, with per-session stickiness so
+// (f3f86fdd, #4975): a decision model evaluates the request before dispatch.
+// Deliberate divergence from upstream (owner's call, 2026-11-11): upstream
+// had the router pick one MODEL out of the combo; here the pools are the
+// operator's own classification, so the router only judges which TIER the
+// request belongs to — easy or hard — and the chosen tier's members lead
+// in combo order. Per-session stickiness still pins a concrete model so
 // later turns reuse the provider holding the warm prompt cache. Everything
-// here fails open: any evaluation problem leaves the combo's own ordering in
-// place, so a broken router model can never take the combo down.
+// here fails open: any evaluation problem leaves the combo's own ordering
+// in place, so a broken router model can never take the combo down.
 
 const (
 	// smartRouterDefaultModel is the fallback System One model when a combo
@@ -42,11 +46,11 @@ const (
 	smartDefaultThreshold = 0.8
 )
 
-// smartChoice is one parsed System One routing decision.
+// smartChoice is one parsed System One routing decision: the tier the
+// router picked ("easy" or "hard") and its confidence in that call.
 type smartChoice struct {
-	Choice        string
-	Confidence    *float64
-	Probabilities map[string]float64
+	Choice     string
+	Confidence *float64
 }
 
 // smartRouteState rides the request context so the combo failure loop can
@@ -122,7 +126,7 @@ type smartBodyViewKey struct{}
 
 // smartBodyView bundles the session analysis and the enriched router
 // state computed from one parse of the body. applySmartRouting computes
-// it once and rides it on the context so resolveSmartChoice does not
+// it once and rides it on the context so resolveSmartTier does not
 // parse the (possibly very large) body again.
 type smartBodyView struct {
 	info  smartSessionInfo
@@ -384,45 +388,53 @@ func describeModelForRouting(modelStr string, isEasy, isHard bool) string {
 	return "Standard language model suited for general text generation, basic coding, conversation, and general knowledge."
 }
 
-// buildSmartCriteria derives the choices list and capability-informed criteria map
-// for System One routing evaluations. A model the operator listed in the
-// combo's easyModels or hardModels takes that tier's criteria verbatim —
-// the explicit lists win over the name/capability heuristics, so a strong
-// model with an unassuming name (or a fast one with a grand name) is
-// described the way the operator classified it. Hard wins when a model is
-// somehow listed in both.
-func buildSmartCriteria(models []string, easyModels, hardModels []string) (map[string]any, []string) {
-	easySet := make(map[string]bool, len(easyModels))
-	for _, em := range easyModels {
-		easySet[strings.TrimSpace(em)] = true
-	}
-	hardSet := make(map[string]bool, len(hardModels))
-	for _, hm := range hardModels {
-		hardSet[strings.TrimSpace(hm)] = true
-	}
-
-	criteria := make(map[string]any, len(models))
-	choices := make([]string, 0, len(models))
+// partitionByTier splits combo members into the easy and hard pools:
+// the operator's pool lists win; unlisted members fall to the routing
+// heuristic inside isEasyTierModel.
+func partitionByTier(models []string, cfg db.ComboStrategy) (easy, hard []string) {
 	for _, m := range models {
-		trimmed := strings.TrimSpace(m)
-		if trimmed == "" {
-			continue
+		if isEasyTierModel(m, cfg) {
+			easy = append(easy, m)
+		} else {
+			hard = append(hard, m)
 		}
-		choices = append(choices, trimmed)
-		criteria[trimmed] = describeModelForRouting(trimmed, easySet[trimmed], hardSet[trimmed])
 	}
-	return criteria, choices
+	return easy, hard
+}
+
+// buildSmartTierCriteria derives the choices and criteria for a tier
+// evaluation: the router judges the REQUEST, not the members — the
+// pools are already the operator's classification, so the only open
+// question is which tier this turn belongs to. Each tier's criteria
+// names its members so the router knows what it is choosing between.
+func buildSmartTierCriteria(easy, hard []string) (map[string]any, []string) {
+	criteria := map[string]any{
+		"easy": smartEasyCriteria + " Pool members: " + strings.Join(easy, ", ") + ".",
+		"hard": smartHardCriteria + " Pool members: " + strings.Join(hard, ", ") + ".",
+	}
+	return criteria, []string{"easy", "hard"}
+}
+
+// orderModelsByTier leads with the chosen tier's members in combo
+// order, followed by the other tier's members in combo order — the
+// full chain stays available as fallback, so a routing call can never
+// make a request fail that the plain order would have served.
+func orderModelsByTier(models []string, cfg db.ComboStrategy, tier string) []string {
+	easy, hard := partitionByTier(models, cfg)
+	if tier == "easy" {
+		return append(easy, hard...)
+	}
+	return append(hard, easy...)
 }
 
 // parseSmartRouteAnswer reads the upstream answers.route object. A missing or
-// empty choice is not a decision; confidence and probabilities are optional.
+// empty choice is not a decision; confidence is optional.
 func parseSmartRouteAnswer(raw []byte) *smartChoice {
 	var payload struct {
 		Answers struct {
 			Route struct {
-				Choice        string         `json:"choice"`
-				Confidence    *float64       `json:"confidence"`
-				Probabilities map[string]any `json:"probabilities"`
+				Choice     string   `json:"choice"`
+				Confidence *float64 `json:"confidence"`
 			} `json:"route"`
 		} `json:"answers"`
 	}
@@ -433,16 +445,7 @@ func parseSmartRouteAnswer(raw []byte) *smartChoice {
 	if choice == "" {
 		return nil
 	}
-	out := &smartChoice{Choice: choice, Confidence: payload.Answers.Route.Confidence}
-	if probs := payload.Answers.Route.Probabilities; len(probs) > 0 {
-		out.Probabilities = make(map[string]float64, len(probs))
-		for k, v := range probs {
-			if n, ok := v.(float64); ok {
-				out.Probabilities[k] = n
-			}
-		}
-	}
-	return out
+	return &smartChoice{Choice: choice, Confidence: payload.Answers.Route.Confidence}
 }
 
 // isEasyTierModel reports whether a combo member belongs to the easy
@@ -495,37 +498,6 @@ func demoteEasyTier(models []string, cfg db.ComboStrategy, heavy bool) []string 
 	}
 	log.Info("combo", "smart-router heavy session: easy tier demoted", "easy", easy, "leading", nonEasy[0])
 	return append(nonEasy, easy...)
-}
-
-// orderModelsBySmartChoice puts the chosen model first and orders the rest by
-// their probabilities descending; models without a probability keep their
-// relative order at the end. A choice outside the combo changes nothing.
-func orderModelsBySmartChoice(models []string, choice *smartChoice) []string {
-	out := make([]string, len(models))
-	copy(out, models)
-	if len(out) <= 1 || choice == nil {
-		return out
-	}
-	if !containsString(out, choice.Choice) {
-		return out
-	}
-	others := make([]string, 0, len(out)-1)
-	for _, m := range out {
-		if m != choice.Choice {
-			others = append(others, m)
-		}
-	}
-	if len(choice.Probabilities) > 0 {
-		// Insertion sort by probability descending: the lists are tiny (combo
-		// membership) and the tie must keep the original relative order,
-		// which sort.Slice does not guarantee.
-		for i := 1; i < len(others); i++ {
-			for j := i; j > 0 && choice.Probabilities[others[j]] > choice.Probabilities[others[j-1]]; j-- {
-				others[j], others[j-1] = others[j-1], others[j]
-			}
-		}
-	}
-	return append([]string{choice.Choice}, others...)
 }
 
 func containsString(list []string, s string) bool {
@@ -663,13 +635,18 @@ func smartSwitchThreshold(cfg db.ComboStrategy) float64 {
 	return smartDefaultThreshold
 }
 
-// resolveSmartChoice asks the configured System One model to pick the best
-// combo member for this request. It never fails the turn: any problem
-// (missing credentials, timeout, unparseable answer) returns nil and the
-// strategy falls back to the combo's own ordering. Port of upstream
-// resolveSmartChoice.
-func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, models []string, cfg db.ComboStrategy) *smartChoice {
+// resolveSmartTier asks the configured System One model which tier
+// this request belongs to. It never fails the turn: any problem
+// (missing credentials, timeout, unparseable answer) returns nil and
+// the strategy falls back to the combo's own ordering, as does a
+// combo whose members all sit in one tier — there is nothing to
+// decide there.
+func (h *ChatHandler) resolveSmartTier(ctx context.Context, body []byte, models []string, cfg db.ComboStrategy) *smartChoice {
 	if len(models) <= 1 {
+		return nil
+	}
+	easy, hard := partitionByTier(models, cfg)
+	if len(easy) == 0 || len(hard) == 0 {
 		return nil
 	}
 	target := strings.TrimSpace(cfg.RouterModel)
@@ -684,12 +661,12 @@ func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, model
 	if state == "" {
 		return nil
 	}
-	criteria, choices := buildSmartCriteria(models, cfg.EasyModels, cfg.HardModels)
-	if len(criteria) == 0 {
-		return nil
-	}
+	criteria, choices := buildSmartTierCriteria(easy, hard)
 	choice, err := h.querySystemOneRouter(ctx, target, state, criteria, choices)
 	if err != nil || choice == nil {
+		return nil
+	}
+	if choice.Choice != "easy" && choice.Choice != "hard" {
 		return nil
 	}
 	return choice
@@ -736,7 +713,7 @@ func (h *ChatHandler) querySystemOneRouter(ctx context.Context, targetModel, sta
 		"questions": map[string]any{
 			"route": map[string]any{
 				"type":         "choice",
-				"instructions": "Which of these configured models is the most appropriate for this request?",
+				"instructions": "Which tier does this request belong to? Judge the request itself — its complexity, depth, and stakes — not the models.",
 				"choices":      choices,
 				"criteria":     criteria,
 			},
@@ -787,8 +764,8 @@ func (h *ChatHandler) querySystemOneRouter(ctx context.Context, targetModel, sta
 // of the smart branch of upstream handleComboChat: a pinned session model is
 // reused (Strict Lock without an evaluation; Smart Switch re-evaluated and
 // only switched above the confidence floor), and a fresh or per-turn session
-// is ordered by the System One choice. Every failure path keeps the combo's
-// own ordering.
+// leads with the tier the System One evaluation picked. Every failure path
+// keeps the combo's own ordering.
 func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboModels []string, comboName string) (context.Context, []string) {
 	models := make([]string, len(comboModels))
 	copy(models, comboModels)
@@ -824,6 +801,12 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 		return demoteEasyTier(ordered, cfg, view.info.Heavy)
 	}
 
+	// A combo whose members all sit in one tier gives the router
+	// nothing to decide: no evaluation, no decision record.
+	if easyPool, hardPool := partitionByTier(models, cfg); len(easyPool) == 0 || len(hardPool) == 0 {
+		return ctx, guard(models)
+	}
+
 	var activeModel string
 	if !isPerTurn && sessionID != "" {
 		activeModel = h.getSmartStickyModel(comboName, sessionID, models)
@@ -850,19 +833,21 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 	}
 
 	if activeModel != "" {
-		// Smart Switch: re-evaluate, and switch only above the floor.
+		// Smart Switch: re-evaluate the tier, and switch only above the floor.
 		var evalChoice *smartChoice
-		if choice := h.resolveSmartChoice(ctx, body, models, cfg); choice != nil {
+		if choice := h.resolveSmartTier(ctx, body, models, cfg); choice != nil {
 			evalChoice = choice
 			conf := -1.0
 			if choice.Confidence != nil {
 				conf = *choice.Confidence
 			}
-			if choice.Choice != activeModel && containsString(models, choice.Choice) && conf >= threshold {
-				log.Info("combo", "smart-router [smart-switch] task changed", "from", activeModel, "to", choice.Choice, "confidence", conf, "threshold", threshold)
-				h.setSmartStickyModel(comboName, sessionID, choice.Choice)
-				dec := &smartDecision{Verdict: smartTierOf(choice.Choice, cfg), Source: "switch", Model: choice.Choice, Confidence: choice.Confidence, Threshold: threshold}
-				return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), dec), guard(orderModelsBySmartChoice(models, choice))
+			if choice.Choice != smartTierOf(activeModel, cfg) && conf >= threshold {
+				ordered := orderModelsByTier(models, cfg, choice.Choice)
+				lead := ordered[0]
+				log.Info("combo", "smart-router [smart-switch] task changed", "from", activeModel, "to", lead, "tier", choice.Choice, "confidence", conf, "threshold", threshold)
+				h.setSmartStickyModel(comboName, sessionID, lead)
+				dec := &smartDecision{Verdict: choice.Choice, Source: "switch", Model: lead, Confidence: choice.Confidence, Threshold: threshold}
+				return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: lead}), dec), guard(ordered)
 			}
 		}
 		// Below the floor, on no decision, or on error: keep the warm cache.
@@ -874,9 +859,9 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 		return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), dec), guard(pinFirst(activeModel))
 	}
 
-	// Turn 1 or per-turn: evaluate and order by the choice.
-	choice := h.resolveSmartChoice(ctx, body, models, cfg)
-	if choice == nil || !containsString(models, choice.Choice) {
+	// Turn 1 or per-turn: evaluate the tier and lead with its members.
+	choice := h.resolveSmartTier(ctx, body, models, cfg)
+	if choice == nil {
 		log.Info("combo", "smart-router no decision, fallback to order", "combo", comboName)
 		return withSmartDecision(ctx, &smartDecision{Verdict: "fallback", Source: "no-decision", Threshold: threshold}), guard(models)
 	}
@@ -888,12 +873,14 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 		log.Info("combo", "smart-router confidence below threshold", "confidence", conf, "threshold", threshold)
 		return withSmartDecision(ctx, &smartDecision{Verdict: "fallback", Source: "below-threshold", Confidence: choice.Confidence, Threshold: threshold}), guard(models)
 	}
-	log.Info("combo", "smart-router selected", "model", choice.Choice, "confidence", conf)
+	ordered := orderModelsByTier(models, cfg, choice.Choice)
+	lead := ordered[0]
+	log.Info("combo", "smart-router selected", "tier", choice.Choice, "model", lead, "confidence", conf)
 	if !isPerTurn && sessionID != "" {
-		h.setSmartStickyModel(comboName, sessionID, choice.Choice)
+		h.setSmartStickyModel(comboName, sessionID, lead)
 	}
-	dec := &smartDecision{Verdict: smartTierOf(choice.Choice, cfg), Source: "selected", Model: choice.Choice, Confidence: choice.Confidence, Threshold: threshold}
-	return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), dec), guard(orderModelsBySmartChoice(models, choice))
+	dec := &smartDecision{Verdict: choice.Choice, Source: "selected", Model: lead, Confidence: choice.Confidence, Threshold: threshold}
+	return withSmartDecision(withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: lead}), dec), guard(ordered)
 }
 
 // withSmartRouteState attaches the smart routing state to the context.
