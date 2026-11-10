@@ -311,6 +311,9 @@ func (h *DashboardHandler) HandleClaimMiniMaxReward(w http.ResponseWriter, r *ht
 	}
 
 	res := ClaimMiniMaxForConnection(r.Context(), h.Repo, conn)
+	if res.Claimed || res.Status == "already_claimed" {
+		invalidateClaimStatus(connID)
+	}
 	handlerutil.WriteJSON(w, http.StatusOK, res)
 }
 
@@ -319,6 +322,11 @@ func (h *DashboardHandler) HandleGetMiniMaxClaimStatus(w http.ResponseWriter, r 
 	connID := getURLParam(r, "connectionId")
 	if connID == "" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "missing connectionId")
+		return
+	}
+
+	if cached, ok := cachedClaimStatus(connID); ok {
+		handlerutil.WriteJSON(w, http.StatusOK, cached)
 		return
 	}
 
@@ -363,6 +371,7 @@ func (h *DashboardHandler) HandleGetMiniMaxClaimStatus(w http.ResponseWriter, r 
 		IsClaimed:    todayStatus == 3,
 		Days:         days,
 	}
+	storeClaimStatus(connID, resp)
 
 	handlerutil.WriteJSON(w, http.StatusOK, resp)
 }
@@ -378,6 +387,8 @@ func (h *DashboardHandler) HandleClaimAllMiniMaxRewards(w http.ResponseWriter, r
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	invalidateClaimStatus("")
 
 	handlerutil.WriteJSON(w, http.StatusOK, MiniMaxClaimAllResponse{
 		Success: true,

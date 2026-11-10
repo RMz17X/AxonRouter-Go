@@ -11,6 +11,7 @@
     type CodexResetCredit,
     type ConnectionUsageResponse,
     type GLMResetCard,
+    type MiniMaxSignInStatus,
     type ProviderConnection,
   } from '../api/client'
   import {
@@ -276,6 +277,14 @@
     quotaCycleController?.abort()
     const controller = new AbortController()
     quotaCycleController = controller
+
+    // MiniMax daily-claim status rides the same pass: one status read per
+    // visible MiniMax row, deduped by the status map (the backend caches
+    // the upstream read as well).
+    for (const target of activeTargets) {
+      const conn = visible.find((c) => c.id === target.id)
+      if (conn && isMiniMaxClaimProvider(conn.provider)) void fetchMiniMaxClaimStatus(conn)
+    }
 
     await runQuotaFetchCycle<ConnectionUsageResponse>({
       targets: activeTargets,
@@ -590,18 +599,58 @@
   let minimaxClaimingId = $state<string | null>(null)
   let minimaxClaimingAll = $state(false)
 
+  // Per-connection daily-claim status, read from the backend status
+  // endpoint during the quota pass. A null entry means the read failed;
+  // the row then fails open and keeps its Claim button.
+  let minimaxClaimStatus = $state<Record<string, MiniMaxSignInStatus | null>>({})
+  const minimaxClaimStatusInFlight = new Set<string>()
+
+  function isMiniMaxClaimProvider(provider: string): boolean {
+    return (
+      provider === 'minimax-code-global' || provider === 'minimax-code' || provider === 'minimax'
+    )
+  }
+
+  async function fetchMiniMaxClaimStatus(conn: ProviderConnection): Promise<void> {
+    if (conn.id in minimaxClaimStatus || minimaxClaimStatusInFlight.has(conn.id)) return
+    minimaxClaimStatusInFlight.add(conn.id)
+    try {
+      const status = await api.getMiniMaxClaimStatus(conn.id)
+      minimaxClaimStatus = { ...minimaxClaimStatus, [conn.id]: status ?? null }
+    } catch {
+      minimaxClaimStatus = { ...minimaxClaimStatus, [conn.id]: null }
+    } finally {
+      minimaxClaimStatusInFlight.delete(conn.id)
+    }
+  }
+
+  function markMiniMaxClaimed(conn: ProviderConnection, streakDay: number): void {
+    minimaxClaimStatus = {
+      ...minimaxClaimStatus,
+      [conn.id]: {
+        connectionId: conn.id,
+        todayStatus: 3,
+        dayNo: streakDay,
+        points: 0,
+        isClaimed: true,
+      },
+    }
+  }
+
   async function claimMiniMaxSingle(conn: ProviderConnection) {
     if (minimaxClaimingId) return
     minimaxClaimingId = conn.id
     try {
       const res = await api.claimMiniMaxReward(conn.id)
       if (res?.status === 'success') {
+        markMiniMaxClaimed(conn, res.streakDay)
         notifications.success(
           `${conn.name || conn.id}: +${res.points} pts (Day ${res.streakDay})`,
           'MiniMax Reward Claimed'
         )
         await refreshProvider(conn.id, conn.provider)
       } else if (res?.status === 'already_claimed') {
+        markMiniMaxClaimed(conn, res.streakDay)
         notifications.info(
           `${conn.name || conn.id}: ${res.message || 'Already claimed today'}`,
           'MiniMax Already Claimed'
@@ -637,6 +686,7 @@
           `Claimed: ${s.claimed} (+${s.totalPoints} pts) | Already done: ${s.alreadyClaimed} | Errors: ${s.errors} (Total ${s.total})`,
           'MiniMax Auto-Claim Summary'
         )
+        minimaxClaimStatus = {}
         await refreshAll(true)
       } else {
         notifications.error(
@@ -1740,20 +1790,31 @@
                   </button>
                 {/if}
 
-                {#if conn.provider === 'minimax-code-global' || conn.provider === 'minimax-code' || conn.provider === 'minimax'}
-                  <button
-                    type="button"
-                    disabled={isLoading || rowBusy || minimaxClaimingId === conn.id}
-                    onclick={() => claimMiniMaxSingle(conn)}
-                    aria-label="Claim MiniMax daily reward"
-                    title="Claim MiniMax daily reward points (+400-1000 pts)"
-                    class="flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-medium tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-60 border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
-                  >
-                    <span class="material-symbols-outlined text-[15px] {minimaxClaimingId === conn.id ? 'animate-spin' : ''}">
-                      {minimaxClaimingId === conn.id ? 'sync' : 'card_giftcard'}
+                {#if isMiniMaxClaimProvider(conn.provider)}
+                  {@const claimStatus = minimaxClaimStatus[conn.id]}
+                  {#if claimStatus?.isClaimed}
+                    <span
+                      class="flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border border-border-subtle bg-surface-2 px-2 text-[11px] font-medium text-text-muted"
+                      title="Daily reward already claimed today"
+                    >
+                      <span class="material-symbols-outlined text-[15px]">check_circle</span>
+                      <span>Day {claimStatus.dayNo}</span>
                     </span>
-                    <span>Claim</span>
-                  </button>
+                  {:else if claimStatus === undefined || claimStatus === null || claimStatus.todayStatus === 2}
+                    <button
+                      type="button"
+                      disabled={isLoading || rowBusy || minimaxClaimingId === conn.id}
+                      onclick={() => claimMiniMaxSingle(conn)}
+                      aria-label="Claim MiniMax daily reward"
+                      title="Claim MiniMax daily reward points (+400-1000 pts)"
+                      class="flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-medium tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-60 border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
+                    >
+                      <span class="material-symbols-outlined text-[15px] {minimaxClaimingId === conn.id ? 'animate-spin' : ''}">
+                        {minimaxClaimingId === conn.id ? 'sync' : 'card_giftcard'}
+                      </span>
+                      <span>Claim</span>
+                    </button>
+                  {/if}
                 {/if}
 
                 {#if (conn.provider === 'claude' || conn.provider === 'codex') && conn.authType === 'oauth'}
@@ -1958,29 +2019,6 @@
               {/if}
             {/if}
 
-            {#if conn.provider === 'minimax-code-global' || conn.provider === 'minimax-code' || conn.provider === 'minimax'}
-              <div class="mt-2.5 flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5 text-xs">
-                <div class="flex items-center gap-1.5 min-w-0">
-                  <span class="material-symbols-outlined text-[16px] text-amber-500">card_giftcard</span>
-                  <span class="font-medium text-text-main truncate">Daily Check-in Reward</span>
-                </div>
-                <button
-                  type="button"
-                  disabled={isLoading || rowBusy || minimaxClaimingId === conn.id}
-                  onclick={() => claimMiniMaxSingle(conn)}
-                  class="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black text-[11px] font-semibold transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
-                  title="Claim MiniMax daily check-in points (+400 ~ +1000 pts)"
-                >
-                  {#if minimaxClaimingId === conn.id}
-                    <span class="material-symbols-outlined text-[13px] animate-spin">sync</span>
-                    <span>Claiming...</span>
-                  {:else}
-                    <span class="material-symbols-outlined text-[13px]">redeem</span>
-                    <span>Claim Points</span>
-                  {/if}
-                </button>
-              </div>
-            {/if}
             {#if hiddenQuotaRows.length > 0}
               <div
                 class="mt-2 flex min-w-0 items-center gap-1 border-t border-border-subtle/60 pt-2 text-[10px] text-text-muted"
