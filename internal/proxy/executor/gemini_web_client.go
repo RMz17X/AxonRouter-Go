@@ -193,6 +193,11 @@ func geminiWebSessionFor(req *Request) *geminiWebSession {
 	return session
 }
 
+// GeminiWebEvictSession drops the session a credential owns.
+func GeminiWebEvictSession(credential string) {
+	geminiWebEvictSession(credential)
+}
+
 // geminiWebEvictSession drops the session a credential owns.
 //
 // A session is keyed by its credential, and a renewed credential is a

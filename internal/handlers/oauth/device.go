@@ -55,7 +55,7 @@ var awsRegionPattern = regexp.MustCompile(`^[a-z]{2}-[a-z]+-\d{1,2}$`)
 // with exactly that message, leaving the modal stuck on "waiting".
 var deviceClient = &http.Client{
 	Transport: proxy.NewFallbackTransport(http.DefaultTransport),
-	Timeout:   15 * time.Second,
+	Timeout:   30 * time.Second,
 }
 
 func postJSON(ctx context.Context, url string, body any, headers map[string]string) (map[string]any, int, error) {

@@ -1,9 +1,11 @@
 package executor
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"axonrouter/proxy/internal/models"
 	fhttp "github.com/bogdanfinn/fhttp"
 )
 
@@ -234,6 +236,39 @@ func TestGeminiWebRotationOptOut(t *testing.T) {
 				t.Errorf("geminiWebRotationEnabled() with %s=%q = %v, want %v",
 					geminiWebRotationEnv, tt.value, got, tt.want)
 			}
+		})
+	}
+}
+
+// TestGeminiWebRotateConnection_SkipsExternalSource ensures connections pushed by
+// Chroma or marked disableAutoRotation are skipped by background rotation.
+func TestGeminiWebRotateConnection_SkipsExternalSource(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "chroma source",
+			data: `{"apiKey":"__Secure-1PSID=a; __Secure-1PSIDTS=b","providerSpecificData":{"source":"chroma"}}`,
+		},
+		{
+			name: "external source",
+			data: `{"apiKey":"__Secure-1PSID=a; __Secure-1PSIDTS=b","providerSpecificData":{"source":"external"}}`,
+		},
+		{
+			name: "disabled flag",
+			data: `{"apiKey":"__Secure-1PSID=a; __Secure-1PSIDTS=b","providerSpecificData":{"disableAutoRotation":true}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conn := &models.ProviderConnection{
+				ID:   "conn-test",
+				Data: tt.data,
+			}
+			// Should return immediately without attempting rotation (which would fail with nil repo)
+			geminiWebRotateConnection(context.Background(), nil, conn)
 		})
 	}
 }

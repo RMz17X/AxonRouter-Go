@@ -49,6 +49,7 @@ services:
       dockerfile: Dockerfile
     image: ${AXONROUTER_IMAGE:-ghcr.io/rmz17x/axonrouter-go:latest}
     environment:
+      TZ: Asia/Jakarta
       # Assembled from the POSTGRES_* parts so the password has one home (.env).
       DATABASE_URL: postgres://${POSTGRES_USER:-axonrouter}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-axonrouter}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}

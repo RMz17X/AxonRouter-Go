@@ -25,7 +25,7 @@ import (
 // {plan, quotas} shape the dashboard parser consumes. Only live provider
 // data — no secrets leave this file except as Bearer headers upstream.
 
-const usageHTTPTimeout = 15 * time.Second
+const usageHTTPTimeout = 30 * time.Second
 
 // usageResult is a normalized provider usage response.
 type usageResult struct {

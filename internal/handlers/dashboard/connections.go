@@ -5,6 +5,7 @@ import (
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/models"
 	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/proxy/executor"
 	"axonrouter/proxy/internal/updater"
 	"context"
 	json "encoding/json/v2"
@@ -1007,6 +1008,15 @@ func (h *DashboardHandler) HandleUpdateConnection(w http.ResponseWriter, r *http
 	if err := h.Repo.UpdateProviderConnection(id, name, priority, isActive, dataStr); err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	if existing.Provider == "gemini-web" && hasAPIKey {
+		var oldRaw map[string]any
+		if existing.Data != "" && json.Unmarshal([]byte(existing.Data), &oldRaw) == nil {
+			if oldKey, _ := oldRaw["apiKey"].(string); oldKey != "" && oldKey != newAPIKey {
+				executor.GeminiWebEvictSession(oldKey)
+			}
+		}
 	}
 
 	InvalidateProviderStatsCache()
