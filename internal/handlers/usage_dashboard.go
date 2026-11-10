@@ -171,7 +171,7 @@ func dashboardDaily(rows []db.UsageDailyRow, now time.Time) ([]dashboardDailyPoi
 	}
 	// The current streak counts back from today (or yesterday while today is
 	// still empty — the day is not over yet).
-	cursor := now.UTC().Format("2006-01-02")
+	cursor := now.Format("2006-01-02")
 	if !active[cursor] {
 		if t, err := time.Parse("2006-01-02", cursor); err == nil {
 			cursor = t.AddDate(0, 0, -1).Format("2006-01-02")
@@ -189,7 +189,7 @@ func dashboardDaily(rows []db.UsageDailyRow, now time.Time) ([]dashboardDailyPoi
 	// Heatmap window: the trailing 365 days, oldest first; empty days stay out
 	// of the payload, the component fills the grid.
 	var points []dashboardDailyPoint
-	today := now.UTC()
+	today := now
 	for i := 364; i >= 0; i-- {
 		key := today.AddDate(0, 0, -i).Format("2006-01-02")
 		d, ok := byKey[key]

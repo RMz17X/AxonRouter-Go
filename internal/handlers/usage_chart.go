@@ -156,11 +156,12 @@ func finalizeChartBuckets(buckets []chartBucket, maxFamilies int) {
 	}
 }
 
-// dayKeyFor is the UTC calendar key of a timestamp. usageDaily rows are keyed
-// by UTC day (see the chat usage writer), so the chart buckets by UTC too —
-// mixing a local key here would split one day's rollup across two buckets.
+// dayKeyFor is the process-local calendar key of a timestamp. usageDaily
+// rows are keyed by local day (see the chat usage writer), so the chart
+// buckets by local day too — mixing a UTC key here would split one day's
+// rollup across two buckets.
 func dayKeyFor(t time.Time) string {
-	return t.UTC().Format("2006-01-02")
+	return t.In(time.Local).Format("2006-01-02")
 }
 
 // addFamily folds a row's tokens into a bucket's family map.

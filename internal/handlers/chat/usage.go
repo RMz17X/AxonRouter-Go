@@ -171,7 +171,7 @@ func firstDailyErrorFold(reqID, provider, model string) bool {
 	}
 	dailyErrorFoldSeen.seen[reqID] = dailyErrorFoldRecord{
 		at:       now,
-		dateKey:  now.UTC().Format("2006-01-02"),
+		dateKey:  now.Format("2006-01-02"),
 		provider: provider,
 		model:    model,
 	}
@@ -686,7 +686,7 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	// under its original provider/model when it landed on this same
 	// day; a fold from a previous day stays, as that day's record of
 	// the attempts stands.
-	if rec, ok := takeDailyErrorFold(middleware.GetRequestIDFromContext(ctx)); ok && rec.dateKey == time.Now().UTC().Format("2006-01-02") {
+	if rec, ok := takeDailyErrorFold(middleware.GetRequestIDFromContext(ctx)); ok && rec.dateKey == time.Now().Format("2006-01-02") {
 		accumulateDailyUsage(h.Repo, dailyUsageDelta{
 			dateKey:  rec.dateKey,
 			provider: rec.provider,

@@ -71,7 +71,10 @@ func accumulateDailyUsage(repo *db.Repo, d dailyUsageDelta) {
 		return
 	}
 	if d.dateKey == "" {
-		d.dateKey = time.Now().UTC().Format("2006-01-02")
+		// Day keys follow the process-local calendar (the TZ env), so an
+		// operator running TZ=Asia/Jakarta gets WIB days everywhere the
+		// dashboard says "today" — the same anchor resolveUsagePeriod uses.
+		d.dateKey = time.Now().Format("2006-01-02")
 	}
 	if usageSynchronous.Load() {
 		applyDailyDeltas(repo, []dailyUsageDelta{d})
