@@ -2314,7 +2314,9 @@ export const api = {
     return { connections: conns }
   },
   // Paginated provider fetch with filters (mirrors Next.js /api/providers/client).
-  // The Go backend currently returns the full list; pagination is applied client-side.
+  // The backend filters, searches and paginates in SQL; `search` matches
+  // name/email/id/provider/display identity across the whole table, and the
+  // returned pagination totals describe the full filtered set.
   getProvidersClientPage: async (
     query: string,
   ): Promise<{

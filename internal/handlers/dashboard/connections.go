@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"axonrouter/proxy/internal/db"
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/models"
 	"axonrouter/proxy/internal/providers"
@@ -75,18 +76,6 @@ func (h *DashboardHandler) HandleGetConnections(w http.ResponseWriter, r *http.R
 	handlerutil.WriteJSON(w, http.StatusOK, sanitized)
 }
 
-// connectionMatchesSearch reports whether a connection's name, email or
-// provider contains the (already lowercased) search text. It backs the
-// quota tracker's search box (operator request, 2026-11-06).
-func connectionMatchesSearch(c *models.ProviderConnection, query string) bool {
-	for _, field := range []*string{c.Name, c.Email} {
-		if field != nil && strings.Contains(strings.ToLower(*field), query) {
-			return true
-		}
-	}
-	return strings.Contains(strings.ToLower(c.Provider), query)
-}
-
 // HandleGetProvidersClient handles GET /api/providers and GET /api/providers/client.
 // Mirrors upstream 9router providers/client route: usage-eligible connections
 // only, with provider/accountStatus filters, priority|provider sort, and
@@ -106,102 +95,62 @@ func (h *DashboardHandler) HandleGetProvidersClient(w http.ResponseWriter, r *ht
 	// no-op once the family's rows carry their identity.
 	h.backfillCodebuddyIntlIdentity()
 
-	sortMode := q.Get("sort")
-	if sortMode == "" {
-		sortMode = "priority"
-	}
 	page := parsePositiveIntQuery(q.Get("page"), 1)
 	pageSize := parsePositiveIntQuery(q.Get("pageSize"), defaultProvidersPageSize)
 	if pageSize > maxProvidersPageSize {
 		pageSize = maxProvidersPageSize
 	}
 
-	var conns []*models.ProviderConnection
-	var err error
-	var providerOptions []string
-
-	if providerFilter != "all" && providerFilter != "" {
-		conns, err = h.Repo.GetProviderConnections(providerFilter, false)
-		providerOptions = h.getUsageProviderOptions(r.Context())
-	} else {
-		conns, err = h.Repo.GetProviderConnections("", false)
+	// The fatal-disable sweep used to ride on this endpoint's full-table
+	// load. The candidate query returns only the rows its signatures can
+	// match, and the sweep re-checks each with the exact Go predicate —
+	// same reach, no full-table pass. Best-effort: a failed candidate
+	// query must not take the list down with it. It still runs before
+	// the page query, so a connection it disables is counted inactive
+	// in this same response, as before.
+	if candidates, err := h.Repo.GetFatalDisableCandidates(r.Context()); err == nil {
+		h.autoDisableFatalConnections(candidates)
 	}
+
+	// Every filter — eligibility, provider, account status, search —
+	// runs in SQL together with the counts, so a search covers the
+	// whole table (not just a loaded slice) and only the requested
+	// page is read back. The SQL ordering replicates
+	// sortProviderConnections; the sort query parameter never changed
+	// it (that function does not branch on the mode).
+	provider := providerFilter
+	if provider == "all" {
+		provider = ""
+	}
+	result, err := h.Repo.GetClientUsagePage(r.Context(), db.ClientUsagePageFilter{
+		Provider:      provider,
+		AccountStatus: accountStatus,
+		Search:        q.Get("search"),
+		Supported:     usageSupportedProviders,
+		APIKey:        usageApikeyProviders,
+		Page:          page,
+		PageSize:      pageSize,
+	})
 	if err != nil {
 		writePlainError(w, http.StatusInternalServerError, "Failed to fetch providers")
 		return
 	}
-	h.autoDisableFatalConnections(conns)
-	eligible := make([]*models.ProviderConnection, 0, len(conns))
-	for _, c := range conns {
-		if c != nil && isUsageEligibleConnection(c) {
-			eligible = append(eligible, c)
-		}
+	providerOptions := result.ProviderOptions
+	if provider != "" {
+		providerOptions = h.getUsageProviderOptions(r.Context())
 	}
-	if providerFilter == "all" || providerFilter == "" {
-		providerOptions = uniqueSortedProviders(eligible)
-	}
-	providerFiltered := make([]*models.ProviderConnection, 0, len(eligible))
-	for _, c := range eligible {
-		if providerFilter == "all" || c.Provider == providerFilter {
-			providerFiltered = append(providerFiltered, c)
-		}
-	}
-	accountFiltered := make([]*models.ProviderConnection, 0, len(providerFiltered))
-	for _, c := range providerFiltered {
-		// "active" means the account can serve a request, not that the toggle
-		// is on. A credit-exhausted connection with isActive=1 is not active,
-		// so filtering on the toggle alone hides the accounts the operator
-		// most needs to see.
-		active := providers.IsEffectivelyActive(c.IsActive, "", providers.HasActiveCooldown(c.Data))
-		if accountStatus == "active" && !active {
-			continue
-		}
-		if accountStatus == "inactive" && active {
-			continue
-		}
-		accountFiltered = append(accountFiltered, c)
-	}
-	if searchQuery := strings.ToLower(strings.TrimSpace(q.Get("search"))); searchQuery != "" {
-		searched := make([]*models.ProviderConnection, 0, len(accountFiltered))
-		for _, c := range accountFiltered {
-			if connectionMatchesSearch(c, searchQuery) {
-				searched = append(searched, c)
-			}
-		}
-		accountFiltered = searched
-	}
-	sortProviderConnections(accountFiltered, sortMode)
-
-	total := len(accountFiltered)
-	totalPages := 1
-	if total > 0 {
-		totalPages = (total + pageSize - 1) / pageSize
-	}
-	currentPage := page
-	if currentPage > totalPages {
-		currentPage = totalPages
-	}
-	start := (currentPage - 1) * pageSize
-	end := start + pageSize
-	if start > total {
-		start = total
-	}
-	if end > total {
-		end = total
-	}
-	pageConns := accountFiltered[start:end]
-	sanitized := make([]map[string]any, 0, len(pageConns))
-	for _, c := range pageConns {
+	sanitized := make([]map[string]any, 0, len(result.Connections))
+	for _, c := range result.Connections {
 		sanitized = append(sanitized, sanitizeProviderConnection(c))
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"connections":     sanitized,
 		"providerOptions": providerOptions,
 		"pagination": map[string]any{
-			"page": currentPage, "pageSize": pageSize, "total": total, "totalPages": totalPages,
+			"page": result.Page, "pageSize": pageSize, "total": result.Total, "totalPages": result.TotalPages,
 		},
 		"totals": map[string]any{
-			"eligibleConnections": len(eligible), "providerFilteredConnections": len(providerFiltered),
+			"eligibleConnections": result.EligibleTotal, "providerFilteredConnections": result.ProviderFilteredTotal,
 		},
 	})
 }
@@ -246,19 +195,6 @@ func isUsageEligibleConnection(c *models.ProviderConnection) bool {
 		return false
 	}
 	return c.AuthType == "oauth" || strSliceContains(usageApikeyProviders, c.Provider)
-}
-
-func uniqueSortedProviders(conns []*models.ProviderConnection) []string {
-	set := map[string]struct{}{}
-	for _, c := range conns {
-		set[c.Provider] = struct{}{}
-	}
-	out := make([]string, 0, len(set))
-	for p := range set {
-		out = append(out, p)
-	}
-	sort.Strings(out)
-	return out
 }
 
 var (
@@ -550,14 +486,12 @@ func isFatalAccountDisableError(msg string) bool {
 		return false
 	}
 	lower := strings.ToLower(msg)
-	return strings.Contains(lower, "disabled in this account") ||
-		strings.Contains(lower, "terms of service") ||
-		strings.Contains(lower, "tos_violation") ||
-		strings.Contains(lower, "account disabled") ||
-		strings.Contains(lower, "validation_required") ||
-		strings.Contains(lower, "verify your account") ||
-		strings.Contains(lower, "invalid_grant") ||
-		strings.Contains(lower, "token refresh rejected")
+	for _, sig := range db.FatalDisableErrorSignatures {
+		if strings.Contains(lower, sig) {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *DashboardHandler) autoDisableFatalConnections(conns []*models.ProviderConnection) {

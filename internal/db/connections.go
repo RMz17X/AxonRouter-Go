@@ -492,7 +492,11 @@ func (r *Repo) GetLockedOrUnavailableConnections(ctx context.Context) ([]*models
 // while the SELECT rows are still open can deadlock the whole pool once
 // four concurrent callers pile up (MaxOpenConns is 4).
 func (r *Repo) listProviderConnections(query string, args []any) ([]*models.ProviderConnection, error) {
-	rows, err := r.QueryContext(context.Background(), query, args...)
+	return r.listProviderConnectionsContext(context.Background(), query, args)
+}
+
+func (r *Repo) listProviderConnectionsContext(ctx context.Context, query string, args []any) ([]*models.ProviderConnection, error) {
+	rows, err := r.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
