@@ -27,6 +27,11 @@ var inlineImageTargets = map[string]bool{
 	"ollama":      true,
 	"kiro":        true,
 	"commandcode": true,
+	// MiniMax's mavis gateway accepts base64 image blocks but rejects
+	// remote http(s) image URLs with a 400 (verified live 2026-11-10:
+	// the same request succeeds with a data URI and fails with a URL),
+	// so its Claude wire needs the inline rewrite like the Gemini one.
+	"minimax-code-global": true,
 }
 
 // imagePrefetchOpts is the policy for every dispatch. A package var so a

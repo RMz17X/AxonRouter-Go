@@ -30,6 +30,11 @@ export interface PickerModel {
   id: string
   name: string
   value: string
+  /** True when this entry is a model alias: `name` is the alias itself
+   * (which the gateway resolves on the wire), `value` is the full model
+   * behind it. Most consumers want `value`; a consumer that promises
+   * "the name you picked is the name you get" wants `name`. */
+  isAlias?: boolean
   caps: { vision: boolean; audioInput: boolean; reasoning: boolean; decision?: boolean }
   /** True when the gateway confirmed this model is gone upstream. */
   deprecated?: boolean
@@ -218,6 +223,7 @@ export function resolveModelPickerGroups(
         id: modelId,
         name: aliasName,
         value: fullModel as string,
+        isAlias: true,
         caps: getModelCaps(modelId),
         deprecated: isDeprecated(modelId),
         ...creditFields(extras, catItem.id, modelId),
@@ -273,15 +279,32 @@ export function resolveModelPickerGroups(
 
     if (!isConnectedNode && (!isCompatibleNode || registeredCustom.length === 0)) continue
 
+    // Alias targets are stored in servable form — "<prefix>/<model>" —
+    // while a node's id is "openai-compatible-chat-<slug>". Match on
+    // either, or a node's aliases never surface as pills at all.
     const nodeModels = Object.entries(extras.modelAliases || {})
-      .filter(([, fullModel]) => typeof fullModel === 'string' && fullModel.startsWith(`${node.id}/`))
-      .filter(([, fullModel]) => isChatModel((fullModel as string).replace(`${node.id}/`, ''), target))
+      .filter(
+        ([, fullModel]) =>
+          typeof fullModel === 'string' &&
+          (fullModel.startsWith(`${node.id}/`) || fullModel.startsWith(`${nodePrefix}/`))
+      )
+      .filter(([, fullModel]) => {
+        const fm = fullModel as string
+        const modelId = fm.startsWith(`${node.id}/`)
+          ? fm.slice(node.id.length + 1)
+          : fm.slice(nodePrefix.length + 1)
+        return isChatModel(modelId, target)
+      })
       .map(([aliasName, fullModel]) => {
-        const modelId = (fullModel as string).replace(`${node.id}/`, '')
+        const fm = fullModel as string
+        const modelId = fm.startsWith(`${node.id}/`)
+          ? fm.slice(node.id.length + 1)
+          : fm.slice(nodePrefix.length + 1)
         return {
           id: modelId,
           name: aliasName,
           value: `${nodePrefix}/${modelId}`,
+          isAlias: true,
           caps: getModelCaps(modelId),
           deprecated: Boolean(
             extras.deprecations?.[`${node.id.toLowerCase()}/${modelId.toLowerCase()}`]

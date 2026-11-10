@@ -11,6 +11,26 @@ import (
 
 const modelLockPrefix = "modelLock_"
 
+// modelGonePrefix marks the durable half of a banned-class model lock
+// (upstream says the model does not exist for this account: a 404
+// NOT_FOUND and its sibling sentences). A gone lock is written alongside
+// its modelLock_ twin and read by the same checks, but the bulk quota
+// clear (ClearConnectionModelLocks, driven by the usage auto-release)
+// must never resurrect a model the upstream has disowned — a healthy
+// quota read for the account's OTHER models used to wipe fresh 404
+// locks within minutes, so the fleet retried a gone model hundreds of
+// times per account. Gone keys clear only by expiry, by a proven
+// success on the pair (ClearConnectionSuccessState), or by an explicit
+// operator reset (ResetConnectionHealthState, UnlockConnectionModel,
+// ResetProviderHealth).
+const modelGonePrefix = "modelGone_"
+
+// isModelLockKey reports whether a data-blob key carries per-model lock
+// state of either family (transient modelLock_ or durable modelGone_).
+func isModelLockKey(k string) bool {
+	return strings.HasPrefix(k, modelLockPrefix) || strings.HasPrefix(k, modelGonePrefix)
+}
+
 // SetConnectionProjectID stores a discovered provider project id in the
 // providerConnections.data JSON blob using a json_set-style update. It is
 // the Repo-side form of the statement handlers/chat's Gemini path used to
@@ -142,15 +162,20 @@ func (r *Repo) DisableConnectionWithReason(id string, status int, reason string)
 	return nil
 }
 
-// SetConnectionVerificationRequired stores verificationUrl and disables the connection
-// so traffic rotates to other accounts while giving the operator a manual link to verify.
-func (r *Repo) SetConnectionVerificationRequired(connID, verificationURL, errText string) error {
+// SetConnectionVerificationRequired flags the connection as
+// verification-gated and disables it so traffic rotates to other
+// accounts. Only the flag is stored — never the verification URL: the
+// link's plt token is minted per refusal and only resolves while the
+// operator's browser holds a live sign-in session for the account, so
+// a stored copy is a dead letter by the time it is clicked. The fresh
+// URL travels in the test response that minted it and is shown in the
+// UI at that moment (fragment 1061). Any legacy stored URL is removed.
+func (r *Repo) SetConnectionVerificationRequired(connID, errText string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	lastError, err := json.Marshal(map[string]any{
-		"status":          403,
-		"message":         errText,
-		"verificationUrl": verificationURL,
-		"timestamp":       now,
+		"status":    403,
+		"message":   errText,
+		"timestamp": now,
 	})
 	if err != nil {
 		return err
@@ -158,15 +183,14 @@ func (r *Repo) SetConnectionVerificationRequired(connID, verificationURL, errTex
 	_, err = r.Exec(
 		`UPDATE providerConnections
 		 SET isActive = 0,
-		     data = `+jsonSetExpr("data",
-			jsonSetPairAt(jsonStringParam(), "verificationUrl"),
+		     data = (`+jsonSetExpr("data",
 			jsonSetPairAt(jsonDocParam(), "lastError"),
 			jsonSetPairAt(jsonStringLiteral("validation_required"), "status"),
 			jsonSetPairAt(jsonStringLiteral("disabled"), "testStatus"),
-		)+`,
+		)+`) - 'verificationUrl',
 		     updatedAt = ?
 		 WHERE id = ?`,
-		verificationURL, string(lastError), now, connID,
+		string(lastError), now, connID,
 	)
 	if err != nil {
 		return fmt.Errorf("set connection verification required %s: %w", connID, err)
@@ -196,6 +220,34 @@ func (r *Repo) LockConnectionModel(connID, model string, durationSec int, backof
 	// Mirror the lock into the speed layer so the selector's per-model
 	// check can answer from the shared cache instead of a SELECT per
 	// candidate (see speed.go). The row above stays the truth.
+	if until, perr := time.Parse(time.RFC3339, lockedUntil); perr == nil {
+		r.publishModelLock(connID, model, until)
+	}
+	return nil
+}
+
+// LockConnectionModelGone is LockConnectionModel for the banned class
+// (a 404 NOT_FOUND and its sibling sentences): the upstream's verdict
+// is that this account does not have the model at all, so alongside the
+// ordinary model lock it stores a durable modelGone_ twin with the same
+// expiry. Selection reads both, but the quota auto-release's bulk clear
+// only lifts modelLock_ keys, so a healthy quota read can no longer
+// resurrect the model before its sentence ends.
+func (r *Repo) LockConnectionModelGone(connID, model string, durationSec int, backoffLevel int) error {
+	lockedUntil := time.Now().UTC().Add(time.Duration(durationSec) * time.Second).Format(time.RFC3339)
+	now := time.Now().UTC().Format(time.RFC3339)
+	_, err := r.Exec(
+		`UPDATE providerConnections SET data = `+jsonSetExpr("data",
+			jsonSetBoundPair(jsonStringParam()),
+			jsonSetBoundPair(jsonStringParam()),
+			jsonSetPairAt(jsonIntParam(), "backoffLevel"),
+		)+`, updatedAt = ? WHERE id = ?`,
+		modelLockPrefix+model, lockedUntil, modelGonePrefix+model, lockedUntil, backoffLevel, now, connID,
+	)
+	if err != nil {
+		return fmt.Errorf("lock connection model gone %s/%s: %w", connID, model, err)
+	}
+	r.invalidateProviderConnections()
 	if until, perr := time.Parse(time.RFC3339, lockedUntil); perr == nil {
 		r.publishModelLock(connID, model, until)
 	}
@@ -383,10 +435,12 @@ func (r *Repo) ClearConnectionSuccessState(connID, lockKey, model string) error 
 	guardArgs := make([]any, 0, len(keys))
 	guards := make([]string, 0, len(keys)+3)
 	for _, k := range keys {
-		pairs = append(pairs, jsonSetBoundPair(jsonNullLiteral()))
-		setArgs = append(setArgs, modelLockPrefix+k)
-		guards = append(guards, `(data #>> ARRAY[?]) IS NOT NULL`)
-		guardArgs = append(guardArgs, modelLockPrefix+k)
+		// A proven success resurrects the pair outright: both the
+		// transient lock and its durable modelGone_ twin clear.
+		pairs = append(pairs, jsonSetBoundPair(jsonNullLiteral()), jsonSetBoundPair(jsonNullLiteral()))
+		setArgs = append(setArgs, modelLockPrefix+k, modelGonePrefix+k)
+		guards = append(guards, `(data #>> ARRAY[?]) IS NOT NULL`, `(data #>> ARRAY[?]) IS NOT NULL`)
+		guardArgs = append(guardArgs, modelLockPrefix+k, modelGonePrefix+k)
 	}
 	// The status stamp is conditional (council round 1, C-4): a success
 	// that was already in flight when the operator disabled the
@@ -471,7 +525,8 @@ func (r *Repo) ClearConnectionModelLocks(ctx context.Context, connID string) err
 
 // IsConnectionModelLocked checks whether the given connection has an active
 // modelLock_<model> field in its data JSON blob. Returns true when the
-// timestamp is in the future.
+// timestamp is in the future. A live modelGone_<model> marker (the durable
+// half of a banned-class lock) locks the pair the same way.
 func isConnectionModelLockedFromData(rawData, model string) bool {
 	if rawData == "" {
 		return false
@@ -480,7 +535,12 @@ func isConnectionModelLockedFromData(rawData, model string) bool {
 	if err := json.Unmarshal([]byte(rawData), &raw); err != nil {
 		return false
 	}
-	key := modelLockPrefix + model
+	return lockTimestampLive(raw, modelLockPrefix+model) || lockTimestampLive(raw, modelGonePrefix+model)
+}
+
+// lockTimestampLive reports whether raw[key] holds an RFC3339 timestamp
+// still in the future.
+func lockTimestampLive(raw map[string]any, key string) bool {
 	val, ok := raw[key]
 	if !ok {
 		return false
@@ -521,16 +581,18 @@ func (r *Repo) IsConnectionModelLocked(connID, model string) (bool, error) {
 }
 
 // UnlockConnectionModel removes a per-connection model lock by setting
-// modelLock_<model> to null and resetting backoffLevel to 0.
-// Matches Next.js clearAccountError behavior.
+// modelLock_<model> to null and resetting backoffLevel to 0. An explicit
+// per-model unlock is an operator decision, so it also lifts the durable
+// modelGone_<model> twin. Matches Next.js clearAccountError behavior.
 func (r *Repo) UnlockConnectionModel(connID, model string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	_, err := r.Exec(
 		`UPDATE providerConnections SET data = `+jsonSetExpr("data",
 			jsonSetBoundPair(jsonNullLiteral()),
+			jsonSetBoundPair(jsonNullLiteral()),
 			jsonSetPairAt(jsonIntLiteral(0), "backoffLevel"),
 		)+`, updatedAt = ? WHERE id = ?`,
-		modelLockPrefix+model, now, connID,
+		modelLockPrefix+model, modelGonePrefix+model, now, connID,
 	)
 	if err != nil {
 		return fmt.Errorf("unlock connection model %s/%s: %w", connID, model, err)
@@ -562,7 +624,7 @@ func (r *Repo) ResetConnectionHealthState(connID string) error {
 	dataMap["backoffLevel"] = 0
 
 	for k := range dataMap {
-		if strings.HasPrefix(k, modelLockPrefix) {
+		if isModelLockKey(k) {
 			dataMap[k] = nil
 		}
 	}
@@ -738,29 +800,14 @@ func (r *Repo) clearConnectionModelLocks(id, data string) error {
 	return err
 }
 
-// checkConnectionModelLock parses connection data to check if modelLock_<model> is active.
+// checkConnectionModelLock parses connection data to check if the pair
+// carries a live lock of either family (modelLock_ or modelGone_).
 func checkConnectionModelLock(data string, model string) bool {
-	var raw map[string]any
-	if err := json.Unmarshal([]byte(data), &raw); err != nil {
-		return false
-	}
-	key := modelLockPrefix + model
-	val, ok := raw[key]
-	if !ok {
-		return false
-	}
-	str, ok := val.(string)
-	if !ok || str == "" {
-		return false
-	}
-	t, err := time.Parse(time.RFC3339, str)
-	if err != nil {
-		return false
-	}
-	return time.Now().UTC().Before(t)
+	return isConnectionModelLockedFromData(data, model)
 }
 
-// listModelLockJSONKeys returns all top-level JSON keys starting with modelLockPrefix.
+// listModelLockJSONKeys returns all top-level JSON keys carrying per-model
+// lock state of either family (modelLock_ or modelGone_).
 func listModelLockJSONKeys(data string) []string {
 	var raw map[string]any
 	if err := json.Unmarshal([]byte(data), &raw); err != nil {
@@ -768,7 +815,7 @@ func listModelLockJSONKeys(data string) []string {
 	}
 	var keys []string
 	for k := range raw {
-		if len(k) > len(modelLockPrefix) && k[:len(modelLockPrefix)] == modelLockPrefix {
+		if isModelLockKey(k) && len(k) > len(modelLockPrefix) {
 			keys = append(keys, k)
 		}
 	}

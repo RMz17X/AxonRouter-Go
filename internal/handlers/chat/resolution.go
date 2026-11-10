@@ -257,6 +257,27 @@ func stripModelContextMarker(modelStr string) string {
 	return modelStr
 }
 
+// systemoneChatError reports whether a resolved concrete model is a
+// System One decision-engine model (the Liquid d1 family, v1m). Those
+// models exist only on the provider's decisions API — the smart router
+// calls them there — and are not chat models at all: Liquid's chat
+// catalog carries none of them on any key (verified against every
+// fleet key: the chat catalog union is the three LFM models), so
+// forwarding one burns an attempt per key on a guaranteed 404 and,
+// once retries pile up, a 503 throttle from Liquid itself. Chat
+// requests for them are refused locally with the 404 Liquid would
+// return. Combo resolutions are exempt here; their members are
+// guarded in the combo loop.
+func systemoneChatError(info *ModelInfo) (string, bool) {
+	if info == nil || info.Provider == "" || len(info.ComboModels) > 0 {
+		return "", false
+	}
+	if providers.GetProviderModelKind(info.Provider, info.Model) == "systemone" {
+		return "model " + info.Model + " is a System One decision model and cannot serve chat requests", true
+	}
+	return "", false
+}
+
 // resolveModel resolves a model string through aliases, combos, and provider/model parsing.
 // Returns the first concrete ModelInfo found, or an error.
 func (h *ChatHandler) resolveModel(modelStr string) (*ModelInfo, error) {

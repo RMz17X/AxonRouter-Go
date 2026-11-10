@@ -447,7 +447,7 @@ func sanitizeProviderConnection(c *models.ProviderConnection) map[string]any {
 		"displayName", "defaultModel", "testStatus", "lastError", "lastErrorAt",
 		"errorCode", "expiresAt", "lastUsedAt", "consecutiveUseCount",
 		"globalPriority", "plan", "message",
-		"disabledReason", "disabledAt", "verificationUrl", "status",
+		"disabledReason", "disabledAt", "status",
 		"oauthLockedUntil", "oauthFailureCount",
 		// Operational (non-secret) state the dashboard renders: cooldown
 		// badges (⏱), quota/rate-limit panels, model assignment. Secret
@@ -472,9 +472,6 @@ func sanitizeProviderConnection(c *models.ProviderConnection) map[string]any {
 					}
 					if src, ok := m["source"].(string); ok && src != "" {
 						safe["lastErrorSource"] = src
-					}
-					if vurl, ok := m["verificationUrl"].(string); ok && vurl != "" && safe["verificationUrl"] == nil {
-						safe["verificationUrl"] = vurl
 					}
 				} else if s, isStr := v.(string); isStr {
 					safe[f] = s
@@ -582,11 +579,7 @@ func (h *DashboardHandler) autoDisableFatalConnections(conns []*models.ProviderC
 		c.IsActive = 0
 		lower := strings.ToLower(errMsg)
 		if strings.Contains(lower, "validation_required") || strings.Contains(lower, "verify your account") {
-			verifyURL, _ := data["verificationUrl"].(string)
-			if verifyURL == "" {
-				verifyURL = "https://antigravity.google"
-			}
-			_ = h.Repo.SetConnectionVerificationRequired(c.ID, verifyURL, errMsg)
+			_ = h.Repo.SetConnectionVerificationRequired(c.ID, errMsg)
 		} else {
 			_ = h.Repo.DisableConnectionWithReason(c.ID, http.StatusForbidden, enrichAppealMessage(errMsg))
 		}

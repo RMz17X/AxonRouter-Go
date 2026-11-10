@@ -35,8 +35,6 @@ export interface ConnectionHealth {
   lastError: string
   /** Disabled because the upstream disabled the account (ToS / fatal). */
   tosDisabled: boolean
-  /** Google's verification page for a validation-flagged account ('' otherwise). */
-  verificationUrl: string
 }
 
 const KNOWN_EFFECTIVE_STATUSES = new Set([
@@ -144,9 +142,12 @@ export function deriveConnectionHealth(
   const locks = mergeLocks(censusLocks(censusEntries, now), payloadLocks(conn, now))
   const lastError = typeof conn.lastError === 'string' ? conn.lastError : ''
 
-  const verificationUrl = typeof conn.verificationUrl === 'string' ? conn.verificationUrl : ''
+  // The flag is the stored status verdict; the verification URL is
+  // never stored (fragment 1061), so it plays no part here. The
+  // error-marker clause stays for rows parked before the status field
+  // existed.
   const needsVerification =
-    verificationUrl !== '' ||
+    (typeof conn.status === 'string' && conn.status.toLowerCase() === 'validation_required') ||
     (effectiveStatus === 'disabled' && VALIDATION_MARKERS.some((marker) => lastError.toLowerCase().includes(marker)))
 
   // Precedence mirrors EffectiveStatusWithError: the disabled toggle wins,
@@ -156,7 +157,7 @@ export function deriveConnectionHealth(
   // deliberate deviation: a validation-flagged connection reads as
   // "validation", not "disabled" — it is parked too, but the operator's
   // next action (verify upstream, then recheck) differs from a terminal
-  // disable, and the row carries the verification link.
+  // disable.
   let state: ConnectionHealthState
   if (needsVerification) state = 'validation'
   else if (effectiveStatus === 'disabled') state = 'disabled'
@@ -165,7 +166,7 @@ export function deriveConnectionHealth(
   else if (locks.length > 0) state = 'locked'
   else state = 'active'
 
-  return { state, effectiveStatus, locks, lastError, tosDisabled: state === 'disabled' && isTosDisabled(conn), verificationUrl }
+  return { state, effectiveStatus, locks, lastError, tosDisabled: state === 'disabled' && isTosDisabled(conn) }
 }
 
 /** Group census rows by connection id (all providers; callers filter). */

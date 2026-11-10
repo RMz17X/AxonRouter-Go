@@ -885,8 +885,16 @@ const requestDetailListSelect = `
 // gathered from outside its window.
 const requestDetailCount = `SELECT COUNT(*) FROM requestDetails %s`
 
-// GetRequestDetailsPaged returns one page of collapsed detail rows and the
-// total number of recorded requests.
+// GetRequestDetailsPaged returns one page of detail rows and the total
+// number of recorded requests.
+//
+// The page is collapsed to one row per REQUEST: requestDetails holds one
+// diagnostic row per failed attempt, so paging raw rows showed a single
+// request up to a dozen times and reported the row count as the request
+// total. The representative row per request is its success row when one
+// exists (the request's outcome), otherwise its latest row. Rows group
+// by the middleware request id the writers stamp into the payload,
+// falling back to the row id for rows that predate it.
 //
 // since is the optional timestamp floor behind ?period on the Details tab; an
 // empty string reads the whole table.
@@ -903,11 +911,37 @@ func (r *Repo) GetRequestDetailsPaged(ctx context.Context, limit, offset int, si
 		args = append(args, since)
 	}
 	var total int
-	if err := r.QueryRowContext(ctx, fmt.Sprintf(requestDetailCount, where), args...).Scan(&total); err != nil {
+	countQuery := `SELECT COUNT(DISTINCT COALESCE(NULLIF(data->>'reqId', ''), id)) FROM requestDetails ` + where
+	if err := r.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count requestDetails: %w", err)
 	}
 
-	rows, err := r.QueryContext(ctx, fmt.Sprintf(requestDetailListSelect, where), append(args, limit, offset)...)
+	listQuery := `WITH picked AS (
+		SELECT DISTINCT ON (COALESCE(NULLIF(data->>'reqId', ''), id)) id, timestamp
+		FROM requestDetails ` + where + `
+		ORDER BY COALESCE(NULLIF(data->>'reqId', ''), id), (status = 'success') DESC, timestamp DESC, id DESC
+	)
+	SELECT rd.id, rd.timestamp, COALESCE(rd.provider, ''), COALESCE(rd.model, ''), COALESCE(rd.connectionId, ''),
+	       COALESCE(rd.status, ''),
+	       COALESCE((trunc((rd.data #>> '{latency,ttft}')::numeric)::bigint), 0),
+	       COALESCE((trunc((rd.data #>> '{latency,total}')::numeric)::bigint), 0),
+	       COALESCE(rd.data #> '{tokens}', '{}'::jsonb),
+	       COALESCE(rd.data #>> '{account}', ''),
+	       COALESCE((rd.data #>> '{cost}')::float8, 0.0),
+	       COALESCE(rd.data #>> '{combo}', ''),
+	       COALESCE(rd.data #>> '{protocol}', ''),
+	       COALESCE(rd.data #>> '{loopWarning}', COALESCE(rd.data #>> '{anomalies,0,message}', '')),
+	       CASE WHEN rd.data IS NULL THEN 0 ELSE 1 END,
+	       COALESCE(NULLIF(rd.data ->> 'proxy', ''), NULLIF(rd.data ->> 'egress', ''), NULLIF(rd.data #>> '{egress,poolName}', ''), NULLIF(rd.data #>> '{egress,poolId}', ''), NULLIF(rd.data #>> '{egress,PoolID}', ''), NULLIF(rd.data #>> '{egress,target}', ''), 'direct'),
+	       COALESCE((rd.data #>> '{isStream}')::boolean, true),
+	       COALESCE(rd.data #>> '{apiKeyName}', ''),
+	       COALESCE(rd.data #>> '{clientApiKey}', ''),
+	       COALESCE(rd.data #>> '{clientIp}', '')
+	FROM picked p
+	JOIN requestDetails rd ON rd.id = p.id AND rd.timestamp = p.timestamp
+	ORDER BY rd.timestamp DESC, rd.id DESC
+	LIMIT ? OFFSET ?`
+	rows, err := r.QueryContext(ctx, listQuery, append(args, limit, offset)...)
 	if err != nil {
 		return nil, total, fmt.Errorf("query requestDetails paged: %w", err)
 	}
@@ -960,13 +994,69 @@ func (r *Repo) GetRequestDetailByID(id string) (string, error) {
 }
 
 // GetRequestDetailsErrorCountSince returns the count of failed requests recorded in requestDetails since cutoff.
+//
+// requestDetails holds one diagnostic row per failed ATTEMPT (LogFailure),
+// so a row count would report one failed request once per account it
+// tried — and a request that eventually succeeded still leaves error
+// rows behind for its losing attempts. The count therefore groups rows
+// by the request they belong to (the middleware request id in the
+// payload, falling back to the row id for rows that predate it) and
+// counts a group as failed only when no row of it succeeded.
 func (r *Repo) GetRequestDetailsErrorCountSince(ctx context.Context, since string) (int, error) {
 	var count int
-	err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM requestDetails WHERE status = 'error' AND timestamp >= ?`, since).Scan(&count)
+	err := r.QueryRowContext(ctx, `SELECT COUNT(*) FROM (
+		SELECT COALESCE(NULLIF(data->>'reqId', ''), id) AS req_key,
+			BOOL_OR(status = 'error') AS has_error,
+			BOOL_OR(status = 'success') AS has_success
+		FROM requestDetails
+		WHERE timestamp >= ? AND status IN ('error', 'success')
+		GROUP BY req_key
+	) grouped WHERE has_error AND NOT has_success`, since).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count requestDetails errors since %s: %w", since, err)
 	}
 	return count, nil
+}
+
+// GetRequestDetailsErrorCountByProviderSince returns, per provider, how
+// many requests failed ON that provider since the cutoff — the same
+// request grain as GetRequestDetailsErrorCountSince, split by provider:
+// a request counts once under every provider it attempted and failed
+// on, and not at all when any of its rows succeeded. The per-provider
+// counts can therefore sum to more than the headline failed-request
+// total for cascaded requests; each number answers "how many requests
+// did this provider fail", which is what a breakdown row means.
+func (r *Repo) GetRequestDetailsErrorCountByProviderSince(ctx context.Context, since string) (map[string]int, error) {
+	rows, err := r.QueryContext(ctx, `WITH failed AS (
+		SELECT DISTINCT COALESCE(provider, '') AS prov,
+			COALESCE(NULLIF(data->>'reqId', ''), id) AS req_key
+		FROM requestDetails
+		WHERE timestamp >= ? AND status = 'error'
+	), succ AS (
+		SELECT DISTINCT COALESCE(NULLIF(data->>'reqId', ''), id) AS req_key
+		FROM requestDetails
+		WHERE timestamp >= ? AND status = 'success'
+	)
+	SELECT f.prov, COUNT(*) FROM failed f
+	WHERE f.req_key NOT IN (SELECT req_key FROM succ)
+	GROUP BY f.prov`, since, since)
+	if err != nil {
+		return nil, fmt.Errorf("count requestDetails errors by provider since %s: %w", since, err)
+	}
+	defer rows.Close()
+	res := make(map[string]int)
+	for rows.Next() {
+		var prov string
+		var n int
+		if err := rows.Scan(&prov, &n); err != nil {
+			return nil, fmt.Errorf("scan requestDetails errors by provider since %s: %w", since, err)
+		}
+		res[prov] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate requestDetails errors by provider since %s: %w", since, err)
+	}
+	return res, nil
 }
 
 // ComboAnalyticsRow is one (combo, resolved model, provider) aggregate of the
@@ -1002,14 +1092,25 @@ func (r *Repo) GetComboAnalyticsSince(ctx context.Context, since string) ([]Comb
 		where += " AND timestamp >= ?"
 		args = append(args, since)
 	}
-	query := `SELECT ` + comboExpr + ` AS combo,
+	// Aggregate over one representative row per REQUEST, not over raw
+	// rows: requestDetails holds one row per failed attempt, so counting
+	// rows inflated a combo's total once per account a request tried
+	// and derived its errors (total - success) from attempt volume.
+	// The representative is the request's success row when one exists,
+	// else its latest row; attribution follows that row.
+	query := `WITH picked AS (
+		SELECT DISTINCT ON (COALESCE(NULLIF(data->>'reqId', ''), id)) *
+		FROM requestDetails
+		` + where + `
+		ORDER BY COALESCE(NULLIF(data->>'reqId', ''), id), (status = 'success') DESC, timestamp DESC, id DESC
+	)
+	SELECT ` + comboExpr + ` AS combo,
 	       COALESCE(model, ''), COALESCE(provider, ''),
 	       COUNT(*),
 	       COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0),
 	       ` + latencyAvg + `,
 	       COALESCE(MAX(timestamp), '')
-	FROM requestDetails
-	` + where + `
+	FROM picked
 	GROUP BY combo, model, provider
 	ORDER BY combo ASC, model ASC, provider ASC`
 	rows, err := r.QueryContext(ctx, query, args...)

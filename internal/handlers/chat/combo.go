@@ -850,6 +850,15 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 			if modelInfo == nil {
 				continue
 			}
+			// A System One decision model (Liquid d1 family) can never
+			// serve a chat member: skip it without an upstream attempt.
+			if providers.GetProviderModelKind(modelInfo.Provider, modelInfo.Model) == "systemone" {
+				log.Warn("combo", "skip systemone member", "provider", modelInfo.Provider, "model", modelInfo.Model)
+				if lastErr == nil {
+					lastErr = &upstreamError{StatusCode: http.StatusNotFound, Body: []byte(`{"error":{"message":"member is a System One decision model and cannot serve chat requests","type":"not_found_error","code":404}}`)}
+				}
+				continue
+			}
 			isLastModel := i == lastTried.index(excludeIDs)
 
 			// Skip unavailable (model-locked) providers
@@ -1386,6 +1395,15 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 			if modelInfo == nil {
 				continue
 			}
+			// A System One decision model (Liquid d1 family) can never
+			// serve a chat member: skip it without an upstream attempt.
+			if providers.GetProviderModelKind(modelInfo.Provider, modelInfo.Model) == "systemone" {
+				log.Warn("combo", "skip systemone member", "provider", modelInfo.Provider, "model", modelInfo.Model)
+				if lastErr == nil {
+					lastErr = &upstreamError{StatusCode: http.StatusNotFound, Body: []byte(`{"error":{"message":"member is a System One decision model and cannot serve chat requests","type":"not_found_error","code":404}}`)}
+				}
+				continue
+			}
 			isLastModel := i == lastTried.index(excludeIDs)
 
 			// Skip unavailable (model-locked) providers
@@ -1822,12 +1840,8 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 	errText := extractErrorText(ue.Body)
 	errLower := strings.ToLower(errText)
 	if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
-		valURL := extractGoogleValidationURL(ue.Body)
-		if valURL == "" {
-			valURL = "https://antigravity.google"
-		}
 		if h.Repo != nil {
-			_ = h.Repo.SetConnectionVerificationRequired(connID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
+			_ = h.Repo.SetConnectionVerificationRequired(connID, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
 		}
 		h.getSessionAffinity().EvictConnection(connID)
 		*excludeIDs = append(*excludeIDs, connID)
@@ -1894,11 +1908,18 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 	}
 	cooldownSec := cooldownSecForClassification(ue.StatusCode, cls, ue, provider)
 	lockKey := canonicalLockModel(provider, model)
-	if err := h.Repo.LockConnectionModel(connID, lockKey, cooldownSec, cls.NewBackoffLevel); err != nil {
+	// Banned-class verdicts (404 NOT_FOUND and its siblings) take the
+	// durable lock twin: the quota auto-release must not resurrect a
+	// model the upstream says this account does not have.
+	lockFn := h.Repo.LockConnectionModel
+	if cls.BannedAccount {
+		lockFn = h.Repo.LockConnectionModelGone
+	}
+	if err := lockFn(connID, lockKey, cooldownSec, cls.NewBackoffLevel); err != nil {
 		log.Warn("combo", "lock failed", "conn", connID, "provider", provider, "model", lockKey, "error", err)
 	}
 	if lockKey != model {
-		_ = h.Repo.LockConnectionModel(connID, model, cooldownSec, cls.NewBackoffLevel)
+		_ = lockFn(connID, model, cooldownSec, cls.NewBackoffLevel)
 	}
 	// Account-scoped cooldown alongside the per-model locks, so the selector
 	// can skip this account before spending a request (upstream applyErrorState).

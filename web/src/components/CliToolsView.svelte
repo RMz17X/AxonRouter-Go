@@ -5,13 +5,17 @@
     Copy,
     ExternalLink,
     Key,
+    ListFilter,
+    LoaderCircle,
     RefreshCw,
     Search,
     Terminal,
     X
   } from 'lucide-svelte'
   import { copyToClipboard } from '../lib/clipboard'
-  import { api, type APIKey } from '../api/client'
+  import { api, type APIKey, type Combo, type ProviderConnection, type ProviderNode } from '../api/client'
+  import ModelPickerModal from './combos/ModelPickerModal.svelte'
+  import type { PickerModel } from './combos/pickerData'
   import HermesToolCard from './cli-tools/HermesToolCard.svelte'
   import HostSetupCommand from './cli-tools/HostSetupCommand.svelte'
 
@@ -62,35 +66,117 @@
     key: string
     label: string
     placeholder: string
+    /** Model-mapping field: offers the gateway's model/combo/persona names as
+     * suggestions while still accepting any custom model name typed in. */
+    model?: boolean
   }
   const SETUP_FIELDS: Record<string, SetupField[]> = {
     claude: [
-      { key: 'model', label: 'Model', placeholder: 'cc/claude-sonnet-5' },
-      { key: 'sonnet', label: 'Sonnet tier', placeholder: 'cc/claude-sonnet-5' },
-      { key: 'opus', label: 'Opus tier', placeholder: 'cc/claude-opus-5' },
-      { key: 'haiku', label: 'Haiku tier', placeholder: 'cc/claude-haiku-4-5-20251001' },
-      { key: 'fable', label: 'Fable tier', placeholder: 'cc/claude-fable-5' },
+      { key: 'model', label: 'Model', placeholder: 'cc/claude-sonnet-5', model: true },
+      { key: 'sonnet', label: 'Sonnet tier', placeholder: 'cc/claude-sonnet-5', model: true },
+      { key: 'opus', label: 'Opus tier', placeholder: 'cc/claude-opus-5', model: true },
+      { key: 'haiku', label: 'Haiku tier', placeholder: 'cc/claude-haiku-4-5-20251001', model: true },
+      { key: 'fable', label: 'Fable tier', placeholder: 'cc/claude-fable-5', model: true },
       { key: 'maxContextTokens', label: 'Max context tokens', placeholder: '200000' },
     ],
     codex: [
-      { key: 'model', label: 'Model', placeholder: 'gpt-5' },
-      { key: 'subagentModel', label: 'Subagent model', placeholder: 'gpt-5' },
+      { key: 'model', label: 'Model', placeholder: 'gpt-5', model: true },
+      { key: 'subagentModel', label: 'Subagent model', placeholder: 'gpt-5', model: true },
     ],
     opencode: [
-      { key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' },
-      { key: 'subagentModel', label: 'Explorer model', placeholder: 'claude-sonnet-5' },
+      { key: 'model', label: 'Model', placeholder: 'claude-sonnet-5', model: true },
+      { key: 'subagentModel', label: 'Explorer model', placeholder: 'claude-sonnet-5', model: true },
     ],
     droid: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'claude-sonnet-5, gpt-5' }],
     copilot: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'gpt-5, claude-sonnet-5' }],
     cowork: [{ key: 'modelsList', label: 'Models (comma-separated)', placeholder: 'claude-sonnet-5' }],
-    openclaw: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
-    cline: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
-    kilo: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5' }],
-    jcode: [{ key: 'model', label: 'Model', placeholder: 'gpt-5' }],
-    qwen: [{ key: 'model', label: 'Model', placeholder: 'qwen3-coder-plus' }],
-    'deepseek-tui': [{ key: 'model', label: 'Model', placeholder: 'deepseek-chat' }],
-    'grok-build': [{ key: 'model', label: 'Model', placeholder: 'grok-4' }],
+    openclaw: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5', model: true }],
+    cline: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5', model: true }],
+    kilo: [{ key: 'model', label: 'Model', placeholder: 'claude-sonnet-5', model: true }],
+    jcode: [{ key: 'model', label: 'Model', placeholder: 'gpt-5', model: true }],
+    qwen: [{ key: 'model', label: 'Model', placeholder: 'qwen3-coder-plus', model: true }],
+    'deepseek-tui': [{ key: 'model', label: 'Model', placeholder: 'deepseek-chat', model: true }],
+    'grok-build': [{ key: 'model', label: 'Model', placeholder: 'grok-4', model: true }],
     amp: [],
+  }
+
+  // Model fields open the same picker the combo editor uses (reused as-is,
+  // PersonaModal pattern): combos stay pickable as entries alongside the
+  // per-connection models. The fields themselves stay free-text — a custom
+  // model name can always be typed instead of picked, and tools like Claude
+  // Code take one name per tier (model/sonnet/opus/haiku/fable), not a
+  // single global model. Connections + combos load lazily on first open.
+  let pickerField = $state<string | null>(null)
+  let pickerConnections = $state<ProviderConnection[]>([])
+  let pickerCombos = $state<Combo[]>([])
+  let pickerNodes = $state<ProviderNode[]>([])
+  // The picker opens only once its data is actually in hand. Opening it
+  // cold — the way this page first wired it — rendered a half-empty
+  // picker (catalog groups only, counts climbing as the connections,
+  // combos and provider nodes landed one by one), and a failed load
+  // latched the picker into that state for the whole session. The combo
+  // editor never hits this because its page preloads everything; here
+  // the first Pick click pays the load, with the button showing it.
+  let pickerOpeningField = $state<string | null>(null)
+  let pickerDataPromise: Promise<void> | null = null
+  const pickerDataDone = { connections: false, combos: false, nodes: false }
+  function ensurePickerData(): Promise<void> {
+    if (pickerDataDone.connections && pickerDataDone.combos && pickerDataDone.nodes) {
+      return Promise.resolve()
+    }
+    if (pickerDataPromise) return pickerDataPromise
+    pickerDataPromise = (async () => {
+      if (!pickerDataDone.connections) {
+        try {
+          pickerConnections = await api.getConnections()
+          pickerDataDone.connections = true
+        } catch {
+          /* retried on the next open; picker still offers the rest */
+        }
+      }
+      if (!pickerDataDone.combos) {
+        try {
+          pickerCombos = await api.getCombos()
+          pickerDataDone.combos = true
+        } catch {
+          /* retried on the next open */
+        }
+      }
+      // Without the provider nodes the picker shows only catalog
+      // providers — the custom-node groups (apinex, dahl, trust, wz, …)
+      // that the combo editor's picker has would be missing here.
+      if (!pickerDataDone.nodes) {
+        try {
+          pickerNodes = await api.getProviderNodes()
+          pickerDataDone.nodes = true
+        } catch {
+          /* retried on the next open */
+        }
+      }
+      pickerDataPromise = null
+    })()
+    return pickerDataPromise
+  }
+  async function openModelPicker(field: string) {
+    if (pickerOpeningField) return
+    pickerOpeningField = field
+    try {
+      await ensurePickerData()
+    } finally {
+      pickerOpeningField = null
+    }
+    pickerField = field
+  }
+  function pickModel(value: string) {
+    if (pickerField) mapping = { ...mapping, [pickerField]: value }
+    pickerField = null
+  }
+  // The name written is the name the operator picked: for an alias entry
+  // that is the alias itself (the gateway resolves aliases on the wire),
+  // not the full model hiding behind it.
+  function pickModelEntry(entry: PickerModel) {
+    if (pickerField) mapping = { ...mapping, [pickerField]: entry.isAlias ? entry.name : entry.value }
+    pickerField = null
   }
   let setupKeyId = $state('')
   let mapping = $state<Record<string, string>>({})
@@ -470,7 +556,7 @@
       category: 'cli',
       image: '/providers/opendesign.png',
       color: '#7C3AED',
-      description: 'OpenDesign — claude.ai/design open-sourced! Agent-native design skills pack',
+      description: 'Open-source design agent with native design skills',
       configType: 'guide',
       instructions: [
         `/plugin marketplace add manalkaff/opendesign`,
@@ -484,7 +570,7 @@
       category: 'cli',
       image: '/providers/pi.png',
       color: '#111827',
-      description: 'pi coding agent — point ~/.pi/agent/models.json at the AxonRouter-Go gateway',
+      description: 'Minimal terminal coding agent with provider extensions',
       configType: 'guide',
       instructions: [
         `Add a AxonRouter-Go provider to ~/.pi/agent/models.json (Windows: %USERPROFILE%\\.pi\\agent\\models.json):`,
@@ -502,7 +588,7 @@
       category: 'cli',
       color: '#7C3AED',
       image: '/providers/omp.png',
-      description: 'omp coding agent — register the gateway in ~/.omp/agent/models.yml',
+      description: 'Oh My Pi — batteries-included terminal coding agent',
       configType: 'guide',
       instructions: [
         `Add a AxonRouter-Go provider to ~/.omp/agent/models.yml (profiles live in ~/.omp/profiles/<name>/agent/):`,
@@ -520,7 +606,7 @@
       category: 'cli',
       image: '/providers/crush.png',
       color: '#8B5CF6',
-      description: 'Crush AI terminal agent — configure ~/.config/crush/crush.json',
+      description: 'Polished terminal AI coding agent with LSP and MCP support',
       configType: 'guide',
       instructions: [
         `Add AxonRouter-Go to your Crush config in ~/.config/crush/crush.json:`,
@@ -537,7 +623,7 @@
       category: 'cli',
       image: '/providers/forge.png',
       color: '#F97316',
-      description: 'Forge AI coding CLI — configure ~/.forge/config.toml',
+      description: 'AI pair-programming CLI for the terminal',
       configType: 'guide',
       instructions: [
         `Configure AxonRouter-Go endpoint under the [openai] section in ~/.forge/config.toml:`,
@@ -554,7 +640,7 @@
       category: 'cli',
       image: '/providers/smelt.svg',
       color: '#E11D48',
-      description: 'Smelt terminal coding agent — configure ~/.smelt/config.json',
+      description: 'Lightweight terminal coding agent',
       configType: 'guide',
       instructions: [
         `Add AxonRouter-Go gateway configuration to ~/.smelt/config.json:`,
@@ -571,7 +657,7 @@
       category: 'cli',
       image: '/providers/codewhale.svg',
       color: '#06B6D4',
-      description: 'CodeWhale terminal developer suite — configure ~/.codewhale/config.toml',
+      description: 'AI coding suite for the terminal',
       configType: 'guide',
       instructions: [
         `Add AxonRouter-Go endpoint under [openai] in ~/.codewhale/config.toml:`,
@@ -617,6 +703,14 @@
     }
     return { label: 'Not installed', cls: 'bg-surface-2 text-text-subtle border-border' }
   }
+
+  let installedCount = $derived(toolsCatalog.filter((t) => statuses[t.id]?.installed).length)
+  let connectedCount = $derived(toolsCatalog.filter((t) => statuses[t.id]?.has9Router).length)
+  let categoryCounts = $derived({
+    cli: toolsCatalog.filter((t) => t.category === 'cli').length,
+    ide: toolsCatalog.filter((t) => t.category === 'ide').length,
+    mitm: toolsCatalog.filter((t) => t.category === 'mitm').length,
+  })
 </script>
 
 <div class="flex flex-col gap-6">
@@ -629,7 +723,7 @@
         </div>
         <div>
           <h1 class="font-headline text-2xl sm:text-3xl font-bold text-text-main tracking-tight flex items-center gap-2">
-            CLI & IDE Tools
+            CLI Tools
           </h1>
           <p class="font-body text-xs sm:text-sm text-text-muted">
             Configure Cursor, Claude Code, Cline, and terminal agents to connect to AxonRouter-Go
@@ -647,6 +741,22 @@
       <RefreshCw class="w-3.5 h-3.5 {isLoading ? 'animate-spin text-brand-500' : 'text-text-muted'}" />
       <span>Scan Installed Tools</span>
     </button>
+  </div>
+
+  <!-- STATS ROW -->
+  <div class="grid grid-cols-3 gap-3">
+    <div class="p-3 rounded-xl bg-surface border border-border">
+      <div class="text-[11px] uppercase tracking-wider text-text-muted">Visible Tools</div>
+      <div class="mt-1 text-2xl font-semibold text-text-main">{filteredTools.length}</div>
+    </div>
+    <div class="p-3 rounded-xl bg-surface border border-border">
+      <div class="text-[11px] uppercase tracking-wider text-text-muted">Installed</div>
+      <div class="mt-1 text-2xl font-semibold text-text-main">{installedCount}</div>
+    </div>
+    <div class="p-3 rounded-xl bg-surface border border-border">
+      <div class="text-[11px] uppercase tracking-wider text-text-muted">Connected</div>
+      <div class="mt-1 text-2xl font-semibold text-text-main">{connectedCount}</div>
+    </div>
   </div>
 
   <!-- SEARCH & CATEGORY FILTER TABS -->
@@ -669,7 +779,7 @@
           ? 'bg-surface text-brand-500 shadow-sm'
           : 'text-text-muted hover:text-text-main'}"
       >
-        CLI Agents
+        CLI Agents ({categoryCounts.cli})
       </button>
       <button
         type="button"
@@ -678,7 +788,7 @@
           ? 'bg-surface text-brand-500 shadow-sm'
           : 'text-text-muted hover:text-text-main'}"
       >
-        IDE & Editors
+        IDE & Editors ({categoryCounts.ide})
       </button>
       <button
         type="button"
@@ -687,7 +797,7 @@
           ? 'bg-surface text-brand-500 shadow-sm'
           : 'text-text-muted hover:text-text-main'}"
       >
-        MITM Proxies
+        MITM Proxies ({categoryCounts.mitm})
       </button>
     </div>
 
@@ -702,6 +812,17 @@
       />
     </div>
   </div>
+
+  <!-- LEGEND -->
+  <p class="text-[11px] leading-relaxed text-text-subtle">
+    Status: <span class="text-text-muted font-medium">Connected</span> = detected on this host and pointed at this gateway ·
+    <span class="text-text-muted font-medium">Not configured</span> = detected, but not pointed here ·
+    <span class="text-text-muted font-medium">Not installed</span> = not detected on this host ·
+    <span class="text-text-muted font-medium">Guide</span> = no local detection, setup guide only.
+    Methods: <span class="text-text-muted font-medium">Environment</span> = environment variables ·
+    <span class="text-text-muted font-medium">Settings UI</span> = configure inside the app ·
+    <span class="text-text-muted font-medium">Transparent</span> = MITM proxy interception.
+  </p>
 
   <!-- TOOLS GRID -->
   <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
@@ -718,34 +839,31 @@
           <!-- Top Row: Icon, Name, Status Badge -->
           <div class="flex items-start justify-between gap-2">
             <div class="flex items-center gap-3">
-              <div class="size-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden bg-surface-2 border border-border/50 p-1">
+              <div class="relative size-10 rounded-xl shrink-0 overflow-hidden bg-surface-2 border border-border/50">
                 {#if tool.image}
-                  <img
-                    src={tool.image}
-                    alt=""
-                    class="size-8 object-contain rounded-lg"
-                    onerror={(e) => {
-                      const img = e.currentTarget as HTMLElement
-                      img.style.display = 'none'
-                      const fallback = img.nextElementSibling as HTMLElement
-                      if (fallback) fallback.style.display = 'flex'
-                    }}
-                    loading="lazy"
-                    decoding="async"
-                  />
                   <div
-                    class="size-8 rounded-lg hidden items-center justify-center font-bold text-white text-xs shadow-sm"
+                    class="absolute inset-0 flex items-center justify-center font-bold text-white text-xs"
                     style="background-color: {tool.color}"
                   >
                     {tool.name.slice(0, 2).toUpperCase()}
                   </div>
+                  <img
+                    src={tool.image}
+                    alt=""
+                    class="absolute inset-0 size-full object-contain p-1 opacity-0 transition-opacity duration-200"
+                    onload={(e) => ((e.currentTarget as HTMLElement).style.opacity = '1')}
+                    onerror={(e) => ((e.currentTarget as HTMLElement).style.display = 'none')}
+                    decoding="async"
+                  />
                 {:else if tool.icon}
-                  <span class="material-symbols-outlined text-[24px]" style="color: {tool.color}">
-                    {tool.icon}
-                  </span>
+                  <div class="absolute inset-0 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-[24px]" style="color: {tool.color}">
+                      {tool.icon}
+                    </span>
+                  </div>
                 {:else}
                   <div
-                    class="size-8 rounded-lg flex items-center justify-center font-bold text-white text-xs shadow-sm"
+                    class="absolute inset-0 flex items-center justify-center font-bold text-white text-xs"
                     style="background-color: {tool.color}"
                   >
                     {tool.name.slice(0, 2).toUpperCase()}
@@ -756,8 +874,8 @@
                 <h3 class="font-bold text-sm text-text-main group-hover:text-brand-500 transition-colors">
                   {tool.name}
                 </h3>
-                <span class="text-[10px] font-mono text-text-subtle capitalize">
-                  {tool.category} tool
+                <span class="text-[10px] font-mono text-text-subtle">
+                  {tool.category === 'cli' ? 'CLI Tool' : tool.category === 'ide' ? 'IDE Tool' : 'MITM Tool'}
                 </span>
               </div>
             </div>
@@ -788,12 +906,25 @@
 </div>
 
 <!-- MODAL: Tool Configuration Detail -->
+<svelte:window
+  onkeydown={(e) => {
+    // The model picker registers its own Escape handler on the shared stack;
+    // while it is open, Escape must close the picker alone, not this modal.
+    if (e.key === 'Escape' && pickerField === null) selectedTool = null
+  }}
+/>
 {#if selectedTool}
   {@const status = getToolStatus(selectedTool.id)}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
-    <div class="w-full max-w-xl p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-5">
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+    role="presentation"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) selectedTool = null
+    }}
+  >
+    <div class="w-full max-w-xl rounded-2xl bg-surface border border-border shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden">
       <!-- Modal Header -->
-      <div class="flex items-start justify-between pb-3 border-b border-border">
+      <div class="flex items-start justify-between px-6 pt-5 pb-3 border-b border-border shrink-0">
         <div class="flex items-center gap-3">
           <div class="size-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden bg-surface-2 border border-border/50 p-1.5">
             {#if selectedTool.image}
@@ -807,7 +938,6 @@
                   const fallback = img.nextElementSibling as HTMLElement
                   if (fallback) fallback.style.display = 'flex'
                 }}
-                loading="lazy"
                 decoding="async"
               />
               <div
@@ -849,6 +979,8 @@
         </button>
       </div>
 
+      <!-- Modal Body (scrolls; header and footer stay pinned) -->
+      <div class="overflow-y-auto flex-1 px-6 py-4 space-y-5">
       <!-- Hermes has per-profile settings the generic env snippet cannot express. -->
       {#if selectedTool.id === 'hermes'}
         <HermesToolCard installed={!!statuses.hermes?.installed} {apiKeys} />
@@ -869,22 +1001,46 @@
                     <option value="">No key created</option>
                   {/if}
                   {#each apiKeys as key (key.id)}
-                    <option value={key.id}>{key.name || key.keyDisplay || key.key}</option>
+                    <option value={key.id}>{key.name || 'Unnamed key'}{key.keyDisplay ? ` · ${key.keyDisplay}` : ''}</option>
                   {/each}
                 </select>
               </div>
               {#each setupFields as field (field.key)}
                 <div class="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
                   <span class="text-xs font-semibold text-text-main sm:w-32 sm:text-right">{field.label}</span>
-                  <input
-                    type="text"
-                    value={mapping[field.key] ?? ''}
-                    oninput={(e) => (mapping = { ...mapping, [field.key]: e.currentTarget.value })}
-                    placeholder={field.placeholder}
-                    class="flex-1 min-w-0 h-8 px-2 rounded bg-surface border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-brand-500/50"
-                  />
+                  <div class="flex flex-1 min-w-0 gap-1.5">
+                    <input
+                      type="text"
+                      value={mapping[field.key] ?? ''}
+                      oninput={(e) => (mapping = { ...mapping, [field.key]: e.currentTarget.value })}
+                      placeholder={field.placeholder}
+                      autocomplete="off"
+                      spellcheck="false"
+                      class="flex-1 min-w-0 h-8 px-2 rounded bg-surface border border-border text-xs text-text-main focus:outline-none focus:ring-1 focus:ring-brand-500/50"
+                    />
+                    {#if field.model}
+                      <button
+                        type="button"
+                        onclick={() => void openModelPicker(field.key)}
+                        disabled={pickerOpeningField !== null}
+                        class="h-8 px-2.5 rounded bg-surface border border-border text-xs font-semibold text-text-main hover:border-brand-500/50 transition cursor-pointer shrink-0 inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-wait"
+                      >
+                        {#if pickerOpeningField === field.key}
+                          <LoaderCircle class="w-3.5 h-3.5 animate-spin" />
+                        {:else}
+                          <ListFilter class="w-3.5 h-3.5" />
+                        {/if}
+                        <span>Pick</span>
+                      </button>
+                    {/if}
+                  </div>
                 </div>
               {/each}
+              {#if setupFields.some((f) => f.model)}
+                <p class="text-[11px] text-text-subtle leading-relaxed">
+                  Use Pick to choose any model or combo this gateway serves — or type a custom model name. Each field maps independently, so tiers can point at different models.
+                </p>
+              {/if}
             </div>
             <HostSetupCommand toolId={selectedTool.id} baseUrl={localOrigin} apiKey={setupApiKey} params={mapping} />
           </div>
@@ -987,7 +1143,7 @@
                     {idx + 1}
                   </span>
                   <span class="text-text-muted leading-relaxed select-text flex-1">
-                    {step}
+                    {step.split('<your-api-key>').join(snippetApiKey)}
                   </span>
                 </div>
               {/each}
@@ -996,8 +1152,10 @@
         {/if}
       {/if}
 
+      </div>
+
       <!-- Footer -->
-      <div class="flex items-center justify-between pt-3 border-t border-border">
+      <div class="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
         <div class="flex items-center gap-1.5 text-xs text-text-subtle font-mono">
           <Key class="w-3.5 h-3.5 text-brand-500" />
           <span>Active Token: {noApiKey ? 'none created' : `${effectiveApiKey.slice(0, 10)}••••`}</span>
@@ -1013,4 +1171,18 @@
       </div>
     </div>
   </div>
+
+  <!-- The combo editor's model picker, reused as-is: 'combo' keeps combos
+       pickable as entries alongside the per-connection models. -->
+  <ModelPickerModal
+    isOpen={pickerField !== null}
+    target="combo"
+    connections={pickerConnections}
+    combos={pickerCombos}
+    providerNodes={pickerNodes}
+    addedModelValues={pickerField ? [mapping[pickerField] ?? ''] : []}
+    onSelect={pickModel}
+    onSelectEntry={pickModelEntry}
+    onClose={() => (pickerField = null)}
+  />
 {/if}

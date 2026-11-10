@@ -5,7 +5,7 @@
   // Claude throttling, provider/account filters, codex sort, expiring-first,
   // bulk turn off empty / on available, quota hide/show via settings,
   // and per-connection refresh/toggle/delete actions.
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import {
     api,
     type CodexResetCredit,
@@ -95,7 +95,13 @@
 
   // ─── State ─────────────────────────────────────────────────────────────────
   let connections = $state<ProviderConnection[]>([])
-  let quotaData = $state<Record<string, QuotaEntry>>({})
+  // Seeded from the browser's quota cache: a card with a last-known
+  // reading renders it immediately and the live pass revalidates in the
+  // background, instead of blanking every card to a spinner (or the
+  // "No quota limits tracked" empty state) until its read lands — with
+  // 176 MiniMax accounts behind a paced fetch gate, that blank window
+  // was most of a minute and read as "quota only shows after refresh".
+  let quotaData = $state<Record<string, QuotaEntry>>(getQuotaCache())
   let quotaLoading = $state<Record<string, boolean>>({})
   let quotaErrors = $state<Record<string, string>>({})
   let autoRefresh = $state(true)
@@ -259,7 +265,9 @@
       }
     }
 
-    quotaLoading = buildLoadingState(activeTargets)
+    // Rows that already hold a reading keep showing it while this pass
+    // revalidates; only rows with nothing to show get the spinner.
+    quotaLoading = buildLoadingState(activeTargets.filter((t) => !quotaData[t.id]))
 
     // Supersede the pass in flight before starting this one. Its reads are
     // aborted, so the browser stops waiting on answers no row will use and the
@@ -909,20 +917,47 @@
     }
   }
 
-  // Verification check (operator request): re-probe one validation-flagged
-  // account from its tracker row. If Google accepts it again (the operator
-  // verified upstream), the backend clears the flag and reactivates the
-  // account; the forced quota re-read then shows the live quota table
-  // instead of the stored verdict. The usage read now runs the same check
-  // on its own for flagged accounts, so this button is the explicit,
-  // immediate form of that system check.
+  // Verification check (operator request): test-call the chat API for
+  // one validation-flagged account from its tracker row. If the gate is
+  // gone, the backend enables the account in the same call and the
+  // forced quota re-read shows the live quota table; if it is still
+  // gated, the response's freshly minted verification URL is kept here
+  // (never stored server-side, fragment 1061) and the row swaps its
+  // "Verifikasi Akun" button for that link. The usage read runs the
+  // same release check on its own for flagged accounts, so this button
+  // is the explicit, immediate form of that system check.
   let checkingVerificationId = $state<string | null>(null)
+  let freshVerifyUrlByConn = $state<Record<string, string>>({})
+
+  const VALIDATION_ERROR_MARKERS = ['validation_required', 'verify your account']
+
+  function isValidationFlagged(conn: ProviderConnection): boolean {
+    if (typeof conn.status === 'string' && conn.status.toLowerCase() === 'validation_required')
+      return true
+    // This view's list payload (/api/providers/client) folds a parked
+    // validation row into effectiveStatus 'disabled' — the canonical
+    // status engine has no validation verdict — so the flag alone
+    // never matches here and the stored error's markers are the tell,
+    // the same fallback connectionHealth uses on the provider page.
+    const lastError = typeof conn.lastError === 'string' ? conn.lastError.toLowerCase() : ''
+    return (
+      conn.effectiveStatus === 'disabled' &&
+      VALIDATION_ERROR_MARKERS.some((marker) => lastError.includes(marker))
+    )
+  }
 
   async function checkVerification(conn: ProviderConnection): Promise<void> {
     if (checkingVerificationId) return
     checkingVerificationId = conn.id
     try {
-      await api.testConnection(conn.id)
+      const res = await api.testConnection(conn.id)
+      if (res?.verificationUrl) {
+        freshVerifyUrlByConn = { ...freshVerifyUrlByConn, [conn.id]: res.verificationUrl }
+      } else if (res?.valid) {
+        const next = { ...freshVerifyUrlByConn }
+        delete next[conn.id]
+        freshVerifyUrlByConn = next
+      }
     } catch {
       // The refreshed row state carries the outcome.
     } finally {
@@ -930,6 +965,27 @@
       await fetchQuota(conn.id, conn.provider, { force: true })
     }
   }
+
+  // The tracker refreshes its list on its own cycle (auto-refresh,
+  // quota re-reads, mutations). When a refresh shows an account is no
+  // longer flagged — e.g. the usage auto-check released it server-side
+  // — the fresh URL kept from an earlier test is stale, so the row
+  // drops it on the refresh itself instead of waiting for another
+  // Verifikasi press. Connections absent from the fresh list are left
+  // alone: absence is not a verdict.
+  $effect(() => {
+    const byId = new Map(connections.map((c) => [c.id, c]))
+    untrack(() => {
+      const stale = Object.keys(freshVerifyUrlByConn).filter((id) => {
+        const conn = byId.get(id)
+        return conn !== undefined && !isValidationFlagged(conn)
+      })
+      if (stale.length === 0) return
+      const next = { ...freshVerifyUrlByConn }
+      for (const id of stale) delete next[id]
+      freshVerifyUrlByConn = next
+    })
+  })
 
   async function handleResetAllCooldowns(): Promise<void> {
     if (resettingCooldowns) return
@@ -1652,26 +1708,6 @@
                   >
                 </button>
 
-                <!-- Check verification (validation-flagged accounts only) -->
-                {#if conn.verificationUrl && !isActiveConn(conn)}
-                  <button
-                    type="button"
-                    onclick={() => checkVerification(conn)}
-                    disabled={rowBusy || checkingVerificationId === conn.id}
-                    aria-label="Check verification"
-                    title="Check verification — re-probe this account: if Google accepts it again, the flag clears and the account reactivates"
-                    class="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main disabled:opacity-50 cursor-pointer"
-                  >
-                    <span
-                      class="material-symbols-outlined text-[18px] {checkingVerificationId ===
-                      conn.id
-                        ? 'animate-spin'
-                        : ''}"
-                      >{checkingVerificationId === conn.id ? 'progress_activity' : 'fact_check'}</span
-                    >
-                  </button>
-                {/if}
-
                 <!-- Reset cooldown -->
                 {#if isActiveConn(conn)}
                   <button
@@ -1731,6 +1767,52 @@
 
           <!-- Card body: quota rows -->
           <div class="px-2 py-1.5">
+            {#if isValidationFlagged(conn)}
+              <!-- Verification strip: shown for every flagged card,
+              independent of which body branch renders below (quota
+              rows included). The control is the check itself until a
+              test mints a fresh URL, then it swaps to that link —
+              the same shape as the provider detail row. -->
+              <div
+                class="mb-1.5 flex items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2"
+              >
+                <span
+                  class="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-600 dark:text-amber-400"
+                >
+                  <span class="material-symbols-outlined text-[14px]">gpp_maybe</span>
+                  needs verification
+                </span>
+                {#if freshVerifyUrlByConn[conn.id]}
+                  <a
+                    href={freshVerifyUrlByConn[conn.id]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
+                  >
+                    <span>Verifikasi Akun</span>
+                    <span class="material-symbols-outlined text-sm">open_in_new</span>
+                  </a>
+                {:else}
+                  <button
+                    type="button"
+                    onclick={() => checkVerification(conn)}
+                    disabled={checkingVerificationId === conn.id}
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <span>Verifikasi Akun</span>
+                    <span
+                      class="material-symbols-outlined text-sm {checkingVerificationId ===
+                      conn.id
+                        ? 'animate-spin'
+                        : ''}"
+                      >{checkingVerificationId === conn.id
+                        ? 'progress_activity'
+                        : 'fact_check'}</span
+                    >
+                  </button>
+                {/if}
+              </div>
+            {/if}
             {#if isLoading}
               <div class="py-5 text-center text-text-muted">
                 <span class="material-symbols-outlined text-[28px] animate-spin">
@@ -1751,17 +1833,6 @@
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
                 {/if}
-                {#if conn.verificationUrl}
-                  <a
-                    href={conn.verificationUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
-                  >
-                    <span>Verifikasi Akun</span>
-                    <span class="material-symbols-outlined text-sm">open_in_new</span>
-                  </a>
-                {/if}
               </div>
             {:else if quota?.message}
               <div class="py-4 text-center flex flex-col items-center gap-2">
@@ -1774,17 +1845,6 @@
                     class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold shadow-sm transition-colors"
                   >
                     <span>Kunjungi Form Appeal (ToS)</span>
-                    <span class="material-symbols-outlined text-sm">open_in_new</span>
-                  </a>
-                {/if}
-                {#if conn.verificationUrl}
-                  <a
-                    href={conn.verificationUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-sm transition-colors"
-                  >
-                    <span>Verifikasi Akun</span>
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
                   </a>
                 {/if}

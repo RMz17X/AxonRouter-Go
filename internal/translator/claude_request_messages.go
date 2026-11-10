@@ -96,7 +96,13 @@ func claudeContentBlocks(msg map[string]any) []any {
 				case "text":
 					blocks = append(blocks, map[string]any{"type": "text", "text": part["text"]})
 				case "tool_result":
-					// Already in Claude format — passthrough untouched.
+					// Already in Claude format — passthrough, apart from
+					// the tool id: a foreign id (e.g. a Gemini "__ts__"
+					// transport id) is refused by strict Claude upstreams,
+					// so it gets the shared cleanup (cleanClaudeToolID).
+					if id, isStr := part["tool_use_id"].(string); isStr {
+						part["tool_use_id"] = cleanClaudeToolID(id)
+					}
 					blocks = append(blocks, part)
 				case "image_url":
 					img, _ := part["image_url"].(map[string]any)
@@ -150,6 +156,9 @@ func claudeContentBlocks(msg map[string]any) []any {
 				case "text":
 					blocks = append(blocks, map[string]any{"type": "text", "text": part["text"]})
 				case "tool_use":
+					if id, isStr := part["id"].(string); isStr {
+						part["id"] = cleanClaudeToolID(id)
+					}
 					blocks = append(blocks, part)
 				case "thinking":
 					// Strip cache_control: Claude rejects it on
@@ -190,7 +199,14 @@ func claudeContentBlocks(msg map[string]any) []any {
 				}
 				// safeParseJSON(arguments, arguments): a string is
 				// parsed, falling back to the raw string; a
-				// non-string passes through unchanged.
+				// non-string passes through unchanged. One deliberate
+				// divergence from that fallback: a result that is not
+				// a JSON object (an empty or unparseable string, a
+				// scalar) can never be a valid tool_use input — strict
+				// Claude upstreams refuse the whole request over it
+				// ("tool_use.input: Input should be a valid
+				// dictionary") — so it becomes the empty object, the
+				// same default the executor-side converter applies.
 				var input any = fn["arguments"]
 				if argStr, ok := input.(string); ok {
 					var parsed any
@@ -198,8 +214,12 @@ func claudeContentBlocks(msg map[string]any) []any {
 						input = parsed
 					}
 				}
+				if _, isObj := input.(map[string]any); !isObj {
+					input = map[string]any{}
+				}
+				tcID, _ := tc["id"].(string)
 				blocks = append(blocks, map[string]any{
-					"type": "tool_use", "id": tc["id"], "name": fn["name"], "input": input,
+					"type": "tool_use", "id": cleanClaudeToolID(tcID), "name": fn["name"], "input": input,
 				})
 			}
 		}
@@ -212,8 +232,9 @@ func claudeContentBlocks(msg map[string]any) []any {
 		if !isStr {
 			contentStr = extractClaudeTextContent(content)
 		}
+		toolCallID, _ := msg["tool_call_id"].(string)
 		blocks = append(blocks, map[string]any{
-			"type": "tool_result", "tool_use_id": msg["tool_call_id"], "content": contentStr,
+			"type": "tool_result", "tool_use_id": cleanClaudeToolID(toolCallID), "content": contentStr,
 		})
 	}
 	return blocks

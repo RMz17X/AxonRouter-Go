@@ -49,7 +49,11 @@ export interface ProviderConnection {
   lastError?: string | null
   lastErrorModel?: string | null
   lastErrorSource?: 'chat' | null
-  verificationUrl?: string | null
+  /** Stored lifecycle verdict from the connection blob (e.g.
+   * "validation_required" for a verification-gated account). The
+   * verification URL itself is never stored or served — it only
+   * travels in a connection-test response (fragment 1061). */
+  status?: string | null
   displayName?: string | null
   assignedModel?: string | null
   providerSpecificData?: { assignedModel?: string | null; [key: string]: unknown }
@@ -1358,7 +1362,6 @@ export function normalizeConnection(c: ProviderConnection): ProviderConnection {
     expiresAt: stringField(parsed, 'expiresAt'),
     lastErrorModel: stringField(parsed, 'lastErrorModel') ?? stringField(wire, 'lastErrorModel'),
     lastErrorSource: stringField(parsed, 'lastErrorSource') ?? stringField(wire, 'lastErrorSource'),
-    verificationUrl: stringField(parsed, 'verificationUrl') ?? stringField(wire, 'verificationUrl') ?? (typeof parsed.lastError === 'object' && parsed.lastError ? ((parsed.lastError as Record<string, unknown>).verificationUrl as string) : null) ?? null,
   } as ProviderConnection
 }
 
@@ -1500,7 +1503,7 @@ export const api = {
       method: 'DELETE',
     }),
   testConnection: (id: string) =>
-    request<{ valid: boolean; error?: string }>(`/api/providers/${encodeURIComponent(id)}/test`, {
+    request<{ valid: boolean; error?: string; refreshed?: boolean; verificationUrl?: string }>(`/api/providers/${encodeURIComponent(id)}/test`, {
       method: 'POST',
     }),
   resetConnectionStatus: (id: string) =>
@@ -2071,7 +2074,7 @@ export const api = {
       '/api/oauth/antigravity/authorize',
     ),
   antigravityExchange: (code: string, state: string) =>
-    request<{ success: boolean; reactivated?: boolean; error?: string }>('/api/oauth/antigravity/exchange', {
+    request<{ success: boolean; validationRequired?: boolean; connection?: { id: string; provider: string; email?: string; displayName?: string }; error?: string }>('/api/oauth/antigravity/exchange', {
       method: 'POST',
       body: JSON.stringify({ code, state }),
     }),

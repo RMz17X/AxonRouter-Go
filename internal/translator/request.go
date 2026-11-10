@@ -3,6 +3,8 @@ package translator
 import (
 	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/thinking"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
 	"fmt"
@@ -246,11 +248,30 @@ func convertClaudeMessage(msg ClaudeMessage) ([]OpenAIMessage, error) {
 
 // EnsureToolCallIDs validates and repairs tool_call_id on assistant tool_calls and tool messages.
 // It pairs orphaned or id-less tool messages with pending assistant tool calls (PR #4090).
+//
+// A tool message whose id names no tool call anywhere in the request is an
+// orphan: its call fell out of the client's history (a compaction cut, a
+// window slice, a lane switch that dropped the assistant turn). Strict
+// upstreams refuse the whole request over one ("tool result's tool id ...
+// not found"), so the orphan is dropped — the repair the missing-response
+// pass below already performs in the other direction.
 func EnsureToolCallIDs(messages []OpenAIMessage) []OpenAIMessage {
+	knownIDs := make(map[string]bool)
+	for _, m := range messages {
+		if m.Role != "assistant" {
+			continue
+		}
+		for _, tc := range m.ToolCalls {
+			if tc.ID != "" {
+				knownIDs[tc.ID] = true
+			}
+		}
+	}
 	var pendingToolCallIds []string
 	toolSeq := 0
+	out := make([]OpenAIMessage, 0, len(messages))
 	for i := range messages {
-		msg := &messages[i]
+		msg := messages[i]
 		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
 			for k := range msg.ToolCalls {
 				tc := &msg.ToolCalls[k]
@@ -262,6 +283,9 @@ func EnsureToolCallIDs(messages []OpenAIMessage) []OpenAIMessage {
 			toolSeq++
 		} else if msg.Role == "tool" {
 			if msg.ToolCallID != "" {
+				if !knownIDs[msg.ToolCallID] {
+					continue
+				}
 				for idx, id := range pendingToolCallIds {
 					if id == msg.ToolCallID {
 						pendingToolCallIds = append(pendingToolCallIds[:idx], pendingToolCallIds[idx+1:]...)
@@ -277,8 +301,9 @@ func EnsureToolCallIDs(messages []OpenAIMessage) []OpenAIMessage {
 				}
 			}
 		}
+		out = append(out, msg)
 	}
-	return messages
+	return out
 }
 
 func fixMissingToolResponsesOpenAI(messages []OpenAIMessage) []OpenAIMessage {
@@ -477,6 +502,91 @@ func TranslateClaudeToOpenAI(claudeBody []byte) ([]byte, error) {
 	return out, nil
 }
 
+// cleanClaudeToolID returns a tool id the Messages API accepts
+// (^[a-zA-Z0-9_-]+$), deterministically derived from the id the client
+// sent, so a tool_use and its tool_result always rewrite identically
+// without shared state.
+//
+// Two foreign shapes show up in mixed-provider histories. Ids minted on
+// the Gemini lane carry the thought signature as a "__ts__<sig>"
+// transport suffix (see geminiCleanToolCallID): the suffix is base64
+// and fails the charset, and strict upstreams (MiniMax is the proven
+// case) refuse the whole request over it — "tool result's tool id(...)
+// not found". The clean base id is what the Gemini lane itself uses,
+// and the signature stays recoverable from the thought-signature store
+// by that base id, so stripping the suffix loses nothing. Any other
+// non-conforming (or empty) id gets the same sha rewrite the
+// OpenAI→Claude converter's sanitizeToolUseID applies, so both lanes
+// present one id space to every member of a combo.
+func cleanClaudeToolID(id string) string {
+	clean := id
+	if ts := strings.LastIndex(clean, "__ts__"); ts != -1 {
+		clean = clean[:ts]
+	}
+	if clean != "" && claudeToolIDValid(clean) {
+		return clean
+	}
+	sum := sha256.Sum256([]byte(id))
+	return "toolu_" + hex.EncodeToString(sum[:])[:24]
+}
+
+func claudeToolIDValid(id string) bool {
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return len(id) > 0
+}
+
+// sanitizeClaudeToolDefs repairs the tools array of a Claude-format
+// request in place and reports whether it changed anything.
+//
+// Strict Anthropic-compatible upstreams (MiniMax is the proven case,
+// 2026-11-09) validate tool definitions and refuse the WHOLE request
+// with a 2013 invalid-params error when one definition is malformed,
+// where lenient upstreams shrug it off — so a single broken client-side
+// tool (an MCP server that failed to load, a skill registering an
+// unnamed tool) poisons every turn of a mixed combo once the lenient
+// members are unavailable. A tool without a name cannot be called by
+// any model, so it is dropped; a client tool whose input_schema is
+// missing or not an object gets the minimal object schema, the same
+// default the OpenAI→Claude conversion applies. Server tools (a type
+// other than "custom") legitimately carry no input_schema and are left
+// alone apart from the name rule.
+func sanitizeClaudeToolDefs(req map[string]any) bool {
+	toolsRaw, ok := req["tools"].([]any)
+	if !ok || len(toolsRaw) == 0 {
+		return false
+	}
+	changed := false
+	kept := make([]any, 0, len(toolsRaw))
+	for _, tRaw := range toolsRaw {
+		tool, ok := tRaw.(map[string]any)
+		if !ok {
+			kept = append(kept, tRaw)
+			continue
+		}
+		name, _ := tool["name"].(string)
+		if strings.TrimSpace(name) == "" {
+			changed = true
+			continue
+		}
+		if toolType, _ := tool["type"].(string); toolType == "" || toolType == "custom" {
+			if _, isObj := tool["input_schema"].(map[string]any); !isObj {
+				tool["input_schema"] = map[string]any{"type": "object", "properties": map[string]any{}}
+				changed = true
+			}
+		}
+		kept = append(kept, tRaw)
+	}
+	if changed {
+		req["tools"] = kept
+	}
+	return changed
+}
+
 // SanitizeClaudePassthrough drops foreign server_tool_use blocks that would poison Claude history.
 // Port of decolua/9router PR #3686 (fix/claude: drop server_tool_use blocks carrying a foreign id).
 // Anthropic validates server_tool_use.id against ^srvtoolu_[a-zA-Z0-9_]+$ and 400s if not matched.
@@ -499,12 +609,18 @@ func SanitizeClaudePassthrough(body []byte, intentionalPrefill bool) []byte {
 	if err := json.Unmarshal(body, &req); err != nil {
 		return body
 	}
+	toolsChanged := sanitizeClaudeToolDefs(req)
 	messagesRaw, ok := req["messages"].([]any)
 	if !ok || len(messagesRaw) == 0 {
+		if toolsChanged {
+			if out, err := json.Marshal(req, json.Deterministic(true)); err == nil {
+				return out
+			}
+		}
 		return body
 	}
 	droppedIDs := make(map[string]bool)
-	changed := false
+	changed := toolsChanged
 
 	// First pass: drop foreign server_tool_use and collect their ids
 	// Wrap bare content block objects into single-element array (parity with decolua/9router v0.5.75 #8a81085)
@@ -513,6 +629,45 @@ func SanitizeClaudePassthrough(body []byte, intentionalPrefill bool) []byte {
 			normalizeMessageContent(msgMap)
 			if dropForeignMessageKeys(msgMap) {
 				changed = true
+			}
+		}
+	}
+
+	// Normalize tool ids (see cleanClaudeToolID): ids minted on another
+	// provider's lane ride the client's history verbatim, and a strict
+	// Claude-format upstream refuses the whole request over a single
+	// non-conforming one. Runs before the server_tool_use pass, whose
+	// own id rule is separate (srvtoolu_ ids are already conforming,
+	// so they pass through this rewrite unchanged).
+	for _, mRaw := range messagesRaw {
+		msgMap, ok := mRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		blocks, ok := msgMap["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, bRaw := range blocks {
+			block, ok := bRaw.(map[string]any)
+			if !ok {
+				continue
+			}
+			switch block["type"] {
+			case "tool_use":
+				if id, isStr := block["id"].(string); isStr {
+					if clean := cleanClaudeToolID(id); clean != id {
+						block["id"] = clean
+						changed = true
+					}
+				}
+			case "tool_result":
+				if id, isStr := block["tool_use_id"].(string); isStr {
+					if clean := cleanClaudeToolID(id); clean != id {
+						block["tool_use_id"] = clean
+						changed = true
+					}
+				}
 			}
 		}
 	}
@@ -560,41 +715,67 @@ func SanitizeClaudePassthrough(body []byte, intentionalPrefill bool) []byte {
 		}
 	}
 
-	// Second pass: drop tool_result referencing dropped server_tool_use ids
-	if len(droppedIDs) > 0 {
-		for _, mRaw := range messagesRaw {
-			msgMap, ok := mRaw.(map[string]any)
+	// Second pass: drop tool_result blocks that no surviving tool call can
+	// claim — references to dropped server_tool_use ids, and orphans whose
+	// tool_use fell out of the client's history entirely (a compaction cut
+	// or a lane switch that dropped the assistant turn). Strict
+	// Claude-format upstreams refuse the whole request over a single
+	// orphan ("tool result's tool id ... not found").
+	liveIDs := make(map[string]bool)
+	for _, mRaw := range messagesRaw {
+		msgMap, ok := mRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		blocks, ok := msgMap["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, bRaw := range blocks {
+			block, ok := bRaw.(map[string]any)
 			if !ok {
 				continue
 			}
-			contentRaw, ok := msgMap["content"]
+			bType, _ := block["type"].(string)
+			if bType == "tool_use" || bType == "server_tool_use" {
+				if id, isStr := block["id"].(string); isStr && id != "" && !droppedIDs[id] {
+					liveIDs[id] = true
+				}
+			}
+		}
+	}
+	for _, mRaw := range messagesRaw {
+		msgMap, ok := mRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		contentRaw, ok := msgMap["content"]
+		if !ok {
+			continue
+		}
+		blocks, ok := contentRaw.([]any)
+		if !ok {
+			continue
+		}
+		var kept []any
+		for _, bRaw := range blocks {
+			block, ok := bRaw.(map[string]any)
 			if !ok {
+				kept = append(kept, bRaw)
 				continue
 			}
-			blocks, ok := contentRaw.([]any)
-			if !ok {
-				continue
-			}
-			var kept []any
-			for _, bRaw := range blocks {
-				block, ok := bRaw.(map[string]any)
-				if !ok {
-					kept = append(kept, bRaw)
+			bType, _ := block["type"].(string)
+			if bType == "tool_result" || bType == "web_search_tool_result" {
+				toolUseID, _ := block["tool_use_id"].(string)
+				if droppedIDs[toolUseID] || !liveIDs[toolUseID] {
+					changed = true
 					continue
 				}
-				bType, _ := block["type"].(string)
-				if bType == "tool_result" || bType == "web_search_tool_result" {
-					toolUseID, _ := block["tool_use_id"].(string)
-					if droppedIDs[toolUseID] {
-						changed = true
-						continue
-					}
-				}
-				kept = append(kept, bRaw)
 			}
-			if len(kept) != len(blocks) {
-				msgMap["content"] = kept
-			}
+			kept = append(kept, bRaw)
+		}
+		if len(kept) != len(blocks) {
+			msgMap["content"] = kept
 		}
 	}
 

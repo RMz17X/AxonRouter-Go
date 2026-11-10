@@ -12,6 +12,7 @@
     resolveFilteredCombos,
     resolveFilteredGroups,
     resolveModelPickerGroups,
+    type PickerModel,
   } from './pickerData'
   import { EMPTY_PICKER_EXTRAS, loadPickerExtras } from './pickerExtras'
   import { emailPrivacy, formatEmailLabel } from '../../lib/privacy'
@@ -33,6 +34,11 @@
     addedModelValues?: string[]
     onSelect: (modelValue: string) => void
     onDeselect?: (modelValue: string) => void
+    /** When provided, replaces onSelect for provider-model pill picks and
+     * receives the exact entry clicked — so a consumer can honor the
+     * picked entry itself (e.g. an alias entry's own name) instead of
+     * only its resolved value. Combo picks still go through onSelect. */
+    onSelectEntry?: (entry: PickerModel) => void
     onClose: () => void
   }
 
@@ -50,6 +56,7 @@
     addedModelValues = [],
     onSelect,
     onDeselect,
+    onSelectEntry,
     onClose,
   }: Props = $props()
 
@@ -152,6 +159,14 @@
     } else {
       onSelect(val)
     }
+  }
+
+  function handleToggleModel(model: PickerModel) {
+    if (onSelectEntry) {
+      onSelectEntry(model)
+      return
+    }
+    handleToggle(model.value)
   }
 
   function clearSearch() {
@@ -336,7 +351,12 @@
               </span>
             </div>
             <div class="flex flex-wrap gap-1.5">
-              {#each group.models as model (model.value)}
+              <!-- Keyed by name + value, not value alone: two aliases can
+                   resolve to one servable model (step-5 and step-5-preview
+                   both → trust/tig/step-5-preview), and duplicate keys in a
+                   keyed each corrupt the list update — the picker froze on
+                   its pre-extras snapshot and would not reopen. -->
+              {#each group.models as model (model.name + '|' + model.value)}
                 <ModelPill
                   label={model.name}
                   value={model.value}
@@ -347,7 +367,7 @@
                   deprecated={model.deprecated}
                   credit={model.credit}
                   free={model.free}
-                  onToggle={handleToggle}
+                  onToggle={() => handleToggleModel(model)}
                 />
               {/each}
             </div>

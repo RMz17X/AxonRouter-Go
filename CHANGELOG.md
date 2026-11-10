@@ -1,5 +1,152 @@
 # Changelog
 
+## [v1.9.97] - 2026-11-10
+
+### Fixed
+
+- Quota Tracker no longer blanks every card to a spinner (or the "No quota limits tracked" empty state) on page load while the live pass is still fetching. `quotaData` is now seeded from the browser's existing quota cache, so a card with a last-known reading renders it immediately and the live pass revalidates in the background; bulk passes mark only rows with nothing to show as loading. With 176 MiniMax accounts behind the shared paced fetch gate, a cold MiniMax pass takes up to ~25 s — the page previously looked like quota only appeared after a manual per-card Refresh (which uses its own controller and jumps the queue), while providers with few accounts filled before the blank state was noticeable. Manual per-card Refresh keeps its spinner feedback; values are still replaced by live reads as they land, and stale entries for deleted connections are pruned by the existing visible-connection filter.
+
+## [v1.9.96] - 2026-11-10
+
+### Fixed
+- Model picker froze on its first-render snapshot and refused to reopen: the pill list is a keyed each on the model value, but two aliases can resolve to one servable model (step-5 and step-5-preview both → trust/tig/step-5-preview), so the moment the picker's extras landed, the TIG Upstream group held duplicate keys and the list update corrupted — node groups stayed on their placeholder pills (trust/model-id, wz/model-id) forever and the modal would not open a second time in the page session. The each is now keyed by name + value, which is unique per entry; both alias pills render, and picking either writes its own name where the consumer is entry-aware.
+
+## [v1.9.95] - 2026-11-10
+
+### Fixed
+- CLI Tools model picker no longer opens cold. The Pick button now loads the picker's data first (connections, combos, provider nodes — with a spinner on the button) and opens the picker only once everything is in hand. Before, the modal opened instantly and filled progressively: group counts climbed across openings (57 → 145 → 358), custom-node groups appeared late or never, and a single failed load latched the picker into its half-empty state for the rest of the session because the old lazy loader never retried. Loads are now shared behind one in-flight promise, each resource is marked done only on success, and a failed resource is retried on the next open.
+
+## [v1.9.94] - 2026-11-10
+
+### Fixed
+- The CLI Tools model picker now receives the provider nodes (loaded lazily alongside connections and combos, the way the combos page wires its picker). Without them it silently showed only the catalog providers — 145 models in 15 groups instead of the full 354 in 23 — so custom-node models (apinex, Dahl, Token Harbor, trust, wz, …) could not be picked for a tool setup at all.
+- Model picker: a custom node's alias entries now actually surface as pills. Alias targets are stored in servable "<prefix>/<model>" form, but the node branch of pickerData matched them against the node's internal id ("openai-compatible-chat-<slug>"), which never matches — a node with only aliases (e.g. TIG Upstream) rendered just its "trust/model-id" placeholder and the operator's aliases (step-5, gpt-6-luna, …) were invisible in every picker. The filter now matches the node's display prefix as well as its id, and the model id is stripped from whichever form matched.
+
+## [v1.9.93] - 2026-11-10
+
+### Fixed
+- CLI Tools setup composer: the model written into a mapping field is now the name the operator actually picked in the model picker. Alias entries in the picker display the alias name but previously inserted the full provider/model id behind the alias; they now insert the alias itself, which the gateway resolves on the wire like any other model name. pickerData marks alias entries (`isAlias`), ModelPickerModal gains an optional `onSelectEntry` callback that receives the exact entry clicked for provider-model picks (combo picks still flow through `onSelect`, and existing consumers are unchanged), and CliToolsView uses it to write `entry.name` for alias entries and `entry.value` otherwise. Custom names typed by hand are unaffected.
+
+## [v1.9.92] - 2026-11-10
+
+### Changed
+- CLI Tools setup composer: the v1.9.91 datalist suggestions on model fields are replaced by the combo editor's own ModelPickerModal, reused as-is (PersonaModal wiring: connections and combos load lazily on first open, target 'combo' keeps combos pickable alongside per-connection models, and the picker's existing custom-model support comes with it). Every model field (Claude Code's model/sonnet/opus/haiku/fable, Codex and OpenCode's model + subagent/explorer, the single-model tools) gains a Pick button that fills the field from the picker. The fields stay free-text, so a custom model name can still be typed instead of picked. The tool modal's window Escape handler is now picker-aware: while the picker is open, Escape closes the picker alone instead of also closing the tool modal underneath it.
+
+## [v1.9.91] - 2026-11-10
+
+### Added
+- CLI Tools setup composer: model-mapping fields now suggest every name this gateway can serve — combos, personas, custom models, and the chat-model catalog (from /api/models/meta, media kinds excluded) — through a native datalist on each model field (Claude Code's model/sonnet/opus/haiku/fable, Codex and OpenCode's model + subagent/explorer, and the single-model tools). The fields remain free-text: any custom model name can be typed and is composed verbatim into the setup command, because the backend templates (internal/clisetup) substitute the mapping strings without catalog validation. A hint under the fields states that each field maps independently, so tiers can point at different models. Suggestion loading is best-effort per source; a failed source never blocks the composer.
+
+## [v1.9.90] - 2026-11-10
+
+### Added
+- CLI Tools page gains a stat row (Visible Tools / Installed / Connected) mirroring the JS dashboard's summary cards, with counts derived from the live tool-status scan instead of static numbers.
+- Category tabs now carry per-category counts, and a legend under the filters explains the status badges (Connected / Not configured / Not installed / Guide) and the method labels (Environment / Settings UI / Transparent).
+
+### Fixed
+- Tool detail modal could trap the user: the panel had no height bound or scroll area, so on shorter viewports its header, close button and footer rendered off-screen, and neither Escape nor a backdrop click dismissed it. The panel is now a column layout capped at 90dvh with pinned header and footer and a scrolling body, Escape closes it, and clicking the backdrop closes it (repo rule: modal dialogs handle Escape and click-outside dismissals).
+- The setup composer's API key dropdown listed keys by name only, so several keys sharing one name looked like duplicate entries; options now also carry the key's masked display value to disambiguate them.
+- Setup instruction steps hardcoded the literal `<your-api-key>` placeholder even when the one-command setup and environment blocks above them already embedded the selected key; rendered steps now substitute the same selected key, and keep the placeholder only when no key exists.
+- Page heading duplicated the top bar ("CLI Tools" above "CLI & IDE Tools"); the in-page heading now matches the section name.
+- Card type labels rendered with broken casing ("Cli Tool", "Ide Tool", "Mitm Tool") from a CSS capitalize over the raw category id; they now use explicit labels (CLI Tool / IDE Tool / MITM Tool).
+- Tool card logos left blank dark tiles for seconds on first paint because the letter fallback only appeared on image error while the image lazy-loaded; the colored initial tile now paints immediately underneath and the logo fades in over it once loaded.
+- Tool descriptions that read as raw config paths (Pi, Oh My Pi, Crush, Forge, Smelt, CodeWhale) or repeated the tool's own name (OpenDesign) are rewritten as plain descriptions, matching the tone of the rest of the catalog.
+
+## [v1.9.89] - 2026-11-10
+
+### Fixed
+- Remote image URLs through the Gemini wire work now: the image prefetch that rewrites remote URLs to inline base64 ran at the END of the dispatch pipeline, after the body had already been translated into the target's wire shape, so its client-shape scanner found nothing for exactly the targets it exists for — Gemini attempts received a fileData part with a wildcard "image/*" mime type that Google rejects on every account. The prefetch now runs before translation, right after the legacy-media strip, while the body is still in the client's own shape.
+- Gemini's payload rejection for that wildcard-mime part ("Unsupported mime type: image/* in contents.file_data") is classified as a model-fit rejection, so when a remote image cannot be fetched and inlined, the account loop breaks after one account (fragment 1076's payload break) instead of rotating the provider's whole pool on a body property.
+
+## [v1.9.88] - 2026-11-10
+
+### Fixed
+- Vision requests with remote image URLs now work through MiniMax: the mavis gateway accepts base64 image blocks but rejects http(s) image URLs with a 400 (verified live — the same request succeeds with a data URI and fails with a URL), yet minimax-code-global was missing from the inline-image prefetch targets, so URL images reached it as dead references. It is in the table now, and the prefetch rewrites the URLs to inline base64 before dispatch like it already did for the Gemini wire.
+- A model that cannot take the request's payload no longer burns the whole account pool: when an upstream answers with an unsupported-media or model-fit rejection (a text-only model handed an image, an oversized prompt), every other account of that provider would answer identically, but the account fallback loop kept rotating — one vision request to fast-free tried ten MiniMax accounts and took 53 seconds to die. The account loop now breaks immediately on those classes, locking nothing, so a combo advances at once to a member that can serve the request and a direct request fails fast with the upstream's own error.
+
+## [v1.9.87] - 2026-11-10
+
+### Fixed
+- Usage numbers now count requests, not attempts, on every remaining surface. The Request Details page paged raw requestDetails rows — one per failed attempt — and reported the row count as its total; it now collapses to one representative row per request (its success row when one exists, else its latest) and counts distinct requests. Combo analytics aggregated raw rows the same way; it now aggregates the same representative rows. Sub-day provider breakdowns carried no errors at all (every provider showed a fake 100% next to a lower headline rate); they now merge failed-request counts per provider at the same grain as the headline.
+- Daily windows double-counted errors in the headline total: the rollup's per-provider "requests" already includes error folds (mergeDailyUsageError increments it), and the totals added totalErrors on top. The daily fold now normalizes bucket requests to successes (requests - errors), so the shared successes + errors formula is right on both paths. Corrects the daily half of fragment 1072/1073's accounting in the same spirit as 1074.
+- The daily fold kept a phantom error (and a second request count) for requests that failed on early attempts and then succeeded: LogFailure's first-failure fold now records provider/model/day, and LogUsage retracts that fold when the request succeeds the same day.
+- Liquid d1/d1.1/d1-ultra are System One decision models, not chat models: Liquid's chat catalog carries none of them on any key (verified fleet-wide; the chat catalog union is the three LFM models), so every chat request for them burned one upstream attempt per key on a guaranteed 404 and, under retry pile-up, a 503 throttle from Liquid. Chat requests naming a systemone-kind model are now refused locally with a 404, and combo members of that kind are skipped without an upstream attempt. The smart router's own System One lane is untouched.
+
+## [v1.9.86] - 2026-11-10
+
+### Fixed
+- Usage error counting now counts failed REQUESTS instead of failed attempts. requestDetails holds one diagnostic row per failed attempt (LogFailure), so the sub-day error overlay counted rows: a request that tried five accounts counted five errors, and a request that eventually succeeded still counted as failed from its losing attempts' rows (measured on live data: 333 error rows vs 97 actually-failed requests in a two-hour window, with 295 requests carrying both success and error rows). GetRequestDetailsErrorCountSince now groups rows by request (the middleware request id, falling back to the row id) and counts a group as failed only when no row of it succeeded.
+- The daily error fold had the same grain bug: LogFailure folded one daily error delta per attempt. It now folds only the first failure of each request per process.
+- Corrects v1.9.85 (fragment 1073): it treated the raw history buckets as if they included errors and dropped them from the headline total. usageHistory in fact holds success rows only, so the original successes + errors formula was right and is restored; the actual overcount came from the attempt-grained error count fixed above.
+
+## [v1.9.85] - 2026-11-10
+
+### Fixed
+- Usage stats double-counted errors in the headline total for sub-day windows (today, 24h, <n>h): the totals step assumed every byProvider bucket's requests counted successes only — true for daily rollups, whose writer folds failures into a separate errors counter — but the raw history fold counts every non-canceled row, errors included. TotalRequests therefore came out as the true total plus the error count (measured live: 16,369 reported against 12,519 rows in the window, an overcount of 3,850 against 3,851 reported errors), and the success rate was dragged down with it. The handler now records which bucket semantics produced the response: raw windows take the bucket sum as the total and derive the success side from it, daily windows keep successes + errors.
+
+## [v1.9.84] - 2026-11-10
+
+### Fixed
+- Daily-window usage stats (`period=7d`, `30d`, `60d`, `all`, and custom `<n>d`) reported `totalErrors` 0 and a 100% success rate regardless of the errors on record. The daily fold accumulated per-provider errors into the breakdown but never carried any error total into the response, and the ledger error-count overlay that sub-day windows use is keyed on the window start, which a daily window leaves zero. Each folded day now adds its rollup's own recorded `errors` total (the staging rollups hold 20,875 errors across the last 7 days the endpoint reported as 0), so `totalRequests` and `successRate` for daily windows count errors the same way the Today/24h windows already did.
+
+### Added
+- The smart (System One) combo strategy now honors the operator's explicit `easyModels` / `hardModels` tiers from `comboStrategies[name]` — the fields the dashboard's Smart Routing section saves and the JS upstream defines. The Go port previously never read them: `applyComboStrategies` dropped the keys and `buildSmartCriteria` derived every model's description from name/capability heuristics alone, so a stored tier list (e.g. smart-liquid-test's) changed nothing. The fields are now parsed into `ComboStrategy`, persisted by `SetComboStrategy`, and applied in `buildSmartCriteria`: a hard-listed model is always described to the router as the advanced-reasoning tier and an easy-listed one as the fast lightweight tier, whatever its name suggests; unlisted models keep the heuristic description. Deliberate divergence in mechanism, recorded: upstream also ships a separate difficulty-tier strategy (`handleDifficultyChat`) that routes to tier candidate sets with a judge prompt; the Go port carries only the System One strategy, so the lists steer the router's criteria rather than gating candidate sets.
+
+## [v1.9.83] - 2026-11-10
+
+### Fixed
+- An OpenAI-wire attempt inside a combo now converts the body it is actually handed, mirroring the Claude-lane gate (1069). Combo members share one working body, kept in the Claude shape when an earlier member needs it; the per-attempt Claude→OpenAI conversion existed only at combo entry, so a Claude-first cascade handed a raw Claude payload — top-level `system`, `tool_use` blocks, `context_management` — to Chat Completions upstreams. Lenient endpoints ignore the foreign fields, but strict ones (Gonka, behind the dahl provider) reject them outright: every GLM attempt on that lane died with 400 "Chat completions parameter \"system\" is currently rejected" (14 of 14 in the deploy window). The fallback path now converts when the body itself is Claude-shaped (`isClaudeMessagesBody`: top-level system / context_management, `input_schema` tools, tool_use / tool_result blocks — none of which a genuine OpenAI request can carry) before the OpenAI filter runs. Gemini-native attempts are excluded: their forward path consumes either shape by design.
+
+## [v1.9.82] - 2026-11-10
+
+### Fixed
+- A Claude-format attempt inside a combo now converts the body it is actually handed, not the body the client's endpoint implies. Combo members share one working body, translated to the OpenAI shape when an earlier member needs it; the conversion gate for Messages-format upstreams keyed on `claudeNative` (the client's endpoint), so a /v1/messages client whose combo had already translated its body sent the raw OpenAI payload — `tool_calls`, `role:"tool"`, `{type:"function"}` tools — to MiniMax's Messages endpoint, which rejected every such attempt with 2013 "input json is empty" (8,873 attempts in 3h). The gate now also converts when the body itself is OpenAI-shaped (`isOpenAIChatBody`: tool_calls / role:"tool" / function tools — none of which a genuine Claude request can carry), leaving true passthrough bodies untouched.
+
+## [v1.9.81] - 2026-11-09
+
+### Fixed
+- Banned-class model locks (a 404 NOT_FOUND and its siblings — the upstream says the account does not have the model) now store a durable `modelGone_<model>` twin alongside the ordinary lock. The usage auto-release, which clears every `modelLock_` key whenever a quota read shows availability, used to resurrect those models within minutes, so a combo retried a disowned model hundreds of times per account; it can now only lift transient quota locks. Gone locks end by expiry, by a proven success on the pair, or by an explicit operator reset/unlock. Selection, the availability census, and the dashboard lock readers treat the durable twin as a lock.
+- Orphan tool results are dropped in both request repairs: `EnsureToolCallIDs` (Claude→OpenAI) no longer forwards a tool message whose id names no tool call in the request, and `SanitizeClaudePassthrough` drops `tool_result` blocks no surviving `tool_use` claims. A result whose call fell out of the client's history (compaction cut, lane switch) made strict Claude-format upstreams refuse the whole request ("tool result's tool id ... not found").
+
+## [v1.9.80] - 2026-11-09
+
+### Fixed
+- Mixed-provider histories still poisoned MiniMax after fragment 1066 (live storm continued post-v1.9.79; the tool-definition sanitizer was necessary but not the active poison). The fleet's real histories — replayed verbatim through the gateway to prove it — carry tool ids minted on the Gemini lane in the gateway's own transport form, `call_<n>__ts__<base64 thought signature>`, whose `/`, `+` and `=` characters fail the Messages API id charset. Claude-shaped bodies pass those ids through untouched, so MiniMax refused whole requests with "tool result's tool id(...) not found" (and sibling 2013 shapes), while two conversion paths additionally let a non-object tool_use input through ("tool_use.input: Input should be a valid dictionary"). SanitizeClaudePassthrough now normalizes every tool_use.id / tool_result.tool_use_id via cleanClaudeToolID: strip the `__ts__` transport suffix (the clean base id is the Gemini lane's own form, and the signature stays recoverable from the thought-signature store by that id), otherwise apply the deterministic sha rewrite the OpenAI→Claude converter already used. The translator's OpenAI→Claude message conversion applies the same id cleanup on its passthrough branches and its tool envelope, and both OpenAI→Claude converters now coerce a non-object parsed arguments value to the empty object instead of emitting it as a tool_use input. Verified by replay: a real 141-message fleet history that was refused with the tool-id error is accepted once its ids are normalized, and the gateway now performs that normalization itself.
+
+## [v1.9.79] - 2026-11-09
+
+### Fixed
+- One malformed client tool definition could take down every MiniMax turn of a mixed combo (live storm 2026-11-09 22:10–22:21 WIB: 455 requests, ~3,700 attempts, all streaming /v1/messages via a combo, all refused by MiniMax with 2013 invalid-params while lenient members tolerated the same payload and were simultaneously quota/404-unavailable). MiniMax's Anthropic endpoint validates tool definitions strictly — a definition with an empty name returns "function name is empty", one with a missing/non-object schema returns "function parameters is empty" (both reproduced verbatim through the gateway) — where other upstreams shrug the same definitions off. SanitizeClaudePassthrough now repairs the tools array on the Claude passthrough path: definitions with a blank name are dropped (a nameless tool is uncallable in every dialect) and client tools (type custom or absent) whose input_schema is missing or not an object get the minimal object schema; server tools keep their shape. The OpenAI→Claude conversion (claudeToolsFromOpenAI) applies the same two rules so it cannot mint a definition the passthrough would have dropped.
+
+### Fixed
+- Model-availability census silently skipped connections whose per-model locks live only in flattened keys (audit 2026-11-09: of 41 census locks only 20 matched the DB; anaking966, abahakunan and adenarere held live locks yet never appeared in GET /api/models/availability at all). The Go-side reader (activeModelLocks) already unions the `modelLocks` object with the flattened `modelLock_<model>` keys, but the repo prefilter in GetLockedOrUnavailableConnections selected rows on the object alone — and writers store locks almost exclusively as flattened keys, the object routinely absent. The prefilter now also matches any row carrying a `modelLock_*` key, so the census enumerates the same locks the serving path enforces; no stored data changes.
+
+## [v1.9.78] - 2026-11-09
+
+### Fixed
+- Quota Tracker verification UI never rendered at all (found by live browser verification of fragment 1063, 2026-11-09): the tracker's `isValidationFlagged` keyed only on the stored status flag, but the tracker's own list payload (`GET /api/providers/client`) folds a parked validation row into `effectiveStatus: 'disabled'` with `status: 'disabled'` — the canonical status engine has no validation verdict — so the predicate could never match on this surface and the strip from fragment 1063 (like the check control from fragment 1061 before it) stayed dead. The provider detail page was unaffected because its health derivation already carried the fallback.
+- `isValidationFlagged` now mirrors connectionHealth's derivation: the stored flag, or a disabled effective status whose stored error carries the validation markers (`validation_required`, `verify your account`) — both fields are present on the client-page payload. The fragment-1062 prune inherits the corrected predicate, so a released account's strip still clears itself on refresh while a still-gated account's strip now actually appears.
+
+## [v1.9.77] - 2026-11-09
+
+### Fixed
+- Quota Tracker verification UI parity with the provider detail page (owner request, 2026-11-09). A validation-flagged account's tracker card carried no "needs verification" badge at all, and its labeled "Verifikasi Akun" control existed only inside the card body's error and quota-message branches — a flagged card that rendered quota rows (or was still loading) offered nothing but a muted fact_check icon in the header action cluster.
+- The card body now opens with an unconditional verification strip for every flagged connection: the amber "needs verification" badge (same treatment as the provider detail row) plus the Verifikasi Akun control — the check itself until a test mints a fresh URL, then the fresh-URL link, exactly the fragment-1061 shape. The two branch-local copies and the header icon button are removed, so the strip is the single verification control on the card; the fragment-1062 prune keeps it clearing itself when refreshed data drops the flag.
+
+## [v1.9.76] - 2026-11-09
+
+### Fixed
+- Dashboard verification panels no longer outlive the flag they belong to. Since fragment 1061, a flagged row's Verifikasi test keeps the refusal's fresh verification URL in component state (never stored server-side) and the panel renders from that state; but when the account was released by a path the open page did not start — the usage auto-check enabling it server-side — refreshed row data alone never cleared the panel, so the operator kept seeing a verification warning for an account that was already active until they pressed Verifikasi again or reloaded (observed live 2026-11-09, anaking966: three Verifikasi presses landed before the 21:12 release, the warning stayed on screen after it).
+- Provider detail view: an effect now prunes the per-row fresh-URL state whenever the health derivation over refreshed connections stops reading "validation" for that connection. Quota Tracker: the same prune keyed on its stored-flag check over its refreshed connection list. Entries for connections absent from the refreshed slice are left untouched — absence is not a verdict — and a still-gated account keeps its URL, because its refreshed row still carries the flag.
+
+## [v1.9.75] - 2026-11-09
+
+### Fixed
+- Antigravity verification flow rebuilt around how Google's verification link actually behaves (proven live 2026-11-09): the link's plt token is minted per refusal and only resolves while the operator's browser holds a live sign-in session for the account, so a stored link is a dead letter by click time. The verification URL is never stored anymore: `SetConnectionVerificationRequired` records only the flag (`status=validation_required`, parked) and scrubs any legacy stored URL; every flagging path (chat classifiers, quota classification, list sweeper, validation recheck) writes the flag only.
+- The connection test is the Verify action: for Antigravity it decides on a real pinned generate, not the light account probe. A still-gated verdict returns the refusal's fresh verification URL in the test response (response-only, never persisted); a verdict without the gate — success or any other upstream answer — enables the account in the same call. Fresh, unflagged Antigravity accounts get the same generate verdict, so a just-connected account that was born gated is caught by the connect flow itself.
+- The Antigravity OAuth exchange no longer reactivates a validation-flagged connection on re-login (the sign-in-as-verification theory, falsified live 2026-11-09): it preserves the flag and the parked state, and the post-exchange test decides.
+- Dashboard: the connect modal stays open on a Step 3 verification step (fresh URL field, Open, Copy, Check) when the post-exchange test finds the account gated; a flagged row's Verifikasi test surfaces the fresh URL in its error panel; the Quota Tracker's stored-link anchors became Verify actions with the same fresh-URL swap. Connection payloads no longer serve a stored `verificationUrl`, and health derivation keys off the stored status flag.
+
 ## [v1.9.74] - 2026-11-09
 
 ## Validation recheck: an upstream answer without the gate releases the account (v1.9.74)

@@ -353,6 +353,20 @@ func (h *ChatHandler) handleAccountFallback(
 			lastErr = ue
 			break
 		}
+		if ue != nil && (providers.IsUnsupportedMediaError(ue.StatusCode, ue.Body) || providers.IsModelFitError(ue.StatusCode, ue.Body)) {
+			// The model cannot take this payload — media it does not
+			// accept, or a prompt shape/size it rejects. Every other
+			// account of this provider answers identically, so rotating
+			// accounts only burns the pool (a vision request to a
+			// text-only model used to try every account before
+			// failing). The account is healthy: nothing is locked, and
+			// the error returns at once so a combo can advance to a
+			// member that can serve the request.
+			log.WarnCtx(attemptCtx, "fallback", "model cannot serve this payload, breaking account retries",
+				"conn", connObj.ID, "provider", provider, "model", model)
+			lastErr = ue
+			break
+		}
 		if errors.As(lastErr, &ue) && providers.RetryableStatusCodes[ue.StatusCode] {
 			if handlerutil.IsProbeContext(ctx) {
 				excludeIDs = append(excludeIDs, connObj.ID)
@@ -407,9 +421,17 @@ func (h *ChatHandler) handleAccountFallback(
 				errMsg = fmt.Sprintf("%d upstream error", ue.StatusCode)
 			}
 			lockKey := canonicalLockModel(provider, model)
-			h.Repo.LockConnectionModel(connObj.ID, lockKey, cooldownSec, classification.NewBackoffLevel)
+			// A banned-class verdict (404 NOT_FOUND and its siblings)
+			// says the account does not have the model at all, so the
+			// lock gets the durable twin the quota auto-release cannot
+			// lift; every other class keeps the transient lock alone.
+			lockFn := h.Repo.LockConnectionModel
+			if classification.BannedAccount {
+				lockFn = h.Repo.LockConnectionModelGone
+			}
+			lockFn(connObj.ID, lockKey, cooldownSec, classification.NewBackoffLevel)
 			if lockKey != model {
-				_ = h.Repo.LockConnectionModel(connObj.ID, model, cooldownSec, classification.NewBackoffLevel)
+				_ = lockFn(connObj.ID, model, cooldownSec, classification.NewBackoffLevel)
 			}
 			// Account-scoped cooldown alongside the per-model locks, so the
 			// selector can skip this account before spending a request
@@ -442,12 +464,8 @@ func (h *ChatHandler) handleAccountFallback(
 				}
 				h.getSessionAffinity().EvictConnection(connObj.ID)
 			} else if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
-				valURL := extractGoogleValidationURL(ue.Body)
-				if valURL == "" {
-					valURL = "https://antigravity.google"
-				}
 				if h.Repo != nil {
-					_ = h.Repo.SetConnectionVerificationRequired(connObj.ID, valURL, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
+					_ = h.Repo.SetConnectionVerificationRequired(connObj.ID, "Verify your account to continue. PERMISSION_DENIED VALIDATION_REQUIRED")
 				}
 				h.getSessionAffinity().EvictConnection(connObj.ID)
 			} else if strings.Contains(errLower, "no project id") {
@@ -664,6 +682,79 @@ func servesClaudeMessages(provider string, cfg *providers.ProviderConfig) bool {
 	return cfg != nil && cfg.Format == providers.FormatClaude
 }
 
+// isOpenAIChatBody reports whether a request body is in the OpenAI Chat
+// Completions shape rather than the Claude Messages shape. The discriminators
+// cannot appear in a genuine Claude request: assistant messages carry
+// tool_calls, tool results arrive as role:"tool" messages, and tools are
+// declared as {type:"function", function:{...}}.
+func isOpenAIChatBody(body []byte) bool {
+	var probe struct {
+		Messages []map[string]any `json:"messages"`
+		Tools    []map[string]any `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return false
+	}
+	for _, m := range probe.Messages {
+		if _, ok := m["tool_calls"]; ok {
+			return true
+		}
+		if m["role"] == "tool" {
+			return true
+		}
+	}
+	for _, t := range probe.Tools {
+		if _, ok := t["function"]; ok {
+			return true
+		}
+		if t["type"] == "function" {
+			return true
+		}
+	}
+	return false
+}
+
+// isClaudeMessagesBody reports whether a request body is in the Claude
+// Messages shape rather than the OpenAI Chat Completions shape. The
+// discriminators cannot appear in a genuine OpenAI request: a top-level
+// system or context_management field, tools declared with input_schema, and
+// tool_use / tool_result content blocks.
+func isClaudeMessagesBody(body []byte) bool {
+	var probe struct {
+		System            any              `json:"system"`
+		ContextManagement any              `json:"context_management"`
+		Messages          []map[string]any `json:"messages"`
+		Tools             []map[string]any `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return false
+	}
+	if probe.System != nil || probe.ContextManagement != nil {
+		return true
+	}
+	for _, t := range probe.Tools {
+		if _, ok := t["input_schema"]; ok {
+			return true
+		}
+	}
+	for _, m := range probe.Messages {
+		blocks, ok := m["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, b := range blocks {
+			bm, ok := b.(map[string]any)
+			if !ok {
+				continue
+			}
+			if bm["type"] == "tool_use" || bm["type"] == "tool_result" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func appendBetaQuery(u string) string {
 	if strings.Contains(u, "beta=true") {
 		return u
@@ -834,12 +925,29 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// Strip unservable legacy media from earlier turns if this specific candidate cannot serve it.
 	pipedBody = StripLegacyMediaForModel(pipedBody, provider, model)
 
+	// G11: a target whose wire format cannot fetch a remote image would
+	// receive the URL as a dead reference — the Gemini translator turns
+	// it into a fileData part with a wildcard "image/*" mime type that
+	// Google rejects, and MiniMax's gateway refuses remote URLs
+	// outright. The rewrite has to happen HERE, while the body is still
+	// in the client's own shape: the prefetch scanner matches
+	// client-shaped image parts, and after the translations below the
+	// parts wear the target's wire shape and the scan finds nothing
+	// (this call used to sit at the end of the pipeline, where it was
+	// a no-op for exactly the targets it exists for). Fail-open: any
+	// refusal leaves the body as-is.
+	pipedBody = prefetchImagesForTarget(ctx, provider, model, providerCfg, pipedBody)
+
 	var claudeToolMap map[string]string
 	if upstreamClaude {
-		if !claudeNative {
+		if !claudeNative || isOpenAIChatBody(pipedBody) {
 			// Raw OpenAI-format body would be invalid at the Messages API:
 			// convert to a spec-compliant Claude payload (top-level system,
 			// tools, merged roles) — what the dashboard does server-side.
+			// claudeNative describes the CLIENT's endpoint, not the body in
+			// hand: a combo whose earlier members needed the OpenAI working
+			// body hands this attempt an OpenAI-shaped body even for a
+			// /v1/messages client, so the body's own shape decides too.
 			pipedBody = executor.EnsureClaudeMessagesFor(pipedBody, provider, model)
 		}
 		// The OpenAI→Claude conversion merges turns, so a client body whose
@@ -861,6 +969,25 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 					pipedBody = out
 				}
 			}
+		}
+	}
+
+	// Mirror of the Claude-lane gate above for OpenAI-wire attempts: a combo
+	// whose earlier members needed the Claude working body hands this attempt
+	// a Claude-shaped body (top-level system, tool_use blocks,
+	// context_management). Lenient OpenAI endpoints ignore the foreign
+	// fields, but strict ones (Gonka/dahl) reject them outright — "Chat
+	// completions parameter \"system\" is currently rejected" — so the body's
+	// own shape decides here too: convert before the OpenAI filter below.
+	// Gemini-native attempts are excluded: their forward path consumes the
+	// working body in either shape by design.
+	if !upstreamClaude && !providerCfg.IsGeminiNative() &&
+		!executor.UpstreamSpeaksResponses(provider, wireModel, providerCfg) &&
+		isClaudeMessagesBody(pipedBody) {
+		if converted, err := translator.TranslateClaudeToOpenAI(pipedBody); err == nil {
+			pipedBody = converted
+		} else {
+			log.Warn("fallback", "claude→openai conversion failed", "provider", provider, "model", model, "error", err)
 		}
 	}
 
@@ -954,11 +1081,8 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		}
 	}
 
-	// G11: a target whose wire format cannot fetch a remote image would receive
-	// the URL as a dead string. Done here rather than inside a translator
-	// because this is the one place that knows both the target provider and the
-	// client's own body shape. Fail-open: any refusal leaves the body as-is.
-	pipedBody = prefetchImagesForTarget(ctx, provider, model, providerCfg, pipedBody)
+	// (The remote-image prefetch runs earlier in this pipeline, before
+	// translation — see the G11 note above StripLegacyMediaForModel.)
 
 	// Codex Fast intent: the account's stored preference is the fallback, and a
 	// body that carries its own intent wins. Applied after every body rewrite

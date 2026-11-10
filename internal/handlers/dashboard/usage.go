@@ -321,15 +321,12 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 					_ = h.Repo.DisableConnectionWithReason(conn.ID, http.StatusForbidden, res.message)
 				} else if strings.Contains(lowerMsg, "validation_required") ||
 					strings.Contains(lowerMsg, "verify your account") {
-					// Store the account-specific verification URL the
-					// error carried (its token rotates per error), not
-					// the generic landing page: the operator's Verify
-					// link must open the flow Google actually gated.
-					valURL := res.validationURL
-					if valURL == "" {
-						valURL = "https://antigravity.google"
-					}
-					_ = h.Repo.SetConnectionVerificationRequired(conn.ID, valURL, res.message)
+					// Flag only (fragment 1061): the verification URL
+					// the error carried is never stored — it is minted
+					// per refusal and only resolves inside a live
+					// sign-in session, so the operator's Verify action
+					// re-mints it with a fresh test at click time.
+					_ = h.Repo.SetConnectionVerificationRequired(conn.ID, res.message)
 				}
 			}
 			if res.message == "" {
