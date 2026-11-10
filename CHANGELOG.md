@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.10.24] - 2026-11-11
+
+---
+type: added
+---
+
+New provider: **claude-web** — claude.ai's consumer chat reached with a browser `sessionKey` cookie, implemented from `docs/CLAUDE_WEB_PROVIDER_SPEC.md`. Chroma (or a manual paste) supplies the session; the gateway discovers the organization (`GET /api/organizations`, skipped when the connection carries `organizationUuid`), opens a throwaway conversation per request, posts the flattened transcript as one prompt with `rendering_mode: "messages"`, and translates the completion stream back to OpenAI chunks. The stream parser accepts both wire shapes — the spec's `event: completion` deltas and the Anthropic-style typed events — and thinking turns (`cweb/claude-3-7-thinking`, `thinking: {type: "enabled", budget_tokens: 4096}`) surface as `reasoning_content`. The throwaway conversation is deleted best-effort after each turn. Transport is the sibling web providers' impersonating TLS stack with the Chrome_133 profile matching the spec's User-Agent, honoring the connection's proxy pool (or the synced `proxyUrl`); `CLAUDE_WEB_PLAIN_HTTP=1` is the escape hatch. Catalog: `claude-3-7-sonnet`, `claude-3-7-thinking`, `claude-3-5-sonnet`, `claude-3-5-haiku`, `claude-web` under the `cweb/` alias — a distinct provider from the API-key `claude`, never aliased onto it. The connection test probes `GET /api/auth/current_account`. Chroma syncs accounts through `POST /api/providers/claude-web/connections` (`{name, cookie|sessionKey, organizationUuid, userAgent, proxyUrl, replace}`), which translates into the one generic connection write path; connections can equally be created from the dashboard with the generic create. Two deliberate deviations from the spec text: the completion body also sends `parent_message_uuid` (the null UUID on a first turn), which the site's own client always sends, and the spec's simplified catalog models are the 3.7/3.5 generation it names — live verification against a real session is still pending, as no claude.ai session was available at implementation time.
+
 ## [v1.10.23] - 2026-11-11
 
 ---
