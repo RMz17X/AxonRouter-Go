@@ -23,6 +23,15 @@ const maxAntigravityOutputTokens = 64000
 // maxOutputTokens strictly exceeds it (parity across chat and image paths).
 const thinkingHeadroomTokens = 8192
 
+// minToolCallOutputTokens floors maxOutputTokens on tool-bearing requests.
+// Gemini's dynamic thinking shares the output budget: measured live on
+// 2026-11-10, a one-line tool task drew 200-380 thought tokens, so a client
+// cap of a few hundred tokens is spent entirely on thoughts and the reply
+// ends MAX_TOKENS with zero content — the client sees its tool call vanish.
+// The floor leaves room for the thoughts plus the call itself; requests
+// without tools keep the client's exact cap.
+const minToolCallOutputTokens = 1024
+
 // Decoy tools carry functional descriptions, not "currently unavailable".
 // Deliberate divergence from upstream decolua/9router (which describes every
 // decoy as unavailable): measured live on 2026-11-10, a model dressed as the
@@ -725,6 +734,15 @@ func hardenAntigravityRequest(geminiBody []byte) []byte {
 					newMax = maxAntigravityOutputTokens
 				}
 				gc["maxOutputTokens"] = newMax
+				changed = true
+			}
+		}
+		// Floor the output budget on tool-bearing requests so dynamic
+		// thinking cannot consume it before any tool call is emitted
+		// (see minToolCallOutputTokens).
+		if tools, ok := m["tools"].([]any); ok && len(tools) > 0 {
+			if v, ok := gc["maxOutputTokens"].(float64); ok && v > 0 && v < minToolCallOutputTokens {
+				gc["maxOutputTokens"] = float64(minToolCallOutputTokens)
 				changed = true
 			}
 		}
