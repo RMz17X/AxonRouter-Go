@@ -20,6 +20,12 @@
     extractDetailError,
     type RequestDetailItem,
   } from './types'
+  import {
+    smartDecisionClasses,
+    smartDecisionIcon,
+    smartDecisionLabel,
+    smartDecisionTitle,
+  } from './smartDecision'
   import { costIn } from '../../lib/currency.svelte'
 
   interface Props {
@@ -89,35 +95,6 @@
   function closeDetail() {
     selectedDetail = null
     detailError = ''
-  }
-
-  type SmartDecision = NonNullable<RequestDetailItem['smartDecision']>
-
-  function smartDecisionLabel(d: SmartDecision): string {
-    const conf = d.confidence !== undefined ? ` ${Math.round(d.confidence * 100)}%` : ''
-    if (d.verdict === 'easy') return `AI Easy${conf}`
-    if (d.verdict === 'hard') return `AI Hard${conf}`
-    return 'Fallback'
-  }
-
-  function smartDecisionIcon(d: SmartDecision): string {
-    if (d.verdict === 'easy') return 'bolt'
-    if (d.verdict === 'hard') return 'psychology'
-    return 'alt_route'
-  }
-
-  function smartDecisionClasses(d: SmartDecision): string {
-    if (d.verdict === 'easy') return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500'
-    if (d.verdict === 'hard') return 'border-purple-500/20 bg-purple-500/10 text-purple-400'
-    return 'border-border bg-surface-2 text-text-muted'
-  }
-
-  function smartDecisionTitle(d: SmartDecision): string {
-    const parts = [`Smart router decision: ${d.source}`]
-    if (d.model) parts.push(`led with ${d.model}`)
-    if (d.confidence !== undefined) parts.push(`confidence ${Math.round(d.confidence * 100)}%`)
-    if (d.threshold) parts.push(`threshold ${Math.round(d.threshold * 100)}%`)
-    return parts.join(' · ')
   }
 
   function resolveAccount(item: RequestDetailItem | null | undefined): { name: string; email?: string } {

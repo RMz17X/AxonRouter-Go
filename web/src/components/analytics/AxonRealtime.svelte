@@ -19,6 +19,12 @@
     type ActiveRequestItem,
     type RequestDetailItem,
   } from './types'
+  import {
+    smartDecisionClasses,
+    smartDecisionIcon,
+    smartDecisionLabel,
+    smartDecisionTitle,
+  } from './smartDecision'
 
   interface Props {
     activeRequests?: ActiveRequestItem[]
@@ -353,6 +359,12 @@
                 <div class="mt-1 flex items-center gap-1.5">
                   {@render modeBadge(row.isStream !== false)}
                   <span class="inline-block rounded-full border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
+                  {#if row.smartDecision}
+                    <span class="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px font-sans text-[9px] font-semibold {smartDecisionClasses(row.smartDecision)}" title={smartDecisionTitle(row.smartDecision)}>
+                      <span class="material-symbols-outlined text-[10px]">{smartDecisionIcon(row.smartDecision)}</span>
+                      {smartDecisionLabel(row.smartDecision)}
+                    </span>
+                  {/if}
                 </div>
               </td>
               <td class="max-w-[160px] py-2 pr-2">
@@ -399,6 +411,12 @@
           <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-muted">
             {@render modeBadge(row.isStream !== false)}
             <span class="inline-block rounded-full border border-border bg-surface px-1.5 py-0.5 text-[10px] font-medium text-text-main">{providerDisplayName(row.provider)}</span>
+            {#if row.smartDecision}
+              <span class="inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px font-sans text-[9px] font-semibold {smartDecisionClasses(row.smartDecision)}" title={smartDecisionTitle(row.smartDecision)}>
+                <span class="material-symbols-outlined text-[10px]">{smartDecisionIcon(row.smartDecision)}</span>
+                {smartDecisionLabel(row.smartDecision)}
+              </span>
+            {/if}
             <span>{row.account || 'Direct (Free)'}</span>
             {#if proxyLabel(row) !== 'direct'}
               <span class="inline-block rounded-full border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary" title={proxyLabel(row)}>{proxyLabel(row)}</span>
