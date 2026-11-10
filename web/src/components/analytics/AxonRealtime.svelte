@@ -254,10 +254,10 @@
 
 {#snippet modeBadge(isStream: boolean)}
   <span
-    class="inline-flex shrink-0 items-center gap-1 rounded-brand bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary"
+    class="inline-flex shrink-0 items-center gap-0.5 rounded-brand bg-primary/10 px-1 py-0 text-[9px] leading-[1.5] font-semibold text-primary"
     title={isStream ? 'Streaming response' : 'Non-streaming JSON response'}
   >
-    <span class="material-symbols-outlined text-[11px]" aria-hidden="true">{isStream ? 'wifi_tethering' : 'code'}</span>
+    <span class="material-symbols-outlined text-[9px]" aria-hidden="true">{isStream ? 'wifi_tethering' : 'code'}</span>
     {isStream ? 'STREAM' : 'JSON'}
   </span>
 {/snippet}

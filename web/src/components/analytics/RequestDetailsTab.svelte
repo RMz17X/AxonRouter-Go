@@ -230,10 +230,10 @@
               <td class="py-3 px-4">
                 <div class="flex items-center gap-1.5">
                   <span
-                    class="inline-flex shrink-0 items-center gap-1 rounded-brand bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold text-primary"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-brand bg-primary/10 px-1 py-0 text-[9px] leading-[1.5] font-semibold text-primary"
                     title={item.isStream === false ? 'Non-streaming JSON response' : 'Streaming response'}
                   >
-                    <span class="material-symbols-outlined text-[11px]" aria-hidden="true">{item.isStream === false ? 'code' : 'wifi_tethering'}</span>
+                    <span class="material-symbols-outlined text-[9px]" aria-hidden="true">{item.isStream === false ? 'code' : 'wifi_tethering'}</span>
                     {item.isStream === false ? 'JSON' : 'STREAM'}
                   </span>
                   {#if item.provider}
