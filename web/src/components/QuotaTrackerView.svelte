@@ -95,7 +95,13 @@
 
   // ─── State ─────────────────────────────────────────────────────────────────
   let connections = $state<ProviderConnection[]>([])
-  let quotaData = $state<Record<string, QuotaEntry>>({})
+  // Seeded from the browser's quota cache: a card with a last-known
+  // reading renders it immediately and the live pass revalidates in the
+  // background, instead of blanking every card to a spinner (or the
+  // "No quota limits tracked" empty state) until its read lands — with
+  // 176 MiniMax accounts behind a paced fetch gate, that blank window
+  // was most of a minute and read as "quota only shows after refresh".
+  let quotaData = $state<Record<string, QuotaEntry>>(getQuotaCache())
   let quotaLoading = $state<Record<string, boolean>>({})
   let quotaErrors = $state<Record<string, string>>({})
   let autoRefresh = $state(true)
@@ -259,7 +265,9 @@
       }
     }
 
-    quotaLoading = buildLoadingState(activeTargets)
+    // Rows that already hold a reading keep showing it while this pass
+    // revalidates; only rows with nothing to show get the spinner.
+    quotaLoading = buildLoadingState(activeTargets.filter((t) => !quotaData[t.id]))
 
     // Supersede the pass in flight before starting this one. Its reads are
     // aborted, so the browser stops waiting on answers no row will use and the
