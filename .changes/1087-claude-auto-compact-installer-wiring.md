@@ -1,3 +1,0 @@
-### Fixed
-
-- CLI Tools: the Claude Code composer's Auto-Compact preset (100k / 150k / 180k) now reaches the generated installer command as `maxContextTokens`, so the installed settings carry `CLAUDE_CODE_MAX_CONTEXT_TOKENS` — previously the preset only fed the copy-paste env snippet (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`), and installer users got Claude Code's startup warning that an unrecognized gateway model is "assumed to be 200k tokens" no matter what they picked. This mirrors the upstream Claude card, which sends one preset to both variables. An explicitly typed Max context tokens value still wins over the preset, and "Default" sends nothing. (Supersedes fragment 1086, whose composer change never actually landed in the v1.9.98 build.)
