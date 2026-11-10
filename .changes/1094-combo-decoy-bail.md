@@ -1,2 +1,0 @@
-## Fixed
-- Combo members now also bail after two decoy-only responses: fragment 1093 added the counter to the single-model account loop in `handleAccountFallback`, but combo members iterate accounts in `tryComboMembers`' own loops, which kept burning the full ten-account budget per member (measured live on v1.10.5: ten decoy-only draws on one member, ~70 s, before the next member was tried). Both member loops (chat and responses passes) now count `translator.ErrDecoyOnlyResponse` per member and break to the next member at two.
