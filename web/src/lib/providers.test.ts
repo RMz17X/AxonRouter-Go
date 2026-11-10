@@ -194,6 +194,15 @@ describe('providers & media separation', () => {
     assert.strictEqual(Boolean(p.modelsFetcher), true)
   })
 
+  it('wires the clixad provider end-to-end', () => {
+    const p = PROVIDER_CATALOG.find((e) => e.id === 'clixad')
+    assert.ok(p, 'clixad missing from the dashboard catalog')
+    assert.strictEqual(p.category, 'freeTier')
+    assert.ok(isChatProvider(p))
+    assert.strictEqual(getModelsByProviderId('clixad').length, 14)
+    assert.strictEqual(Boolean(p.modelsFetcher), true)
+  })
+
   it('resolves every provider alias to a catalog with an entry', () => {
     const missing = Object.keys(PROVIDER_ID_TO_ALIAS).filter(
       (id) => !PROVIDER_CATALOG.some((p) => p.id === id || p.alias === id)

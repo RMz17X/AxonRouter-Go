@@ -248,6 +248,10 @@ func SetupRoutes(r interface {
 	// GLM Reset Cards (Z.ai international)
 	r.Get("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleGetGLMResetCards)
 	r.Post("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleRedeemGLMResetCard)
+	// MiniMax Code Daily Rewards Claim
+	r.Get("/api/usage/{connectionId}/minimax-claim", dashH.HandleGetMiniMaxClaimStatus)
+	r.Post("/api/usage/{connectionId}/minimax-claim", dashH.HandleClaimMiniMaxReward)
+	r.Post("/api/providers/minimax/claim-all", dashH.HandleClaimAllMiniMaxRewards)
 
 	// Debug Tracing Domain (p50/p95 latency per provider+model)
 	r.Get("/debug/traces", HandleDebugTraces)
@@ -430,6 +434,10 @@ func SetupDashboardRoutes(r chi.Router, repo *db.Repo, chatH *chat.ChatHandler) 
 	// GLM Reset Cards (Z.ai international)
 	r.Get("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleGetGLMResetCards)
 	r.Post("/api/usage/{connectionId}/glm-reset-cards", dashH.HandleRedeemGLMResetCard)
+	// MiniMax Code Daily Rewards Claim
+	r.Get("/api/usage/{connectionId}/minimax-claim", dashH.HandleGetMiniMaxClaimStatus)
+	r.Post("/api/usage/{connectionId}/minimax-claim", dashH.HandleClaimMiniMaxReward)
+	r.Post("/api/providers/minimax/claim-all", dashH.HandleClaimAllMiniMaxRewards)
 
 	// Cache Analytics & Management
 	r.Get("/api/cache", dashH.HandleGetCache)

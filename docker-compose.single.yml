@@ -38,6 +38,9 @@ services:
     restart: unless-stopped
 
   app:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: ${AXONROUTER_IMAGE:-ghcr.io/rmz17x/axonrouter-go:latest}
     depends_on:
       postgres:

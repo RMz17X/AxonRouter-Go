@@ -22,6 +22,7 @@
   import { PROVIDER_CATALOG } from '../lib/providers'
   import { copyToClipboard } from '../lib/clipboard'
   import { emailPrivacy, formatEmailLabel } from '../lib/privacy'
+  import { notifications } from '../lib/notifications'
   import Toggle from '../lib/ui/Toggle.svelte'
   import Menu from '../lib/ui/Menu.svelte'
   import MenuItem from '../lib/ui/MenuItem.svelte'
@@ -582,6 +583,74 @@
       glmResetCardError = err instanceof Error ? err.message : 'Failed to redeem the GLM reset card.'
     } finally {
       glmResetCardConsuming = false
+    }
+  }
+
+  // MiniMax Daily Rewards Claim handlers
+  let minimaxClaimingId = $state<string | null>(null)
+  let minimaxClaimingAll = $state(false)
+
+  async function claimMiniMaxSingle(conn: ProviderConnection) {
+    if (minimaxClaimingId) return
+    minimaxClaimingId = conn.id
+    try {
+      const res = await api.claimMiniMaxReward(conn.id)
+      if (res?.status === 'success') {
+        notifications.success(
+          `${conn.name || conn.id}: +${res.points} pts (Day ${res.streakDay})`,
+          'MiniMax Reward Claimed'
+        )
+        await refreshProvider(conn.id, conn.provider)
+      } else if (res?.status === 'already_claimed') {
+        notifications.info(
+          `${conn.name || conn.id}: ${res.message || 'Already claimed today'}`,
+          'MiniMax Already Claimed'
+        )
+      } else {
+        notifications.error(
+          res?.message || res?.error || 'Unknown error',
+          'MiniMax Claim Failed'
+        )
+      }
+    } catch (err) {
+      notifications.error(
+        err instanceof Error ? err.message : 'Failed to claim reward',
+        'MiniMax Claim Error'
+      )
+    } finally {
+      minimaxClaimingId = null
+    }
+  }
+
+  async function claimAllMiniMax() {
+    if (minimaxClaimingAll) return
+    minimaxClaimingAll = true
+    notifications.info(
+      'Claiming daily rewards across active MiniMax accounts...',
+      'MiniMax Auto-Claim'
+    )
+    try {
+      const res = await api.claimAllMiniMaxRewards()
+      if (res?.success) {
+        const s = res.summary
+        notifications.success(
+          `Claimed: ${s.claimed} (+${s.totalPoints} pts) | Already done: ${s.alreadyClaimed} | Errors: ${s.errors} (Total ${s.total})`,
+          'MiniMax Auto-Claim Summary'
+        )
+        await refreshAll(true)
+      } else {
+        notifications.error(
+          res?.error || 'Failed to claim rewards',
+          'MiniMax Claim Failed'
+        )
+      }
+    } catch (err) {
+      notifications.error(
+        err instanceof Error ? err.message : 'Failed to execute bulk claim',
+        'MiniMax Claim Error'
+      )
+    } finally {
+      minimaxClaimingAll = false
     }
   }
 
@@ -1508,6 +1577,12 @@
           disabled={refreshingAll}
           onSelect={() => refreshAll(true)}
         />
+        <MenuItem
+          label={minimaxClaimingAll ? "Claiming MiniMax..." : "Claim all MiniMax"}
+          icon="card_giftcard"
+          disabled={minimaxClaimingAll}
+          onSelect={() => claimAllMiniMax()}
+        />
       </Menu>
     </div>
   </div>
@@ -1662,6 +1737,22 @@
                   >
                     <span class="material-symbols-outlined text-[15px]">restart_alt</span>
                     <span>{resetCardCount}</span>
+                  </button>
+                {/if}
+
+                {#if conn.provider === 'minimax-code-global' || conn.provider === 'minimax-code' || conn.provider === 'minimax'}
+                  <button
+                    type="button"
+                    disabled={isLoading || rowBusy || minimaxClaimingId === conn.id}
+                    onclick={() => claimMiniMaxSingle(conn)}
+                    aria-label="Claim MiniMax daily reward"
+                    title="Claim MiniMax daily reward points (+400-1000 pts)"
+                    class="flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-medium tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-60 border-amber-500/30 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
+                  >
+                    <span class="material-symbols-outlined text-[15px] {minimaxClaimingId === conn.id ? 'animate-spin' : ''}">
+                      {minimaxClaimingId === conn.id ? 'sync' : 'card_giftcard'}
+                    </span>
+                    <span>Claim</span>
                   </button>
                 {/if}
 
@@ -1865,6 +1956,30 @@
                   Account active. No quota limits tracked.
                 </div>
               {/if}
+            {/if}
+
+            {#if conn.provider === 'minimax-code-global' || conn.provider === 'minimax-code' || conn.provider === 'minimax'}
+              <div class="mt-2.5 flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1.5 text-xs">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="material-symbols-outlined text-[16px] text-amber-500">card_giftcard</span>
+                  <span class="font-medium text-text-main truncate">Daily Check-in Reward</span>
+                </div>
+                <button
+                  type="button"
+                  disabled={isLoading || rowBusy || minimaxClaimingId === conn.id}
+                  onclick={() => claimMiniMaxSingle(conn)}
+                  class="shrink-0 flex items-center gap-1 px-2.5 py-1 rounded bg-amber-500 hover:bg-amber-400 text-black text-[11px] font-semibold transition-colors disabled:opacity-50 cursor-pointer shadow-xs"
+                  title="Claim MiniMax daily check-in points (+400 ~ +1000 pts)"
+                >
+                  {#if minimaxClaimingId === conn.id}
+                    <span class="material-symbols-outlined text-[13px] animate-spin">sync</span>
+                    <span>Claiming...</span>
+                  {:else}
+                    <span class="material-symbols-outlined text-[13px]">redeem</span>
+                    <span>Claim Points</span>
+                  {/if}
+                </button>
+              </div>
             {/if}
             {#if hiddenQuotaRows.length > 0}
               <div
