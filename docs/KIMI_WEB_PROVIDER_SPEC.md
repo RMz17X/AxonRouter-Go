@@ -225,3 +225,18 @@ Pada AxonRouter `internal/providers/registry_models.go`:
    - Menggunakan CDP `Runtime.evaluate` atau `DOMStorage` untuk membaca key `refresh_token` dari domain `https://kimi.moonshot.cn`.
 2. **Sync ke AxonRouter:**
    - Mengirim `refreshToken` dan `User-Agent` ke endpoint `http://127.0.0.1:3177/api/providers/kimi-web/connections`.
+
+---
+
+## 10. Status Implementasi (2026-11-11 — SHIPPED, staging v1.10.26)
+
+Diimplementasikan penuh di AxonRouter-Go dan sudah live di staging:
+
+- **Registry & katalog:** `internal/providers/provider_registry.go` (`kimi-web`, alias `kweb`, CategoryWebCookie, auth `token`, warna `#2563EB`, ikon `psychology`, ServiceKinds `llm` + `webSearch` — persis Bagian 8), `registry_models.go` (4 model sesuai Bagian 7), `registry_aliases.go` + `aliases.go` (`kweb` ⇄ `kimi-web`), `providers.go`. Ikon artwork: `web/public/providers/kimi-web.png` (salinan `kimi.png`).
+- **Executor:** `internal/proxy/executor/kimi_web.go` (orkestrasi + resolusi kredensial + pembangunan messages; system turn dilipat ke user turn pertama karena client web tidak punya kanal system), `kimi_web_client.go` (transport TLS impersonasi Chrome_133 + fallback plain `KIMI_WEB_PLAIN_HTTP=1`), `kimi_web_api.go` (siklus token + create/delete chat), `kimi_web_stream.go` (parser SSE Bagian 6: `cmpl` → content, delta thinking → `reasoning_content`, `all_done` → finish, `ping` diabaikan, event lain yang membawa `text` diperlakukan sebagai content). Terdaftar di `executor/init.go`.
+- **Siklus token (Bagian 2.2 & 5.1):** access token ditukar secara lazy — hanya bila cache kosong atau <30 detik menuju expiry; refresh diserialkan per akun (satu mutex) agar burst paralel tidak merotasi token berbarengan; refresh_token hasil rotasi menggantikan yang tersimpan di cache in-process. Batasan yang diketahui: cache token hidup di memori proses; baris koneksi menyimpan refresh_token terakhir yang disync Chroma, jadi bila rotasi upstream membatalkan token lama DAN proses restart, akun dipulihkan lewat re-sync Chroma.
+- **Alur chat:** `POST /api/chat` (chat sekali pakai per request, dihapus best-effort setelah turn) → `POST /api/chat/{id}/completion/stream` dengan body `{messages, refs: [], use_search, model}` — field `model` ditambahkan di samping field Bagian 5.3 agar pemetaan katalog Bagian 7 berlaku; `use_search: true` hanya untuk `kimi-search`.
+- **Validasi koneksi:** tombol test melakukan pertukaran token sungguhan ke `GET /api/auth/token/refresh` (`internal/handlers/dashboard/validate.go`, case `kimi-web`).
+- **Sync Chroma:** `POST /api/providers/kimi-web/connections` live (`internal/handlers/dashboard/kimi_web_sync.go`), body `{name, refreshToken, accessToken, tokenExpiresAt, userAgent, proxyUrl, proxyPoolId, replace}` — diterjemahkan ke jalur tulis koneksi generik yang sama dengan dashboard.
+- **Bukti:** host terverifikasi sebelum implementasi (kimi.moonshot.cn resolve; endpoint refresh menjawab 401 tanpa token); katalog + `/v1/models` memuat `kweb/kimi-latest`, `kweb/kimi-search`, `kweb/kimi-k2.5`, `kweb/kimi-web`; ikon HTTP 200; chat dengan refresh token palsu mencapai endpoint refresh asli dan kembali 401 dengan pesan auth yang didesain; test fake-upstream membuktikan refresh-sekali-lalu-reuse, folding system, dan flag search.
+- **Belum terbukti:** happy-path chat dengan akun asli (belum ada kredensial Kimi saat implementasi) — pembuktian live dilakukan terpisah.

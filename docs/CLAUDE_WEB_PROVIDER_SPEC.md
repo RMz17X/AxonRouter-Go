@@ -196,3 +196,18 @@ Pada AxonRouter `internal/providers/registry_models.go`:
 2. **Sync ke AxonRouter:**
    - Kirim `sessionKey` dan `User-Agent` ke endpoint `http://127.0.0.1:3177/api/providers/claude-web/connections`.
    - AxonRouter otomatis menerima akun tersebut ke dalam pool round-robin.
+
+---
+
+## 10. Status Implementasi (2026-11-11 — SHIPPED, staging v1.10.24–v1.10.25)
+
+Diimplementasikan penuh di AxonRouter-Go dan sudah live di staging:
+
+- **Registry & katalog:** `internal/providers/provider_registry.go` (`claude-web`, alias `cweb`, CategoryWebCookie, auth `cookie`, ikon Material `psychology`), `registry_models.go` (5 model sesuai Bagian 7), `registry_aliases.go` + `aliases.go` (`cweb` ⇄ `claude-web`), `providers.go`. Ikon artwork: `web/public/providers/claude-web.png` (salinan `claude.png`, pola yang sama dengan `deepseek-web.png`).
+- **Executor:** `internal/proxy/executor/claude_web.go` (orkestrasi + resolusi kredensial + flattening pesan), `claude_web_client.go` (transport TLS impersonasi Chrome_133 + fallback plain `CLAUDE_WEB_PLAIN_HTTP=1`), `claude_web_api.go` (discovery organisasi, create/delete conversation, payload completion), `claude_web_stream.go` (parser SSE dua bentuk: `event: completion` sesuai Bagian 6 DAN event typed gaya Anthropic `content_block_delta`/`message_delta`; delta thinking menjadi `reasoning_content`). Terdaftar di `executor/init.go`.
+- **Alur:** sessionKey dari paste/Chroma → `GET /api/organizations` (dilewati bila `organizationUuid` tersimpan) → conversation sekali pakai per request → `POST .../completion` → conversation dihapus best-effort setelah turn selesai. Payload completion memuat juga `parent_message_uuid` (null UUID pada turn pertama) — field yang selalu dikirim client resmi situs dan tidak tercantum di Bagian 5 spec ini.
+- **Koreksi atas spec (terbukti live):** base URL Bagian 3 BUKAN `https://api.claude.ai` — nama itu tidak resolve di DNS (dibuktikan dari host staging: getent kosong, curl 000). Host API yang sebenarnya adalah `https://claude.ai` dengan path `/api/...` yang sama (menjawab 403 tanpa sesi, sesuai ekspektasi). Dokumen ini sudah dikoreksi (v1.10.25).
+- **Validasi koneksi:** tombol test memanggil `GET /api/auth/current_account` (`internal/handlers/dashboard/validate.go`, case `claude-web`).
+- **Sync Chroma:** `POST /api/providers/claude-web/connections` live (`internal/handlers/dashboard/claude_web_sync.go`), body `{name, cookie|sessionKey, organizationUuid, userAgent, proxyUrl, proxyPoolId, replace}` — diterjemahkan ke jalur tulis koneksi generik yang sama dengan dashboard (satu-satunya jalur tulis).
+- **Bukti:** katalog dashboard memuat Claude Web; `/v1/models` memuat `cweb/claude-3-7-sonnet`, `cweb/claude-3-7-thinking`, `cweb/claude-3-5-sonnet`, `cweb/claude-3-5-haiku`, `cweb/claude-web`; ikon HTTP 200; chat dengan sessionKey palsu mencapai claude.ai asli dan kembali 403 dengan pesan auth yang didesain; test fake-upstream membuktikan bentuk request (endpoint, cookie, payload, thinking block) tanpa akun asli.
+- **Belum terbukti:** happy-path chat dengan sesi asli (belum ada kredensial claude.ai saat implementasi) — pembuktian live dilakukan terpisah. Katalog model mengikuti generasi 3.7/3.5 yang dinamai spec ini; penyesuaian ke model web terbaru menunggu pembuktian live tersebut.
