@@ -12,7 +12,7 @@
     X
   } from 'lucide-svelte'
   import { copyToClipboard } from '../lib/clipboard'
-  import { api, type APIKey, type Combo, type ProviderConnection } from '../api/client'
+  import { api, type APIKey, type Combo, type ProviderConnection, type ProviderNode } from '../api/client'
   import ModelPickerModal from './combos/ModelPickerModal.svelte'
   import type { PickerModel } from './combos/pickerData'
   import HermesToolCard from './cli-tools/HermesToolCard.svelte'
@@ -108,6 +108,7 @@
   let pickerField = $state<string | null>(null)
   let pickerConnections = $state<ProviderConnection[]>([])
   let pickerCombos = $state<Combo[]>([])
+  let pickerNodes = $state<ProviderNode[]>([])
   let pickerLoaded = $state(false)
   $effect(() => {
     if (pickerField && !pickerLoaded) {
@@ -120,6 +121,14 @@
         }
         try {
           pickerCombos = await api.getCombos()
+        } catch {
+          /* best-effort */
+        }
+        // Without the provider nodes the picker shows only catalog
+        // providers — the custom-node groups (apinex, dahl, trust, wz, …)
+        // that the combo editor's picker has would be missing here.
+        try {
+          pickerNodes = await api.getProviderNodes()
         } catch {
           /* best-effort */
         }
@@ -1133,6 +1142,7 @@
     target="combo"
     connections={pickerConnections}
     combos={pickerCombos}
+    providerNodes={pickerNodes}
     addedModelValues={pickerField ? [mapping[pickerField] ?? ''] : []}
     onSelect={pickModel}
     onSelectEntry={pickModelEntry}

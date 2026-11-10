@@ -276,10 +276,20 @@ export function resolveModelPickerGroups(
 
     if (!isConnectedNode && (!isCompatibleNode || registeredCustom.length === 0)) continue
 
+    // Alias targets are stored in servable form — "<prefix>/<model>" —
+    // while a node's id is "openai-compatible-chat-<slug>". Match on
+    // either, or a node's aliases never surface as pills at all.
     const nodeModels = Object.entries(extras.modelAliases || {})
-      .filter(([, fullModel]) => typeof fullModel === 'string' && fullModel.startsWith(`${node.id}/`))
+      .filter(
+        ([, fullModel]) =>
+          typeof fullModel === 'string' &&
+          (fullModel.startsWith(`${node.id}/`) || fullModel.startsWith(`${nodePrefix}/`))
+      )
       .map(([aliasName, fullModel]) => {
-        const modelId = (fullModel as string).replace(`${node.id}/`, '')
+        const fm = fullModel as string
+        const modelId = fm.startsWith(`${node.id}/`)
+          ? fm.slice(node.id.length + 1)
+          : fm.slice(nodePrefix.length + 1)
         return {
           id: modelId,
           name: aliasName,
