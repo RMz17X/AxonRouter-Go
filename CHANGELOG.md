@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.9.98] - 2026-11-10
+
+### Fixed
+
+- CLI Tools: the Claude Code composer's context-window field is now the upstream "Auto-compact" preset select (Default / 200K / 300K / 500K / 700K, values 198000 / 298000 / 498000 / 698000) instead of a free-text "Max context tokens" box nobody filled in. Claude Code does not recognize gateway model names such as `auto`, assumes a 200K window, and warns at startup ("Model \"auto\" isn't recognized · context assumed to be 200k tokens"); the chosen preset travels as `maxContextTokens` into the generated settings as `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, exactly like the upstream Claude card, and "Default" omits the parameter. Setup fields can now declare fixed `options`, rendered as a select bound to the same mapping value the text input used.
+
 ## [v1.9.97] - 2026-11-10
 
 ### Fixed
