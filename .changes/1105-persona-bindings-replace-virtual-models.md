@@ -1,5 +1,0 @@
----
-type: feat
----
-
-Persona is now a binding, not a virtual model — a deliberate divergence from the previous AxonRouter-Go persona design. A persona is a label plus one library preset plus a set of bound names (model ids and/or combo names). The serving path injects the bound preset per forward leg: a binding on the requested name (a combo) dresses the whole request, a binding on the leg's model follows that model wherever it serves — direct requests, combo legs, smart routing, fusion — and a bound persona replaces the standing keyword resolver for that leg, as the playground override does. A model or combo wears at most one persona, enforced at save time. Persona names are no longer requestable: name resolution and the /v1/models persona entries are removed, and combos may again use any name. Definitions stored in the old shape (name → one target) keep working: the target reads as the persona's single binding, and the next save rewrites the row in the new shape. The dashboard shows bindings in the persona editor and list, and as chips on the combos page (bound combos and bound member models).
