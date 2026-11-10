@@ -60,6 +60,158 @@ type smartRouteState struct {
 
 type smartRouteStateKey struct{}
 
+// smartHeavySessionChars is the conversation-text size past which a
+// session counts as a heavy working session on its own, regardless of
+// tool use: far beyond casual chat, far below a real coding session
+// (the owner's contexts run past 100K tokens).
+const smartHeavySessionChars = 48000
+
+// smartSessionInfo is the local, deterministic read of a request body:
+// what kind of session this turn belongs to. The router model only
+// ever sees the latest user turn, so on its own it cannot tell a
+// trivial standalone question from a two-word steering message ("go
+// on", "fix that") in the middle of a long, heavy task — exactly the
+// turns a coding session is made of (owner report, 2026-11-10). These
+// signals are computed from the body the gateway already holds, for
+// free, and feed both the router's state text and the heavy-session
+// guard in applySmartRouting.
+type smartSessionInfo struct {
+	Messages       int
+	TextChars      int
+	ToolsInUse     bool
+	LastTurnIsTool bool
+	Heavy          bool
+}
+
+type smartBodyViewKey struct{}
+
+// smartBodyView bundles the session analysis and the enriched router
+// state computed from one parse of the body. applySmartRouting computes
+// it once and rides it on the context so resolveSmartChoice does not
+// parse the (possibly very large) body again.
+type smartBodyView struct {
+	info  smartSessionInfo
+	state string
+}
+
+// viewSmartBody parses the body once and derives the session info and
+// the state text sent to the router model: a one-line session summary
+// followed by the most recent user turns (up to three, oldest first,
+// each truncated). The summary is what lets the router know a short
+// last turn belongs to a long tool-driven session instead of reading
+// it as a trivial standalone request.
+func viewSmartBody(body []byte) smartBodyView {
+	var raw map[string]any
+	if json.Unmarshal(body, &raw) != nil || raw == nil {
+		return smartBodyView{state: extractSmartPromptState(body)}
+	}
+	info := smartSessionInfo{}
+	if tools, ok := raw["tools"].([]any); ok && len(tools) > 0 {
+		info.ToolsInUse = true
+	}
+	msgs, _ := raw["messages"].([]any)
+	isInput := false
+	if len(msgs) == 0 {
+		if input, ok := raw["input"].([]any); ok {
+			msgs = input
+			isInput = true
+		}
+	}
+	info.Messages = len(msgs)
+	var userTurns []string
+	for i, m := range msgs {
+		msg, _ := m.(map[string]any)
+		if msg == nil {
+			continue
+		}
+		info.TextChars += len(smartTextOf(msg["content"]))
+		if smartMsgUsesTools(msg) {
+			info.ToolsInUse = true
+		}
+		if i == len(msgs)-1 && smartMsgIsToolResult(msg) {
+			info.LastTurnIsTool = true
+		}
+		isUser := false
+		if isInput {
+			t, _ := msg["type"].(string)
+			role, _ := msg["role"].(string)
+			isUser = t == "message" && (role == "" || role == "user")
+		} else {
+			role, _ := msg["role"].(string)
+			isUser = role == "user"
+		}
+		if isUser {
+			if text := strings.TrimSpace(smartTextOf(msg["content"])); text != "" {
+				userTurns = append(userTurns, text)
+			}
+		}
+	}
+	info.Heavy = info.ToolsInUse || info.TextChars > smartHeavySessionChars
+
+	header := fmt.Sprintf("[session: %d messages, ~%d chars of conversation", info.Messages, info.TextChars)
+	if info.ToolsInUse {
+		header += ", tools in use"
+	}
+	if info.LastTurnIsTool {
+		header += ", last turn is a tool result"
+	}
+	header += "]"
+
+	if len(userTurns) == 0 {
+		return smartBodyView{info: info, state: extractSmartPromptState(body)}
+	}
+	if len(userTurns) > 3 {
+		userTurns = userTurns[len(userTurns)-3:]
+	}
+	parts := make([]string, 0, len(userTurns)+1)
+	parts = append(parts, header)
+	for _, turn := range userTurns {
+		if len(turn) > 700 {
+			turn = turn[:700]
+		}
+		parts = append(parts, turn)
+	}
+	return smartBodyView{info: info, state: strings.Join(parts, "\n---\n")}
+}
+
+// smartMsgUsesTools reports whether one conversation item shows tool
+// use: an assistant tool call, a tool/function result message, a
+// Responses-API function call or its output, or a tool_result block.
+func smartMsgUsesTools(msg map[string]any) bool {
+	if _, ok := msg["tool_calls"]; ok {
+		return true
+	}
+	if role, _ := msg["role"].(string); role == "tool" || role == "function" {
+		return true
+	}
+	if t, _ := msg["type"].(string); t == "function_call" || t == "function_call_output" {
+		return true
+	}
+	return smartMsgIsToolResult(msg)
+}
+
+// smartMsgIsToolResult reports whether one conversation item is a
+// tool result: a tool/function role, a function_call_output item, or
+// content carrying a tool_result block.
+func smartMsgIsToolResult(msg map[string]any) bool {
+	if role, _ := msg["role"].(string); role == "tool" || role == "function" {
+		return true
+	}
+	if t, _ := msg["type"].(string); t == "function_call_output" {
+		return true
+	}
+	if parts, ok := msg["content"].([]any); ok {
+		for _, p := range parts {
+			if pm, ok := p.(map[string]any); ok {
+				if pt, _ := pm["type"].(string); pt == "tool_result" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // extractSmartPromptState pulls the latest user turn out of a request body
 // (messages[] or input[] or a string prompt), truncated to the classifier
 // cap. Upstream extractPromptState.
@@ -258,6 +410,58 @@ func parseSmartRouteAnswer(raw []byte) *smartChoice {
 	return out
 }
 
+// isEasyTierModel reports whether a combo member belongs to the easy
+// tier: listed in the combo's easyModels, or — when unlisted — matching
+// the same name heuristics that describe it to the router as easy. The
+// operator's hard list always wins over the heuristics.
+func isEasyTierModel(modelStr string, cfg db.ComboStrategy) bool {
+	for _, em := range cfg.EasyModels {
+		if strings.TrimSpace(em) == modelStr {
+			return true
+		}
+	}
+	for _, hm := range cfg.HardModels {
+		if strings.TrimSpace(hm) == modelStr {
+			return false
+		}
+	}
+	return describeModelForRouting(modelStr, false, false) == smartEasyCriteria
+}
+
+// demoteEasyTier applies the heavy-session guard to an ordered member
+// list: in a heavy working session (see smartSessionInfo) no easy-tier
+// member may lead the chain, because the router judged only the latest
+// turn's wording and a heavy session's steering turns read as trivial.
+// Easy members keep their relative order at the tail — they stay in
+// the chain as fallback when the stronger members are down, so the
+// guard can never make a request fail that would otherwise succeed.
+// Light sessions and lists without a mix pass through unchanged.
+func demoteEasyTier(models []string, cfg db.ComboStrategy, heavy bool) []string {
+	if !heavy || len(models) <= 1 {
+		return models
+	}
+	nonEasy := make([]string, 0, len(models))
+	easy := make([]string, 0, len(models))
+	changed := false
+	seenEasy := false
+	for _, m := range models {
+		if isEasyTierModel(m, cfg) {
+			easy = append(easy, m)
+			seenEasy = true
+		} else {
+			if seenEasy {
+				changed = true
+			}
+			nonEasy = append(nonEasy, m)
+		}
+	}
+	if !changed || len(nonEasy) == 0 {
+		return models
+	}
+	log.Info("combo", "smart-router heavy session: easy tier demoted", "easy", easy, "leading", nonEasy[0])
+	return append(nonEasy, easy...)
+}
+
 // orderModelsBySmartChoice puts the chosen model first and orders the rest by
 // their probabilities descending; models without a probability keep their
 // relative order at the end. A choice outside the combo changes nothing.
@@ -437,7 +641,11 @@ func (h *ChatHandler) resolveSmartChoice(ctx context.Context, body []byte, model
 	if target == "" {
 		target = smartRouterDefaultModel
 	}
-	state := extractSmartPromptState(body)
+	view, ok := ctx.Value(smartBodyViewKey{}).(smartBodyView)
+	if !ok {
+		view = viewSmartBody(body)
+	}
+	state := view.state
 	if state == "" {
 		return nil
 	}
@@ -572,6 +780,15 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 	threshold := smartSwitchThreshold(cfg)
 	sessionID := handlerutil.GetSessionID(ctx)
 
+	// One parse of the body feeds both the router's enriched state and
+	// the heavy-session guard; the view rides the context so the
+	// evaluation calls below reuse it instead of parsing again.
+	view := viewSmartBody(body)
+	ctx = context.WithValue(ctx, smartBodyViewKey{}, view)
+	guard := func(ordered []string) []string {
+		return demoteEasyTier(ordered, cfg, view.info.Heavy)
+	}
+
 	var activeModel string
 	if !isPerTurn && sessionID != "" {
 		activeModel = h.getSmartStickyModel(comboName, sessionID, models)
@@ -590,8 +807,10 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 
 	if activeModel != "" && isStrict {
 		// Strict Lock: reuse the pinned model without an evaluation.
+		// The heavy-session guard still applies: a pin earned while the
+		// session was light must not lead once the session turned heavy.
 		log.Info("combo", "smart-router [strict] locked session", "session", sessionID, "model", activeModel)
-		return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), pinFirst(activeModel)
+		return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), guard(pinFirst(activeModel))
 	}
 
 	if activeModel != "" {
@@ -604,19 +823,19 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 			if choice.Choice != activeModel && containsString(models, choice.Choice) && conf >= threshold {
 				log.Info("combo", "smart-router [smart-switch] task changed", "from", activeModel, "to", choice.Choice, "confidence", conf, "threshold", threshold)
 				h.setSmartStickyModel(comboName, sessionID, choice.Choice)
-				return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), orderModelsBySmartChoice(models, choice)
+				return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), guard(orderModelsBySmartChoice(models, choice))
 			}
 		}
 		// Below the floor, on no decision, or on error: keep the warm cache.
 		log.Info("combo", "smart-router [smart-switch] retained model", "model", activeModel)
-		return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), pinFirst(activeModel)
+		return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: activeModel}), guard(pinFirst(activeModel))
 	}
 
 	// Turn 1 or per-turn: evaluate and order by the choice.
 	choice := h.resolveSmartChoice(ctx, body, models, cfg)
 	if choice == nil || !containsString(models, choice.Choice) {
 		log.Info("combo", "smart-router no decision, fallback to order", "combo", comboName)
-		return ctx, models
+		return ctx, guard(models)
 	}
 	conf := -1.0
 	if choice.Confidence != nil {
@@ -624,13 +843,13 @@ func (h *ChatHandler) applySmartRouting(ctx context.Context, body []byte, comboM
 	}
 	if threshold > 0 && conf >= 0 && conf < threshold {
 		log.Info("combo", "smart-router confidence below threshold", "confidence", conf, "threshold", threshold)
-		return ctx, models
+		return ctx, guard(models)
 	}
 	log.Info("combo", "smart-router selected", "model", choice.Choice, "confidence", conf)
 	if !isPerTurn && sessionID != "" {
 		h.setSmartStickyModel(comboName, sessionID, choice.Choice)
 	}
-	return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), orderModelsBySmartChoice(models, choice)
+	return withSmartRouteState(ctx, &smartRouteState{comboName: comboName, sessionID: sessionID, activeModel: choice.Choice}), guard(orderModelsBySmartChoice(models, choice))
 }
 
 // withSmartRouteState attaches the smart routing state to the context.
