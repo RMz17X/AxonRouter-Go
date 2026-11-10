@@ -21,7 +21,7 @@ Dokumen ini mendefinisikan arsitektur dan panduan implementasi untuk menambahkan
 │  - Provider: claude-web (CategoryWebCookie)            │
 │  - Connection Pool (Multi-Akun Claude, failover, quota)│
 │  - Protocol Translator (OpenAI / Anthropic -> Web SSE) │
-│  - Upstream Engine: https://api.claude.ai              │
+│  - Upstream Engine: https://claude.ai              │
 │  - Output: /v1/chat/completions & /v1/messages         │
 └────────────────────────────────────────────────────────┘
 ```
@@ -54,7 +54,7 @@ Setiap koneksi `claude-web` di AxonRouter disimpan dalam tabel PostgreSQL `provi
 
 ## 3. Upstream Endpoints `claude.ai`
 
-Base URL: `https://api.claude.ai`
+Base URL: `https://claude.ai`
 
 | Aksi | Method | Endpoint | Keterangan |
 | :--- | :--- | :--- | :--- |
@@ -68,7 +68,7 @@ Base URL: `https://api.claude.ai`
 
 ## 4. Header Wajib Upstream
 
-Upstream `api.claude.ai` membutuhkan header browser yang konsisten:
+Upstream `claude.ai` membutuhkan header browser yang konsisten:
 ```http
 Accept: text/event-stream, text/plain, */*
 Accept-Language: en-US,en;q=0.9

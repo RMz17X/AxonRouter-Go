@@ -872,7 +872,7 @@ func validateGrokWeb(ctx context.Context, apiKey string) validateOutcome {
 
 // --- claude-web: sessionKey probe (spec case "claude-web") ---
 
-const claudeWebProbeURL = "https://api.claude.ai/api/auth/current_account"
+const claudeWebProbeURL = "https://claude.ai/api/auth/current_account"
 
 // claudeWebSessionKeyFromPaste pulls the sessionKey value out of what
 // was pasted: a bare key, a sessionKey= pair, or a full cookie header.

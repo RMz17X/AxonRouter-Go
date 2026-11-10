@@ -1271,7 +1271,7 @@ var KnownProviders = map[string]ProviderConfig{
 	// The executor performs the real auth (Cookie header); this row is
 	// the nominal passthrough shape every web-cookie sibling carries.
 	"claude-web": {
-		BaseURL:    "https://api.claude.ai",
+		BaseURL:    "https://claude.ai",
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},

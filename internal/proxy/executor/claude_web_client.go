@@ -28,7 +28,7 @@ var claudeWebTLSProfile = profiles.Chrome_133
 
 // claudeWebBaseURL is the upstream every claude.ai API call goes to;
 // var so the test suite can aim it at a fake site.
-var claudeWebBaseURL = "https://api.claude.ai"
+var claudeWebBaseURL = "https://claude.ai"
 
 // claudeWebOrigin is the web app origin the API expects in Origin/Referer.
 const claudeWebOrigin = "https://claude.ai"
