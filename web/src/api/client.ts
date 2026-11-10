@@ -1101,12 +1101,13 @@ export interface JailbreakKeyword {
   mode?: string
 }
 
-/** One Persona virtual model: a minted name routing to a target — a
- * model id or a combo name — and always injecting the named preset. */
+/** One Persona: a label, the preset it injects, and the model ids /
+ * combo names that preset is bound to. A bound name wears the persona
+ * wherever it serves; a name wears at most one persona. */
 export interface PersonaDef {
   name: string
-  target: string
   presetId: string
+  models: string[]
 }
 
 /** One selectable Playground entry: a provider model on an active

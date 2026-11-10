@@ -34,6 +34,8 @@
 
   interface Props {
     combo: Combo
+    /** Persona bindings: bound model/combo name -> persona name. */
+    personaByBound?: Record<string, string>
     strategyInfo?: ComboStrategyInfo
     globalStrategy?: string | null
     copiedId?: string | null
@@ -61,6 +63,7 @@
 
   let {
     combo,
+    personaByBound = {},
     strategyInfo = {},
     globalStrategy = null,
     copiedId = null,
@@ -149,6 +152,15 @@
             {ruleCount} smart rule{ruleCount === 1 ? '' : 's'}
           </span>
         {/if}
+        {#if personaByBound[combo.name]}
+          <span
+            class="mt-1 inline-flex items-center gap-1 rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-medium text-brand-500 border border-brand-500/30"
+            title="Persona {personaByBound[combo.name]} is bound to this combo — its preset is injected on every request"
+          >
+            <span class="material-symbols-outlined text-[11px]">person</span>
+            Persona: {personaByBound[combo.name]}
+          </span>
+        {/if}
         <div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
           {#if modelsList.length === 0}
             <span class="text-xs text-text-muted italic">No models</span>
@@ -193,6 +205,12 @@
                     class="rounded bg-purple-500/10 px-1 py-0.2 font-mono text-[9px] font-semibold text-purple-400 border border-purple-500/20"
                     title="Configured in Hard pool"
                   >hard</span>
+                {/if}
+                {#if personaByBound[model]}
+                  <span
+                    class="rounded bg-brand-500/10 px-1 py-0.2 font-sans text-[9px] font-semibold text-brand-500 border border-brand-500/20"
+                    title="Persona {personaByBound[model]} is bound to this model — its preset is injected whenever this model serves"
+                  >persona: {personaByBound[model]}</span>
                 {/if}
               </code>
             {/each}

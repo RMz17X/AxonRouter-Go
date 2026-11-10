@@ -34,7 +34,7 @@
     return personas.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
-        p.target.toLowerCase().includes(q) ||
+        (p.models ?? []).some((m) => m.toLowerCase().includes(q)) ||
         presetLabel(p.presetId).toLowerCase().includes(q)
     )
   })
@@ -59,35 +59,33 @@
 
 <Card padding="md" class="overflow-hidden">
   <p class="text-xs text-text-subtle">
-    A persona model is a name you mint: clients call it like any model, the gateway runs the target
-    underneath, and the persona's preset is always injected. The name must differ from every real
-    model, combo, and alias — that is what keeps the prompt attached to exactly the traffic that
-    asked for it.
+    A persona binds one preset to a set of models and combos. Whenever a bound model serves —
+    directly, or as the leg a combo forwards to — or a bound combo is requested, the preset is
+    injected automatically. A model or combo wears at most one persona.
   </p>
 
   {#if personas.length === 0}
     <div class="flex flex-col items-center gap-2 px-4 py-10 text-center">
       <span class="material-symbols-outlined text-[22px] text-text-subtle">person_add</span>
-      <p class="text-sm font-medium text-text-main">No persona models yet</p>
+      <p class="text-sm font-medium text-text-main">No personas yet</p>
       <p class="max-w-md text-xs text-text-muted">
-        Create one to give a prompt its own model name — pick the model or combo it runs on and the
-        preset it injects.
+        Create one to attach a preset to the models and combos that should always wear it.
       </p>
-      <Button variant="primary" size="sm" onclick={onAdd} icon="add">New persona model</Button>
+      <Button variant="primary" size="sm" onclick={onAdd} icon="add">New persona</Button>
     </div>
   {:else}
     <div class="flex flex-wrap items-center gap-2 pt-4">
       <input
         type="text"
         bind:value={search}
-        placeholder="Filter persona models…"
-        aria-label="Filter persona models"
+        placeholder="Filter personas…"
+        aria-label="Filter personas"
         class="min-w-[240px] flex-1 rounded-brand border border-border-subtle bg-surface-2 px-3 py-1.5 text-xs text-text-main placeholder:text-text-subtle"
       />
     </div>
 
     {#if filtered.length === 0}
-      <p class="pt-3 text-xs text-text-subtle">No persona model matches "{search}".</p>
+      <p class="pt-3 text-xs text-text-subtle">No persona matches "{search}".</p>
     {:else}
       <div class="divide-y divide-border-subtle">
         {#each filtered as persona (persona.name)}
@@ -98,15 +96,21 @@
                 <span class="rounded-full border border-brand-500/30 bg-brand-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-500">PERSONA</span>
               </div>
               <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-text-muted">
-                <span class="text-text-subtle">runs on</span>
-                {#if comboNames.has(persona.target)}
-                  <span class="shrink-0 rounded-full border border-brand-500/30 bg-brand-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-500">COMBO</span>
-                {:else}
-                  <span class="shrink-0 rounded-full border border-border-subtle bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">MODEL</span>
-                {/if}
-                <span class="truncate font-code" title={persona.target}>{persona.target}</span>
-                <span class="text-text-subtle">· preset</span>
+                <span class="text-text-subtle">preset</span>
                 <span class="truncate">{presetLabel(persona.presetId)}</span>
+                <span class="text-text-subtle">· bound to</span>
+                {#each persona.models ?? [] as m (m)}
+                  <span class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border-subtle bg-surface-2 py-0.5 pr-2 pl-1.5">
+                    {#if comboNames.has(m)}
+                      <span class="shrink-0 rounded-full border border-brand-500/30 bg-brand-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-500">COMBO</span>
+                    {:else}
+                      <span class="shrink-0 rounded-full border border-border-subtle bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">MODEL</span>
+                    {/if}
+                    <span class="truncate font-code text-[11px] text-text-main" title={m}>{m}</span>
+                  </span>
+                {:else}
+                  <span class="text-text-subtle">nothing</span>
+                {/each}
               </div>
             </div>
             <div class="flex items-center gap-2">

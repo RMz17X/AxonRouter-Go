@@ -12,17 +12,17 @@ import (
 	"axonrouter/proxy/internal/handlerutil"
 )
 
-// Persona virtual models: named prompts on names of their own. A persona
-// mints a NEW model name that routes to one target — a model id or a
-// combo name — and always injects one preset from the library. These
-// handlers own the CRUD plus the namespace discipline: the name must be
-// unique across the whole model catalog (real models and combos), the
-// model aliases, and the other personas, and the target may not be a
-// persona, so resolution stays a single hop.
+// Personas: a label, one preset from the library, and the set of model
+// ids / combo names that preset is bound to. A bound name wears its
+// persona wherever it serves; a name wears at most one persona. These
+// handlers own the CRUD plus that discipline: the preset must exist,
+// every bound name must be a listed model or combo, and no bound name
+// may already belong to another persona. The persona's own name is
+// only a label — it is not requestable and shares no namespace with
+// models, combos, or aliases.
 
-// validPersonaName mirrors the combo-name rule minus "/": a persona name
-// is resolved on the bare-name path, where a slash would be read as a
-// provider/model pair and the persona could never be reached.
+// validPersonaName keeps the label URL- and shell-friendly; unlike the
+// retired virtual-model name it never reaches the serving path.
 var validPersonaName = regexp.MustCompile(`^[a-zA-Z0-9_.\-]+$`)
 
 // HandleListPersonas returns every persona definition, ordered by name.
@@ -39,35 +39,24 @@ func (h *DashboardHandler) HandleListPersonas(w http.ResponseWriter, r *http.Req
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"personas": personas})
 }
 
-// personaNamespace snapshots the three namespaces a persona name or
-// target is checked against: every id the catalog publishes (real
-// models, combos, and the personas themselves) and the persona names.
-func (h *DashboardHandler) personaNamespace(r *http.Request) (catalog map[string]bool, personaNames map[string]bool, err error) {
-	catalog = map[string]bool{}
+// personaCatalog snapshots every id the catalog publishes — real
+// models and combos — the set a binding may point at.
+func (h *DashboardHandler) personaCatalog(r *http.Request) (map[string]bool, error) {
+	catalog := map[string]bool{}
 	chatH := chat.NewChatHandler(h.Repo, nil)
 	for _, m := range chatH.BuildModelsListResult(r.Context(), chat.ListModeCatalog).Models {
 		if m.ID != "" {
 			catalog[m.ID] = true
 		}
 	}
-	personaNames = map[string]bool{}
-	personas, err := h.Repo.ListPersonas()
-	if err != nil {
-		return nil, nil, err
-	}
-	for _, p := range personas {
-		if p != nil && p.Name != "" {
-			personaNames[p.Name] = true
-		}
-	}
-	return catalog, personaNames, nil
+	return catalog, nil
 }
 
 // HandleSavePersona creates or replaces one persona definition.
-// PUT /api/jailbreak/personas with {"name","target","presetId"}; the
+// PUT /api/jailbreak/personas with {"name","presetId","models"}; the
 // name is the identity, so a rename is a delete plus a create.
 func (h *DashboardHandler) HandleSavePersona(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, 4*1024))
+	body, err := io.ReadAll(io.LimitReader(r.Body, 16*1024))
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
@@ -78,44 +67,62 @@ func (h *DashboardHandler) HandleSavePersona(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	req.Name = strings.TrimSpace(req.Name)
-	req.Target = strings.TrimSpace(req.Target)
 	req.PresetID = strings.TrimSpace(req.PresetID)
 	if req.Name == "" || len(req.Name) > 300 || !validPersonaName.MatchString(req.Name) {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "Persona name can only contain letters, numbers, -, _ and .")
-		return
-	}
-	if req.Target == "" || len(req.Target) > 300 {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "Persona needs a target model or combo")
 		return
 	}
 	if req.PresetID == "" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "Persona needs a preset")
 		return
 	}
+	// Normalize the binding set: trimmed, non-empty, de-duplicated.
+	bound := make([]string, 0, len(req.Models))
+	seenBound := map[string]bool{}
+	for _, m := range req.Models {
+		m = strings.TrimSpace(m)
+		if m == "" || seenBound[m] {
+			continue
+		}
+		seenBound[m] = true
+		bound = append(bound, m)
+	}
+	if len(bound) == 0 {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest, "Persona needs at least one bound model or combo")
+		return
+	}
+	req.Models = bound
+	req.Target = ""
 
-	catalog, personaNames, err := h.personaNamespace(r)
+	catalog, err := h.personaCatalog(r)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// The name must be free, or already this persona's own (an update).
-	if catalog[req.Name] && !personaNames[req.Name] {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "That name is already used by a model or combo")
+	for _, m := range bound {
+		if len(m) > 300 || !catalog[m] {
+			handlerutil.WriteJSONError(w, http.StatusBadRequest, "Bound name is not a known model or combo: "+m)
+			return
+		}
+	}
+	// One persona per bound name: a name another persona already wears
+	// must be unbound there first. This persona's own current bindings
+	// are fine — a save replaces its whole definition.
+	personas, err := h.Repo.ListPersonas()
+	if err != nil {
+		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if alias, err := h.Repo.GetModelAlias(req.Name); err == nil && alias != "" {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "That name is already used by a model alias")
-		return
-	}
-	// The target must be a listed model or combo, never another persona
-	// (resolution is one hop by design) and never the persona itself.
-	if personaNames[req.Target] || req.Target == req.Name {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "A persona cannot target another persona")
-		return
-	}
-	if !catalog[req.Target] {
-		handlerutil.WriteJSONError(w, http.StatusBadRequest, "Target is not a known model or combo")
-		return
+	for _, p := range personas {
+		if p == nil || p.Name == req.Name {
+			continue
+		}
+		for _, other := range p.BoundNames() {
+			if seenBound[other] {
+				handlerutil.WriteJSONError(w, http.StatusBadRequest, other+" is already bound to persona "+p.Name)
+				return
+			}
+		}
 	}
 	presets, err := h.Repo.ListJailbreakPresets()
 	if err != nil {

@@ -51,13 +51,16 @@ func (h *ChatHandler) applyJailbreak(ctx context.Context, body map[string]any, r
 		}
 		return h.applyJailbreakDoc(ctx, body, ov.doc, requestedModel)
 	}
-	// A Persona virtual model carries exactly one preset, chosen when the
-	// persona was minted; it replaces the standing resolver outright, the
-	// same way the playground override does, so the two never stack and
-	// the persona's target legs never re-arm a keyword preset underneath
-	// it. A persona whose preset was deleted injects nothing.
+	// A Persona binding arms exactly one preset for the name it is bound
+	// to, and it replaces the standing resolver outright, the same way
+	// the playground override does, so the two never stack and a bound
+	// leg never re-arms a keyword preset underneath it. The requested
+	// name (a combo, for a combo request) is consulted first, then the
+	// leg actually being forwarded — so a bound model wears its persona
+	// wherever it serves, and a bound combo dresses every leg alike. A
+	// persona whose preset was deleted injects nothing.
 	if h.Repo != nil {
-		if persona, err := h.Repo.GetPersona(requestedModel); err == nil && persona != nil {
+		if persona := h.boundPersona(requestedModel, legIDs); persona != nil {
 			if persona.PresetID == "" {
 				return ctx
 			}
@@ -73,6 +76,22 @@ func (h *ChatHandler) applyJailbreak(ctx context.Context, body map[string]any, r
 		return ctx
 	}
 	return h.applyJailbreakDoc(ctx, body, doc, requestedModel)
+}
+
+// boundPersona resolves the persona bound to this forward: the
+// requested name first (a combo binding dresses the whole request),
+// then each leg id (a model binding follows the model wherever it
+// serves). Nil when nothing is bound to either.
+func (h *ChatHandler) boundPersona(requestedModel string, legIDs []string) *db.PersonaDef {
+	if persona, err := h.Repo.GetPersonaForBinding(requestedModel); err == nil && persona != nil {
+		return persona
+	}
+	for _, id := range legIDs {
+		if persona, err := h.Repo.GetPersonaForBinding(id); err == nil && persona != nil {
+			return persona
+		}
+	}
+	return nil
 }
 
 // applyJailbreakDoc injects one resolved document into the outbound body and

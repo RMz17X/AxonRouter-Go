@@ -6,9 +6,9 @@
 
   interface Props {
     presets: JailbreakDoc[]
-    /** When set, the modal edits this persona instead of minting a new one. */
+    /** When set, the modal edits this persona instead of creating a new one. */
     editTarget: PersonaDef | null
-    /** Known combo names, for the MODEL/COMBO chip on the picked target. */
+    /** Known combo names, for the MODEL/COMBO chip on each bound name. */
     comboNames: Set<string>
     /** The page's combo list, shared so the picker does not refetch it. */
     combos: Combo[]
@@ -28,27 +28,27 @@
   // svelte-ignore state_referenced_locally
   let name = $state(editTarget?.name ?? '')
   // svelte-ignore state_referenced_locally
-  let target = $state(editTarget?.target ?? '')
+  let bound = $state<string[]>(editTarget?.models ? [...editTarget.models] : [])
   // svelte-ignore state_referenced_locally
   let presetId = $state(editTarget?.presetId ?? '')
   let error = $state('')
   let saving = $state(false)
 
   const editing = $derived(editTarget !== null)
-  const targetIsCombo = $derived(target !== '' && comboNames.has(target))
 
-  // Target picker: the Combos flow's picker, reused as-is — target
+  // Binding picker: the Combos flow's picker, reused as-is — target
   // 'combo' keeps combos pickable as entries alongside per-connection
-  // models. The page's combo list is shared via props; connections (and
-  // combos, only if the page's fetch came back empty) load lazily on
-  // first open.
-  let showTargetPicker = $state(false)
+  // models. Picking toggles a name in the binding set; the picker stays
+  // open so several names can be bound in one pass. The page's combo
+  // list is shared via props; connections (and combos, only if the
+  // page's fetch came back empty) load lazily on first open.
+  let showPicker = $state(false)
   let pickerConnections = $state<ProviderConnection[]>([])
   let fetchedCombos = $state<Combo[]>([])
   let pickerCombos = $derived(combos.length > 0 ? combos : fetchedCombos)
   let pickerLoaded = $state(false)
   $effect(() => {
-    if (showTargetPicker && !pickerLoaded) {
+    if (showPicker && !pickerLoaded) {
       pickerLoaded = true
       void (async () => {
         try {
@@ -62,9 +62,11 @@
       })()
     }
   })
-  function pickTarget(value: string) {
-    target = value
-    showTargetPicker = false
+  function addBound(value: string) {
+    if (!bound.includes(value)) bound = [...bound, value]
+  }
+  function removeBound(value: string) {
+    bound = bound.filter((m) => m !== value)
   }
 
   // Preset combobox: a keyword search over name and id, so a large
@@ -87,11 +89,11 @@
   async function save() {
     error = ''
     if (!name.trim()) {
-      error = 'Give the persona model a name.'
+      error = 'Give the persona a name.'
       return
     }
-    if (!target) {
-      error = 'Pick the model or combo this persona runs on.'
+    if (bound.length === 0) {
+      error = 'Bind at least one model or combo.'
       return
     }
     if (!presetId) {
@@ -100,7 +102,7 @@
     }
     saving = true
     try {
-      await api.savePersona({ name: name.trim(), target, presetId })
+      await api.savePersona({ name: name.trim(), presetId, models: [...bound] })
       await onSaved()
       onClose()
     } catch (e) {
@@ -111,16 +113,17 @@
   }
 </script>
 
-<Modal isOpen={true} {onClose} title={editing ? 'Edit persona model' : 'New persona model'} size="xl" icon={editing ? 'edit' : 'person_add'}>
+<Modal isOpen={true} {onClose} title={editing ? 'Edit persona' : 'New persona'} size="xl" icon={editing ? 'edit' : 'person_add'}>
   <div class="space-y-4">
     <p class="text-xs text-text-subtle">
-      A persona model is a <span class="text-text-main">new model name of your own</span> that runs the
-      target you pick, with the chosen preset always injected. Clients call the persona name exactly
-      like a model; the name must differ from every real model, combo, and alias.
+      A persona binds <span class="text-text-main">one preset</span> to the models and combos you pick.
+      Whenever a bound model serves — directly, or as a combo leg — or a bound combo is requested, that
+      preset is injected automatically. Binding a combo dresses all of its legs; a model or combo wears
+      at most one persona.
     </p>
 
     <label class="block space-y-1.5">
-      <span class="text-xs text-text-muted">Persona model name</span>
+      <span class="text-xs text-text-muted">Persona name</span>
       <input
         type="text"
         bind:value={name}
@@ -131,27 +134,36 @@
           : ''}"
       />
       {#if editing}
-        <span class="block text-[11px] text-text-subtle">The name is the model's identity, so it cannot change here. Delete and re-create to rename.</span>
+        <span class="block text-[11px] text-text-subtle">The name is the persona's identity, so it cannot change here. Delete and re-create to rename.</span>
       {/if}
     </label>
 
     <div class="space-y-1.5">
-      <span class="text-xs text-text-muted">Runs on</span>
-      <div class="flex items-center gap-2">
-        <div class="flex min-w-0 flex-1 items-center gap-2 rounded-brand border border-border-subtle bg-surface-2 px-3 py-2">
-          {#if target}
-            {#if targetIsCombo}
+      <span class="text-xs text-text-muted">Bound to</span>
+      <div class="flex flex-wrap items-center gap-1.5">
+        {#each bound as m (m)}
+          <span class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border-subtle bg-surface-2 py-0.5 pr-1.5 pl-2">
+            {#if comboNames.has(m)}
               <span class="shrink-0 rounded-full border border-brand-500/30 bg-brand-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-500">COMBO</span>
             {:else}
               <span class="shrink-0 rounded-full border border-border-subtle bg-surface-3 px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">MODEL</span>
             {/if}
-            <span class="truncate font-code text-sm text-text-main" title={target}>{target}</span>
-          {:else}
-            <span class="text-sm text-text-subtle">No model or combo picked yet</span>
-          {/if}
-        </div>
-        <Button variant="secondary" size="md" onclick={() => (showTargetPicker = true)}>Pick model…</Button>
+            <span class="truncate font-code text-xs text-text-main" title={m}>{m}</span>
+            <button
+              type="button"
+              onclick={() => removeBound(m)}
+              aria-label="Unbind {m}"
+              class="shrink-0 cursor-pointer text-text-subtle transition-colors hover:text-text-main"
+            >
+              <span class="material-symbols-outlined text-[14px]">close</span>
+            </button>
+          </span>
+        {/each}
+        {#if bound.length === 0}
+          <span class="text-sm text-text-subtle">Nothing bound yet</span>
+        {/if}
       </div>
+      <Button variant="secondary" size="md" onclick={() => (showPicker = true)}>Add model or combo…</Button>
     </div>
 
     <label class="block space-y-1.5">
@@ -200,19 +212,21 @@
 
     <div class="flex justify-end gap-2 pt-1">
       <Button variant="ghost" size="md" onclick={onClose}>Cancel</Button>
-      <Button variant="primary" size="md" onclick={save} disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create persona model'}</Button>
+      <Button variant="primary" size="md" onclick={save} disabled={saving}>{saving ? 'Saving…' : editing ? 'Save changes' : 'Create persona'}</Button>
     </div>
   </div>
 
   <!-- The Combos flow's picker, reused as-is: target 'combo' keeps combos
-       pickable as entries alongside the per-connection models. -->
+       pickable as entries alongside the per-connection models; picks
+       toggle the binding set. -->
   <ModelPickerModal
-    isOpen={showTargetPicker}
+    isOpen={showPicker}
     target="combo"
     connections={pickerConnections}
     combos={pickerCombos}
-    addedModelValues={target ? [target] : []}
-    onSelect={pickTarget}
-    onClose={() => (showTargetPicker = false)}
+    addedModelValues={bound}
+    onSelect={addBound}
+    onDeselect={removeBound}
+    onClose={() => (showPicker = false)}
   />
 </Modal>

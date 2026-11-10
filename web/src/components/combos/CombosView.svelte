@@ -210,6 +210,23 @@
   }
 
   $effect(() => { loadSettings() })
+
+  // Persona bindings (bound model/combo name -> persona name), shown as
+  // chips on the combo card and its member rows. Best-effort: a failed
+  // read just leaves the chips off.
+  let personaByBound = $state<Record<string, string>>({})
+  $effect(() => {
+    void (async () => {
+      try {
+        const res = await api.listPersonas()
+        const map: Record<string, string> = {}
+        for (const p of res.personas ?? []) {
+          for (const m of p.models ?? []) map[m] = p.name
+        }
+        personaByBound = map
+      } catch {}
+    })()
+  })
   // Reset the create form once per open. Unguarded, this looped forever: the
   // effect bumps `modalNameResetKey`, which the `{#key}` block below reads, that
   // block re-creates CreateComboModal, and that re-queues the effect. Svelte
@@ -758,6 +775,7 @@
         {#each filteredCombos as combo (combo.id)}
           <ComboCard
             {combo}
+            {personaByBound}
             strategyInfo={comboStrategies[combo.name]}
             globalStrategy={globalComboStrategy}
             {copiedId}
