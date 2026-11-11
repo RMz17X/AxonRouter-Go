@@ -189,6 +189,7 @@ func TranslateOpenAIToGeminiWithSession(openaiBody []byte, sessionID string) ([]
 		Stream              bool           `json:"stream,omitempty"`
 		Tools               jsontext.Value `json:"tools,omitempty"`
 		ReasoningEffort     string         `json:"reasoning_effort,omitempty"`
+		ResponseFormat      jsontext.Value `json:"response_format,omitempty"`
 		Thinking            *struct {
 			Type         string `json:"type"`
 			BudgetTokens int    `json:"budget_tokens"`
@@ -392,6 +393,29 @@ func TranslateOpenAIToGeminiWithSession(openaiBody []byte, sessionID string) ([]
 			req.Contents = append(req.Contents, GeminiContent{Role: "user", Parts: parts})
 		}
 	}
+	genConfig := make(map[string]any)
+	if len(oreq.ResponseFormat) > 0 {
+		var rf struct {
+			Type       string         `json:"type"`
+			JSONSchema jsontext.Value `json:"json_schema,omitempty"`
+		}
+		if err := json.Unmarshal(oreq.ResponseFormat, &rf); err == nil {
+			switch rf.Type {
+			case "json_object":
+				genConfig["responseMimeType"] = "application/json"
+				systemParts = append(systemParts, GeminiPart{Text: "You must respond with valid JSON only. No other text, no markdown code fences."})
+			case "json_schema":
+				genConfig["responseMimeType"] = "application/json"
+				var s struct {
+					Schema any `json:"schema"`
+				}
+				if len(rf.JSONSchema) > 0 && json.Unmarshal(rf.JSONSchema, &s) == nil && s.Schema != nil {
+					genConfig["responseSchema"] = s.Schema
+				}
+				systemParts = append(systemParts, GeminiPart{Text: "You must respond with valid JSON matching the schema only. No other text, no markdown code fences."})
+			}
+		}
+	}
 	if len(systemParts) > 0 {
 		req.SystemInstruction = &GeminiContent{
 			Role:  "user",
@@ -430,7 +454,6 @@ func TranslateOpenAIToGeminiWithSession(openaiBody []byte, sessionID string) ([]
 	}
 
 	// Generation config
-	genConfig := make(map[string]any)
 	isGemini4 := isGemini4Model(oreq.Model)
 	if !isGemini4 {
 		if oreq.Temperature != nil {

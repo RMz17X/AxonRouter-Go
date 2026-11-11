@@ -729,3 +729,69 @@ func TestTranslateOpenAIToGemini_ToolCallIDDropsThoughtSigSuffix(t *testing.T) {
 		}
 	}
 }
+
+func TestTranslateOpenAIToGemini_ResponseFormat(t *testing.T) {
+	t.Run("json_object", func(t *testing.T) {
+		body := []byte(`{
+			"model": "gemini-3.8-flash-low",
+			"messages": [{"role": "user", "content": "hi"}],
+			"response_format": {"type": "json_object"}
+		}`)
+		geminiBytes, err := TranslateOpenAIToGemini(body)
+		if err != nil {
+			t.Fatalf("TranslateOpenAIToGemini: %v", err)
+		}
+		var req GeminiRequest
+		if err := json.Unmarshal(geminiBytes, &req); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		var gc map[string]any
+		if err := json.Unmarshal(req.GenerationConfig, &gc); err != nil {
+			t.Fatalf("unmarshal gc: %v", err)
+		}
+		if gc["responseMimeType"] != "application/json" {
+			t.Errorf("expected responseMimeType application/json, got %v", gc["responseMimeType"])
+		}
+		if req.SystemInstruction == nil || len(req.SystemInstruction.Parts) == 0 || !strings.Contains(req.SystemInstruction.Parts[0].Text, "JSON") {
+			t.Errorf("expected SystemInstruction to contain JSON guidance, got %+v", req.SystemInstruction)
+		}
+	})
+
+	t.Run("json_schema", func(t *testing.T) {
+		body := []byte(`{
+			"model": "gemini-3.8-flash-low",
+			"messages": [{"role": "user", "content": "hi"}],
+			"response_format": {
+				"type": "json_schema",
+				"json_schema": {
+					"name": "user_info",
+					"schema": {
+						"type": "object",
+						"properties": {"name": {"type": "string"}},
+						"required": ["name"]
+					}
+				}
+			}
+		}`)
+		geminiBytes, err := TranslateOpenAIToGemini(body)
+		if err != nil {
+			t.Fatalf("TranslateOpenAIToGemini: %v", err)
+		}
+		var req GeminiRequest
+		if err := json.Unmarshal(geminiBytes, &req); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		var gc map[string]any
+		if err := json.Unmarshal(req.GenerationConfig, &gc); err != nil {
+			t.Fatalf("unmarshal gc: %v", err)
+		}
+		if gc["responseMimeType"] != "application/json" {
+			t.Errorf("expected responseMimeType application/json, got %v", gc["responseMimeType"])
+		}
+		schema, ok := gc["responseSchema"].(map[string]any)
+		if !ok || schema["type"] != "object" {
+			t.Errorf("expected responseSchema with type object, got %v", gc["responseSchema"])
+		}
+	})
+}
+
