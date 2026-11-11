@@ -218,6 +218,15 @@ var ErrorRules = []ErrorRule{
 	{Text: "refresh_token_reused", CooldownMs: cooldownBannedAccount},
 	{Text: "account has been deleted", CooldownMs: cooldownBannedAccount},
 	{Text: "account has been banned", CooldownMs: cooldownBannedAccount},
+	// A suspension is the same verdict as a ban — the account itself is
+	// dead upstream — yet these two phrases were missing from this family:
+	// a 403 "Account suspended or missing" fell through to the generic 403
+	// status rule (cooldownLong, 2 minutes) and the account was re-dialled
+	// on every lapse (one apinex account took 54 attempts in 3 hours).
+	// ExcludeStatus 429 mirrors the ToS family: a throttle quoting the
+	// phrase is a throttle, not a suspension.
+	{Text: "account suspended", CooldownMs: cooldownBannedAccount, ExcludeStatus: http.StatusTooManyRequests},
+	{Text: "account disabled", CooldownMs: cooldownBannedAccount, ExcludeStatus: http.StatusTooManyRequests},
 	{Text: "requested entity was not found", CooldownMs: cooldownBannedAccount, RequireStatus: http.StatusNotFound},
 	{Text: "model_not_found", CooldownMs: cooldownBannedAccount, RequireStatus: http.StatusNotFound},
 	{Text: "no credentials", CooldownMs: cooldownLong},

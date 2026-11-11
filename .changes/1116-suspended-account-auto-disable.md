@@ -1,0 +1,5 @@
+---
+type: fixed
+---
+
+A suspended upstream account was never parked: a 403 "Account suspended or missing" (the apinex free fleet's verdict for dead accounts) matched no rule in the classifier's banned family, so it fell through to the generic 403 status rule — a 2-minute cooldown — and the account was re-dialled on every lapse (one connection took 54 attempts in 3 hours, another 35). "account suspended" and "account disabled" are now banned-class text rules (24h cooldown, carried unclamped, durable model-gone lock like the deleted/banned/ToS family; a 429 quoting the phrase stays a throttle), and both chat paths' hard-disable branches (single-provider fallback and combo) now include the two phrases alongside "account has been deleted/banned", so a suspended account is disabled from routing on its first verdict instead of cycling forever. The phrases were already known to `isAccountAuthFailure` and the dashboard's permanent-failure list — only the classifier table and the disable branches were missing them.
