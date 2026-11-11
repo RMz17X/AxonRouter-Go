@@ -474,7 +474,7 @@ jobs:
           load: true
           tags: axonrouter-go:ci
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: ${{ github.ref == 'refs/heads/main' && 'type=gha,mode=max' || '' }}
 
       # The image binary is -s -w stripped, but the buildinfo section survives
       # stripping, so go version -m still reports the profile it was built with.
