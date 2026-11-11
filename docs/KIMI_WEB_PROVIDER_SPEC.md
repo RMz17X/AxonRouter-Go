@@ -181,10 +181,10 @@ Pada AxonRouter `internal/providers/registry_models.go`:
 
 | Public Alias / Model ID | Upstream Model Kimi Web | Keterangan |
 | :--- | :--- | :--- |
-| `kweb/kimi-latest` | `kimi-latest` | Model default Kimi Web (Context hingga 2M) |
-| `kweb/kimi-search` | `kimi-search` | Otomatis mengaktifkan flag `"use_search": true` |
-| `kweb/kimi-k2.5`   | `kimi-k2.5`   | Model penalaran K2.5 |
-| `kweb/kimi-web`    | `kimi-latest` | Default alias |
+| `kweb/kimi-latest` | `kimi` | Model default Kimi Web (Context hingga 2M) |
+| `kweb/kimi-search` | `kimi` | Otomatis mengaktifkan flag `"use_search": true` |
+| `kweb/kimi-k2.5`   | `k2`   | Model penalaran K2.5 |
+| `kweb/kimi-web`    | `kimi` | Default alias |
 
 ---
 

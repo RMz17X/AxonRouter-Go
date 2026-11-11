@@ -36,21 +36,26 @@ type kimiWebRoute struct {
 	useSearch     bool
 }
 
-// kimiWebModelMap is the spec's catalog (section 7): the public names
-// the registry advertises, mapped to the upstream model id and the
-// search flag the completion call carries.
+// kimiWebModelMap maps the public names the registry advertises to
+// the upstream model id and the search flag the completion call
+// carries. The upstream ids are the ones kimi.moonshot.cn actually
+// accepts — proven live 2026-11-11 against real connections: the
+// completion endpoint rejects anything outside [kimi k1 k1.5 k2
+// k1.5-thinking] with a 422 validation error, so the spec section 7
+// names (kimi-latest, kimi-search, kimi-k2.5) are client-facing only
+// and must translate here.
 var kimiWebModelMap = map[string]kimiWebRoute{
-	"kimi-latest": {upstreamModel: "kimi-latest"},
-	"kimi-search": {upstreamModel: "kimi-search", useSearch: true},
-	"kimi-k2.5":   {upstreamModel: "kimi-k2.5"},
-	"kimi-web":    {upstreamModel: "kimi-latest"},
+	"kimi-latest": {upstreamModel: "kimi"},
+	"kimi-search": {upstreamModel: "kimi", useSearch: true},
+	"kimi-k2.5":   {upstreamModel: "k2"},
+	"kimi-web":    {upstreamModel: "kimi"},
 }
 
 func kimiWebResolveModel(model string) kimiWebRoute {
 	if route, ok := kimiWebModelMap[model]; ok {
 		return route
 	}
-	log.Info("kimi-web", "unmapped model, defaulting to kimi-latest", "model", model)
+	log.Info("kimi-web", "unmapped model, defaulting to kimi", "model", model)
 	return kimiWebModelMap["kimi-web"]
 }
 

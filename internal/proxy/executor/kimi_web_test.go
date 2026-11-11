@@ -112,7 +112,7 @@ func TestForwardKimiWeb_StreamRefreshesAndReuses(t *testing.T) {
 	if got := site.completion["use_search"]; got != true {
 		t.Errorf("use_search = %v, want true for kimi-search", got)
 	}
-	if got := site.completion["model"]; got != "kimi-search" {
+	if got := site.completion["model"]; got != "kimi" {
 		t.Errorf("completion model = %v", got)
 	}
 	msgs, _ := site.completion["messages"].([]any)
