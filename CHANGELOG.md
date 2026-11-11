@@ -1,5 +1,19 @@
 # Changelog
 
+## [v1.10.33] - 2026-11-11
+
+---
+type: fixed
+---
+
+The CLI Tools configuration modal could not be scrolled on mobile at all, and the Hermes manual-configuration modal overflowed off-screen the same way. Root cause: both are flex-column shells whose scroll region lacked min-h-0, so the region refused to shrink below its content height and the shell's overflow-hidden clipped everything past the viewport — on desktop the content happened to fit, on a phone it did not. Both modals are redesigned as mobile-first sheets: full-height bottom-anchored sheets on small screens (rounded top, safe-area-aware footer padding, overscroll containment so a scroll never chains to the page behind), the familiar centered card on larger screens, a real 32px close button, and a pinned header and footer around the now-actually-scrollable body. The Hermes modal additionally gains the height cap and scroll region it never had, and long environment-variable lines in the tool modal wrap instead of pushing the layout sideways.
+
+---
+type: changed
+---
+
+kimi-web's chat catalog now mirrors what the upstream API actually accepts, and Kimi's search moved to the media surface where it belongs. Live probes against kimi.moonshot.cn and kimi.com (2026-11-11, the server's own 422 enumeration) prove the completion API accepts only the slot ids [kimi k1 k1.5 k2 k1.5-thinking]; the public name kimi-k2.5 — inherited from the original spec, never live-tested — named a version the web product does not carry, so it is renamed to kimi-k2 (no combo, persona, or client referenced the old name). The kimi-search chat model is removed: search is not a chat model. kimi-web is now a Media Providers → Web citizen (ServiceKinds gains "web") with a bespoke /v1/search adapter next to antigravity's: the handler runs a use_search completion on a fleet connection and maps the stream's search_plus get_res messages — title, url, snippet, date, site name, favicon, captured live from the real wire — into the standard SearchResponse envelope together with the synthesized answer. The unused useSearch route in the chat executor map goes with the old model; the remaining chat routes are kimi-latest and kimi-k2 plus the kimi-web catch-all.
+
 ## [v1.10.32] - 2026-11-11
 
 ---
