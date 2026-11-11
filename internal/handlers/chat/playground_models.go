@@ -165,6 +165,7 @@ func (h *ChatHandler) playgroundInventory(ctx context.Context) ([]PlaygroundMode
 	now := time.Now()
 	seen := make(map[string]bool)
 	contributed := make(map[string]int)
+	unpinnedBuilt := make(map[string]bool)
 	for _, conn := range conns {
 		if conn == nil || conn.Provider == "" || conn.IsActive != 1 {
 			continue
@@ -180,7 +181,23 @@ func (h *ChatHandler) playgroundInventory(ctx context.Context) ([]PlaygroundMode
 		if until, ok := db.ConnectionBlockedUntil(conn.Data); ok && until.After(now) {
 			continue
 		}
+		// An unpinned connection publishes its provider's catalog, which
+		// the builder resolves live per credential — the same set for
+		// every unpinned connection of the provider. Building it once
+		// per provider keeps a farm of interchangeable keys from fanning
+		// out to one upstream catalog fetch per key (the walk that made
+		// /v1/models take minutes before it went first-connection-per-
+		// provider); the dedupe below keeps the first contributor's
+		// entries either way. Pinned connections always build their own
+		// list — that list is theirs alone.
+		unpinned := len(parseConnectionModelData(conn).EnabledModels()) == 0
+		if unpinned && unpinnedBuilt[conn.Provider] {
+			continue
+		}
 		contributed[conn.Provider]++
+		if unpinned {
+			unpinnedBuilt[conn.Provider] = true
+		}
 		name := playgroundConnectionName(conn)
 		objs := h.appendConnectionModels(ctx, nil, make(map[string]bool), conn, conn.Provider,
 			customs, aliases, nodePrefixes, isDisabled, nil)
