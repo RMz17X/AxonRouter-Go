@@ -345,28 +345,32 @@
 </Card>
 
 {#if showManualConfig}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" onclick={() => (showManualConfig = false)} role="presentation">
-    <div class="w-full max-w-2xl p-6 rounded-2xl bg-surface border border-border shadow-2xl space-y-4" onclick={(e) => e.stopPropagation()} role="presentation">
-      <div class="flex items-start justify-between pb-3 border-b border-border">
-        <div>
+  <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 overscroll-none sm:p-4" onclick={() => (showManualConfig = false)} role="presentation">
+    <div class="w-full max-w-2xl bg-surface border border-border shadow-2xl flex flex-col overflow-hidden h-dvh max-h-dvh rounded-t-2xl sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl" onclick={(e) => e.stopPropagation()} role="presentation">
+      <div class="flex items-start justify-between px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-border shrink-0">
+        <div class="min-w-0">
           <h3 class="text-base font-bold text-text-main">Hermes Agent — Manual Configuration</h3>
           <p class="text-xs text-text-muted">Write these into {hermesHomeDir(activeProfile)} when you prefer to edit the files yourself.</p>
         </div>
-        <button type="button" onclick={() => (showManualConfig = false)} class="text-text-muted hover:text-text-main cursor-pointer" title="Close">
+        <button type="button" onclick={() => (showManualConfig = false)} class="size-8 shrink-0 -mr-1 flex items-center justify-center rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 cursor-pointer" title="Close">
           <X class="w-4 h-4" />
         </button>
       </div>
-      {#each manualConfigs as cfg (cfg.filename)}
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-text-main font-mono">{cfg.filename}</span>
-            <button type="button" onclick={() => copyToClipboard(cfg.content)} class="flex items-center gap-1 text-xs font-semibold text-brand-500 hover:opacity-80 cursor-pointer">
-              <Copy class="w-3.5 h-3.5" />Copy
-            </button>
+      <!-- min-h-0 lets this region actually shrink and scroll inside the
+           flex shell; without it tall config blocks overflow off-screen. -->
+      <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4 space-y-4">
+        {#each manualConfigs as cfg (cfg.filename)}
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-text-main font-mono">{cfg.filename}</span>
+              <button type="button" onclick={() => copyToClipboard(cfg.content)} class="flex items-center gap-1 text-xs font-semibold text-brand-500 hover:opacity-80 cursor-pointer">
+                <Copy class="w-3.5 h-3.5" />Copy
+              </button>
+            </div>
+            <pre class="p-3 rounded-xl bg-bg border border-border font-mono text-xs text-text-main whitespace-pre-wrap break-words select-all">{cfg.content}</pre>
           </div>
-          <pre class="p-3 rounded-xl bg-bg border border-border font-mono text-xs text-text-main whitespace-pre-wrap select-all">{cfg.content}</pre>
-        </div>
-      {/each}
+        {/each}
+      </div>
     </div>
   </div>
 {/if}

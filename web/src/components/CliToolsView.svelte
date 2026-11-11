@@ -931,15 +931,15 @@
 {#if selectedTool}
   {@const status = getToolStatus(selectedTool.id)}
   <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
+    class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 overscroll-none sm:p-4"
     role="presentation"
     onclick={(e) => {
       if (e.target === e.currentTarget) selectedTool = null
     }}
   >
-    <div class="w-full max-w-xl rounded-2xl bg-surface border border-border shadow-2xl flex flex-col max-h-[90dvh] overflow-hidden">
+    <div class="w-full max-w-xl bg-surface border border-border shadow-2xl flex flex-col overflow-hidden h-dvh max-h-dvh rounded-t-2xl sm:h-auto sm:max-h-[90dvh] sm:rounded-2xl">
       <!-- Modal Header -->
-      <div class="flex items-start justify-between px-6 pt-5 pb-3 border-b border-border shrink-0">
+      <div class="flex items-start justify-between px-4 sm:px-6 pt-4 sm:pt-5 pb-3 border-b border-border shrink-0">
         <div class="flex items-center gap-3">
           <div class="size-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden bg-surface-2 border border-border/50 p-1.5">
             {#if selectedTool.image}
@@ -988,14 +988,18 @@
         <button
           type="button"
           onclick={() => (selectedTool = null)}
-          class="text-text-muted hover:text-text-main cursor-pointer"
+          class="size-8 shrink-0 -mr-1 flex items-center justify-center rounded-lg text-text-muted hover:text-text-main hover:bg-surface-2 cursor-pointer"
+          title="Close"
         >
           <X class="w-4 h-4" />
         </button>
       </div>
 
-      <!-- Modal Body (scrolls; header and footer stay pinned) -->
-      <div class="overflow-y-auto flex-1 px-6 py-4 space-y-5">
+      <!-- Modal Body (scrolls; header and footer stay pinned). min-h-0 is
+           load-bearing: without it the flex child refuses to shrink below
+           its content height, the shell's overflow-hidden clips the rest,
+           and the modal cannot scroll at all on small screens. -->
+      <div class="overflow-y-auto overscroll-contain flex-1 min-h-0 px-4 sm:px-6 py-4 space-y-5">
       <!-- Hermes has per-profile settings the generic env snippet cannot express. -->
       {#if selectedTool.id === 'hermes'}
         <HermesToolCard installed={!!statuses.hermes?.installed} {apiKeys} />
@@ -1127,8 +1131,8 @@
 
             <div class="p-3 rounded-xl bg-bg border border-border font-mono text-xs text-text-main space-y-1.5 select-all">
               {#each Object.entries(selectedTool.envVars) as [key, val]}
-                <div class="flex items-center justify-between gap-2">
-                  <span class="text-text-muted">export {key}="<span class="text-brand-400">{key.includes('KEY') ? snippetApiKey : val}</span>"</span>
+                <div class="flex items-start justify-between gap-2">
+                  <span class="text-text-muted min-w-0 break-all">export {key}="<span class="text-brand-400">{key.includes('KEY') ? snippetApiKey : val}</span>"</span>
                   <button
                     type="button"
                     onclick={() => copyText(`export ${key}="${key.includes('KEY') ? snippetApiKey : val}"`, key)}
@@ -1170,10 +1174,10 @@
       </div>
 
       <!-- Footer -->
-      <div class="flex items-center justify-between px-6 py-4 border-t border-border shrink-0">
-        <div class="flex items-center gap-1.5 text-xs text-text-subtle font-mono">
-          <Key class="w-3.5 h-3.5 text-brand-500" />
-          <span>Active Token: {noApiKey ? 'none created' : `${effectiveApiKey.slice(0, 10)}••••`}</span>
+      <div class="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-4 border-t border-border shrink-0">
+        <div class="flex items-center gap-1.5 text-xs text-text-subtle font-mono min-w-0">
+          <Key class="w-3.5 h-3.5 text-brand-500 shrink-0" />
+          <span class="truncate">Active Token: {noApiKey ? 'none created' : `${effectiveApiKey.slice(0, 10)}••••`}</span>
         </div>
 
         <button
