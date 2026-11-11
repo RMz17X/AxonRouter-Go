@@ -183,7 +183,7 @@ func (h *ChatHandler) handleClaudeUpstreamJSON(ctx context.Context, w http.Respo
 		// it into one chat.completion: translate each event to an OpenAI chunk,
 		// then aggregate the chunks the same way a forced-SSE OpenAI reply is.
 		var folded bytes.Buffer
-		state := &translator.ClaudeToOpenAIStreamState{Model: translator.RequestedModelFromContext(ctx)}
+		state := &translator.ClaudeToOpenAIStreamState{Model: translator.RequestedModelFromContext(ctx), PromptEstimate: translator.PromptEstimateFromContext(ctx)}
 		_ = internalproxy.ScanStream(bytes.NewReader(body), func(payload []byte) {
 			if out, terr := translator.TranslateClaudeChunkToOpenAI(payload, state); terr == nil {
 				folded.Write(out)
@@ -212,7 +212,7 @@ func (h *ChatHandler) handleClaudeUpstreamStream(ctx context.Context, w http.Res
 	flusher := internalproxy.WriteSSEHeaders(hw)
 	// A Messages stream that omits `model` still has to echo one back, and the
 	// model the client asked for is the value that is actually true.
-	state := &translator.ClaudeToOpenAIStreamState{Model: translator.RequestedModelFromContext(ctx)}
+	state := &translator.ClaudeToOpenAIStreamState{Model: translator.RequestedModelFromContext(ctx), PromptEstimate: translator.PromptEstimateFromContext(ctx)}
 	done := false
 	err := internalproxy.ScanStream(upstream, func(payload []byte) {
 		noteUpstreamProgress(ctx)

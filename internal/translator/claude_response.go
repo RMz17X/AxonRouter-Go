@@ -20,6 +20,24 @@ type ClaudeToOpenAIStreamState struct {
 	NextToolCallIndex int
 	ToolCalls         map[int]*ClaudeStreamToolCall // key: block_index
 	Usage             *OpenAIUsage
+	// PromptEstimate is the gateway's body-size prompt estimate for the
+	// request, substituted at the terminal chunk when the upstream
+	// reported no input tokens (see terminalUsage).
+	PromptEstimate int
+}
+
+// terminalUsage returns the usage for the terminal chunk, substituting the
+// body-size prompt estimate when the upstream reported zero prompt tokens.
+// MiniMax's mavis gateway reports input_tokens: 0 in message_start and
+// never revises it, so without this every client of a Claude-wire provider
+// sees prompt_tokens: 0 and its context meter stays at 0% for the whole
+// session. The state itself is updated, so the usage recorded for the
+// request matches what the client was sent.
+func (state *ClaudeToOpenAIStreamState) terminalUsage() *OpenAIUsage {
+	if state.Usage != nil && state.Usage.PromptTokens == 0 && state.PromptEstimate > 0 {
+		state.Usage.PromptTokens = state.PromptEstimate
+	}
+	return state.Usage
 }
 
 // modelUnknown is what a Messages stream that omits `model` falls back to
@@ -195,6 +213,11 @@ func TranslateClaudeChunkToOpenAI(payload []byte, state *ClaudeToOpenAIStreamSta
 				state.Usage = &OpenAIUsage{}
 			}
 			state.Usage.CompletionTokens = int(outTokens)
+			// The delta's usage is cumulative and can carry the real
+			// input count even when message_start reported none.
+			if inTokens := usageInt(u["input_tokens"]); inTokens > 0 {
+				state.Usage.PromptTokens = inTokens
+			}
 		}
 		if delta, ok := raw["delta"].(map[string]any); ok {
 			if stopReason, ok := delta["stop_reason"].(string); ok && stopReason != "" {
@@ -225,7 +248,7 @@ func TranslateClaudeChunkToOpenAI(payload []byte, state *ClaudeToOpenAIStreamSta
 				}
 				state.FinishReason = finishReason
 				state.FinishReasonSent = true
-				writeChunk(map[string]any{}, &finishReason, state.Usage)
+				writeChunk(map[string]any{}, &finishReason, state.terminalUsage())
 			}
 		}
 
@@ -240,7 +263,7 @@ func TranslateClaudeChunkToOpenAI(payload []byte, state *ClaudeToOpenAIStreamSta
 				}
 			}
 			state.FinishReasonSent = true
-			writeChunk(map[string]any{}, &finishReason, state.Usage)
+			writeChunk(map[string]any{}, &finishReason, state.terminalUsage())
 		}
 		buf.WriteString("data: [DONE]\n\n")
 	}

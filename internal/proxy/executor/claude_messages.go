@@ -117,7 +117,8 @@ func handleClaudeMessagesStream(w http.ResponseWriter, req *Request, upstream io
 	// the model the client asked for is the value that is actually true. The
 	// translator's own fallback is a placeholder, not a substitute for this.
 	state := &translator.ClaudeToOpenAIStreamState{
-		Model: translator.RequestedModelFromContext(req.Ctx),
+		Model:          translator.RequestedModelFromContext(req.Ctx),
+		PromptEstimate: translator.PromptEstimateFromContext(req.Ctx),
 	}
 	doneSeen := false
 	sawTerminal := false // saw message_delta (with stop_reason) or message_stop
