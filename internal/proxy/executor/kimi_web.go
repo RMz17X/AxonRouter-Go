@@ -45,10 +45,15 @@ type kimiWebRoute struct {
 // names (kimi-latest, kimi-search, kimi-k2.5) are client-facing only
 // and must translate here.
 var kimiWebModelMap = map[string]kimiWebRoute{
-	"kimi-latest": {upstreamModel: "kimi"},
-	"kimi-search": {upstreamModel: "kimi", useSearch: true},
-	"kimi-k2.5":   {upstreamModel: "k2"},
-	"kimi-web":    {upstreamModel: "kimi"},
+	"kimi-latest":        {upstreamModel: "k2"},
+	"kimi-search":        {upstreamModel: "kimi", useSearch: true},
+	"kimi-k2.5":          {upstreamModel: "k2"},
+	"kimi-k2":            {upstreamModel: "k2"},
+	"kimi-k1.5":          {upstreamModel: "k1.5"},
+	"kimi-k1.5-thinking": {upstreamModel: "k1.5-thinking"},
+	"kimi-k1":            {upstreamModel: "k1"},
+	"kimi":               {upstreamModel: "kimi"},
+	"kimi-web":           {upstreamModel: "k2"},
 }
 
 func kimiWebResolveModel(model string) kimiWebRoute {
