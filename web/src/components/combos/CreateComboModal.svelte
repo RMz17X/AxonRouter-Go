@@ -458,8 +458,14 @@
   function handleSave() {
     if (!validateModalName(modalName)) return
     if (timeoutMs === null || graceMs === null) return
+    // Smart: the visible list is the order the operator arranged, so it —
+    // not the pool arrays — decides the saved order, and each pool's saved
+    // order is that same list filtered by tier. Rebuilding the list from
+    // the pools (easy block, then hard block, then the rest) silently
+    // discarded every drag, because drags write the list while the pools
+    // only ever change on tier toggles.
     const finalModels = selectedStrategy === 'smart'
-      ? Array.from(new Set([...easyModels, ...hardModels, ...models]))
+      ? Array.from(new Set(models))
       : models
     onSave(
       modalName.trim(),
@@ -470,8 +476,8 @@
       selectedStrategy,
       selectedStrategy === 'smart'
         ? {
-            easyModels: easyModels.length > 0 ? easyModels : [],
-            hardModels: hardModels.length > 0 ? hardModels : [],
+            easyModels: finalModels.filter((m) => easyModels.includes(m)),
+            hardModels: finalModels.filter((m) => hardModels.includes(m)),
             routerModel: routerModel.trim() || undefined,
           }
         : undefined
@@ -526,6 +532,8 @@
   onClose={onClose}
   title={editingCombo ? 'Edit Combo' : 'Create Combo'}
   size="5xl"
+  closeOnOverlay={false}
+  closeOnEscape={false}
 >
   <div class="flex flex-col gap-3">
     <!-- Row: Name & Strategy -->

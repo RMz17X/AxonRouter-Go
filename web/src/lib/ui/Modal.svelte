@@ -10,6 +10,7 @@
     icon = '',
     size = 'md',
     closeOnOverlay = true,
+    closeOnEscape = true,
     showTrafficLights = true,
     class: klass = '',
     children,
@@ -21,6 +22,7 @@
     icon?: string
     size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | 'full'
     closeOnOverlay?: boolean
+    closeOnEscape?: boolean
     showTrafficLights?: boolean
     class?: string
     children?: Snippet
@@ -51,8 +53,10 @@
 
   // Escape closes only the topmost dialog, so a dialog opened over this one
   // (a picker, a confirm) is dismissed without taking this one with it.
+  // A dialog that opts out (closeOnEscape=false) registers no handler at
+  // all: it can be closed only through its own buttons.
   $effect(() => {
-    if (!isOpen) return
+    if (!isOpen || !closeOnEscape) return
     return pushEscapeHandler(() => onClose?.())
   })
 </script>
@@ -63,7 +67,7 @@
     <div
       class="absolute inset-0 bg-black/60 fade-in"
       onclick={closeOnOverlay ? () => onClose?.() : undefined}
-      onkeydown={(e) => e.key === 'Escape' && onClose?.()}
+      onkeydown={(e) => e.key === 'Escape' && closeOnEscape && onClose?.()}
       role="presentation"
     ></div>
 

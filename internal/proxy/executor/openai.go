@@ -357,6 +357,16 @@ func sseStream(o sseStreamOpts) error {
 			}
 			return p
 		})
+		// Upstreams that report prompt_tokens: 0 in their terminal usage
+		// chunk (MiniMax streaming) leave client context meters at 0%;
+		// the body-size estimate stands in for the missing count.
+		promptEst := translator.PromptEstimateFromContext(ctx)
+		patchers = append(patchers, func(p []byte) []byte {
+			if patched, changed := translator.PatchZeroPromptUsage(p, promptEst); changed {
+				return patched
+			}
+			return p
+		})
 		return proxy.SSECopy(hw, upstream, flusher, func(chunk []byte) {
 			if ttft != nil && *ttft == 0 {
 				*ttft = time.Since(startTime).Milliseconds()
@@ -443,6 +453,15 @@ func captureUsageFromSSEChunk(ctx context.Context, chunk []byte) {
 			usage = translator.ParseResponsesUsage(payload)
 		}
 		if usage != nil {
+			// The chunk capture sees the raw bytes, before the wire
+			// patcher runs: an upstream reporting prompt_tokens: 0 gets
+			// the same estimate substituted here, so the recorded usage
+			// matches what the client was sent.
+			if usage.PromptTokens == 0 {
+				if est := translator.PromptEstimateFromContext(ctx); est > 0 {
+					usage.PromptTokens = est
+				}
+			}
 			translator.SetUsage(ctx, usage)
 		}
 	})
