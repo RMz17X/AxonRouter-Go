@@ -31,7 +31,7 @@ import (
 // CurrentVersion is the active AxonRouter-Go application version.
 // Can be overridden at build time via -ldflags "-X axonrouter/proxy/internal/updater.CurrentVersion=1.8.8"
 // Default fallback is read from version.json at init if not overridden.
-var CurrentVersion = "1.10.42"
+var CurrentVersion = "1.10.43"
 
 // DefaultUpdateURL is the primary remote version manifest URL.
 var DefaultUpdateURL = "https://raw.githubusercontent.com/RMz17X/AxonRouter-Go/main/version.json"
