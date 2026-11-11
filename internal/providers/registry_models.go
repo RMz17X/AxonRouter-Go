@@ -100,8 +100,8 @@ var ProviderModels = map[string][]string{
 	// section 7). These ids belong to the browser-session provider and are
 	// deliberately not merged into the API-key `kimi` rows: a request naming
 	// one of them must reach the web provider, never the API one.
-	"kimi-web": {"kimi-latest", "kimi-search", "kimi-k2.5", "kimi-web"},
-	"kweb":     {"kimi-latest", "kimi-search", "kimi-k2.5", "kimi-web"},
+	"kimi-web": {"kimi-latest", "kimi-k2", "kimi-web"},
+	"kweb":     {"kimi-latest", "kimi-k2", "kimi-web"},
 	"hcnsec": {
 		"auto",
 		"DeepSeek-V4-Flash",

@@ -183,10 +183,18 @@ Pada AxonRouter `internal/providers/registry_models.go`:
 
 | Public Alias / Model ID | Upstream Model Kimi Web | Keterangan |
 | :--- | :--- | :--- |
-| `kweb/kimi-latest` | `kimi` | Model default Kimi Web (Context hingga 2M) |
-| `kweb/kimi-search` | `kimi` | Otomatis mengaktifkan flag `"use_search": true` |
-| `kweb/kimi-k2.5`   | `k2`   | Model penalaran K2.5 |
+| `kweb/kimi-latest` | `kimi` | Slot default Kimi Web (Context hingga 2M) |
+| `kweb/kimi-k2`     | `k2`   | Slot k2 |
 | `kweb/kimi-web`    | `kimi` | Default alias |
+
+Search bukan model chat: pencarian dilayani sebagai media service di
+`POST /v1/search` (provider `kimi-web` di halaman Media Providers → Web),
+menjalankan completion `use_search: true` dan memetakan event
+`search_plus` menjadi hasil terstruktur. Nama publik lama `kimi-search`
+dan `kimi-k2.5` dicabut di v1.10.33 (fragment 1121): `kimi-k2.5` menamai
+versi yang tidak ada di produk web, dan id upstream yang diterima server
+hanya `[kimi k1 k1.5 k2 k1.5-thinking]` (error validasi 422, terverifikasi
+live 2026-11-11 di kimi.moonshot.cn dan kimi.com).
 
 ---
 
@@ -242,3 +250,5 @@ Diimplementasikan penuh di AxonRouter-Go dan sudah live di staging:
 - **Sync Chroma:** `POST /api/providers/kimi-web/connections` live (`internal/handlers/dashboard/kimi_web_sync.go`), body `{name, refreshToken, accessToken, tokenExpiresAt, userAgent, proxyUrl, proxyPoolId, replace}` — diterjemahkan ke jalur tulis koneksi generik yang sama dengan dashboard.
 - **Bukti:** host terverifikasi sebelum implementasi (kimi.moonshot.cn resolve; endpoint refresh menjawab 401 tanpa token); katalog + `/v1/models` memuat `kweb/kimi-latest`, `kweb/kimi-search`, `kweb/kimi-k2.5`, `kweb/kimi-web`; ikon HTTP 200; chat dengan refresh token palsu mencapai endpoint refresh asli dan kembali 401 dengan pesan auth yang didesain; test fake-upstream membuktikan refresh-sekali-lalu-reuse, folding system, dan flag search.
 - **Belum terbukti:** happy-path chat dengan akun asli (belum ada kredensial Kimi saat implementasi) — pembuktian live dilakukan terpisah.
+
+**Addendum v1.10.33 (2026-11-11, fragment 1121):** happy-path chat terbukti live (12 koneksi fleet; upstream model id diterjemahkan di executor — Bagian 7 versi awal tidak pernah dites live). Katalog chat dijujurkan: `kimi-k2.5` → `kimi-k2`, `kimi-search` dicabut dari katalog chat dan search dipindah ke permukaan media (`POST /v1/search`, adapter `internal/handlers/media/kimi_search.go` + `executor.ExecuteKimiWebSearch`; ServiceKinds provider menjadi `llm` + `webSearch` + `web` agar tampil di Media Providers → Web). Event `search_plus` (msg `get_res`: title/url/snippet/date/site_name/icon) dipetakan ke amplop `SearchResponse` standar. Protokol SSE asli (Bagian 6 yang dikarang) sudah dikoreksi di v1.10.31: event dinamai di field `event`, bukan `type`; `rename` adalah judul chat dan tidak pernah masuk konten.

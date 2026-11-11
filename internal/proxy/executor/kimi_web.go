@@ -41,19 +41,15 @@ type kimiWebRoute struct {
 // carries. The upstream ids are the ones kimi.moonshot.cn actually
 // accepts — proven live 2026-11-11 against real connections: the
 // completion endpoint rejects anything outside [kimi k1 k1.5 k2
-// k1.5-thinking] with a 422 validation error, so the spec section 7
-// names (kimi-latest, kimi-search, kimi-k2.5) are client-facing only
-// and must translate here.
+// k1.5-thinking] with a 422 validation error. Public names mirror
+// the slot they ride (fragment 1121): kimi-latest is the default
+// slot, kimi-k2 is the k2 slot — the earlier kimi-k2.5 label named
+// a version the web product does not carry. Search is not a chat
+// model at all: it is served by ExecuteKimiWebSearch on /v1/search.
 var kimiWebModelMap = map[string]kimiWebRoute{
-	"kimi-latest":        {upstreamModel: "k2"},
-	"kimi-search":        {upstreamModel: "kimi", useSearch: true},
-	"kimi-k2.5":          {upstreamModel: "k2"},
-	"kimi-k2":            {upstreamModel: "k2"},
-	"kimi-k1.5":          {upstreamModel: "k1.5"},
-	"kimi-k1.5-thinking": {upstreamModel: "k1.5-thinking"},
-	"kimi-k1":            {upstreamModel: "k1"},
-	"kimi":               {upstreamModel: "kimi"},
-	"kimi-web":           {upstreamModel: "k2"},
+	"kimi-latest": {upstreamModel: "kimi"},
+	"kimi-k2":     {upstreamModel: "k2"},
+	"kimi-web":    {upstreamModel: "kimi"},
 }
 
 func kimiWebResolveModel(model string) kimiWebRoute {

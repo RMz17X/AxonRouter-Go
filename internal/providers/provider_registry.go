@@ -1965,7 +1965,7 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Color:        "#2563EB",
 		Icon:         "psychology",
 		AuthHint:     "Paste your refresh_token value from kimi.moonshot.cn Local Storage (DevTools → Application → Local Storage → refresh_token). Chroma can sync accounts here automatically.",
-		ServiceKinds: []string{"llm", "webSearch"},
+		ServiceKinds: []string{"llm", "webSearch", "web"},
 		Website:      "https://kimi.moonshot.cn",
 	},
 	"selfhosted-tts": {

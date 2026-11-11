@@ -82,7 +82,7 @@ func TestForwardKimiWeb_StreamRefreshesAndReuses(t *testing.T) {
 
 	newReq := func() *Request {
 		return &Request{
-			Body:         []byte(`{"model":"kimi-search","messages":[{"role":"user","content":"Apa itu internet?"}]}`),
+			Body:         []byte(`{"model":"kimi-latest","messages":[{"role":"user","content":"Apa itu internet?"}]}`),
 			APIKey:       "refresh-1",
 			IsStream:     true,
 			ConnectionID: "conn-kimi-stream",
@@ -122,8 +122,8 @@ func TestForwardKimiWeb_StreamRefreshesAndReuses(t *testing.T) {
 	if site.createHits.Load() != 2 || site.completionID != "chat-xyz" {
 		t.Errorf("create hits = %d, completion chat = %q", site.createHits.Load(), site.completionID)
 	}
-	if got := site.completion["use_search"]; got != true {
-		t.Errorf("use_search = %v, want true for kimi-search", got)
+	if got := site.completion["use_search"]; got != false {
+		t.Errorf("use_search = %v, want false for kimi-latest (search is a media service, not a chat model)", got)
 	}
 	if got := site.completion["model"]; got != "kimi" {
 		t.Errorf("completion model = %v", got)

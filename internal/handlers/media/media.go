@@ -898,6 +898,14 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 					continue
 				}
 			}
+			if endpoint == "/v1/search" && (subInfo.Provider == "kimi-web" || subInfo.Provider == "kweb") {
+				if err := h.handleKimiWebSearch(w, r, body, subInfo); err == nil {
+					return
+				} else {
+					lastErr, lastStatus = searchErrorParts(err)
+					continue
+				}
+			}
 			if (endpoint == "/v1/images/generations" || endpoint == "/images/generations" ||
 				endpoint == "/v1/images/edits" || endpoint == "/images/edits") && (subInfo.Provider == "antigravity" || subInfo.Provider == "ag") {
 				if err := h.handleAntigravityImage(w, r, body, subInfo); err == nil {
@@ -1090,6 +1098,13 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 
 	if endpoint == "/v1/search" && (modelInfo.Provider == "xquik" || modelInfo.Provider == "xquik-search") {
 		if err := h.handleXquikSearch(w, r, body, modelInfo); err != nil {
+			writeSearchError(w, err)
+		}
+		return
+	}
+
+	if endpoint == "/v1/search" && (modelInfo.Provider == "kimi-web" || modelInfo.Provider == "kweb") {
+		if err := h.handleKimiWebSearch(w, r, body, modelInfo); err != nil {
 			writeSearchError(w, err)
 		}
 		return
