@@ -30,6 +30,26 @@ describe('getRemainingPercentage', () => {
     expect(getRemainingPercentage({ remainingPercentage: 61.6 })).toBe(62)
   })
 
+  it('prioritizes remainingPercentage over absolute remaining amount', () => {
+    expect(
+      getRemainingPercentage({
+        used: 1,
+        total: 2400,
+        remaining: 2399,
+        remainingPercentage: 100,
+      }),
+    ).toBe(100)
+  })
+
+  it('calculates percentage from absolute remaining and total when remainingPercentage is absent', () => {
+    expect(
+      getRemainingPercentage({
+        total: 48384,
+        remaining: 48384,
+      }),
+    ).toBe(100)
+  })
+
   it('derives the percentage from a finite used/total pair', () => {
     expect(getRemainingPercentage({ used: 25, total: 100 })).toBe(75)
   })

@@ -377,17 +377,22 @@ export function calculatePercentage(used?: number, total?: number): number {
  * renders "—" instead of inventing a number.
  */
 export function getRemainingPercentage(quota: Partial<NormalizedQuota>): number | null {
+  if (Number.isFinite(quota?.remainingPercentage)) {
+    return Math.round(quota.remainingPercentage as number)
+  }
   if (Number.isFinite(quota?.percentage)) {
     // Providers may report the used share; the UI renders the remaining one.
     const value = quota.percentageIsUsed === true ? 100 - (quota.percentage as number) : (quota.percentage as number)
     return Math.max(0, Math.round(value))
   }
-  if (Number.isFinite(quota?.remaining)) return Math.max(0, Math.round(quota.remaining as number))
-  if (Number.isFinite(quota?.remainingPercentage)) {
-    return Math.round(quota.remainingPercentage as number)
-  }
-  if (Number.isFinite(quota?.used) && Number.isFinite(quota?.total)) {
+  if (Number.isFinite(quota?.used) && Number.isFinite(quota?.total) && (quota.total as number) > 0) {
     return calculatePercentage(quota.used, quota.total)
+  }
+  if (Number.isFinite(quota?.remaining)) {
+    if (Number.isFinite(quota?.total) && (quota.total as number) > 0) {
+      return Math.max(0, Math.min(100, Math.round(((quota.remaining as number) / (quota.total as number)) * 100)))
+    }
+    return Math.max(0, Math.round(quota.remaining as number))
   }
   return null
 }
