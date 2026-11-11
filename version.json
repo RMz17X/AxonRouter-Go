@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.10.29",
+  "latestVersion": "1.10.30",
   "releaseNotes": "v1.9.53: Optimize provider detail view with on-demand server-side pagination and O(1) cached stats lookup, eliminating bulk 17MB payload downloads."
 }
