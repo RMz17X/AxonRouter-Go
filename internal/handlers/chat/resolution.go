@@ -352,6 +352,11 @@ func (h *ChatHandler) resolveModel(modelStr string) (*ModelInfo, error) {
 					Provider: provider,
 					Model:    model,
 				}, nil
+			} else if aliasTarget != modelStr {
+				// Target is a combo name (e.g. "auto") or another alias
+				if info, err := h.resolveModel(aliasTarget); err == nil && info != nil {
+					return info, nil
+				}
 			}
 		}
 	}
@@ -429,6 +434,13 @@ func (h *ChatHandler) resolveModel(modelStr string) (*ModelInfo, error) {
 			conns, err := h.Repo.GetProviderConnections(provider, true)
 			if err == nil && len(conns) > 0 {
 				return &ModelInfo{Provider: provider, Model: modelStr}, nil
+			}
+		}
+
+		// 5. Fallback for claude-* models to combo "auto" when no direct anthropic connection exists
+		if strings.HasPrefix(strings.ToLower(modelStr), "claude-") {
+			if autoCombo, err := h.Repo.GetComboByName("auto"); err == nil && autoCombo != nil {
+				return h.resolveModel("auto")
 			}
 		}
 	}

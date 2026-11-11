@@ -33,8 +33,8 @@ import (
 
 const (
 	liveCatalogTTL       = 30 * time.Minute
-	liveCatalogNegTTL    = 10 * time.Minute
-	liveCatalogFastHTTP  = 3 * time.Second
+	liveCatalogNegTTL    = 30 * time.Minute
+	liveCatalogFastHTTP  = 1500 * time.Millisecond
 	kiroCatalogHTTP      = 3 * time.Second
 	kiroRuntimeSDKVer    = "1.0.0"
 	kiroAgentOS          = "windows"

@@ -1379,6 +1379,10 @@ func (h *ChatHandler) liveCapabilityLeaf(seat string, connMap ...map[string]*Mod
 	if info == nil {
 		return LiveModel{}, false
 	}
+	canon := providers.ResolveAlias(info.Provider)
+	if canon != "kiro" && canon != "grok-cli" && canon != "zed" && !isCompatibleProviderID(info.Provider) && !isCompatibleProviderID(canon) {
+		return LiveModel{}, false
+	}
 	conns, err := h.Repo.GetProviderConnections(info.Provider, true)
 	if err != nil || len(conns) == 0 {
 		return LiveModel{}, false
