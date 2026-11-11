@@ -99,8 +99,9 @@
     return standingMatch.presetName || standingMatch.presetId || null
   })
 
-  // The toolbar's prompt chip names the layer that will actually fire:
-  // session prompt > chosen preset > standing Persona > none.
+  // The toolbar's single settings chip leads with the prompt layer that
+  // will actually fire: session prompt > chosen preset > standing
+  // Persona > none — followed by the sampling summary.
   const promptChipLabel = $derived.by(() => {
     if (systemPrompt.trim()) return 'Session prompt'
     if (presetId) return presets.find((p) => p.id === presetId)?.name || 'Preset'
@@ -232,19 +233,10 @@
       class="flex shrink-0 items-center gap-1.5 rounded-brand-lg border px-2.5 py-2 text-xs transition-colors {promptChipActive
         ? 'border-brand-500/50 bg-primary/10 text-primary'
         : 'border-border bg-surface text-text-muted hover:text-text-main'}"
-      title="Session prompt and Persona preset"
-    >
-      <span class="material-symbols-outlined text-[16px]">edit_note</span>
-      <span class="hidden max-w-44 truncate md:inline">{promptChipLabel}</span>
-    </button>
-    <button
-      type="button"
-      onclick={() => (settingsOpen = true)}
-      class="flex shrink-0 items-center gap-1.5 rounded-brand-lg border border-border bg-surface px-2.5 py-2 text-xs text-text-muted transition-colors hover:text-text-main"
-      title="Sampling parameters"
+      title="Session settings: prompt and parameters"
     >
       <span class="material-symbols-outlined text-[16px]">tune</span>
-      <span class="hidden md:inline">{paramsChipLabel}</span>
+      <span class="hidden max-w-56 truncate md:inline">{promptChipLabel} · {paramsChipLabel}</span>
     </button>
     <div class="flex-1"></div>
     <button

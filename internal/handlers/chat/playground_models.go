@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"axonrouter/proxy/internal/db"
@@ -49,6 +50,21 @@ import (
 // farms of interchangeable keys publishing the provider catalog.
 const playgroundProviderConnectionCap = 100
 
+// playgroundInventoryTTL bounds how long a computed inventory is served
+// before it counts as stale. The build walks the whole connections table
+// (tens of thousands of rows on farm fleets) plus per-provider catalog
+// work, which took seconds per request uncached, while the picker
+// tolerates minutes of staleness: connection and combo edits are operator
+// actions, and the serving path re-validates eligibility at dispatch.
+const playgroundInventoryTTL = 5 * time.Minute
+
+var (
+	playgroundInvMu        sync.Mutex
+	playgroundInvCache     []PlaygroundModelEntry
+	playgroundInvExpiresAt time.Time
+	playgroundInvRefresh   bool
+)
+
 // PlaygroundModelEntry is one selectable row of the inventory. Model is the
 // wire id a client would send: "provider/model" for provider models, the
 // combo's name for combos.
@@ -63,12 +79,55 @@ type PlaygroundModelEntry struct {
 // HandlePlaygroundModels serves GET /api/playground/models (dashboard
 // session group).
 func (h *ChatHandler) HandlePlaygroundModels(w http.ResponseWriter, r *http.Request) {
-	entries, err := h.playgroundInventory(r.Context())
+	entries, err := h.playgroundInventoryCached(r.Context())
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, "failed to load playground models")
 		return
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, entries)
+}
+
+// playgroundInventoryCached serves the cached inventory: fresh entries
+// directly, stale entries immediately with one background refresh in
+// flight, and a synchronous build only when nothing has been computed
+// yet (the first load after boot).
+func (h *ChatHandler) playgroundInventoryCached(ctx context.Context) ([]PlaygroundModelEntry, error) {
+	playgroundInvMu.Lock()
+	if playgroundInvCache != nil {
+		cached := playgroundInvCache
+		if time.Now().Before(playgroundInvExpiresAt) {
+			playgroundInvMu.Unlock()
+			return cached, nil
+		}
+		if !playgroundInvRefresh {
+			playgroundInvRefresh = true
+			go h.refreshPlaygroundInventory()
+		}
+		playgroundInvMu.Unlock()
+		return cached, nil
+	}
+	playgroundInvMu.Unlock()
+
+	entries, err := h.playgroundInventory(ctx)
+	if err != nil {
+		return nil, err
+	}
+	playgroundInvMu.Lock()
+	playgroundInvCache = entries
+	playgroundInvExpiresAt = time.Now().Add(playgroundInventoryTTL)
+	playgroundInvMu.Unlock()
+	return entries, nil
+}
+
+func (h *ChatHandler) refreshPlaygroundInventory() {
+	entries, err := h.playgroundInventory(context.Background())
+	playgroundInvMu.Lock()
+	defer playgroundInvMu.Unlock()
+	playgroundInvRefresh = false
+	if err == nil {
+		playgroundInvCache = entries
+		playgroundInvExpiresAt = time.Now().Add(playgroundInventoryTTL)
+	}
 }
 
 func (h *ChatHandler) playgroundInventory(ctx context.Context) ([]PlaygroundModelEntry, error) {
@@ -115,10 +174,10 @@ func (h *ChatHandler) playgroundInventory(ctx context.Context) ([]PlaygroundMode
 		if hiddenProvider(conn.Provider) {
 			continue
 		}
-		if until, ok := db.ConnectionBlockedUntil(conn.Data); ok && until.After(now) {
+		if contributed[conn.Provider] >= playgroundProviderConnectionCap {
 			continue
 		}
-		if contributed[conn.Provider] >= playgroundProviderConnectionCap {
+		if until, ok := db.ConnectionBlockedUntil(conn.Data); ok && until.After(now) {
 			continue
 		}
 		contributed[conn.Provider]++
