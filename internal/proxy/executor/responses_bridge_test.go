@@ -221,3 +221,61 @@ toolMap := map[string]string{shortName: longName}
 		}
 	})
 }
+
+func TestHandleClaudeMessages_TranslateRespEmitsNamedEvents(t *testing.T) {
+	t.Run("upstream with event headers", func(t *testing.T) {
+		upstream := strings.Join([]string{
+			"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_1\",\"model\":\"claude-x\"}}\n\n",
+			"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n",
+			"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+			"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n",
+			"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+		}, "")
+
+		rec := httptest.NewRecorder()
+		req := &Request{Ctx: context.Background(), IsStream: true, TranslateResp: true}
+
+		if err := handleClaudeMessagesStream(rec, req, strings.NewReader(upstream)); err != nil {
+			t.Fatalf("handleClaudeMessagesStream: %v", err)
+		}
+		out := rec.Body.String()
+		for _, expected := range []string{
+			"event: message_start\n",
+			"event: content_block_start\n",
+			"event: content_block_delta\n",
+			"event: content_block_stop\n",
+			"event: message_delta\n",
+			"event: message_stop\n",
+		} {
+			if !strings.Contains(out, expected) {
+				t.Errorf("output missing expected SSE event header %q:\n%s", expected, out)
+			}
+		}
+	})
+
+	t.Run("upstream without event headers infers from type", func(t *testing.T) {
+		upstream := strings.Join([]string{
+			"data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_2\"}}\n\n",
+			"data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hello\"}}\n\n",
+			"data: {\"type\":\"message_stop\"}\n\n",
+		}, "")
+
+		rec := httptest.NewRecorder()
+		req := &Request{Ctx: context.Background(), IsStream: true, TranslateResp: true}
+
+		if err := handleClaudeMessagesStream(rec, req, strings.NewReader(upstream)); err != nil {
+			t.Fatalf("handleClaudeMessagesStream: %v", err)
+		}
+		out := rec.Body.String()
+		for _, expected := range []string{
+			"event: message_start\ndata: {\"type\":\"message_start\"",
+			"event: content_block_delta\ndata: {\"type\":\"content_block_delta\"",
+			"event: message_stop\ndata: {\"type\":\"message_stop\"}",
+		} {
+			if !strings.Contains(out, expected) {
+				t.Errorf("output missing expected inferred event %q:\n%s", expected, out)
+			}
+		}
+	})
+}

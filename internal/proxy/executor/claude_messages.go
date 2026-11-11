@@ -30,12 +30,31 @@ func handleClaudeMessagesStream(w http.ResponseWriter, req *Request, upstream io
 		hw := proxy.NewHeartbeatWriter(req.Ctx, w, 0)
 		defer hw.Close()
 		flusher := proxy.WriteSSEHeaders(hw)
-		writeFrame := func(payload []byte) {
+		writeFrame := func(eventType string, payload []byte) {
 			if req.TTFT != nil && *req.TTFT == 0 {
 				*req.TTFT = time.Since(startTime).Milliseconds()
 			}
-			frame := append([]byte("data: "), payload...)
-			frame = append(frame, '\n', '\n')
+			trimmed := bytes.TrimSpace(payload)
+			if len(trimmed) == 0 {
+				return
+			}
+			var frame []byte
+			if bytes.Equal(trimmed, []byte("[DONE]")) {
+				frame = []byte("data: [DONE]\n\n")
+			} else if eventType != "" {
+				frame = make([]byte, 0, len("event: ")+len(eventType)+len("\ndata: ")+len(payload)+3)
+				frame = append(frame, "event: "...)
+				frame = append(frame, eventType...)
+				frame = append(frame, '\n')
+				frame = append(frame, "data: "...)
+				frame = append(frame, payload...)
+				frame = append(frame, '\n', '\n')
+			} else {
+				frame = make([]byte, 0, len("data: ")+len(payload)+2)
+				frame = append(frame, "data: "...)
+				frame = append(frame, payload...)
+				frame = append(frame, '\n', '\n')
+			}
 			if req.ResponseBuf != nil {
 				req.ResponseBuf.Write(frame)
 			}
@@ -49,14 +68,26 @@ func handleClaudeMessagesStream(w http.ResponseWriter, req *Request, upstream io
 				translator.SetUsage(req.Ctx, usage)
 			}
 		}
-		return proxy.ScanStream(upstream, func(payload []byte) {
-			if decloaker != nil {
-				for _, ev := range decloaker.Events(payload) {
-					writeFrame(ev.Payload)
-				}
-				return
+		return proxy.ScanStreamEvents(upstream, func(ev proxy.SSEEvent) bool {
+			if len(ev.Data) == 0 {
+				return true
 			}
-			writeFrame(payload)
+			evType := ev.Event
+			if evType == "" {
+				evType = extractEventType(string(ev.Data))
+			}
+			if decloaker != nil {
+				for _, dev := range decloaker.Events(ev.Data) {
+					t := dev.Type
+					if t == "" {
+						t = evType
+					}
+					writeFrame(t, dev.Payload)
+				}
+				return true
+			}
+			writeFrame(evType, ev.Data)
+			return true
 		})
 	}
 
