@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	json "encoding/json/v2"
 
@@ -348,11 +349,28 @@ func isUsableProvider(providerID string, usable map[string]bool) bool {
 	return canon != "" && usable[canon]
 }
 
+type cachedModelsListEntry struct {
+	res ModelsListResult
+	exp time.Time
+}
+
+var (
+	modelsListCacheMu sync.RWMutex
+	modelsListCache   = make(map[ModelsListMode]cachedModelsListEntry)
+)
+
 // buildModelsListResult mirrors upstream buildModelsList(["llm"]) and reports
 // the mode it used. Combos come first, then one model set per active
 // connection, with the static catalog dump only when the connections table
 // itself is empty (and unconditionally in modeListCatalog).
 func (h *ChatHandler) buildModelsListResult(ctx context.Context, mode ModelsListMode) ModelsListResult {
+	modelsListCacheMu.RLock()
+	if c, ok := modelsListCache[mode]; ok && time.Now().Before(c.exp) {
+		modelsListCacheMu.RUnlock()
+		return c.res
+	}
+	modelsListCacheMu.RUnlock()
+
 	var allConns []*models.ProviderConnection
 	if h.Repo != nil {
 		allConns, _ = h.Repo.GetFirstConnectionPerProvider(ctx)
@@ -379,7 +397,16 @@ func (h *ChatHandler) buildModelsListResult(ctx context.Context, mode ModelsList
 	usable := h.connectedProviderIDs(allConns)
 
 	data := h.buildModelsListForMode(ctx, mode, allConns, activeConns, usable)
-	return ModelsListResult{Models: data, Mode: modelsListModeString(mode), Connections: activeCount}
+	res := ModelsListResult{Models: data, Mode: modelsListModeString(mode), Connections: activeCount}
+
+	modelsListCacheMu.Lock()
+	modelsListCache[mode] = cachedModelsListEntry{
+		res: res,
+		exp: time.Now().Add(30 * time.Second),
+	}
+	modelsListCacheMu.Unlock()
+
+	return res
 }
 
 // activeConnections filters the connection rows down to the ones the operator
@@ -400,8 +427,7 @@ func activeConnections(conns []*models.ProviderConnection) []*models.ProviderCon
 
 // buildModelsList is the upstream-faithful entry point used by model lookup.
 func (h *ChatHandler) buildModelsList(ctx context.Context) []ModelInfoObject {
-	conns := h.allConnections()
-	return h.buildModelsListForMode(ctx, modeListAll, conns, activeConnections(conns), nil)
+	return h.buildModelsListResult(ctx, modeListAll).Models
 }
 
 // allConnections returns one representative row per provider to discover active models,
