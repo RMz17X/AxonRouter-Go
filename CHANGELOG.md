@@ -1,5 +1,31 @@
 # Changelog
 
+## [v1.10.39] - 2026-11-11
+
+### Added
+
+- **Gemini response_format normalization**: Translate OpenAI `response_format: {"type": "json_object"}` and `json_schema` into Gemini native `generationConfig.responseMimeType = "application/json"`, `responseSchema`, and system guidance. This guarantees that requests specifying JSON formats strictly return pure JSON without markdown wrappers or conversational filler across Gemini and Antigravity models.
+
+title: Provider Detail: account search over the provider's whole list
+version: v1.10.39
+
+## Added
+- Provider Detail gains the Quota Tracker's account search: a search
+  form above the account list (submit on Enter or the button, clear
+  button while applied) that finds accounts by name, email,
+  connection id, or the display identity (displayName, username,
+  githubLogin) — the same field set the Quota Tracker search covers.
+- GET /api/connections accepts a search parameter and filters the
+  provider's whole list before pagination, so a match on any page is
+  findable and X-Total-Count reports the filtered total; the pager
+  and the "Showing … of N accounts" line follow the filtered count
+  while a search is applied, and an empty result says so instead of
+  falling back to the unfiltered list.
+
+### Fixed
+
+- **Claude Messages SSE event framing**: Preserve upstream `event: <name>` headers (and infer from payload `"type"` when missing) during downstream Claude Messages streaming passthrough (`TranslateResp = true`). Previously, frames were emitted with only `data: ...` without the `event:` header, causing the Anthropic SDK in Claude Code / Claude CLI to discard all events and fall back to non-streaming JSON.
+
 ## [v1.10.38] - 2026-11-11
 
 title: Playground inventory: build each provider's unpinned catalog once
