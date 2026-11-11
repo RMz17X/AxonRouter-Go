@@ -184,7 +184,7 @@ Pada AxonRouter `internal/providers/registry_models.go`:
 | Public Alias / Model ID | Upstream Model Kimi Web | Keterangan |
 | :--- | :--- | :--- |
 | `kweb/kimi-latest` | `kimi` | Slot default Kimi Web (Context hingga 2M) |
-| `kweb/kimi-k2`     | `k2`   | Slot k2 |
+| `kweb/kimi-k3`     | `kimi` | Generasi K3 produk web saat ini, dilayani slot default (id `k3` harfiah DITOLAK API dengan 422; slot `k2` warisan tidak lagi ditampilkan produk web — v1.10.34, fragment 1123) |
 | `kweb/kimi-web`    | `kimi` | Default alias |
 
 Search bukan model chat: pencarian dilayani sebagai media service di

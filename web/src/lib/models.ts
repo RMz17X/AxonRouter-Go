@@ -2355,8 +2355,8 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "Kimi Latest"
     },
     {
-      "id": "kimi-k2",
-      "name": "Kimi K2"
+      "id": "kimi-k3",
+      "name": "Kimi K3"
     },
     {
       "id": "kimi-web",
