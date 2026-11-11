@@ -297,7 +297,12 @@ func EnsureToolCallIDs(messages []OpenAIMessage) []OpenAIMessage {
 					msg.ToolCallID = pendingToolCallIds[0]
 					pendingToolCallIds = pendingToolCallIds[1:]
 				} else {
-					msg.ToolCallID = fmt.Sprintf("call_tool_%d", i)
+					// Orphan tool result: no declared call to pair with.
+					// Never fabricate an id (a dangling `call_tool_<i>`
+					// is rejected by pairing-strict upstreams, e.g.
+					// MiniMax 2013) — demote it to a user message, as
+					// in repairToolCallIDsInMap.
+					msg.Role = "user"
 				}
 			}
 		}
