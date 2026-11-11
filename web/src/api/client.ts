@@ -1418,6 +1418,37 @@ export const api = {
     const conns = await request<ProviderConnection[]>(url)
     return Array.isArray(conns) ? conns.map(normalizeConnection) : []
   },
+  // getConnectionsPage is getConnections with the pagination total the
+  // pager needs (the X-Total-Count header, which the plain request
+  // helper cannot surface) and an optional identity search the server
+  // applies over the provider's whole list before paginating.
+  getConnectionsPage: async (
+    provider?: string,
+    page?: number,
+    pageSize?: number,
+    search?: string
+  ): Promise<{ connections: ProviderConnection[]; total: number | null }> => {
+    const params = new URLSearchParams()
+    if (provider) params.set('provider', provider)
+    if (page && page > 0) params.set('page', String(page))
+    if (pageSize && pageSize > 0) params.set('pageSize', String(pageSize))
+    if (search) params.set('search', search)
+    const qs = params.toString()
+    const res = await fetch(qs ? `/api/connections?${qs}` : '/api/connections', {
+      headers: { ...getAuthHeaders() },
+    })
+    if (res.status === 401) {
+      handleUnauthorized('/api/connections')
+    }
+    if (!res.ok) throw new ApiError(await responseErrorMessage(res), res.status)
+    const conns = (await res.json()) as ProviderConnection[]
+    const totalHeader = res.headers.get('x-total-count')
+    const total = totalHeader !== null ? Number.parseInt(totalHeader, 10) : Number.NaN
+    return {
+      connections: Array.isArray(conns) ? conns.map(normalizeConnection) : [],
+      total: Number.isFinite(total) ? total : null,
+    }
+  },
   getProviderStats: async () => {
     const res = await request<{ stats?: Record<string, Record<string, { total: number; connected: number; error: number; allDisabled: boolean; lastError?: string }>> }>('/api/providers/stats')
     return res.stats || {}

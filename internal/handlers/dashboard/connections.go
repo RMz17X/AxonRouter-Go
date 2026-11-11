@@ -47,6 +47,13 @@ func (h *DashboardHandler) HandleGetConnections(w http.ResponseWriter, r *http.R
 	}
 	h.autoDisableFatalConnections(conns)
 
+	// The Provider Detail account search rides on this endpoint: the
+	// filter runs over the provider's whole list before pagination, so
+	// X-Total-Count reports the filtered total the pager must show.
+	if search := strings.TrimSpace(r.URL.Query().Get("search")); search != "" {
+		conns = filterConnectionsBySearch(conns, search)
+	}
+
 	total := len(conns)
 	page := parsePositiveIntQuery(r.URL.Query().Get("page"), 0)
 	pageSize := parsePositiveIntQuery(r.URL.Query().Get("pageSize"), 0)
@@ -75,6 +82,51 @@ func (h *DashboardHandler) HandleGetConnections(w http.ResponseWriter, r *http.R
 		sanitized = append(sanitized, sanitizeProviderConnection(c))
 	}
 	handlerutil.WriteJSON(w, http.StatusOK, sanitized)
+}
+
+// filterConnectionsBySearch narrows a connection list to the rows whose
+// identity matches the search text as a case-insensitive literal
+// substring — the same field set the Quota Tracker's SQL search covers
+// (clientUsageSearchClause): name, email, connection id, provider, and
+// the display identity stored in data (displayName, username,
+// githubLogin). This endpoint filters its in-memory snapshot, so the
+// match is a plain substring test rather than a LIKE pattern.
+func filterConnectionsBySearch(conns []*models.ProviderConnection, search string) []*models.ProviderConnection {
+	needle := strings.ToLower(search)
+	out := make([]*models.ProviderConnection, 0, len(conns))
+	for _, c := range conns {
+		if c != nil && connectionMatchesSearch(c, needle) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func connectionMatchesSearch(c *models.ProviderConnection, needle string) bool {
+	for _, field := range []*string{c.Name, c.Email} {
+		if field != nil && strings.Contains(strings.ToLower(*field), needle) {
+			return true
+		}
+	}
+	if strings.Contains(strings.ToLower(c.ID), needle) ||
+		strings.Contains(strings.ToLower(c.Provider), needle) {
+		return true
+	}
+	if c.Data != "" {
+		var identity struct {
+			DisplayName string `json:"displayName"`
+			Username    string `json:"username"`
+			GithubLogin string `json:"githubLogin"`
+		}
+		if json.Unmarshal([]byte(c.Data), &identity) == nil {
+			for _, value := range []string{identity.DisplayName, identity.Username, identity.GithubLogin} {
+				if value != "" && strings.Contains(strings.ToLower(value), needle) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // HandleGetProvidersClient handles GET /api/providers and GET /api/providers/client.

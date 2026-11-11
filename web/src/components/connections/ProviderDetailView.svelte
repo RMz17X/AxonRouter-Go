@@ -265,15 +265,41 @@
       : pagedConnections
   )
 
+  // While an account search is applied, the count is the filtered
+  // total the server reports for the search (X-Total-Count), not the
+  // provider's whole roster.
   let totalConnectionsCount = $derived(
-    cachedStats.total > 0
-      ? cachedStats.total
-      : (pagedConnections.length > 0 ? pagedConnections.length : providerConnections.length)
+    appliedConnSearch && pagedTotal !== null
+      ? pagedTotal
+      : cachedStats.total > 0
+        ? cachedStats.total
+        : (pagedConnections.length > 0 ? pagedConnections.length : providerConnections.length)
   )
 
   // Connections pagination
   let connPageSize = $state<number>(10)
   let connPage = $state<number>(1)
+
+  // Account search, mirroring the Quota Tracker's: submit on Enter or
+  // the search button (not per keystroke), a clear button while a
+  // search is applied, and the server filters the provider's whole
+  // list so a match on any page is findable.
+  let connSearchQuery = $state('')
+  let appliedConnSearch = $state('')
+  let pagedTotal = $state<number | null>(null)
+
+  function handleConnSearch(): void {
+    appliedConnSearch = connSearchQuery.trim()
+    connPage = 1
+  }
+
+  function handleClearConnSearch(): void {
+    connSearchQuery = ''
+    if (appliedConnSearch) {
+      appliedConnSearch = ''
+      connPage = 1
+    }
+  }
 
   let connTotalPages = $derived(
     Math.max(1, Math.ceil(totalConnectionsCount / connPageSize))
@@ -283,11 +309,13 @@
     if (!pId) return
     isLoadingConnections = true
     try {
-      const data = await api.getConnections(pId, page, size)
-      pagedConnections = data
+      const data = await api.getConnectionsPage(pId, page, size, appliedConnSearch || undefined)
+      pagedConnections = data.connections
+      pagedTotal = data.total
     } catch (err) {
       console.error('Failed to load paged connections', err)
       pagedConnections = []
+      pagedTotal = null
     } finally {
       isLoadingConnections = false
     }
@@ -296,16 +324,19 @@
   $effect(() => {
     void providerId
     connPage = 1
+    connSearchQuery = ''
+    appliedConnSearch = ''
   })
 
   $effect(() => {
+    void appliedConnSearch
     if (providerId) {
       loadPagedConnections(providerId, connPage, connPageSize)
     }
   })
 
   let paginatedConnections = $derived(
-    pagedConnections.length > 0
+    pagedConnections.length > 0 || appliedConnSearch
       ? pagedConnections
       : providerConnections.slice((connPage - 1) * connPageSize, connPage * connPageSize)
   )
@@ -4312,6 +4343,48 @@
             Load quotas ({pageQuotasPending})
           </button>
         </div>
+      {/if}
+      <!-- Account search (Quota Tracker parity): the server filters the
+           provider's whole list, so this finds accounts on any page. -->
+      <form
+        onsubmit={(e) => {
+          e.preventDefault()
+          handleConnSearch()
+        }}
+        class="flex items-center gap-1 px-1 py-2"
+      >
+        <input
+          bind:value={connSearchQuery}
+          type="search"
+          placeholder="Search name or email"
+          aria-label="Search accounts by name or email"
+          class="h-8 w-44 rounded-lg border border-border-subtle bg-surface-2 px-2 text-xs text-text-main outline-none transition-colors placeholder:text-text-muted"
+        />
+        <button
+          type="submit"
+          aria-label="Search"
+          title="Search"
+          class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg border border-border-subtle bg-surface-2 text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main"
+        >
+          <span class="material-symbols-outlined text-[18px]">search</span>
+        </button>
+        {#if appliedConnSearch}
+          <button
+            type="button"
+            onclick={handleClearConnSearch}
+            aria-label="Clear search"
+            title="Clear search"
+            class="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-surface-3 hover:text-text-main"
+          >
+            <span class="material-symbols-outlined text-[18px]">close</span>
+          </button>
+          <span class="text-xs text-text-muted">{totalConnectionsCount} matching accounts</span>
+        {/if}
+      </form>
+      {#if appliedConnSearch && paginatedConnections.length === 0 && !isLoadingConnections}
+        <p class="px-1 pb-2 text-xs text-text-muted">
+          No accounts match "{appliedConnSearch}".
+        </p>
       {/if}
       <!-- relative z-50: the open row proxy dropdown paints a fixed inset-0
            click-away backdrop over the whole viewport, which otherwise swallows
