@@ -52,6 +52,7 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "codebuddy-intl": "cbai",
   "codex": "cx",
   "cohere": "cohere",
+  "claude-web": "cweb",
   "comfyui": "comfyui",
   "commandcode": "cmc",
   "coqui": "coqui",
@@ -86,6 +87,7 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "kilocode-free": "kcf",
   "kimchi": "kimchi",
   "kimi": "kimi",
+  "kimi-web": "kweb",
   "kiro": "kr",
   "llm7": "llm7",
   "minimax": "minimax",
@@ -2323,6 +2325,46 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     {
       "id": "gemini-4-argon",
       "name": "Gemini 4 Argon"
+    }
+  ],
+  "claude-web": [
+    {
+      "id": "claude-3-7-sonnet",
+      "name": "Claude 3.7 Sonnet"
+    },
+    {
+      "id": "claude-3-7-thinking",
+      "name": "Claude 3.7 Thinking"
+    },
+    {
+      "id": "claude-3-5-sonnet",
+      "name": "Claude 3.5 Sonnet"
+    },
+    {
+      "id": "claude-3-5-haiku",
+      "name": "Claude 3.5 Haiku"
+    },
+    {
+      "id": "claude-web",
+      "name": "Claude Web"
+    }
+  ],
+  "kimi-web": [
+    {
+      "id": "kimi-latest",
+      "name": "Kimi Latest"
+    },
+    {
+      "id": "kimi-search",
+      "name": "Kimi Search"
+    },
+    {
+      "id": "kimi-k2.5",
+      "name": "Kimi K2.5"
+    },
+    {
+      "id": "kimi-web",
+      "name": "Kimi Web"
     }
   ],
   "gh": [
