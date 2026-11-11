@@ -13,17 +13,23 @@ import (
 	"axonrouter/proxy/internal/proxy"
 )
 
-// The completion stream in Kimi Web's SSE shape (spec section 6):
-// data lines whose "type" names the event — "cmpl" carries a text
-// delta, "all_done" ends the turn, "ping" is a heartbeat. Reasoning
-// models interleave thinking deltas, and any other event carrying a
-// text field is treated as content so an unlisted delta type degrades
-// to visible text instead of vanishing.
+// The completion stream in Kimi Web's real SSE shape, captured live
+// from kimi.moonshot.cn on 2026-11-11 (the written spec's section 6
+// guessed a different, fictional format): every data line names its
+// kind in the "event" field. A turn opens with session furniture —
+// "req" (echoes the prompt under "content"), "resp", "zone_set",
+// "loading", and "rename", whose "text" is the auto-generated CHAT
+// TITLE (the prompt's head, truncated) — then "cmpl" events carry the
+// answer deltas in "text", and "done" ends the turn. Only "cmpl" is
+// answer text: folding any other event's text into the reply leaks
+// the chat title into the content, which is exactly the bug this
+// classification exists to prevent.
 
 // kimiWebStreamEvent is one decoded data: line.
 type kimiWebStreamEvent struct {
 	Text  string `json:"text"`
-	Type  string `json:"type"`
+	Event string `json:"event"`
+	View  string `json:"view"`
 	Error *struct {
 		Message string `json:"message"`
 	} `json:"error"`
@@ -43,24 +49,31 @@ func kimiWebClassify(ev kimiWebStreamEvent) (kimiWebChunk, bool) {
 	if ev.Error != nil && ev.Error.Message != "" {
 		return kimiWebChunk{err: ev.Error.Message}, true
 	}
-	switch ev.Type {
+	switch ev.Event {
 	case "cmpl":
-		if ev.Text != "" {
-			return kimiWebChunk{text: ev.Text}, true
+		if ev.Text == "" {
+			return kimiWebChunk{}, false
 		}
-	case "thinking", "think":
-		if ev.Text != "" {
+		// Thinking zones mark their deltas with a think view; the
+		// mapping is defensive — no thinking model has been probed
+		// live yet, and a wrong guess here only mislabels the delta
+		// channel, never leaks furniture into the content.
+		if ev.View == "think" || ev.View == "thinking" {
 			return kimiWebChunk{thinking: ev.Text}, true
 		}
-	case "all_done":
+		return kimiWebChunk{text: ev.Text}, true
+	case "done":
 		return kimiWebChunk{finish: "stop"}, true
-	case "ping":
-		return kimiWebChunk{}, false
-	default:
-		if ev.Text != "" {
-			return kimiWebChunk{text: ev.Text}, true
+	case "error":
+		msg := ev.Text
+		if msg == "" {
+			msg = "upstream error event"
 		}
+		return kimiWebChunk{err: msg}, true
 	}
+	// Everything else (req, resp, ping, zone_set, loading, rename,
+	// and anything unlisted) is session furniture: it carries no
+	// answer text for the client, whatever its other fields hold.
 	return kimiWebChunk{}, false
 }
 

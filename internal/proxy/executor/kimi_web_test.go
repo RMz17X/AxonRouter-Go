@@ -42,12 +42,19 @@ func (f *fakeKimiSite) handler() http.Handler {
 		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &f.completion)
 		w.Header().Set("Content-Type", "text/event-stream")
+		// The real wire shape, captured live 2026-11-11: the turn
+		// opens with furniture events (the "rename" text is the chat
+		// title — the prompt's head — and must never reach the client
+		// as content), then cmpl deltas, then "done".
 		_, _ = w.Write([]byte(
-			"data: {\"text\":\"pikir \",\"type\":\"thinking\"}\n\n" +
-				"data: {\"text\":\"Internet\",\"type\":\"cmpl\"}\n\n" +
-				"data: {\"type\":\"ping\"}\n\n" +
-				"data: {\"text\":\" adalah jaringan\",\"type\":\"cmpl\"}\n\n" +
-				"data: {\"type\":\"all_done\"}\n\n"))
+			"data: {\"content\":\"Apa itu internet?\",\"event\":\"req\",\"model\":\"kimi\"}\n\n" +
+				"data: {\"event\":\"ping\"}\n\n" +
+				"data: {\"event\":\"resp\",\"model\":\"kimi\"}\n\n" +
+				"data: {\"event\":\"rename\",\"text\":\"Apa itu internet?\"}\n\n" +
+				"data: {\"event\":\"cmpl\",\"text\":\"pikir \",\"view\":\"think\"}\n\n" +
+				"data: {\"event\":\"cmpl\",\"text\":\"Internet\",\"view\":\"cmpl\"}\n\n" +
+				"data: {\"event\":\"cmpl\",\"text\":\" adalah jaringan\",\"view\":\"cmpl\"}\n\n" +
+				"data: {\"event\":\"done\"}\n\n"))
 	})
 	mux.HandleFunc("DELETE /api/chat/{id}", func(w http.ResponseWriter, r *http.Request) {
 		f.deleteHits.Add(1)
@@ -92,6 +99,12 @@ func TestForwardKimiWeb_StreamRefreshesAndReuses(t *testing.T) {
 			if !strings.Contains(out, want) {
 				t.Errorf("call #%d stream output missing %q:\n%s", i, want, out)
 			}
+		}
+		// The chat-title furniture event must not leak as content:
+		// the prompt may appear in the stream only inside the req
+		// echo, which the client never sees.
+		if strings.Contains(out, `"content":"Apa itu internet?"`) {
+			t.Errorf("call #%d leaked the chat title as content:\n%s", i, out)
 		}
 	}
 

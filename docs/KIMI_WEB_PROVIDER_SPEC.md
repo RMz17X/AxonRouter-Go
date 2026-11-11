@@ -142,23 +142,25 @@ Content-Type: application/json
 
 ## 6. Parsing Format Response Stream SSE Kimi
 
-Kimi Web menggunakan format SSE berikut:
+Kimi Web menggunakan format SSE berikut — **bentuk asli yang tertangkap live 2026-11-11** (versi awal bagian ini menebak field `type`; server sebenarnya memakai field `event`):
 
-1. **`event: cmpl` (Delta teks konten)**
+1. **Event furniture di awal giliran** — BUKAN konten, jangan pernah diteruskan ke client:
    ```json
-   data: {"text": "Internet", "type": "cmpl"}
+   data: {"content": "<prompt user>", "event": "req", "model": "kimi"}
+   data: {"event": "ping"}
+   data: {"event": "resp", "model": "kimi"}
+   data: {"event": "zone_set", "idx_z": 0, "zone_type": "normal"}
+   data: {"event": "loading", "loading": true, "type": "default"}
+   data: {"event": "rename", "text": "<judul chat = kepala prompt, terpotong>"}
    ```
-2. **`event: cmpl` (Lanjutan teks)**
+   Khusus `rename`: field `text`-nya adalah judul chat yang dibuat otomatis dari pesan pertama. Memasukkannya ke konten = membocorkan kepala prompt ke jawaban.
+2. **`event: cmpl` (Delta teks konten)**
    ```json
-   data: {"text": " adalah jaringan komputer global...", "type": "cmpl"}
+   data: {"event": "cmpl", "idx_s": 0, "idx_z": 0, "text": "Internet", "view": "cmpl"}
    ```
-3. **`event: all_done` (Selesai)**
+3. **`event: done` (Selesai)**
    ```json
-   data: {"type": "all_done"}
-   ```
-4. **`event: ping` (Heartbeat / keepalive)**
-   ```json
-   data: {"type": "ping"}
+   data: {"event": "done"}
    ```
 
 ### Konversi ke Format OpenAI:
@@ -167,7 +169,7 @@ AxonRouter membaca event `cmpl`, mengekstrak field `text`, lalu memancarkannya k
 data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","choices":[{"delta":{"content":"Internet"}}]}
 ```
 
-Dan saat menerima `event: all_done`, pancarkan penutup:
+Dan saat menerima `event: done`, pancarkan penutup:
 ```
 data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
 data: [DONE]
