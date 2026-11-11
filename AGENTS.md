@@ -676,3 +676,27 @@ make changelog-merge TAG=v1.9.11
 rtk git status
 rtk git diff
 ```
+
+## 9. Staging Deploy (hijilaptop)
+
+Staging is deployed with the build stack, never the production stack:
+
+1. `docker compose -f docker-compose.build.yml build app` — the image lands
+   under the build stack's own tag (`axonrouter-go:local`) while the running
+   app keeps serving; the build phase has zero downtime.
+2. `docker compose -f docker-compose.build.yml up -d` — the container
+   recreate is the only interruption.
+
+Rules:
+
+- Never retag images for staging, and never deploy staging via
+  `docker-compose.single.yml` — that stack is production-only and pulls the
+  registry image.
+- The bundled `postgres` service stays behind the `local-pg` profile with no
+  app `depends_on`: staging uses the shared global-postgres via the network
+  alias. Starting a second postgres causes split-brain writes.
+- The app environment carries `TZ: Asia/Jakarta` (usage day boundaries are
+  process-local time).
+- Run from the release worktree, whose `.env` sets
+  `COMPOSE_PROJECT_NAME=axonrouter-go`, so the stack keeps the same network
+  and `appdata` volume as the running staging container.
