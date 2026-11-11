@@ -1287,6 +1287,23 @@
     }
   })
 
+  // The accounts page rides in the URL on the same terms, so a refresh
+  // lands on the page the operator left instead of restarting at page 1.
+  // Page 1 removes the parameter instead of pinning it.
+  $effect(() => {
+    void page
+    if (!initialLoadDone || typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (page > 1) {
+      url.searchParams.set('page', String(page))
+    } else {
+      url.searchParams.delete('page')
+    }
+    if (url.href !== window.location.href) {
+      window.history.replaceState(window.history.state, '', url)
+    }
+  })
+
   // An unknown provider yields an empty list and an empty dropdown, so the
   // deep link is released once the real option list is known.
   $effect(() => {
@@ -1302,6 +1319,16 @@
     // would silently un-filter the page for anyone holding an old bookmark.
     const deepLinkProvider = new URLSearchParams(window.location.search).get('provider')
     if (deepLinkProvider) providerFilter = deepLinkProvider
+
+    // A ?page= deep link survives a reload the same way: the accounts
+    // pagination starts from the URL rather than always page 1. An
+    // out-of-range page is clamped by the server on the first fetch,
+    // and the write-back below then corrects the URL to match.
+    const deepLinkPage = Number.parseInt(
+      new URLSearchParams(window.location.search).get('page') ?? '',
+      10,
+    )
+    if (Number.isFinite(deepLinkPage) && deepLinkPage > 1) page = deepLinkPage
 
     // Hydrate auto-refresh preference
     const stored = window.localStorage.getItem(AUTO_REFRESH_STORAGE_KEY)
