@@ -42,19 +42,25 @@ type kimiWebRoute struct {
 // accepts — proven live 2026-11-11 against real connections: the
 // completion endpoint rejects anything outside [kimi k1 k1.5 k2
 // k1.5-thinking] with a 422 validation error, and there is no k3
-// slot id (a literal "k3" is rejected too). Public names mirror
-// the web product's current generation (fragments 1121, 1123):
-// the default slot serves today's K3-generation experience, so
-// kimi-latest and kimi-k3 both ride it; the legacy k2 slot —
-// still accepted by the API — is no longer surfaced by the web
-// product and carries no public name. The earlier kimi-k2.5 label
-// named a version the product never carried. Search is not a
-// chat model at all: it is served by ExecuteKimiWebSearch on
-// /v1/search.
+// slot id (a literal "k3" is rejected too). The catalog carries
+// the current generation plus every legacy slot that remains
+// callable (fragments 1121, 1123, 1125): kimi-latest, kimi-k3
+// (displayed "K3.1 Pro", the web's own flagship label) and the
+// kimi-web catch-all ride the default slot, which serves today's
+// K3-generation experience; kimi-k2, kimi-k1.5-thinking,
+// kimi-k1.5 and kimi-k1 name the legacy models they actually
+// reach — each re-probed live with real completions before being
+// listed. The earlier kimi-k2.5 label named a version the product
+// never carried. Search is not a chat model at all: it is served
+// by ExecuteKimiWebSearch on /v1/search.
 var kimiWebModelMap = map[string]kimiWebRoute{
-	"kimi-latest": {upstreamModel: "kimi"},
-	"kimi-k3":     {upstreamModel: "kimi"},
-	"kimi-web":    {upstreamModel: "kimi"},
+	"kimi-latest":        {upstreamModel: "kimi"},
+	"kimi-k3":            {upstreamModel: "kimi"},
+	"kimi-web":           {upstreamModel: "kimi"},
+	"kimi-k2":            {upstreamModel: "k2"},
+	"kimi-k1.5-thinking": {upstreamModel: "k1.5-thinking"},
+	"kimi-k1.5":          {upstreamModel: "k1.5"},
+	"kimi-k1":            {upstreamModel: "k1"},
 }
 
 func kimiWebResolveModel(model string) kimiWebRoute {
