@@ -531,6 +531,11 @@ func jsonResponse(ctx context.Context, w http.ResponseWriter, upstream io.Reader
 		return nil
 	}
 
+	if ctx != nil {
+		if patched, changed := translator.PatchZeroPromptUsage(body, translator.PromptEstimateFromContext(ctx)); changed {
+			body = patched
+		}
+	}
 	if usage := translator.ParseResponseUsage(body); usage != nil {
 		if ctx != nil {
 			translator.SetUsage(ctx, usage)

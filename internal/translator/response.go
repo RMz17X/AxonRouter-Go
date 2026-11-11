@@ -184,6 +184,51 @@ func ParseResponseUsage(body []byte) *OpenAIUsage {
 	return &usage
 }
 
+// PatchZeroPromptUsage rewrites an OpenAI-shaped response body's usage block
+// when the upstream reported prompt_tokens as 0 (or omitted it): some
+// providers (MiniMax streaming, notably) always report prompt_tokens: 0,
+// which leaves every client's context meter stuck at 0% even though the
+// conversation is long. The gateway's own body-size prompt estimate (the
+// same fallback the translated-stream terminal usage block applies)
+// stands in. Real reported numbers are never overwritten: a non-zero
+// prompt_tokens — or a total_tokens the upstream actually reported — is
+// left exactly as sent.
+func PatchZeroPromptUsage(body []byte, estimate int) ([]byte, bool) {
+	if estimate <= 0 || len(body) == 0 {
+		return body, false
+	}
+	var doc map[string]any
+	if json.Unmarshal(body, &doc) != nil {
+		return body, false
+	}
+	usage, ok := doc["usage"].(map[string]any)
+	if !ok {
+		return body, false
+	}
+	if v, present := usageNumber(usage, "prompt_tokens"); present && v != 0 {
+		return body, false
+	}
+	usage["prompt_tokens"] = estimate
+	if v, present := usageNumber(usage, "total_tokens"); !present || v == 0 {
+		completion, _ := usageNumber(usage, "completion_tokens")
+		usage["total_tokens"] = estimate + completion
+	}
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return body, false
+	}
+	return out, true
+}
+
+// usageNumber reads an integer-valued field from a decoded usage block.
+func usageNumber(usage map[string]any, key string) (int, bool) {
+	v, ok := usage[key].(float64)
+	if !ok {
+		return 0, false
+	}
+	return int(v), true
+}
+
 // ParseOllamaUsage extracts usage from an Ollama native response body, whose
 // counters sit at the TOP level rather than under `usage`.
 //

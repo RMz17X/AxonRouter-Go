@@ -300,12 +300,21 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 		// OpenAI-compatible clients mid-turn (upstream 95c9d03e).
 		toolFill := internalproxy.NewStreamToolCallIDFill()
 		thinkFilter := translator.NewThinkStreamFilter()
+		// Upstreams that report prompt_tokens: 0 in their terminal usage
+		// chunk (MiniMax streaming) leave client context meters at 0%;
+		// the body-size estimate stands in for the missing count, the
+		// same fallback the translated path applies to its terminal
+		// usage block.
+		promptEst := translator.PromptEstimateFromContext(ctx)
 		err := internalproxy.ScanStream(upstream, func(payload []byte) {
 			noteUpstreamProgress(ctx)
 			if patched, changed := toolFill.Fill(payload); changed {
 				payload = patched
 			}
 			if patched, changed := thinkFilter.FilterSSEPayload(payload); changed {
+				payload = patched
+			}
+			if patched, changed := translator.PatchZeroPromptUsage(payload, promptEst); changed {
 				payload = patched
 			}
 			if metrics.TTFT == 0 {
@@ -607,6 +616,9 @@ func (h *ChatHandler) handleJSONResponse(ctx context.Context, w http.ResponseWri
 	if !translate {
 		if normalized, changed := translator.NormalizeOpenAIResponseJSON(body); changed {
 			body = normalized
+		}
+		if patched, changed := translator.PatchZeroPromptUsage(body, translator.PromptEstimateFromContext(ctx)); changed {
+			body = patched
 		}
 		// The !translate path serves both OpenAI bodies (/v1/chat/completions,
 		// translateResponse hardcoded false) and Claude bodies (claude/anthropic
