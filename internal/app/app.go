@@ -62,7 +62,7 @@ func Run(fxApp *fx.App) error {
 		os.Exit(1)
 	}()
 
-	stopCtx, stopCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), StopBudget())
 	defer stopCancel()
 	return fxApp.Stop(stopCtx)
 }

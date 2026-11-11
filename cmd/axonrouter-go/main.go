@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -202,11 +203,20 @@ func runServer(cCtx *cli.Context) error {
 		os.Exit(1)
 	}()
 
-	stopCtx, stopCancel := context.WithTimeout(context.Background(), 20*time.Second)
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), app.StopBudget())
 	defer stopCancel()
 	stopErr := fxApp.Stop(stopCtx)
 
 	// The listener is closed now, so a restart hook can bind the same port.
 	shutdown.RunAfterStop()
+	if errors.Is(stopErr, context.DeadlineExceeded) {
+		// The stop was requested (signal, dashboard button, restart
+		// hook); a drain that outlives even the aligned budget is
+		// logged, not fatal. The process is leaving either way, and
+		// returning the error made main exit 1, so every intentional
+		// stop under streaming load read as a crash.
+		log.Printf("[shutdown] drain did not finish within %s: %v", app.StopBudget(), stopErr)
+		return nil
+	}
 	return stopErr
 }

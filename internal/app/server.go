@@ -105,6 +105,17 @@ func shutdownGrace() time.Duration {
 	return defaultShutdownGraceSeconds * time.Second
 }
 
+// StopBudget is the total time the process gives fxApp.Stop to drain:
+// the server's own shutdown grace plus headroom for the remaining
+// lifecycle hooks (usage flush, database close). The stop context in
+// main must never be SHORTER than the server grace — at 20s against a
+// 30s grace, every stop under streaming load burned the whole budget,
+// fx reported context deadline exceeded, and main exited 1 on an
+// intentional shutdown, making a planned stop look like a crash.
+func StopBudget() time.Duration {
+	return shutdownGrace() + 15*time.Second
+}
+
 // ProvideServer creates *http.Server and registers lifecycle hooks.
 func ProvideServer(p ServerParams) *http.Server {
 	var addr string
