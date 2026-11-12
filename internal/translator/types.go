@@ -48,11 +48,77 @@ type ToolCallState struct {
 type OpenAIUsage struct {
 	PromptTokens             int                      `json:"prompt_tokens"`
 	CompletionTokens         int                      `json:"completion_tokens"`
+	// TotalTokens is the upstream's own total. It is the only way to tell an
+	// OpenAI-shaped usage (reasoning nested inside completion_tokens) from the
+	// xAI-style one (reasoning reported ON TOP of completion_tokens): only the
+	// latter has total == prompt + completion + reasoning.
+	//
+	// It is omitzero on purpose: the struct is marshaled straight to the
+	// client on the translated lanes (the Claude-to-Chat chunk writer), and a
+	// total the upstream never reported would otherwise reach the client as
+	// a literal "total_tokens": 0 — a total that contradicts the prompt and
+	// completion counts beside it and pins a context meter to zero.
+	//
+	// omitzero, not omitempty: the marshaling here is encoding/json/v2, which
+	// keeps a zero number under omitempty (the directive only skips empty
+	// values in the v1 sense — false, 0 is a value). omitzero is the v2
+	// directive that skips the zero.
+	TotalTokens              int                      `json:"total_tokens,omitzero"`
 	CachedTokens             int                      `json:"cached_tokens"`
 	CacheCreationInputTokens int                      `json:"cache_creation_input_tokens"`
 	PromptTokensDetails      *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionTokensDetails  *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
 	PromptCacheIncluded      bool                     `json:"-"`
+	// ReasoningIncludedInOutput records that reasoning_tokens is a SUBSET of
+	// completion_tokens for this usage — the OpenAI Chat Completions and
+	// Responses families. Pricing then bills the reasoning slice once instead
+	// of charging it on top of the output it already sits in
+	// (upstream decolua/9router #5634).
+	//
+	// It stays false for the families that report reasoning apart from the
+	// output — Gemini/Antigravity's thoughtsTokenCount, and the OpenAI-compatible
+	// upstreams whose total_tokens equals prompt + completion + reasoning.
+	ReasoningIncludedInOutput bool `json:"-"`
+}
+
+// ReasoningIsSubsetOfOutput reports whether the reasoning count of an
+// OpenAI-shaped usage is already inside the output count.
+//
+// OpenAI Chat Completions and the Responses API nest reasoning_tokens inside
+// completion_tokens/output_tokens. A few OpenAI-compatible upstreams (xAI) report
+// it on top instead, and those are recognisable because total_tokens equals
+// prompt + completion + reasoning. A usage with no total cannot disprove the
+// subset reading, so it keeps it — the same call upstream makes in
+// reasoningIsSubsetOfOutput (open-sse/utils/usageTracking.js).
+//
+// Port of reasoningIsSubsetOfOutput in upstream
+// open-sse/utils/usageTracking.js (decolua/9router #5634).
+func (u *OpenAIUsage) ReasoningIsSubsetOfOutput() bool {
+	if u == nil {
+		return false
+	}
+	reasoning := u.ReasoningTokens()
+	if reasoning <= 0 {
+		return false
+	}
+	if u.TotalTokens <= 0 {
+		// No total to compare against: the additive reading cannot be
+		// proved, so the reasoning slice is treated as part of the output.
+		return true
+	}
+	return u.TotalTokens != u.PromptTokens+u.CompletionTokens+reasoning
+}
+
+// MarkReasoningSubset records the subset relation for an OpenAI-shaped usage.
+//
+// The marker is what pricing reads, so it is set where the usage is parsed —
+// the same place upstream sets reasoning_included_in_output — and carried
+// through the canonical shape unchanged.
+func (u *OpenAIUsage) MarkReasoningSubset() {
+	if u == nil {
+		return
+	}
+	u.ReasoningIncludedInOutput = u.ReasoningIsSubsetOfOutput()
 }
 
 type PromptTokensDetails struct {

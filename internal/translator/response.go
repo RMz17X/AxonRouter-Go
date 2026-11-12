@@ -181,6 +181,11 @@ func ParseResponseUsage(body []byte) *OpenAIUsage {
 	}
 	usage.CachedTokens = CachedTokensFromJSON(raw.Usage)
 	usage.PromptCacheIncluded = true
+	// The OpenAI families count reasoning_tokens INSIDE completion_tokens, so
+	// pricing has to know the slice is a subset before it bills it
+	// (decolua/9router #5634). Claude carries no reasoning field, so this is a
+	// no-op there.
+	usage.MarkReasoningSubset()
 	return &usage
 }
 
@@ -511,21 +516,27 @@ func TranslateOpenAIToClaude(openaiResp []byte) ([]byte, *OpenAIUsage, error) {
 	// Usage
 	inputTokens, outputTokens, cachedTokens, cacheCreationTokens := 0, 0, 0, 0
 	var details *CompletionTokensDetails
+	totalTokens := 0
 	if resp.Usage != nil {
 		inputTokens = resp.Usage.PromptTokens
 		outputTokens = resp.Usage.CompletionTokens
 		details = resp.Usage.CompletionTokensDetails
 		cachedTokens = resp.Usage.GetCachedTokens()
 		cacheCreationTokens = resp.Usage.CacheCreationInputTokens
+		totalTokens = resp.Usage.TotalTokens
 	}
 	usage := &OpenAIUsage{
 		PromptTokens:             inputTokens,
 		CompletionTokens:         outputTokens,
+		TotalTokens:              totalTokens,
 		CachedTokens:             cachedTokens,
 		CacheCreationInputTokens: cacheCreationTokens,
 		CompletionTokensDetails:  details,
 		PromptCacheIncluded:      true,
 	}
+	// The upstream usage was OpenAI-shaped, so the reasoning slice it carries
+	// sits inside the output count (decolua/9router #5634).
+	usage.MarkReasoningSubset()
 	// Anthropic's input_tokens counts only uncached input; OpenAI's
 	// prompt_tokens already includes the cached subset. Splitting them here
 	// keeps Claude Code (which sums input + cache_read + cache_creation)
@@ -684,6 +695,9 @@ func TranslateOpenAIToClaudeStreamSession(sessionKey string, openaiChunk []byte)
 		if chunk.Usage.CompletionTokens > 0 {
 			state.Usage.CompletionTokens = chunk.Usage.CompletionTokens
 		}
+		if chunk.Usage.TotalTokens > 0 {
+			state.Usage.TotalTokens = chunk.Usage.TotalTokens
+		}
 		if cached := chunk.Usage.GetCachedTokens(); cached > 0 {
 			state.Usage.CachedTokens = cached
 		}
@@ -693,6 +707,9 @@ func TranslateOpenAIToClaudeStreamSession(sessionKey string, openaiChunk []byte)
 		if chunk.Usage.CompletionTokensDetails != nil {
 			state.Usage.CompletionTokensDetails = chunk.Usage.CompletionTokensDetails
 		}
+		// The chunk's usage arrived straight from the wire, so the subset
+		// relation has to be derived here (decolua/9router #5634).
+		state.Usage.MarkReasoningSubset()
 		// Deferred terminal: the finish chunk already went by without usage,
 		// and this trailing chunk is where stream_options.include_usage
 		// delivers it. Close the message now with the real numbers.

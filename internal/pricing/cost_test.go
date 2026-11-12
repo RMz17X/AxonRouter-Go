@@ -72,6 +72,11 @@ func TestGetPricingForModel_Parity(t *testing.T) {
 // every case. The expected numbers are what upstream's
 // calculateCostFromTokens returns for prompt 1M, completion 1M, cached 250k,
 // reasoning 100k, cache_creation 50k.
+//
+// The mix is ADDITIVE here — the reasoning slice sits on top of the completion
+// count, which is what a usage without the subset marker describes. The
+// OpenAI-shaped families (reasoning nested inside completion_tokens) are priced
+// once and are covered by TestCalculateCost_ReasoningSubsetIsChargedOnce.
 func TestCalculateCost_Parity(t *testing.T) {
 	tokens := TokenCounts{
 		PromptTokens:        1_000_000,
@@ -161,6 +166,96 @@ func TestEstimateCost_ZeroTokens(t *testing.T) {
 	if cost := EstimateCost("openai", "gpt-4o", TokenCounts{}); cost != 0 {
 		t.Errorf("cost = %v, want 0", cost)
 	}
+}
+
+// TestCalculateCost_ReasoningSubsetIsChargedOnce covers the money bug behind
+// upstream decolua/9router #5634: the OpenAI families report reasoning_tokens
+// INSIDE completion_tokens, so charging the full completion at the output rate
+// and the reasoning slice again at the reasoning rate bills every reasoning
+// turn twice.
+//
+// The worked example is the one the bug was reported with: prompt 100,
+// completion 1000, reasoning 800, input rate 1, output rate 10, reasoning rate
+// 10.
+//   - additive (no marker): 100*1 + 1000*10 + 800*10 = 18100 per million → 0.0181
+//   - subset (marker set):  100*1 +  200*10 +  800*10 = 10100 per million → 0.0101
+//
+// The subset figure is the same as charging the completion count exactly once
+// (1000 * 10 = 10000 per million), plus the prompt: no token is billed twice.
+func TestCalculateCost_ReasoningSubsetIsChargedOnce(t *testing.T) {
+	p := ModelPricing{InputPer1M: 1, OutputPer1M: 10, ReasoningPer1M: 10}
+
+	base := TokenCounts{
+		PromptTokens:     100,
+		CompletionTokens: 1000,
+		ReasoningTokens:  800,
+	}
+
+	t.Run("the reasoning slice is a subset of the output", func(t *testing.T) {
+		tokens := base
+		tokens.ReasoningIncludedInOutput = true
+		got := CalculateCost(tokens, p)
+		// prompt 100*1 + output remainder 200*10 + reasoning 800*10 = 10100/1M
+		want := 10100.0 / 1_000_000
+		if math.Abs(got-want) > 1e-12 {
+			t.Errorf("cost = %v, want %v (reasoning charged once)", got, want)
+		}
+	})
+
+	t.Run("the reasoning slice sits on top of the output", func(t *testing.T) {
+		tokens := base
+		got := CalculateCost(tokens, p)
+		// prompt 100*1 + output 1000*10 + reasoning 800*10 = 18100/1M
+		want := 18100.0 / 1_000_000
+		if math.Abs(got-want) > 1e-12 {
+			t.Errorf("cost = %v, want %v (reasoning charged on top)", got, want)
+		}
+	})
+
+	t.Run("the subset case is not overcharged", func(t *testing.T) {
+		subset := base
+		subset.ReasoningIncludedInOutput = true
+		additive := base
+		subsetCost, additiveCost := CalculateCost(subset, p), CalculateCost(additive, p)
+		if subsetCost >= additiveCost {
+			t.Errorf("subset cost %v is not below the additive cost %v", subsetCost, additiveCost)
+		}
+		// The overcharge factor collapses from 1.8x to 1.0x: the subset
+		// figure is the completion count charged exactly once.
+		once := float64(base.CompletionTokens) / 1_000_000 * p.OutputPer1M
+		withPrompt := once + float64(base.PromptTokens)/1_000_000*p.InputPer1M
+		if math.Abs(subsetCost-withPrompt) > 1e-12 {
+			t.Errorf("subset cost = %v, want %v (every output token billed once)", subsetCost, withPrompt)
+		}
+	})
+
+	t.Run("a reasoning count larger than the output floors at zero", func(t *testing.T) {
+		tokens := TokenCounts{
+			PromptTokens:             0,
+			CompletionTokens:         100,
+			ReasoningTokens:          500,
+			ReasoningIncludedInOutput: true,
+		}
+		got := CalculateCost(tokens, p)
+		// Only the reasoning slice is billed; the output remainder floors at 0.
+		want := 500.0 / 1_000_000 * 10
+		if math.Abs(got-want) > 1e-12 {
+			t.Errorf("cost = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("no reasoning reported leaves the output untouched", func(t *testing.T) {
+		tokens := TokenCounts{
+			PromptTokens:             0,
+			CompletionTokens:         1000,
+			ReasoningIncludedInOutput: true,
+		}
+		got := CalculateCost(tokens, p)
+		want := 1000.0 / 1_000_000 * 10
+		if math.Abs(got-want) > 1e-12 {
+			t.Errorf("cost = %v, want %v", got, want)
+		}
+	})
 }
 
 // TestMatchPricingPattern covers the glob rule: `*` has to cross a `/`, because

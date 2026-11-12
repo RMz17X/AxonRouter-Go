@@ -20,6 +20,19 @@ type TokenCounts struct {
 	CachedTokens        int
 	CacheCreationTokens int
 	ReasoningTokens     int
+	// ReasoningIncludedInOutput marks the OpenAI-shaped usage families, where
+	// reasoning_tokens is a SUBSET of completion_tokens: the count is already
+	// inside the output the rate was applied to, and charging it again at the
+	// reasoning rate bills every reasoning turn twice (upstream decolua/9router
+	// #5634).
+	//
+	// It is false by default on purpose. Gemini/Antigravity reports
+	// thoughtsTokenCount SEPARATE from candidatesTokenCount, and the few
+	// OpenAI-compatible upstreams that report reasoning on top of completion
+	// (xAI-style) are additive too — for those the reasoning slice is a real
+	// extra charge and must stay additive. Only usage whose family is known to
+	// nest reasoning inside the output sets it.
+	ReasoningIncludedInOutput bool
 }
 
 // freeModelNamespaces are model-id prefixes billed at zero. The namespace is
@@ -131,6 +144,14 @@ func matchPricingPattern(pattern, model string) bool {
 // input rate applies and then charged separately; a rate left at zero in the
 // table falls back the way upstream does (cached → input, reasoning → output,
 // cache_creation → input).
+//
+// The output count is charged once. When reasoning is known to be a SUBSET of
+// the output (ReasoningIncludedInOutput, the OpenAI families), the reasoning
+// slice is taken out of the output before the output rate applies and then
+// charged at the reasoning rate — charging it on top of the full output billed
+// every reasoning turn twice (upstream decolua/9router #5634). Without the
+// marker the reasoning slice stays additive, which is what Gemini's separate
+// thoughtsTokenCount and the xAI-style reporting need.
 func CalculateCost(tokens TokenCounts, p ModelPricing) float64 {
 	nonCachedInput := tokens.PromptTokens - tokens.CachedTokens - tokens.CacheCreationTokens
 	if nonCachedInput < 0 {
@@ -145,7 +166,15 @@ func CalculateCost(tokens TokenCounts, p ModelPricing) float64 {
 		}
 		cost += float64(tokens.CachedTokens) / 1_000_000 * rate
 	}
-	cost += float64(tokens.CompletionTokens) / 1_000_000 * p.OutputPer1M
+
+	billedOutput := tokens.CompletionTokens
+	if tokens.ReasoningIncludedInOutput && tokens.ReasoningTokens > 0 {
+		billedOutput = tokens.CompletionTokens - tokens.ReasoningTokens
+		if billedOutput < 0 {
+			billedOutput = 0
+		}
+	}
+	cost += float64(billedOutput) / 1_000_000 * p.OutputPer1M
 	if tokens.ReasoningTokens > 0 {
 		rate := p.ReasoningPer1M
 		if rate == 0 {

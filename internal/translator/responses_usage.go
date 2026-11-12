@@ -43,6 +43,9 @@ func ParseResponsesUsage(body []byte) *OpenAIUsage {
 		// The figure was counted against the Responses envelope, so the
 		// Chat-shaped prompt/completion split already includes the cache.
 		PromptCacheIncluded: true,
+		// The Responses envelope reports its own total; carry it so the
+		// subset check below can tell the families apart.
+		TotalTokens: u.TotalTokens,
 	}
 
 	cached := 0
@@ -72,5 +75,10 @@ func ParseResponsesUsage(body []byte) *OpenAIUsage {
 	if reasoning > 0 {
 		out.CompletionTokensDetails = &CompletionTokensDetails{ReasoningTokens: reasoning}
 	}
+	// The Responses API counts output_tokens as INCLUDING the reasoning slice
+	// (output_tokens_details.reasoning_tokens is a breakdown of it, not an
+	// extra), so the marker is set unconditionally here — there is no additive
+	// variant of the Responses envelope (decolua/9router #5634).
+	out.ReasoningIncludedInOutput = reasoning > 0
 	return out
 }

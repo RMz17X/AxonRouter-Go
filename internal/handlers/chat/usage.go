@@ -468,12 +468,21 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 	// are handed over too: the formula takes them out of the input rate and
 	// charges them at their own, cheaper rate. The provider matters because
 	// gateways can price the same model differently.
+	//
+	// ReasoningIncludedInOutput tells the formula whether the reasoning slice
+	// is already inside completion_tokens. For the OpenAI families it is, and
+	// charging it on top of the full output billed every reasoning turn twice
+	// (decolua/9router #5634). The marker travels on the usage record, which
+	// was marked where the usage was parsed — so Gemini's separate
+	// thoughtsTokenCount and the xAI-style additive reporting keep charging
+	// the reasoning slice on top.
 	cost := pricing.EstimateCost(info.Provider, info.Model, pricing.TokenCounts{
-		PromptTokens:        usage.PromptTokens,
-		CompletionTokens:    usage.CompletionTokens,
-		CachedTokens:        cachedTokens,
-		CacheCreationTokens: cacheCreationTokens,
-		ReasoningTokens:     usage.ReasoningTokens(),
+		PromptTokens:             usage.PromptTokens,
+		CompletionTokens:         usage.CompletionTokens,
+		CachedTokens:             cachedTokens,
+		CacheCreationTokens:      cacheCreationTokens,
+		ReasoningTokens:          usage.ReasoningTokens(),
+		ReasoningIncludedInOutput: usage.ReasoningIncludedInOutput,
 	})
 	metaJSON := fmt.Sprintf(`{"provider":"%s","model":"%s","connectionId":"%s"}`, info.Provider, info.Model, info.ConnectionID)
 
