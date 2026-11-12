@@ -51,7 +51,15 @@ func BuildStreamErrorBytes(code int, message string, format SSEClientFormat) []b
 		encoded = []byte(`{"error":{"message":"upstream stream failed","type":"server_error","code":"internal_server_error"}}`)
 	}
 	if format == SSEFormatClaude {
-		ev, _ := json.Marshal(map[string]any{"type": "error", "error": payload.Error})
+		// Claude Code retries a mid-stream error event only when its type is
+		// overloaded_error (what Anthropic emits for transient failures); the
+		// frame carries no HTTP status, so server_error would end the run
+		// instead of retrying it. Every abort that reaches here (upstream cut,
+		// stall) is transient, so the message and the code stay and only the
+		// type changes (upstream decolua/9router #5609).
+		detail := payload.Error
+		detail.Type = "overloaded_error"
+		ev, _ := json.Marshal(map[string]any{"type": "error", "error": detail})
 		return []byte("event: error\ndata: " + string(ev) + "\n\n")
 	}
 	return []byte("data: " + string(encoded) + "\n\n" + sseDoneFrame)

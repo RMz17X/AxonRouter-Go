@@ -5,6 +5,7 @@ import (
 	json "encoding/json/v2"
 	"errors"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -88,5 +89,66 @@ func TestSSECopy_AbortEmitsInBandErrorFrame(t *testing.T) {
 				t.Errorf("stream must still close with [DONE], got %q", out)
 			}
 		})
+	}
+}
+
+// TestBuildStreamErrorBytes_ClaudeUsesOverloadedError pins the Claude-lane
+// error type. A mid-stream abort carries no HTTP status, and Claude Code only
+// retries a streamed error event whose type is overloaded_error — the type
+// Anthropic itself uses for transient failures. With server_error the run ends
+// instead of retrying, so every upstream cut killed the turn.
+//
+// Upstream decolua/9router #5609.
+func TestBuildStreamErrorBytes_ClaudeUsesOverloadedError(t *testing.T) {
+	frame := string(BuildStreamErrorBytes(http.StatusBadGateway, "upstream connection lost", SSEFormatClaude))
+
+	if !strings.HasPrefix(frame, "event: error\ndata: ") {
+		t.Fatalf("Claude frame shape changed: %q", frame)
+	}
+	payload := strings.TrimPrefix(frame, "event: error\ndata: ")
+	var decoded struct {
+		Type  string         `json:"type"`
+		Error sseErrorDetail `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(payload)), &decoded); err != nil {
+		t.Fatalf("Claude frame is not JSON: %v (frame=%q)", err, frame)
+	}
+	if decoded.Type != "error" {
+		t.Errorf("frame type = %q, want %q", decoded.Type, "error")
+	}
+	if decoded.Error.Type != "overloaded_error" {
+		t.Errorf("error type = %q, want %q — Claude Code only retries this one",
+			decoded.Error.Type, "overloaded_error")
+	}
+	// The message and the code stay: the type is the only thing that changes.
+	if decoded.Error.Message != "upstream connection lost" {
+		t.Errorf("message = %q, want %q", decoded.Error.Message, "upstream connection lost")
+	}
+	if decoded.Error.Code != "upstream_error" {
+		t.Errorf("code = %q, want %q", decoded.Error.Code, "upstream_error")
+	}
+}
+
+// TestBuildStreamErrorBytes_OpenAIKeepsServerError guards the other lanes: the
+// overloaded_error type is a Claude-client convention and must not leak into
+// the OpenAI frame, whose clients read server_error.
+func TestBuildStreamErrorBytes_OpenAIKeepsServerError(t *testing.T) {
+	frame := string(BuildStreamErrorBytes(http.StatusBadGateway, "upstream connection lost", SSEFormatOpenAI))
+
+	if strings.Contains(frame, "overloaded_error") {
+		t.Errorf("the OpenAI frame must keep server_error, got %q", frame)
+	}
+	parsed, ok := errorFrame(t, frame)
+	if !ok {
+		t.Fatalf("no in-band error frame in %q", frame)
+	}
+	if parsed.Error.Type != "server_error" {
+		t.Errorf("error type = %q, want %q", parsed.Error.Type, "server_error")
+	}
+	if parsed.Error.Code != "upstream_error" {
+		t.Errorf("code = %q, want %q", parsed.Error.Code, "upstream_error")
+	}
+	if !strings.HasSuffix(frame, sseDoneFrame) {
+		t.Errorf("the OpenAI frame must still close with [DONE], got %q", frame)
 	}
 }
