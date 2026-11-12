@@ -75,6 +75,13 @@ services:
       - appdata:/data
     stop_grace_period: 30s
     restart: unless-stopped
+    # CPU ceiling: the gateway is an I/O-bound proxy, but an unbounded
+    # smart-router + token-saver loop can spike to >100% CPU and starve the
+    # host (this box also runs the Hermes gateway, browser farm and the
+    # Docker stack). 2 cores is ~2x the observed steady-state and still
+    # leaves 10 for everything else. Override with AXONROUTER_CPUS.
+    cpus: "${AXONROUTER_CPUS:-2.00}"
+    mem_limit: "${AXONROUTER_MEM_LIMIT:-2g}"
 
   # One-shot SQLite → PostgreSQL migration (tools/migrate-db). Runs the
   # migrator's own verification: it refuses a non-empty target unless
