@@ -736,13 +736,13 @@ func init() {
 	// falls through to the generic `*gemini-3*` pattern row would advertise the
 	// API surface's search flag, which is the outcome this override exists to
 	// prevent.
-	geminiWebCaps := Capabilities{Vision: true, Tools: true, Reasoning: true, ThinkingFormat: "gemini-level", ThinkingCanDisable: new(false)}
+	geminiWebCaps := Capabilities{Vision: true, Tools: true, Reasoning: true, ThinkingFormat: "gemini-level", ThinkingCanDisable: new(false), ContextWindow: 1048576, MaxOutput: 65536}
 	// The Lite models do not think: the site's registry publishes no
 	// reasoning level for them, and their own names say so. Advertising a
 	// thinking level for a model that has none is the outcome the override
 	// exists to prevent.
-	geminiWebLiteCaps := Capabilities{Vision: true, Tools: true, ThinkingFormat: "gemini-level", ThinkingCanDisable: new(false)}
-	geminiWebImageCaps := Capabilities{Vision: true, Tools: true, ImageOutput: true, ThinkingFormat: "gemini-level", ThinkingCanDisable: new(false)}
+	geminiWebLiteCaps := Capabilities{Vision: true, Tools: true, ThinkingFormat: "gemini-level", ThinkingCanDisable: new(false), ContextWindow: 1048576, MaxOutput: 65536}
+	geminiWebImageCaps := Capabilities{Vision: true, Tools: true, ImageOutput: true, ThinkingFormat: "gemini-level", ThinkingCanDisable: new(false), ContextWindow: 1048576, MaxOutput: 65536}
 	providerCapabilities["gemini-web"] = map[string]Capabilities{
 		"gemini-3.1-pro":        geminiWebCaps,
 		"gemini-3.7-flash":      geminiWebCaps,

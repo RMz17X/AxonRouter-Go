@@ -162,13 +162,10 @@ func geminiWebRotateConnection(ctx context.Context, repo *db.Repo, conn *models.
 	if cookie == "" || !GeminiWebHasSessionTimestamp(cookie) {
 		return
 	}
-	// Check if this connection is managed externally (e.g. by Chroma daemon sync)
-	// or explicitly marked to skip internal background rotation. This avoids
-	// concurrent rotation collisions with the user's active browser session.
+	// Check if this connection is explicitly marked to skip internal background rotation.
+	// Note: connections synced by Chroma are STILL rotated by AxonRouter so that
+	// __Secure-1PSIDTS is renewed on schedule without requiring an active browser session.
 	if psd, ok := raw["providerSpecificData"].(map[string]any); ok {
-		if src, _ := psd["source"].(string); strings.EqualFold(src, "chroma") || strings.EqualFold(src, "external") {
-			return
-		}
 		if disable, _ := psd["disableAutoRotation"].(bool); disable {
 			return
 		}
