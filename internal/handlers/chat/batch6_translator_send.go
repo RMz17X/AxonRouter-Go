@@ -191,8 +191,9 @@ func (h *ChatHandler) HandleTranslatorSend(w http.ResponseWriter, r *http.Reques
 	if !capture.decided {
 		dst := w.Header()
 		dst.Set("Content-Type", "text/event-stream")
-		dst.Set("Cache-Control", "no-cache")
+		dst.Set("Cache-Control", "no-cache, no-transform")
 		dst.Set("Connection", "keep-alive")
+		dst.Set("X-Accel-Buffering", "no")
 		w.WriteHeader(http.StatusOK)
 	}
 }

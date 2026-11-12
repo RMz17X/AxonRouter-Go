@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"axonrouter/proxy/internal/constants"
+	internalproxy "axonrouter/proxy/internal/proxy"
 )
 
 // bypassResponse represents a fake response for bypassed requests.
@@ -148,11 +149,7 @@ func handleBypassRequest(w http.ResponseWriter, body []byte, model string, isStr
 	}
 
 	if isStream {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.WriteHeader(http.StatusOK)
-		flusher, _ := w.(http.Flusher)
+		flusher := internalproxy.WriteSSEHeaders(w)
 
 		// First chunk: role + content
 		firstChunk := map[string]any{

@@ -236,8 +236,10 @@ func (h *ChatHandler) handleResponsesSingleModel(ctx context.Context, w http.Res
 			}
 			if err := json.Unmarshal(ue.Body, &errBody); err == nil && errBody.Error != nil {
 				if code, _ := errBody.Error["code"].(string); code == "context_length_exceeded" {
-					cw.Header().Set("Content-Type", "text/event-stream")
-					cw.WriteHeader(http.StatusOK)
+					// The error is delivered as an SSE frame, so the
+					// response needs the same anti-buffering headers every
+					// other streaming lane sends.
+					internalproxy.WriteSSEHeaders(cw)
 					_, _ = cw.Write([]byte(translator.FormatResponsesFailedSSE(errBody.Error)))
 					if f, ok := cw.ResponseWriter.(http.Flusher); ok {
 						f.Flush()

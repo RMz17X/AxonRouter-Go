@@ -382,10 +382,7 @@ func ForwardPerch(w http.ResponseWriter, req *Request) error {
 	created := time.Now().Unix()
 
 	if req.IsStream {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		flusher, _ := w.(http.Flusher)
+		flusher := proxy.WriteSSEHeaders(w)
 
 		emit := func(chunk map[string]any) error {
 			if req.TTFT != nil && *req.TTFT == 0 {

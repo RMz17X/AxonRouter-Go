@@ -29,6 +29,7 @@ import (
 
 	"axonrouter/proxy/internal/handlers/shared"
 	"axonrouter/proxy/internal/handlerutil"
+	internalproxy "axonrouter/proxy/internal/proxy"
 	"axonrouter/proxy/internal/providers"
 )
 
@@ -621,10 +622,11 @@ func (g *geminiSSEWriter) processLine(line string) {
 func (g *geminiSSEWriter) emit(chunk map[string]any) {
 	if !g.decided {
 		g.decided = true
-		g.w.Header().Set("Content-Type", "text/event-stream")
-		g.w.Header().Set("Cache-Control", "no-cache")
+		// The shared writer carries the anti-buffering headers every
+		// streaming lane sends, so a proxy between the gateway and the
+		// client cannot coalesce the frames.
 		g.w.Header().Set("Access-Control-Allow-Origin", "*")
-		g.w.WriteHeader(http.StatusOK)
+		internalproxy.WriteSSEHeaders(g.w)
 	}
 	out, err := json.Marshal(chunk)
 	if err != nil {
@@ -655,10 +657,8 @@ func (g *geminiSSEWriter) finish() {
 		// an (empty) Gemini stream rather than leaving the client
 		// hanging on an unwritten header.
 		g.decided = true
-		g.w.Header().Set("Content-Type", "text/event-stream")
-		g.w.Header().Set("Cache-Control", "no-cache")
 		g.w.Header().Set("Access-Control-Allow-Origin", "*")
-		g.w.WriteHeader(http.StatusOK)
+		internalproxy.WriteSSEHeaders(g.w)
 	}
 }
 

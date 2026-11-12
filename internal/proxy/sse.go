@@ -10,10 +10,20 @@ import (
 
 // WriteSSEHeaders sets standard SSE headers on the response and writes HTTP 200.
 // Returns the http.Flusher if the ResponseWriter supports it.
+//
+// The headers are anti-buffering: X-Accel-Buffering is what nginx-class
+// reverse proxies honour to switch response buffering off, and the no-transform
+// cache directive tells intermediaries to leave the body untouched mid-stream.
+// Without them a proxy or sidecar between the gateway and the IDE may hold
+// chunks back and coalesce them, and the answer arrives stuttered.
+//
+// Content-Type stays exactly "text/event-stream": the tests assert the exact
+// string, and SSE payloads are UTF-8 per the spec anyway.
 func WriteSSEHeaders(w http.ResponseWriter) http.Flusher {
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
 	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 	f, _ := w.(http.Flusher)
 	if f != nil {
