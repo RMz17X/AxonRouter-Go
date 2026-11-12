@@ -3982,14 +3982,14 @@
     <!-- Header -->
     <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h2 class="text-lg font-semibold">Connections</h2>
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+      <div class="flex flex-1 flex-wrap items-center gap-2">
         {#if selectedConnIds.length > 0}
           <button
             type="button"
             onclick={handleDeleteSelected}
-            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 h-7 px-3 text-xs rounded-[8px]"
+            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 h-8 px-3 text-xs rounded-[8px]"
           >
-            <span class="material-symbols-outlined text-[18px]">delete</span>
+            <span class="material-symbols-outlined text-[16px]">delete</span>
             Delete Selected ({selectedConnIds.length})
           </button>
         {/if}
@@ -3998,9 +3998,9 @@
           <button
             type="button"
             onclick={() => (showApplyProxyModal = true)}
-            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-surface-2 hover:bg-surface-3 text-text-main border border-border h-7 px-3 text-xs rounded-[8px]"
+            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-surface-2 hover:bg-surface-3 text-text-main border border-border h-8 px-3 text-xs rounded-[8px]"
           >
-            <span class="material-symbols-outlined text-[18px]">lan</span>
+            <span class="material-symbols-outlined text-[16px]">lan</span>
             Apply Proxy
           </button>
         {/if}
@@ -4010,10 +4010,10 @@
             type="button"
             onclick={handleBulkResetStatus}
             disabled={isResettingCooldown}
-            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 h-7 px-3 text-xs rounded-[8px]"
+            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 h-8 px-3 text-xs rounded-[8px]"
             title={selectedConnIds.length > 0 ? 'Reset cooldown & exhausted status for selected accounts' : 'Reset cooldown & exhausted status for all active accounts in this provider'}
           >
-            <span class="material-symbols-outlined text-[18px] {isResettingCooldown ? 'animate-spin' : ''}">restart_alt</span>
+            <span class="material-symbols-outlined text-[16px] {isResettingCooldown ? 'animate-spin' : ''}">restart_alt</span>
             {selectedConnIds.length > 0 ? `Reset Cooldown (${selectedConnIds.length})` : 'Reset Cooldown / Exhausted'}
           </button>
         {/if}
@@ -4022,10 +4022,10 @@
           <button
             type="button"
             onclick={() => (showBulkJwtModal = true)}
-            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] bg-surface-2 hover:bg-surface-3 text-text-main border border-border h-7 px-3 text-xs rounded-[8px]"
+            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] bg-surface-2 hover:bg-surface-3 text-text-main border border-border h-8 px-3 text-xs rounded-[8px]"
             title="Bulk import JWT / token accounts"
           >
-            <span class="material-symbols-outlined text-[18px]">playlist_add</span>
+            <span class="material-symbols-outlined text-[16px]">playlist_add</span>
             Bulk Add
           </button>
         {/if}
@@ -4034,9 +4034,9 @@
           type="button"
           onclick={runOneByOneTest}
           disabled={isTestingOneByOne || providerConnections.length === 0}
-          class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-surface-2 hover:bg-surface-3 text-text-main border border-border h-7 px-3 text-xs rounded-[8px]"
+          class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-surface-2 hover:bg-surface-3 text-text-main border border-border h-8 px-3 text-xs rounded-[8px]"
         >
-          <span class="material-symbols-outlined text-[18px] {isTestingOneByOne ? 'animate-spin text-primary' : ''}">sync</span>
+          <span class="material-symbols-outlined text-[16px] {isTestingOneByOne ? 'animate-spin text-primary' : ''}">sync</span>
           {isTestingOneByOne ? 'Testing Connection One-by-One...' : 'Test Connection One-by-One'}
         </button>
 
@@ -4045,14 +4045,14 @@
             type="button"
             onclick={stopOneByOneTest}
             disabled={isStoppingOneByOne}
-            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-transparent hover:bg-surface-2 text-text-muted hover:text-text-main h-7 px-3 text-xs rounded-[8px]"
+            class="inline-flex items-center justify-center gap-2 font-semibold transition-all duration-150 ease-out cursor-pointer active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed bg-transparent hover:bg-surface-2 text-text-muted hover:text-text-main h-8 px-3 text-xs rounded-[8px]"
           >
-            <span class="material-symbols-outlined text-[18px]">stop</span>
+            <span class="material-symbols-outlined text-[16px]">stop</span>
             {isStoppingOneByOne ? 'Stopping...' : 'Stop'}
           </button>
         {/if}
 
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 sm:ml-auto rounded-lg border border-border bg-surface-2/60 px-2.5 py-1">
           <span class="text-xs text-text-muted font-medium">Round Robin</span>
           <button
             type="button"
@@ -4083,14 +4083,14 @@
           <button
             type="button"
             onclick={() => (showHeaderOverrides = true)}
-            class="inline-flex h-7 items-center gap-1.5 rounded-[8px] px-3 text-xs font-medium text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main"
+            class="inline-flex h-8 items-center gap-1.5 rounded-[8px] px-2 text-xs font-medium text-text-muted transition-colors hover:bg-surface-2 hover:text-text-main"
           >
-            <span class="material-symbols-outlined text-[18px]" aria-hidden="true">tune</span>
+            <span class="material-symbols-outlined text-[16px]" aria-hidden="true">tune</span>
             Custom headers
           </button>
 
           <!-- Provider Proxy Lock -->
-          <div class="flex items-center gap-1.5 border-l border-border pl-2.5 ml-1">
+          <div class="flex items-center gap-1.5 border-l border-border/70 pl-3">
             <span class="text-xs text-text-muted font-medium flex items-center gap-1" title="Lock provider to a proxy group. All accounts automatically route through it unless set to a custom proxy.">
               <span class="material-symbols-outlined text-[16px] {lockedProxyGroup || lockedProxyPoolId ? 'text-primary' : 'text-text-muted'}">lock</span>
               Proxy Lock:

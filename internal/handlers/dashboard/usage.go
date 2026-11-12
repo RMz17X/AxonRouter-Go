@@ -260,7 +260,16 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 	// for quota reads: a dead proxy degrades to direct instead of failing
 	// the read. Relay pools are not dialed here (probeHTTPClient reports
 	// them with an empty proxy URL) and keep the shared client.
-	fetchCtx := r.Context()
+	// The fetch runs detached from the dashboard request's cancellation: a
+	// quota read is a server-side, per-connection probe whose result is
+	// cached for the next read, but the tracker supersedes its own passes
+	// with an AbortController — one page refresh or page change aborted the
+	// browser request and killed in-flight upstream probes mid-call, which
+	// surfaced as raw "context canceled" errors on quota cards. Values on
+	// the request context (the per-connection proxy client added below)
+	// still carry over; usageDo bounds every upstream call with its own
+	// timeout, so a detached probe cannot outlive its budget.
+	fetchCtx := context.WithoutCancel(r.Context())
 	if client, proxyURL := h.probeHTTPClient(parseConnectionProbeData(data), data); client != nil && proxyURL != "" {
 		wrapped := *client
 		wrapped.Transport = proxy.NewFallbackTransport(client.Transport)
@@ -294,14 +303,14 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 			log.Warn("usage", "forced credential refresh failed", "provider", conn.Provider, "conn", connID, "error", retry.err)
 		} else if retry.refreshed {
 			if retried, retryOK := fetchProviderUsage(fetchCtx, conn.Provider, data); retryOK {
-				h.maybeAutoReleaseQuotaLocks(r.Context(), connID, retried.quotas)
+				h.maybeAutoReleaseQuotaLocks(fetchCtx, connID, retried.quotas)
 				h.writeUsageResponse(w, connID, retried.toResponse())
 				return
 			}
 		}
 	}
 	if ok {
-		h.maybeAutoReleaseQuotaLocks(r.Context(), connID, res.quotas)
+		h.maybeAutoReleaseQuotaLocks(fetchCtx, connID, res.quotas)
 		h.writeUsageResponse(w, connID, res.toResponse())
 		return
 	}
@@ -342,7 +351,7 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 				}
 			}
 			if res.message == "" {
-				h.maybeAutoReleaseQuotaLocks(r.Context(), connID, res.quotas)
+				h.maybeAutoReleaseQuotaLocks(fetchCtx, connID, res.quotas)
 			}
 			h.writeUsageResponse(w, connID, res.toResponse())
 			return

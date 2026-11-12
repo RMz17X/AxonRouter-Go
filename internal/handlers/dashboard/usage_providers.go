@@ -46,6 +46,7 @@ func (r usageResult) toResponse() map[string]any {
 	// Mirror upstream: the dashboard hides the quota table whenever a message
 	// is set, so only attach a message when there are no quota rows.
 	if len(r.quotas) > 0 {
+		cleanUsageQuotaMessages(r.quotas)
 		out := map[string]any{"plan": r.plan, "quotas": r.quotas}
 		for k, v := range r.extra {
 			out[k] = v
@@ -53,7 +54,7 @@ func (r usageResult) toResponse() map[string]any {
 		return out
 	}
 	if r.message != "" {
-		out := map[string]any{"message": r.message}
+		out := map[string]any{"message": cleanUsageMessage(r.message)}
 		if !r.bare {
 			out["quotas"] = map[string]any{}
 		}

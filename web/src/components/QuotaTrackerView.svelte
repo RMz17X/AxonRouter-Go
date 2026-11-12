@@ -231,8 +231,70 @@
       lower.includes('validation_required') ||
       lower.includes('verify your account') ||
       lower.includes('invalid_grant') ||
-      lower.includes('token refresh rejected')
+      lower.includes('token refresh rejected') ||
+      lower.includes('refresh token no longer valid')
     )
+  }
+
+  // Display form of a quota message. The backend cleans the messages it
+  // returns, but a disabled account's card is populated from the stored
+  // lastError, which still holds the raw upstream text (Go URL dumps, raw
+  // JSON bodies). Map the known dump shapes to the same short sentences
+  // the backend uses; anything else is shown trimmed and length-capped.
+  function displayQuotaMessage(raw: string | null | undefined): string {
+    const msg = (raw || '').replace(/\s+/g, ' ').trim()
+    if (!msg) return ''
+    const lower = msg.toLowerCase()
+    if (
+      lower.includes('terms of service') ||
+      lower.includes('tos_violation') ||
+      lower.includes('account disabled') ||
+      lower.includes('disabled in this account') ||
+      lower.includes('account suspended') ||
+      lower.includes('validation_required') ||
+      lower.includes('verify your account')
+    ) {
+      return msg.length > 200 ? msg.slice(0, 199) + '…' : msg
+    }
+    if (
+      lower.includes('invalid_grant') ||
+      lower.includes('refresh token can no longer be used') ||
+      lower.includes('start a new authorization')
+    ) {
+      return 'Sign-in expired — refresh token no longer valid. Re-authorize this account.'
+    }
+    if (lower.includes('token refresh rejected')) {
+      return 'Sign-in expired — token refresh rejected by the provider. Re-authorize this account.'
+    }
+    if (lower.includes('context canceled')) {
+      return 'Quota check was interrupted before it finished — press Refresh to retry.'
+    }
+    if (
+      lower.includes('context deadline exceeded') ||
+      lower.includes('timed out') ||
+      lower.includes('timeout')
+    ) {
+      return 'Quota check timed out — press Refresh to retry.'
+    }
+    if (
+      lower.includes('dial tcp') ||
+      lower.includes('connection refused') ||
+      lower.includes('no such host') ||
+      lower.includes('tls handshake') ||
+      lower.includes('proxyconnect') ||
+      lower.includes('connection reset')
+    ) {
+      return 'Could not reach the provider (network or proxy problem) — press Refresh to retry.'
+    }
+    const brace = msg.indexOf('{')
+    if (brace >= 0) {
+      const head = msg.slice(0, brace).replace(/[:\-—\s]+$/, '')
+      return head.length >= 12 && !head.includes('://')
+        ? head + '.'
+        : 'The provider returned an error — press Refresh to retry.'
+    }
+    if (msg.includes('://')) return 'Upstream request failed — press Refresh to retry.'
+    return msg.length > 200 ? msg.slice(0, 199) + '…' : msg
   }
 
   // Runs one full pass over `targets`. Starting a pass supersedes any pass
@@ -260,7 +322,7 @@
           [conn.id]: {
             quotas: [],
             plan: conn.provider,
-            message: errText,
+            message: displayQuotaMessage(errText),
             raw: null,
           },
         }
@@ -297,7 +359,7 @@
         const quotaEntry: QuotaEntry = {
           quotas: parseQuotaData(target.provider, data),
           plan: data?.plan || null,
-          message: data?.message || null,
+          message: data?.message ? displayQuotaMessage(data.message) : null,
           raw: data,
         }
         quotaData = { ...quotaData, [target.id]: quotaEntry }
@@ -322,7 +384,7 @@
         // 404-style: the connection was deleted underneath the page, which is
         // not a failure worth showing on a row that is about to disappear.
         if (message.toLowerCase().includes('not found')) return
-        quotaErrors = { ...quotaErrors, [target.id]: message || 'Failed to fetch quota' }
+        quotaErrors = { ...quotaErrors, [target.id]: displayQuotaMessage(message) || 'Failed to fetch quota' }
         if (isFatalDisableMessage(message)) {
           const cur = connections.find((c) => c.id === target.id)
           if (cur && cur.isActive === 1) {
@@ -871,7 +933,7 @@
         const quotaEntry: QuotaEntry = {
           quotas: parseQuotaData(target.provider, data),
           plan: data?.plan || null,
-          message: data?.message || null,
+          message: data?.message ? displayQuotaMessage(data.message) : null,
           raw: data,
         }
         quotaData = { ...quotaData, [target.id]: quotaEntry }
@@ -896,7 +958,7 @@
         // 404-style: the connection is gone, which is not a failure worth
         // showing on a row that is about to disappear.
         if (message.toLowerCase().includes('not found')) return
-        quotaErrors = { ...quotaErrors, [target.id]: message || 'Failed to fetch quota' }
+        quotaErrors = { ...quotaErrors, [target.id]: displayQuotaMessage(message) || 'Failed to fetch quota' }
         if (isFatalDisableMessage(message)) {
           const cur = connections.find((c) => c.id === target.id)
           if (cur && cur.isActive === 1) {
@@ -1999,14 +2061,17 @@
                 </span>
               </div>
             {:else if error}
-              <div class="py-4 text-center flex flex-col items-center gap-2">
-                <p class="text-xs text-red-500 font-medium px-2">{error}</p>
+              <div class="py-3 flex flex-col items-stretch gap-2">
+                <div class="flex items-start gap-2 rounded-lg border border-red-500/25 bg-red-500/5 px-3 py-2.5">
+                  <span class="material-symbols-outlined text-[16px] leading-none text-red-500 mt-px shrink-0">error</span>
+                  <p class="text-xs leading-relaxed text-red-600 dark:text-red-400 break-words min-w-0">{error}</p>
+                </div>
                 {#if error.toLowerCase().includes('terms of service') || error.toLowerCase().includes('disabled in this account') || error.toLowerCase().includes('account disabled') || error.toLowerCase().includes('tos_violation')}
                   <a
                     href="https://forms.gle/hGzM9MEUv2azZsrb9"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold shadow-sm transition-colors"
+                    class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold shadow-sm transition-colors"
                   >
                     <span>Kunjungi Form Appeal (ToS)</span>
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
@@ -2014,14 +2079,17 @@
                 {/if}
               </div>
             {:else if quota?.message}
-              <div class="py-4 text-center flex flex-col items-center gap-2">
-                <p class="text-xs text-text-muted px-2">{quota.message}</p>
+              <div class="py-3 flex flex-col items-stretch gap-2">
+                <div class="flex items-start gap-2 rounded-lg border border-border bg-surface-2/60 px-3 py-2.5">
+                  <span class="material-symbols-outlined text-[16px] leading-none text-text-muted mt-px shrink-0">info</span>
+                  <p class="text-xs leading-relaxed text-text-muted break-words min-w-0">{quota.message}</p>
+                </div>
                 {#if quota.message.toLowerCase().includes('terms of service') || quota.message.toLowerCase().includes('disabled in this account') || quota.message.toLowerCase().includes('account disabled') || quota.message.toLowerCase().includes('tos_violation')}
                   <a
                     href="https://forms.gle/hGzM9MEUv2azZsrb9"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold shadow-sm transition-colors"
+                    class="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-amber-500 hover:bg-amber-400 text-black text-xs font-semibold shadow-sm transition-colors"
                   >
                     <span>Kunjungi Form Appeal (ToS)</span>
                     <span class="material-symbols-outlined text-sm">open_in_new</span>
