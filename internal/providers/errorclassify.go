@@ -512,6 +512,19 @@ func IsModelFitError(statusCode int, body []byte) bool {
 	return false
 }
 
+// IsModelCapacityError reports whether the failure is an upstream
+// model-capacity verdict: the model is saturated for every caller, so
+// the fault scope is the model, not the account that happened to ask.
+// Google's capacity wall answers 503 with "No capacity available for
+// model ..." regardless of which account or project asks, so rotating
+// accounts against it only burns the request's time budget.
+func IsModelCapacityError(statusCode int, body []byte) bool {
+	if statusCode != http.StatusServiceUnavailable || len(body) == 0 {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(body)), "no capacity available")
+}
+
 // IsModelConcurrencyError reports whether an upstream failure is a cluster-wide
 // model concurrency limit (e.g. Dahl "model_concurrency" or TokenHarbor "server_busy"), meaning every connection
 // on this provider will fail for this model. Combos should break to the next model

@@ -1169,6 +1169,21 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 							lastErr = ue
 							break
 						}
+						// A capacity verdict is scoped to the model, not
+						// the account: every connection to this provider
+						// draws on the same saturated upstream pool, so
+						// rotating accounts only burns the request's
+						// budget against the same wall. Advance to the
+						// next combo member at once. Breaking here also
+						// skips comboLockRetryable: the account is fine,
+						// and cooling it would park a healthy connection.
+						if providers.IsModelCapacityError(ue.StatusCode, ue.Body) {
+							log.Warn("combo", "model capacity exhausted, next member",
+								"provider", modelInfo.Provider, "model", modelInfo.Model)
+							retry.note(ue)
+							lastErr = ue
+							break
+						}
 						if providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
 							log.Warn("combo", "model cluster concurrency saturated, next member",
 								"provider", modelInfo.Provider, "model", modelInfo.Model)
@@ -1684,6 +1699,21 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 							lastErr = ue
 							break
 						}
+						// A capacity verdict is scoped to the model, not
+						// the account: every connection to this provider
+						// draws on the same saturated upstream pool, so
+						// rotating accounts only burns the request's
+						// budget against the same wall. Advance to the
+						// next combo member at once. Breaking here also
+						// skips comboLockRetryable: the account is fine,
+						// and cooling it would park a healthy connection.
+						if providers.IsModelCapacityError(ue.StatusCode, ue.Body) {
+							log.Warn("combo", "model capacity exhausted, next member",
+								"provider", modelInfo.Provider, "model", modelInfo.Model)
+							retry.note(ue)
+							lastErr = ue
+							break
+						}
 						if providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
 							log.Warn("combo", "model cluster concurrency saturated, next member",
 								"provider", modelInfo.Provider, "model", modelInfo.Model)
@@ -1870,6 +1900,12 @@ func comboMemberAttemptCap(provider string) int {
 	}
 	if resolved == "tokenharbor" {
 		return 2
+	}
+	if resolved == "antigravity" {
+		// Three draws cover the model's variant tiers; beyond that a
+		// retryable failure is a drought, not variance, and the next
+		// combo member deserves the request's remaining budget.
+		return 3
 	}
 	return 10
 }
