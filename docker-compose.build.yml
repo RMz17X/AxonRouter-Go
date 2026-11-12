@@ -41,6 +41,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Build CPU budget. Without it the Go compiler and the web
+        # bundler parallelise across every core on the host (12 on
+        # hijilaptop) for the whole build and the laptop melts while it
+        # is also serving as the dev/agent box. BUILD_JOBS caps the Go
+        # stage's parallelism; raise it on a dedicated build machine,
+        # lower it when the laptop must stay responsive.
+        BUILD_JOBS: "6"
     image: axonrouter-go:local
     environment:
       TZ: Asia/Jakarta

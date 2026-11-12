@@ -2,6 +2,11 @@
 # Build on BUILDPLATFORM (native host architecture) to avoid emulating Bun under QEMU.
 # Output in web/dist is static HTML/JS/CSS, architecture-agnostic, and shared across targets.
 FROM --platform=$BUILDPLATFORM oven/bun:1-alpine AS web-builder
+# The bundler's Go-based tools (esbuild) otherwise grab every core too;
+# two threads are plenty for the short web stage. The Go stage's budget
+# is BUILD_JOBS (docker-compose.build.yml build.args).
+ARG BUILD_JOBS=6
+ENV GOMAXPROCS=2
 WORKDIR /app/web
 COPY web/package.json web/bun.lock ./
 RUN --mount=type=cache,target=/root/.bun/install/cache bun install --frozen-lockfile
@@ -12,6 +17,7 @@ RUN bun run build
 # Build on BUILDPLATFORM using Go's native cross-compiler (CGO_ENABLED=0 GOOS/GOARCH)
 # instead of running the Go toolchain inside slow QEMU software emulation.
 FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS builder
+ARG BUILD_JOBS=6
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -28,6 +34,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     VERSION=${VERSION:-$(cat VERSION 2>/dev/null || cat version.json | sed -n 's/.*"latestVersion": *"\([^"]*\)".*/\1/p')} && \
     echo "Building version $VERSION for ${TARGETOS:-linux}/${TARGETARCH:-amd64} on $BUILDPLATFORM" && \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    GOMAXPROCS=${BUILD_JOBS} GOFLAGS=-p=${BUILD_JOBS} \
     go build -ldflags="-s -w -X 'axonrouter/proxy/internal/updater.CurrentVersion=${VERSION}'" -o axonrouter-go ./cmd/axonrouter-go/
 
 # Stage 3: Minimal runtime image for target platform.
