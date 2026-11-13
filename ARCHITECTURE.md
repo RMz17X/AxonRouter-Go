@@ -57,6 +57,7 @@ The Go binary owns proxy routing, dashboard APIs, auth, persistence, OAuth, medi
 | `internal/translator/claude_stream_usage.go` | Folds a streamed Claude turn's two usage frames into one cache-aware record |
 | `internal/middleware/` | Request IDs, body limits, logging/path normalization, API/dashboard/admin auth |
 | `internal/db/` | PostgreSQL repositories (pgx via `DATABASE_URL`), partitioned usage ledgers, DB-serialized leases and rotation |
+| `internal/db/usage_rollup.go` | Rolls doomed `usageHistory` rows up into `usageDaily` before the retention prune deletes them |
 | `internal/speedlayer/` | Hot-state store: memory / Valkey / PostgreSQL-degradation backends behind a breaker |
 | `internal/foreigndb/` | Read-only reader for *other applications'* legacy-format files (browser/Cursor/Zed imports); never opens this gateway's data |
 | `web/` | Svelte 5 + Vite + Tailwind dashboard |
@@ -375,6 +376,8 @@ The wire shape diverges deliberately from upstream Next, which shipped bare
 strings and no level at all; the Svelte dashboard is the only consumer.
 
 The usage tracker publishes active requests over SSE; its live state rides the speed layer (§ Speed layer), so a cluster's nodes share the in-flight picture while they sit on the same speed-layer backend, and its recent-request ring is seeded once from `usageHistory` when empty. The failover breaker that picks that backend is per-process: nodes decide independently, so during a partial outage they can briefly serve from different backends before converging. PostgreSQL remains the durable source for all usage history and daily aggregates.
+
+The retention prune (`internal/db/usage_retention_loop.go`, plus the operator's `POST /api/settings/database/prune-usage`) trims the `usageHistory` ledger on a timer and on demand. It is a DELETION, so it rolls the doomed rows up into the `usageDaily` aggregate first (`internal/db/usage_rollup.go`): the day's tokens, cost and request count are folded into the day's summary before the rows that made it are removed, so the day survives the prune in the analytics that read the rollup. The rollup never double counts — the live request path writes `usageDaily` in real time, so a day that already carries a summary is left untouched and only the days the gateway never summarised are backfilled.
 
 Global middleware limits request bodies to 10 MiB, recovers panics, assigns request IDs, and emits structured request logs. `LOG_FILE` can redirect the standard logger to an append-only file.
 
