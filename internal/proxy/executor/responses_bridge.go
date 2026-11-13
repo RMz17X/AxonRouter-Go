@@ -26,9 +26,16 @@ import (
 // Upstream makes the same call by comparing the source format against the
 // transport's own format (chatCore resolveTransport + translateRequest).
 //
-// Two shapes count as Responses-native, both read off data the gateway already
-// carries rather than a new table:
+// Three shapes count as Responses-native, all read off data the gateway
+// already carries rather than a new table:
 //
+//   - the config's declared wire format is the Responses one — a custom
+//     openai-compatible node whose stored apiType is "responses". This is the
+//     signal upstream uses (getTargetFormat reads resolveOpenAICompatibleApiType),
+//     and it is the only one that survives a baseUrl which does not name the
+//     lane: the lane is appended to the node's baseUrl prefix, so the
+//     resolved URL ends in "/responses" only while the connection row kept
+//     the apiType in sync;
 //   - a base URL that is the /responses endpoint itself (codex, grok-cli,
 //     perplexity-agent) — the same test the opencode executors use before
 //     appending /responses to their chat base URL;
@@ -37,8 +44,16 @@ import (
 //     deepseek-v4* serves it alongside chat (upstream models[] supportedFormats) —
 //     so a /v1/responses client is relayed while other clients are translated in.
 func UpstreamSpeaksResponses(provider, model string, cfg *providers.ProviderConfig) bool {
-	if cfg != nil && strings.HasSuffix(strings.TrimRight(cfg.BaseURL, "/"), "/responses") {
-		return true
+	if cfg != nil {
+		// The node's DECLARED wire format comes first: it is the signal
+		// upstream uses (getTargetFormat reads the node's apiType), and it
+		// survives a baseUrl that does not name the lane.
+		if cfg.Format == providers.FormatOpenAIResponses {
+			return true
+		}
+		if strings.HasSuffix(strings.TrimRight(cfg.BaseURL, "/"), "/responses") {
+			return true
+		}
 	}
 	switch provider {
 	case "opencode", "opencode-go":

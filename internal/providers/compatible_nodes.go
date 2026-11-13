@@ -1,5 +1,7 @@
 package providers
 
+import "strings"
+
 // NodeWire is the wire contract of one custom provider node type: the lane a
 // node's baseUrl prefix completes to, and the format its upstream speaks.
 type NodeWire struct {
@@ -38,4 +40,62 @@ var CompatibleNodeWires = map[string]NodeWire{
 	// handler swaps the route to /embeddings off this same URL
 	// (buildEmbeddingsURL), which is why no /embeddings lane is declared here.
 	"custom-embedding": {Lane: "/chat/completions"},
+}
+
+// APITypeResponses is the stored apiType of an openai-compatible node whose
+// upstream speaks the Responses API (upstream resolveOpenAICompatibleApiType).
+const APITypeResponses = "responses"
+
+// IsCompatibleNode reports whether a provider id belongs to a custom
+// endpoint the operator registered. The match is by the node-type prefix the
+// create handler composes ("openai-compatible-<suffix>"), so it is the same
+// shape internal/handlers/chat.nodeWireOf recognises — duplicated here
+// because internal/thinking must not import the handler package.
+func IsCompatibleNode(provider string) bool {
+	for nodeType := range CompatibleNodeWires {
+		if strings.HasPrefix(provider, nodeType+"-") {
+			return true
+		}
+	}
+	return false
+}
+
+// IsOpenAICompatibleNode reports whether a provider id names an
+// openai-compatible custom node (upstream isOpenAICompatibleNode).
+func IsOpenAICompatibleNode(provider string) bool {
+	return strings.HasPrefix(provider, "openai-compatible-")
+}
+
+// CompatibleNodeSpeaksResponses reports whether a custom node's upstream
+// serves the OpenAI Responses API.
+//
+// Upstream decides this from the node's DECLARED apiType, not from the URL it
+// happens to dial: getTargetFormat (open-sse/services/provider.js:134) reads
+// resolveOpenAICompatibleApiType(provider, credentials) and answers
+// "openai-responses" for a node whose apiType is "responses". A node whose
+// id says "responses" but whose stored apiType was never filled in falls back
+// to the id, the same fallback upstream applies.
+//
+// The URL is not a usable signal here: the lane is appended to the node's
+// baseUrl prefix (compatibleNodeLaneURL), so the resolved URL ends in
+// "/responses" only as long as the connection row kept the apiType in sync.
+// A connection written before the apiType sync, or one whose baseUrl already
+// names a route, resolves to a URL that says nothing about the wire — and a
+// request that then thinks it is on the Chat lane sends a top-level
+// reasoning_effort to an endpoint that rejects it with 400 ("moved to
+// reasoning.effort").
+//
+// The apiType travels on the connection (providerSpecificData.apiType), so
+// the caller passes what it read there. An empty apiType means the node
+// speaks Chat Completions, which is the default upstream applies.
+func CompatibleNodeSpeaksResponses(provider, apiType string) bool {
+	if !IsOpenAICompatibleNode(provider) {
+		return false
+	}
+	if apiType == APITypeResponses {
+		return true
+	}
+	// Upstream's fallback: a node created before the dashboard began syncing
+	// apiType carries none, and its id is the only thing left that says so.
+	return apiType == "" && strings.Contains(provider, APITypeResponses)
 }

@@ -749,6 +749,12 @@ func (h *ChatHandler) getProviderConfig(provider string, connData *ConnectionDat
 		cloned := cfg
 		baseCfg = &cloned
 	} else {
+		// A nil Repo means there is no node to look up: the handler is
+		// running without a store (a probe, a unit test). Dereferencing it
+		// panicked; the honest answer is that this provider has no config.
+		if h.Repo == nil {
+			return nil, fmt.Errorf("provider %q has no baseUrl in connection data and no provider store", provider)
+		}
 		node, nodeData, err := h.Repo.GetProviderNodeByID(provider)
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up provider node %s: %w", provider, err)
@@ -796,6 +802,24 @@ func (h *ChatHandler) getProviderConfig(provider string, connData *ConnectionDat
 	if format := compatibleNodeFormat(provider); format != "" && baseCfg.Format == "" {
 		cloned := *baseCfg
 		cloned.Format = format
+		baseCfg = &cloned
+	}
+
+	// A compatible node whose stored apiType is "responses" fronts an
+	// endpoint that speaks the Responses API. The wire format is stamped
+	// here, from the node's DECLARATION, so every reader downstream agrees on
+	// it: the thinking pass nests the effort under reasoning.effort (a
+	// top-level reasoning_effort is rejected with 400), the executor picks
+	// the Responses forwarder, and the token-field normaliser stays off.
+	//
+	// The declaration is the signal upstream uses too (getTargetFormat reads
+	// resolveOpenAICompatibleApiType), and it is needed here because the URL
+	// alone is not a reliable one: a connection row written before the
+	// apiType sync carries none, so the resolved URL does not name the lane
+	// even though the node does.
+	if baseCfg.Format == "" && providers.CompatibleNodeSpeaksResponses(provider, h.compatibleNodeAPIType(provider, connData)) {
+		cloned := *baseCfg
+		cloned.Format = providers.FormatOpenAIResponses
 		baseCfg = &cloned
 	}
 
@@ -1019,6 +1043,31 @@ func connectionAPIType(connData *ConnectionData) string {
 	}
 	apiType, _ := connData.ProviderSpecificData["apiType"].(string)
 	return apiType
+}
+
+// compatibleNodeAPIType reports the apiType a compatible node is declared
+// with: the connection's copy first, the node's own second.
+//
+// The two can disagree: the dashboard writes the apiType into the
+// connection's providerSpecificData when the node is created and updated
+// (syncNodeConnections), but a connection row written before that sync
+// carries none while its node says "responses". The node is the declaration,
+// so it settles the question — a request must not be sent to the Chat lane
+// because the copy on the connection went missing.
+//
+// An empty result means Chat Completions, the default upstream applies.
+func (h *ChatHandler) compatibleNodeAPIType(provider string, connData *ConnectionData) string {
+	if apiType := connectionAPIType(connData); apiType != "" {
+		return apiType
+	}
+	if h.Repo == nil {
+		return ""
+	}
+	_, nodeData, err := h.Repo.GetProviderNodeByID(provider)
+	if err != nil || nodeData == nil {
+		return ""
+	}
+	return nodeData.APIType
 }
 
 // chatCompletionsURL completes a configured endpoint into the chat-completions
