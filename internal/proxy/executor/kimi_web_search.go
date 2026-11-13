@@ -72,6 +72,12 @@ func ExecuteKimiWebSearch(ctx context.Context, req *Request, query string, maxRe
 	if err != nil {
 		return nil, proxy.UpstreamFailure(http.StatusServiceUnavailable, err.Error())
 	}
+	// Snapshot the upstream this turn talks to. The throwaway-chat
+	// cleanup below runs on its own goroutine after the turn returned,
+	// so it must not read the package global: the test suite swaps
+	// that global at a fake site and restores it in a cleanup, which
+	// raced with the goroutine.
+	kimiBaseURL := kimiWebBaseURL
 
 	callCtx, cancel := context.WithTimeout(ctx, kimiWebTurnTimeout)
 	defer cancel()
@@ -84,7 +90,7 @@ func ExecuteKimiWebSearch(ctx context.Context, req *Request, query string, maxRe
 	if err != nil {
 		return nil, err
 	}
-	defer func() { go kimiWebDeleteChat(doer, cred, accessToken, chatID) }()
+	defer func() { go kimiWebDeleteChat(doer, cred, kimiBaseURL, accessToken, chatID) }()
 
 	payload, err := json.Marshal(map[string]any{
 		"messages":   []map[string]any{{"role": "user", "content": query}},

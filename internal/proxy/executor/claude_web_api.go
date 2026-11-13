@@ -85,10 +85,18 @@ func claudeWebCreateConversation(ctx context.Context, doer claudeWebDoer, cred c
 // claudeWebDeleteConversation removes the throwaway conversation the
 // turn created, best-effort: the spec marks cleanup optional, and a
 // failure here must never surface to the client.
-func claudeWebDeleteConversation(doer claudeWebDoer, cred claudeWebCred, orgUUID, chatUUID string) {
+//
+// baseURL is passed in rather than read from the package global on
+// purpose. The call runs on its own goroutine after the turn returned,
+// so it can outlive the test that swapped the global at a fake site;
+// reading the global there raced with the test cleanup restoring it.
+// The caller snapshots the base URL it actually talked to, so the
+// delete always goes back to the same host the conversation was
+// opened on.
+func claudeWebDeleteConversation(doer claudeWebDoer, cred claudeWebCred, baseURL, orgUUID, chatUUID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	target := fmt.Sprintf("%s/api/organizations/%s/chat_conversations/%s", claudeWebBaseURL, orgUUID, chatUUID)
+	target := fmt.Sprintf("%s/api/organizations/%s/chat_conversations/%s", baseURL, orgUUID, chatUUID)
 	resp, err := doer.do(ctx, http.MethodDelete, target, claudeWebHeaders(cred, claudeWebJSONAccept), nil)
 	if err != nil {
 		return

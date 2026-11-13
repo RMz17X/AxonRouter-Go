@@ -143,10 +143,17 @@ func kimiWebCreateChat(ctx context.Context, doer kimiWebDoer, cred kimiWebCred, 
 
 // kimiWebDeleteChat removes the throwaway chat the turn created,
 // best-effort: a failure here must never surface to the client.
-func kimiWebDeleteChat(doer kimiWebDoer, cred kimiWebCred, accessToken, chatID string) {
+//
+// baseURL is passed in rather than read from the package global on
+// purpose. The call runs on its own goroutine after the turn returned,
+// so it can outlive the test that swapped the global at a fake site;
+// reading the global there raced with the test cleanup restoring it.
+// The caller snapshots the base URL it actually talked to, so the
+// delete always goes back to the same host the chat was opened on.
+func kimiWebDeleteChat(doer kimiWebDoer, cred kimiWebCred, baseURL, accessToken, chatID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	resp, err := doer.do(ctx, http.MethodDelete, kimiWebBaseURL+"/api/chat/"+chatID,
+	resp, err := doer.do(ctx, http.MethodDelete, baseURL+"/api/chat/"+chatID,
 		kimiWebHeaders(cred, accessToken), nil)
 	if err != nil {
 		return

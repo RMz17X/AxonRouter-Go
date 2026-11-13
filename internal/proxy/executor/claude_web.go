@@ -243,6 +243,12 @@ func ForwardClaudeWeb(w http.ResponseWriter, req *Request) error {
 	if err != nil {
 		return proxy.UpstreamFailure(http.StatusServiceUnavailable, err.Error())
 	}
+	// Snapshot the upstream this turn talks to. The throwaway-
+	// conversation cleanup below runs on its own goroutine after the
+	// turn returned, so it must not read the package global: the test
+	// suite swaps that global at a fake site and restores it in a
+	// cleanup, which raced with the goroutine.
+	claudeBaseURL := claudeWebBaseURL
 
 	callCtx, cancel := context.WithTimeout(ctx, claudeWebTurnTimeout)
 	defer cancel()
@@ -261,7 +267,7 @@ func ForwardClaudeWeb(w http.ResponseWriter, req *Request) error {
 	}
 	// The conversation is throwaway (the transcript rode in the
 	// prompt); remove it once the turn is over, off the client's path.
-	defer func() { go claudeWebDeleteConversation(doer, cred, orgUUID, chatUUID) }()
+	defer func() { go claudeWebDeleteConversation(doer, cred, claudeBaseURL, orgUUID, chatUUID) }()
 
 	payload := claudeWebCompletionPayload{
 		Prompt:            prompt,
@@ -283,7 +289,7 @@ func ForwardClaudeWeb(w http.ResponseWriter, req *Request) error {
 	log.Info("claude-web", "query", "model", modelName, "upstream", route.upstreamModel, "chars", len(prompt))
 
 	target := fmt.Sprintf("%s/api/organizations/%s/chat_conversations/%s/completion",
-		claudeWebBaseURL, orgUUID, chatUUID)
+		claudeBaseURL, orgUUID, chatUUID)
 	response, err := doer.do(callCtx, http.MethodPost, target, claudeWebHeaders(cred, claudeWebSSEAccept), encoded)
 	if err != nil {
 		return proxy.UpstreamFailure(http.StatusBadGateway, "claude-web: connection failed: "+err.Error())

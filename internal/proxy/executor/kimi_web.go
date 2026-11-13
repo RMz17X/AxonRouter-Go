@@ -224,6 +224,12 @@ func ForwardKimiWeb(w http.ResponseWriter, req *Request) error {
 	if err != nil {
 		return proxy.UpstreamFailure(http.StatusServiceUnavailable, err.Error())
 	}
+	// Snapshot the upstream this turn talks to. The throwaway-chat
+	// cleanup below runs on its own goroutine after the turn returned,
+	// so it must not read the package global: the test suite swaps
+	// that global at a fake site and restores it in a cleanup, which
+	// raced with the goroutine.
+	kimiBaseURL := kimiWebBaseURL
 
 	callCtx, cancel := context.WithTimeout(ctx, kimiWebTurnTimeout)
 	defer cancel()
@@ -239,7 +245,7 @@ func ForwardKimiWeb(w http.ResponseWriter, req *Request) error {
 	}
 	// The chat is throwaway (the message list rode in the completion
 	// call); remove it once the turn is over, off the client's path.
-	defer func() { go kimiWebDeleteChat(doer, cred, accessToken, chatID) }()
+	defer func() { go kimiWebDeleteChat(doer, cred, kimiBaseURL, accessToken, chatID) }()
 
 	payload, err := json.Marshal(map[string]any{
 		"messages":   messages,
