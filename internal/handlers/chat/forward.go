@@ -320,7 +320,7 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 			if patched, changed := thinkFilter.FilterSSEPayload(payload); changed {
 				payload = patched
 			}
-			if patched, changed := translator.PatchZeroPromptUsage(payload, promptEst); changed {
+			if patched, changed := translator.PatchPromptUsageFloor(payload, promptEst); changed {
 				payload = patched
 			}
 			if metrics.TTFT == 0 {
@@ -338,9 +338,11 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 			// reads it as a whole usage record with prompt_tokens = 0 and
 			// would wipe the cache figures message_start established.
 			if acc := translator.AccumulateClaudeStreamUsage(streamUsage, payload); acc != streamUsage {
+				translator.FloorPromptTokens(acc, promptEst)
 				streamUsage = acc
 				translator.SetUsage(ctx, streamUsage)
 			} else if usage := translator.ParseResponseUsage(payload); usage != nil {
+				translator.FloorPromptTokens(usage, promptEst)
 				translator.SetUsage(ctx, usage)
 			}
 		})
@@ -474,7 +476,7 @@ func (h *ChatHandler) handleJSONResponse(ctx context.Context, w http.ResponseWri
 		if normalized, changed := translator.NormalizeOpenAIResponseJSON(body); changed {
 			body = normalized
 		}
-		if patched, changed := translator.PatchZeroPromptUsage(body, translator.PromptEstimateFromContext(ctx)); changed {
+		if patched, changed := translator.PatchPromptUsageFloor(body, translator.PromptEstimateFromContext(ctx)); changed {
 			body = patched
 		}
 		// The !translate path serves both OpenAI bodies (/v1/chat/completions,

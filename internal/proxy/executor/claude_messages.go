@@ -69,6 +69,7 @@ func handleClaudeMessagesStream(w http.ResponseWriter, req *Request, upstream io
 				flusher.Flush()
 			}
 			if acc := translator.AccumulateClaudeStreamUsage(streamUsage, payload); acc != streamUsage {
+				translator.FloorPromptTokens(acc, translator.PromptEstimateFromContext(req.Ctx))
 				streamUsage = acc
 				translator.SetUsage(req.Ctx, streamUsage)
 			}
@@ -262,6 +263,9 @@ func handleClaudeMessagesNonStream(w http.ResponseWriter, req *Request, upstream
 	converted, err := translator.TranslateClaudeResponseToOpenAI(body)
 	if err != nil {
 		return fmt.Errorf("translate claude response to openai: %w", err)
+	}
+	if patched, changed := translator.PatchPromptUsageFloor(converted, translator.PromptEstimateFromContext(req.Ctx)); changed {
+		converted = patched
 	}
 	return jsonResponse(req.Ctx, w, bytes.NewReader(converted), false, req.ResponseBuf)
 }

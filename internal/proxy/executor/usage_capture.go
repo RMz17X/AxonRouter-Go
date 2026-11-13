@@ -127,6 +127,7 @@ func (u *usageCapture) captureFrame(frame []byte) {
 		// the prompt and cache figures that message_start established
 		// (upstream luqman-v1/9router-go #1102).
 		if next := translator.AccumulateClaudeStreamUsage(u.acc, payload); next != u.acc {
+			translator.FloorPromptTokens(next, translator.PromptEstimateFromContext(u.ctx))
 			u.acc = next
 			translator.SetUsage(u.ctx, u.acc)
 			return
@@ -139,16 +140,10 @@ func (u *usageCapture) captureFrame(frame []byte) {
 			return
 		}
 		// The capture sees the raw bytes, before the wire patcher runs: an
-		// upstream reporting prompt_tokens: 0 gets the same estimate
-		// substituted here, so the recorded usage matches what the client
-		// was sent.
-		estimated := false
-		if usage.PromptTokens == 0 {
-			if est := translator.PromptEstimateFromContext(u.ctx); est > 0 {
-				usage.PromptTokens = est
-				estimated = true
-			}
-		}
+		// upstream whose prompt total is not credible against the
+		// forwarded body gets the same estimate substituted here, so the
+		// recorded usage matches what the client was sent.
+		estimated := translator.FloorPromptTokens(usage, translator.PromptEstimateFromContext(u.ctx))
 		// A frame carrying a usage block merges into what the earlier
 		// frames already reported instead of replacing it: the finish
 		// chunk and the usage-only trailer are two frames of the same

@@ -302,6 +302,7 @@ func sseStream(o sseStreamOpts) error {
 						sawTerminal = true
 					}
 					if acc := translator.AccumulateClaudeStreamUsage(streamUsage, ev.Payload); acc != streamUsage {
+						translator.FloorPromptTokens(acc, translator.PromptEstimateFromContext(ctx))
 						streamUsage = acc
 						translator.SetUsage(ctx, streamUsage)
 					}
@@ -366,12 +367,13 @@ func sseStream(o sseStreamOpts) error {
 			}
 			return p
 		})
-		// Upstreams that report prompt_tokens: 0 in their terminal usage
-		// chunk (MiniMax streaming) leave client context meters at 0%;
-		// the body-size estimate stands in for the missing count.
+		// Upstreams whose terminal usage chunk reports a prompt total
+		// that cannot describe the forwarded request (MiniMax streaming
+		// counts only the newest segment) leave client context meters at
+		// ~0%; the body-size estimate stands in for the missing count.
 		promptEst := translator.PromptEstimateFromContext(ctx)
 		patchers = append(patchers, func(p []byte) []byte {
-			if patched, changed := translator.PatchZeroPromptUsage(p, promptEst); changed {
+			if patched, changed := translator.PatchPromptUsageFloor(p, promptEst); changed {
 				return patched
 			}
 			return p
@@ -561,7 +563,7 @@ func jsonResponse(ctx context.Context, w http.ResponseWriter, upstream io.Reader
 	}
 
 	if ctx != nil {
-		if patched, changed := translator.PatchZeroPromptUsage(body, translator.PromptEstimateFromContext(ctx)); changed {
+		if patched, changed := translator.PatchPromptUsageFloor(body, translator.PromptEstimateFromContext(ctx)); changed {
 			body = patched
 		}
 	}

@@ -35,18 +35,16 @@ type ClaudeToOpenAIStreamState struct {
 // of several hundred thousand (measured on staging, 2026-11-13: 3,643 of
 // 4,616 MiniMax-served smart-combo requests with ≥30K-token prompts
 // closed with prompt_tokens < 3,000, so every client's context meter
-// read ~0% on those turns). A reporter whose total is not even half the
-// body-size estimate is not describing the prompt; the estimate, derived
-// from the exact forwarded body, is the truthful figure. Honest
-// reporters track the body within tokenizer variance, far above the
-// half-estimate line, and keep their own number. The state itself is
-// updated, so the usage recorded for the request matches what the
-// client was sent.
+// read ~0% on those turns). A reporter whose total is not even a
+// quarter of the body-size estimate is not describing the prompt; the
+// estimate, derived from the exact forwarded body, is the truthful
+// figure. Honest reporters track the body within tokenizer variance —
+// even mavis on a cold cache reports over half the estimate — far
+// above the quarter-estimate line, and keep their own number. The
+// state itself is updated, so the usage recorded for the request
+// matches what the client was sent.
 func (state *ClaudeToOpenAIStreamState) terminalUsage() *OpenAIUsage {
-	if state.Usage != nil && state.PromptEstimate > 0 &&
-		state.Usage.PromptTokens*2 < state.PromptEstimate {
-		state.Usage.PromptTokens = state.PromptEstimate
-	}
+	FloorPromptTokens(state.Usage, state.PromptEstimate)
 	return state.Usage
 }
 

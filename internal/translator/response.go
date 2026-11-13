@@ -189,16 +189,34 @@ func ParseResponseUsage(body []byte) *OpenAIUsage {
 	return &usage
 }
 
-// PatchZeroPromptUsage rewrites an OpenAI-shaped response body's usage block
-// when the upstream reported prompt_tokens as 0 (or omitted it): some
-// providers (MiniMax streaming, notably) always report prompt_tokens: 0,
-// which leaves every client's context meter stuck at 0% even though the
-// conversation is long. The gateway's own body-size prompt estimate (the
-// same fallback the translated-stream terminal usage block applies)
-// stands in. Real reported numbers are never overwritten: a non-zero
-// prompt_tokens — or a total_tokens the upstream actually reported — is
-// left exactly as sent.
-func PatchZeroPromptUsage(body []byte, estimate int) ([]byte, bool) {
+// FloorPromptTokens substitutes the gateway's body-size prompt estimate
+// for a usage record's prompt total when that total is not credible
+// against the request that was actually forwarded: reported as zero, or
+// less than a quarter of the estimate. Some providers (MiniMax's mavis
+// gateway, notably) count only the newest segment of a conversation, so
+// a several-hundred-thousand-token prompt can close with prompt_tokens
+// in the hundreds and every client's context meter reads ~0% on the
+// turn. The estimate, derived from the exact forwarded body, is the
+// truthful figure there. Credible totals are never overwritten: an
+// honest reporter's count tracks the body within tokenizer variance,
+// far above the quarter-estimate line. It reports whether it changed
+// the record.
+func FloorPromptTokens(usage *OpenAIUsage, estimate int) bool {
+	if usage == nil || estimate <= 0 || usage.PromptTokens*4 >= estimate {
+		return false
+	}
+	usage.PromptTokens = estimate
+	if usage.TotalTokens < estimate+usage.CompletionTokens {
+		usage.TotalTokens = estimate + usage.CompletionTokens
+	}
+	return true
+}
+
+// PatchPromptUsageFloor rewrites an OpenAI-shaped response body's usage
+// block under the FloorPromptTokens rule: the upstream's prompt total
+// was zero, omitted, or not credible against the forwarded request, so
+// the gateway's body-size prompt estimate stands in.
+func PatchPromptUsageFloor(body []byte, estimate int) ([]byte, bool) {
 	if estimate <= 0 || len(body) == 0 {
 		return body, false
 	}
@@ -210,12 +228,12 @@ func PatchZeroPromptUsage(body []byte, estimate int) ([]byte, bool) {
 	if !ok {
 		return body, false
 	}
-	if v, present := usageNumber(usage, "prompt_tokens"); present && v != 0 {
+	if v, present := usageNumber(usage, "prompt_tokens"); present && v*4 >= estimate {
 		return body, false
 	}
 	usage["prompt_tokens"] = estimate
-	if v, present := usageNumber(usage, "total_tokens"); !present || v == 0 {
-		completion, _ := usageNumber(usage, "completion_tokens")
+	completion, _ := usageNumber(usage, "completion_tokens")
+	if v, present := usageNumber(usage, "total_tokens"); !present || v < estimate+completion {
 		usage["total_tokens"] = estimate + completion
 	}
 	out, err := json.Marshal(doc)

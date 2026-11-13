@@ -127,7 +127,7 @@ func TestParseResponsesUsageMarksReasoningSubset(t *testing.T) {
 // never reported must not reach the client as a zero. A "total_tokens": 0
 // beside a non-zero prompt and completion count contradicts them and pins the
 // client's context meter to zero — the exact symptom the reported-total
-// detection in PatchZeroPromptUsage works around.
+// detection in PatchPromptUsageFloor works around.
 //
 // The marshaling here is encoding/json/v2, the one the production code uses:
 // under it omitempty does NOT skip a zero number, so the field needs omitzero.
