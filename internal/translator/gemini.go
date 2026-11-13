@@ -142,15 +142,7 @@ type GeminiResponse struct {
 		Content      *GeminiContent `json:"content,omitempty"`
 		FinishReason string         `json:"finishReason,omitempty"`
 	} `json:"candidates"`
-	UsageMetadata *struct {
-		PromptTokenCount        int `json:"promptTokenCount"`
-		CandidatesTokenCount    int `json:"candidatesTokenCount"`
-		CachedContentTokenCount int `json:"cachedContentTokenCount,omitempty"`
-		CachedContentToken      int `json:"cachedContentToken,omitempty"`
-		CandidatesTokenDetails  *struct {
-			ReasoningTokens int `json:"reasoningTokens"`
-		} `json:"candidatesTokenDetails,omitempty"`
-	} `json:"usageMetadata,omitempty"`
+	UsageMetadata *GeminiUsageMetadata `json:"usageMetadata,omitempty"`
 }
 
 // GeminiStreamChunk represents one SSE chunk from Gemini stream.
@@ -711,28 +703,12 @@ func translateGeminiResponseToOpenAI(geminiBody []byte, decoys map[string]bool) 
 	}
 
 	// Usage
-	inputTokens, outputTokens, cachedTokens := 0, 0, 0
-	reasoningTokens := 0
-	if geminiResp.UsageMetadata != nil {
-		inputTokens = geminiResp.UsageMetadata.PromptTokenCount
-		outputTokens = geminiResp.UsageMetadata.CandidatesTokenCount
-		cachedTokens = geminiResp.UsageMetadata.CachedContentTokenCount
-		if cachedTokens == 0 {
-			cachedTokens = geminiResp.UsageMetadata.CachedContentToken
-		}
-		if geminiResp.UsageMetadata.CandidatesTokenDetails != nil {
-			reasoningTokens = geminiResp.UsageMetadata.CandidatesTokenDetails.ReasoningTokens
-		}
-	}
-
-	usage := &OpenAIUsage{
-		PromptTokens:     inputTokens,
-		CompletionTokens: outputTokens,
-		CachedTokens:     cachedTokens,
-		CompletionTokensDetails: &CompletionTokensDetails{
-			ReasoningTokens: reasoningTokens,
-		},
-	}
+	//
+	// Gemini reports the reasoning slice SEPARATE from the output count, so
+	// the totals are resolved by geminiUsageFromMetadata: the output stays
+	// candidatesTokenCount and the reasoning is billed on top of it.
+	counts := geminiUsageFromMetadata(geminiResp.UsageMetadata)
+	usage := counts.toOpenAIUsage()
 	if droppedDecoys > 0 && len(toolCalls) == 0 && openaiContent == "" {
 		return nil, usage, ErrDecoyOnlyResponse
 	}
@@ -751,14 +727,7 @@ func translateGeminiResponseToOpenAI(geminiBody []byte, decoys map[string]bool) 
 			},
 			"finish_reason": claudeStop,
 		}},
-		"usage": map[string]any{
-			"prompt_tokens":     inputTokens,
-			"completion_tokens": outputTokens,
-			"cached_tokens":     cachedTokens,
-			"completion_tokens_details": map[string]any{
-				"reasoning_tokens": reasoningTokens,
-			},
-		},
+		"usage": counts.openAIUsageMap(),
 	}
 
 	// Remove empty fields
