@@ -38,7 +38,7 @@
     '3xl': 'max-w-3xl',
     '4xl': 'max-w-4xl',
     '5xl': 'max-w-5xl',
-    full: 'max-w-4xl'
+    full: 'max-w-6xl'
   }
 
   // Lock background scroll while the modal is open.

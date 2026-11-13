@@ -151,6 +151,29 @@
       return ta - tb
     })
   )
+  // Keyed-each rows for the in-flight modal. The tracker splits ONE
+  // (model, provider, account) aggregate by response mode and by combo, so
+  // two live rows can share provider|model|account while differing only in
+  // isStream or comboName. Keying the each on those three fields alone
+  // collided whenever that happened (busy moments — exactly when the modal
+  // is opened), Svelte threw each_key_duplicate, and the modal never
+  // rendered. The key therefore carries every splitting dimension, plus an
+  // occurrence suffix so even a fully identical pair cannot collide.
+  let keyedActiveRequests = $derived.by(() => {
+    const seen = new Map<string, number>()
+    return sortedActiveRequests.map((r) => {
+      const base = [
+        r.provider || '',
+        r.model || '',
+        r.account || '',
+        r.comboName || '',
+        r.isStream === true ? 'stream' : 'json',
+      ].join('|')
+      const n = (seen.get(base) ?? 0) + 1
+      seen.set(base, n)
+      return { r, key: n === 1 ? base : `${base}#${n}` }
+    })
+  })
   let activeStreamTotal = $derived(
     activeRequests.reduce((sum, r) => sum + (r.isStream === true ? (r.count || 1) : 0), 0)
   )
@@ -472,10 +495,11 @@
         <span>longest <span class="font-mono text-text-main tabular-nums">{formatDuration(longestActiveMs)}</span></span>
       {/if}
     </div>
-    <div class="grid max-h-[72vh] auto-rows-fr grid-cols-1 gap-2.5 overflow-y-auto p-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-      {#each sortedActiveRequests as r (r.provider + '|' + r.model + '|' + (r.account || ''))}
+    <div class="grid grid-cols-1 gap-2.5 p-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+      {#each keyedActiveRequests as entry (entry.key)}
+        {@const r = entry.r}
         {@const parts = activeModelParts(r)}
-        <div class="flex h-full min-w-0 flex-col gap-2 rounded-brand border border-border bg-surface-2/30 px-3 py-2.5 transition-colors hover:bg-surface-2/50">
+        <div class="flex min-w-0 flex-col gap-2 rounded-brand border border-border bg-surface-2/30 px-3 py-2.5 transition-colors hover:bg-surface-2/50">
           <div class="flex items-center justify-between gap-2">
             <span class="truncate text-[11px] text-text-muted" title={providerDisplayName(r.provider)}>
               {providerDisplayName(r.provider)}
