@@ -367,15 +367,22 @@ func sseStream(o sseStreamOpts) error {
 			}
 			return p
 		})
-		return proxy.SSECopy(hw, upstream, flusher, func(chunk []byte) {
+		// The usage block has to be read out of the raw stream, not out
+		// of the relayed bytes: the frame that carries it routinely
+		// straddles a read boundary, so the capture reassembles frames
+		// before parsing them (upstream decolua/9router #5616).
+		capture := newUsageCapture(ctx)
+		err := proxy.SSECopy(hw, upstream, flusher, func(chunk []byte) {
 			if ttft != nil && *ttft == 0 {
 				*ttft = time.Since(startTime).Milliseconds()
 			}
 			if buf != nil {
 				buf.Write(chunk)
 			}
-			captureUsageFromSSEChunk(ctx, chunk)
+			capture.feed(chunk)
 		}, patchers...)
+		capture.flush()
+		return err
 	}
 
 	sessionKey := translator.NewSessionKey("stream")
@@ -433,38 +440,6 @@ func sseStream(o sseStreamOpts) error {
 		translator.SetUsage(ctx, usage)
 	}
 	return err
-}
-
-func captureUsageFromSSEChunk(ctx context.Context, chunk []byte) {
-	const maxUsageFrame = 1 << 20
-	trimmed := bytes.TrimSpace(chunk)
-	if len(trimmed) > maxUsageFrame {
-		trimmed = trimmed[:maxUsageFrame]
-	}
-	if !bytes.Contains(trimmed, []byte("data:")) {
-		return
-	}
-	_ = proxy.ScanStream(bytes.NewReader(trimmed), func(payload []byte) {
-		if bytes.Equal(bytes.TrimSpace(payload), []byte("[DONE]")) {
-			return
-		}
-		usage := translator.ParseResponseUsage(payload)
-		if usage == nil {
-			usage = translator.ParseResponsesUsage(payload)
-		}
-		if usage != nil {
-			// The chunk capture sees the raw bytes, before the wire
-			// patcher runs: an upstream reporting prompt_tokens: 0 gets
-			// the same estimate substituted here, so the recorded usage
-			// matches what the client was sent.
-			if usage.PromptTokens == 0 {
-				if est := translator.PromptEstimateFromContext(ctx); est > 0 {
-					usage.PromptTokens = est
-				}
-			}
-			translator.SetUsage(ctx, usage)
-		}
-	})
 }
 
 // jsonResponse writes the upstream JSON response with optional translation.
