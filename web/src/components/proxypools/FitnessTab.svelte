@@ -48,9 +48,10 @@
   let pageSize = $state(15)
 
   $effect(() => {
-    // Reset page on search or type change
-    fitnessSearch
-    fitnessType
+    // Reset page on search or type change. The bare reads are what
+    // $effect tracks; `void` states that intent to the linter.
+    void fitnessSearch
+    void fitnessType
     page = 1
   })
 

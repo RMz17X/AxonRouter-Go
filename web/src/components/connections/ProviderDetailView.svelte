@@ -265,17 +265,6 @@
       : pagedConnections
   )
 
-  // While an account search is applied, the count is the filtered
-  // total the server reports for the search (X-Total-Count), not the
-  // provider's whole roster.
-  let totalConnectionsCount = $derived(
-    appliedConnSearch && pagedTotal !== null
-      ? pagedTotal
-      : cachedStats.total > 0
-        ? cachedStats.total
-        : (pagedConnections.length > 0 ? pagedConnections.length : providerConnections.length)
-  )
-
   // Connections pagination
   let connPageSize = $state<number>(10)
   let connPage = $state<number>(1)
@@ -287,6 +276,25 @@
   let connSearchQuery = $state('')
   let appliedConnSearch = $state('')
   let pagedTotal = $state<number | null>(null)
+
+  // While an account search is applied, the count is the filtered
+  // total the server reports for the search (X-Total-Count), not the
+  // provider's whole roster.
+  //
+  // Declared after the state it reads: a $derived that names a binding
+  // declared further down hits the temporal dead zone when it is
+  // evaluated, which is a runtime ReferenceError rather than a type
+  // complaint. `?? 0` keeps the count a plain number, so the page
+  // arithmetic below does not have to narrow it at every use.
+  let totalConnectionsCount = $derived(
+    appliedConnSearch && pagedTotal !== null
+      ? pagedTotal
+      : (cachedStats.total ?? 0) > 0
+        ? (cachedStats.total ?? 0)
+        : pagedConnections.length > 0
+          ? pagedConnections.length
+          : providerConnections.length
+  )
 
   function handleConnSearch(): void {
     appliedConnSearch = connSearchQuery.trim()

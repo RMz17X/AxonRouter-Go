@@ -293,12 +293,13 @@
 
   $effect(() => {
     // Reset to page 1 whenever filter or sort changes (the bare reads
-    // below are what $effect tracks — they must stay as plain reads)
-    statusFilter
-    sortOption
-    groupFilter
-    typeFilter
-    searchQuery
+    // below are what $effect tracks — they must stay as plain reads,
+    // so `void` marks them for the linter)
+    void statusFilter
+    void sortOption
+    void groupFilter
+    void typeFilter
+    void searchQuery
     currentPage = 1
   })
 
