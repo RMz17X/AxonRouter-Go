@@ -1,4 +1,0 @@
-### Fixed
-
-- Usage Overview: the realtime card's "View Details" modal (Active In-Flight Requests) never opened whenever the in-flight list held two groups that share provider, model and account — the tracker splits one aggregate by response mode (stream/JSON) and by combo, but the modal's keyed list keyed rows on provider|model|account alone, so the duplicate key threw during render and the modal (backdrop included) never appeared. Busy moments — exactly when the modal is needed — made the collision near-certain. Rows are now keyed on every splitting dimension with an occurrence suffix, so duplicates cannot collide.
-- The same modal is tidied: the card grid no longer nests its own 72vh scroll region inside the modal's scroller (one scroll owner), cards no longer stretch to equal row height, and the shared modal's `full` size is widened from max-w-4xl to max-w-6xl so the four-column grid has room (this modal is the only `full` user).
