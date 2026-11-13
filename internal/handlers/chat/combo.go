@@ -820,6 +820,9 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 	// Retry-After wait so a transient provider blip doesn't surface as a hard
 	// 429 to the client.
 	for attempt := 0; attempt < 2; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
 		if attempt > 0 {
 			wait := retry.wait()
 			if wait == 0 {
@@ -846,6 +849,9 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 		lastTried := newComboLastTried(h, models)
 
 		for i, entry := range models {
+			if ctx.Err() != nil {
+				return
+			}
 			modelInfo := h.resolveModelEntry(entry)
 			if modelInfo == nil {
 				continue
@@ -1415,6 +1421,9 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 	// Retry-After wait so a transient provider blip doesn't surface as a hard
 	// 429 to the client.
 	for attempt := 0; attempt < 2; attempt++ {
+		if ctx.Err() != nil {
+			return
+		}
 		if attempt > 0 {
 			wait := retry.wait()
 			if wait == 0 {
@@ -1437,6 +1446,9 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 		lastTried := newComboLastTried(h, models)
 
 		for i, entry := range models {
+			if ctx.Err() != nil {
+				return
+			}
 			modelInfo := h.resolveModelEntry(entry)
 			if modelInfo == nil {
 				continue

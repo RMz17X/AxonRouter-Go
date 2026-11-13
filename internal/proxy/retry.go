@@ -57,10 +57,15 @@ func resolveSeatBudget(ctx context.Context) int {
 
 // retryTransientUpstream repeats a failed transient attempt per
 // transientRetryPolicy, bounded by per-seat attempt budget (upstream #5341).
+// A client abort (context canceled) is never retried and returns the abort
+// error directly, rather than surfacing as a transient 502/503/504 upstream error.
 func retryTransientUpstream(
 	ctx context.Context,
 	send func(context.Context) (*http.Response, error),
 ) (*http.Response, error) {
+	if ctx != nil && ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	seatBudgetMs := resolveSeatBudget(ctx)
 	startTime := time.Now()
 
@@ -69,6 +74,12 @@ func retryTransientUpstream(
 	}
 
 	resp, err := executeAttempt()
+	if ctx != nil && ctx.Err() != nil {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		return nil, ctx.Err()
+	}
 	var ue *UpstreamError
 	if !errors.As(err, &ue) {
 		return resp, err
@@ -76,6 +87,9 @@ func retryTransientUpstream(
 
 	policy, retryable := transientRetryPolicy[ue.StatusCode]
 	for attempt := 1; retryable && attempt <= policy.attempts; attempt++ {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		elapsed := time.Since(startTime).Milliseconds()
 		waitMs := policy.delay.Milliseconds()
 
@@ -88,11 +102,17 @@ func retryTransientUpstream(
 
 		if waitErr := sleepCtx(ctx, policy.delay); waitErr != nil {
 			log.Debug("retry", "retry abandoned, client gone", "status", ue.StatusCode, "attempt", attempt)
-			return nil, err
+			return nil, ctx.Err()
 		}
 		log.Debug("retry", "transient upstream failure, retrying", "status", ue.StatusCode, "attempt", attempt, "max", policy.attempts, "delay_ms", policy.delay.Milliseconds())
 
 		resp, err = executeAttempt()
+		if ctx != nil && ctx.Err() != nil {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			return nil, ctx.Err()
+		}
 		if !errors.As(err, &ue) {
 			return resp, err
 		}

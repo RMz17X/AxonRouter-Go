@@ -614,7 +614,13 @@ func ForwardCommandcode(w http.ResponseWriter, req *Request) error {
 	}
 	_ = json.Unmarshal(reqBody, &envelope)
 	for attempt := 0; ; attempt++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		err = forwardCommandcodeOnce(ctx, w, req, reqBody, envelope.ThreadID, oreq.Model)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if attempt >= commandcodeMaxRetries || !isCommandcodeRetryable(err) {
 			return err
 		}

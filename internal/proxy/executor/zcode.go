@@ -473,7 +473,9 @@ func zcodePostWithRetry(req *Request, jwt string, body []byte, sessionID, reques
 		wait := time.Duration(1<<attempt) * time.Second
 		select {
 		case <-req.Ctx.Done():
-			return resp, nil
+			// The client hung up: the 429 envelope is not an answer, and
+			// handing it back as one would report the turn as served.
+			return nil, req.Ctx.Err()
 		case <-time.After(wait):
 		}
 	}

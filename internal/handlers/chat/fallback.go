@@ -71,6 +71,9 @@ func (h *ChatHandler) handleAccountFallback(
 	translateResponse bool,
 	endpoint string,
 ) error {
+	if isClientCanceled(ctx, nil) {
+		return clientClosedError()
+	}
 	if FallbackAttemptRecorderFrom(ctx) == nil {
 		ctx = WithFallbackAttemptRecorder(ctx, NewFallbackAttemptRecorder())
 	}
@@ -249,6 +252,9 @@ func (h *ChatHandler) handleAccountFallback(
 		maxAccountAttempts = 2
 	}
 	for _, c := range allConns {
+		if isClientCanceled(ctx, lastErr) {
+			return clientClosedError()
+		}
 		if slices.Contains(excludeIDs, c.ID) {
 			continue
 		}
@@ -384,6 +390,9 @@ func (h *ChatHandler) handleAccountFallback(
 			lastErr = ue
 			break
 		}
+		if isClientCanceled(ctx, lastErr) {
+			return clientClosedError()
+		}
 		if errors.As(lastErr, &ue) && providers.RetryableStatusCodes[ue.StatusCode] {
 			if handlerutil.IsProbeContext(ctx) {
 				excludeIDs = append(excludeIDs, connObj.ID)
@@ -516,6 +525,9 @@ func (h *ChatHandler) handleAccountFallback(
 		}
 
 		// If client disconnected or canceled, stop immediately
+		if isClientCanceled(ctx, lastErr) {
+			return clientClosedError()
+		}
 		if ctx.Err() != nil {
 			return lastErr
 		}
@@ -528,6 +540,9 @@ func (h *ChatHandler) handleAccountFallback(
 		continue
 	}
 	if lastErr != nil {
+		if isClientCanceled(ctx, lastErr) {
+			return clientClosedError()
+		}
 		return opencodeClosureError(provider, model, lastErr)
 	}
 	return fmt.Errorf("no available connections for provider: %s", provider)
@@ -1681,9 +1696,20 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// recorded a 5xx for a disconnect the gateway did not cause. The combo path
 	// already reports this as 499, so the two agree.
 	if isClientCanceled(ctx, fwdErr) {
-		return &upstreamError{StatusCode: StatusClientClosedRequest, Body: []byte(clientClosedBody)}
+		return clientClosedError()
 	}
 	return fwdErr
+}
+
+// clientClosedError is the answer a client abort gets on every path: the
+// canonical 499 with the body the combo path has always sent. Upstream #5639
+// made the abort a first-class outcome — it is not a provider failure, so it
+// must not be re-shaped into a 502 on the way to the client.
+//
+// The helper exists so every path builds the SAME error: a caller that sees
+// one cannot tell which path answered it.
+func clientClosedError() *upstreamError {
+	return &upstreamError{StatusCode: StatusClientClosedRequest, Body: []byte(clientClosedBody)}
 }
 
 // isClientCanceled reports whether the client that asked for this response
@@ -2372,5 +2398,8 @@ func isProxyTransportError(err error, statusCode int) bool {
 		// leaving says nothing about the pool.
 		strings.Contains(text, "response body closed") ||
 		strings.Contains(text, "stream error") ||
+		strings.Contains(text, "server sent goaway") ||
+		strings.Contains(text, "enhance_your_calm") ||
+		strings.Contains(text, "refused_stream") ||
 		strings.Contains(text, "connection closed")
 }
