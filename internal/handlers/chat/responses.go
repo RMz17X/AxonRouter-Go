@@ -47,6 +47,10 @@ func newResponsesBridge(ctx context.Context, hw *internalproxy.HeartbeatWriter, 
 					metrics.TTFT = time.Since(start).Milliseconds()
 				}
 				metrics.ResponseBuf.Write(frame)
+				// The bridge writes into the capture buffer directly, so the
+				// output-timing stamp has to be taken here. Without it the
+				// Responses lane reported 0 tok/s and a 0 ms max gap.
+				metrics.NoteOutput(time.Now())
 			}
 			if _, err := hw.Write(frame); err != nil {
 				return err

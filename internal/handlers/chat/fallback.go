@@ -1406,7 +1406,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 			SessionID:      sessionID,
 			ToolNameMap:    claudeToolMap,
 			UpstreamClaude: upstreamClaude && !claudeNative,
-			ResponseBuf:    &metrics.ResponseBuf,
+			ResponseBuf:    &streamNoteWriter{w: &metrics.ResponseBuf, note: metrics.NoteOutput},
 			StartTime:      start,
 			TTFT:           &metrics.TTFT,
 		}
@@ -1454,7 +1454,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 					SessionID:      sessionID,
 					ToolNameMap:    claudeToolMap,
 					UpstreamClaude: upstreamClaude && !claudeNative,
-					ResponseBuf:    &metrics.ResponseBuf,
+					ResponseBuf:    &streamNoteWriter{w: &metrics.ResponseBuf, note: metrics.NoteOutput},
 					StartTime:      start,
 					TTFT:           &metrics.TTFT,
 				}

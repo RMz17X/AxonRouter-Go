@@ -235,6 +235,7 @@ func (h *ChatHandler) handleClaudeUpstreamStream(ctx context.Context, w http.Res
 			metrics.TTFT = time.Since(startTime).Milliseconds()
 		}
 		_, _ = metrics.ResponseBuf.Write(out)
+		metrics.NoteOutput(time.Now())
 		if _, werr := hw.Write(out); werr != nil {
 			return
 		}
@@ -272,7 +273,7 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 		// ResponsesBridge.CompletionPending and the completion watchdog), so a
 		// second deadline wrapped around the same read would only be a
 		// duplicate timer racing the first one to the same terminal event.
-		return executor.StreamChatToResponses(ctx, w, upstream, startTime, &metrics.TTFT, &metrics.ResponseBuf)
+		return executor.StreamChatToResponses(ctx, w, upstream, startTime, &metrics.TTFT, &streamNoteWriter{w: &metrics.ResponseBuf, note: metrics.NoteOutput})
 	}
 
 	// Peek before the header write. A 200 whose stream opens with an error
@@ -329,6 +330,7 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 			frame := append([]byte("data: "), payload...)
 			frame = append(frame, '\n', '\n')
 			metrics.ResponseBuf.Write(frame)
+			metrics.NoteOutput(time.Now())
 			_, _ = hw.Write(frame)
 			if flusher != nil {
 				flusher.Flush()
@@ -390,6 +392,7 @@ func (h *ChatHandler) handleStreamResponse(ctx context.Context, w http.ResponseW
 			metrics.TTFT = time.Since(startTime).Milliseconds()
 		}
 		metrics.ResponseBuf.Write(translated)
+		metrics.NoteOutput(time.Now())
 		hw.Write(translated)
 		if flusher != nil {
 			flusher.Flush()

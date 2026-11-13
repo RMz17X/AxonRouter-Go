@@ -718,6 +718,10 @@ func (h *ChatHandler) handleGeminiStream(ctx context.Context, w http.ResponseWri
 			metrics.TTFT = time.Since(start).Milliseconds()
 		}
 		metrics.ResponseBuf.Write(openaiChunk)
+		// The Gemini lane writes into the capture buffer directly, so the
+		// output-timing stamp has to be taken here. Without it the stream
+		// summary reported 0 tok/s and a 0 ms max gap for every Gemini turn.
+		metrics.NoteOutput(time.Now())
 
 		if bridge != nil {
 			bridge.FeedFrames(openaiChunk)

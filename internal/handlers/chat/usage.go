@@ -444,6 +444,11 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		if len(respContent) > constants.MaxResponseContentLen {
 			respContent = truncateDetailText(respContent, constants.MaxResponseContentLen, "...[truncated]")
 		}
+		// The output token count is published to the metrics accumulator only
+		// after the fallback estimation below has run. Publishing it here
+		// froze the accumulator on the upstream's own (possibly zero)
+		// completion count, so a turn that fell back to the char estimate
+		// logged "completion: N" while the rate stayed at 0 tok/s.
 	}
 
 	// Fallback token estimation if upstream emitted zero tokens
@@ -458,6 +463,9 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		if usage.CompletionTokens == 0 {
 			usage.CompletionTokens = 1
 		}
+	}
+	if metrics != nil {
+		metrics.SetOutputTokens(usage.CompletionTokens)
 	}
 
 	totalTokens := usage.PromptTokens + usage.CompletionTokens
@@ -490,6 +498,9 @@ func (h *ChatHandler) logUsage(ctx context.Context, info *UsageLogInfo, usage *t
 		"provider", info.Provider, "model", info.Model,
 		"prompt", usage.PromptTokens, "completion", usage.CompletionTokens, "cached", cachedTokens,
 		"cache_creation", cacheCreationTokens, "ttft_ms", ttftMs, "latency_ms", latencyMs, "cost", cost,
+	}
+	if metrics != nil {
+		usageKVs = append(usageKVs, "tok_per_sec", metrics.TokPerSec(), "max_gap_ms", metrics.MaxGap())
 	}
 	if info.SavedTokens > 0 {
 		usageKVs = append(usageKVs, "compressed", fmt.Sprintf("%d->%d (%d%% saved)", info.OriginalInputTokens, info.OriginalInputTokens-info.SavedTokens, info.SavedPercent))
