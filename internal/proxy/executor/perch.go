@@ -344,6 +344,12 @@ func ForwardPerch(w http.ResponseWriter, req *Request) error {
 
 	// If 401 on model call, clear ticket and retry once
 	if resp.StatusCode == http.StatusUnauthorized {
+		// The client hung up: the 401 is not an answer, and re-acquiring a
+		// ticket plus replaying the call would spend two more upstream
+		// requests on a turn nobody is waiting for.
+		if err := guardRetryAttempt(ctx); err != nil {
+			return err
+		}
 		resp.Body.Close()
 		clearPerchTicket(token)
 		ticket, err = getOrAcquirePerchTicket(ctx, client, origin, token)

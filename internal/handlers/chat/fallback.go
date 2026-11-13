@@ -2394,6 +2394,14 @@ func isProxyTransportError(err error, statusCode int) bool {
 	if err == nil {
 		return false
 	}
+	// HTTP/2 transport failures are classified by their typed error value
+	// (AGENTS.md §4.E): a GOAWAY, a stream reset or a dropped h2 connection
+	// is the egress leg dying, and the pool that served it has to be
+	// penalised. See http2_errors.go for the typed targets and the narrow
+	// fallback for the shapes the transports build without a typed value.
+	if isH2TransportError(err) {
+		return true
+	}
 	text := strings.ToLower(err.Error())
 	return strings.Contains(text, "proxy") ||
 		strings.Contains(text, "connect tunnel failed") ||
@@ -2412,9 +2420,5 @@ func isProxyTransportError(err error, statusCode int) bool {
 		// ("context canceled") deliberately stay unmatched: the client
 		// leaving says nothing about the pool.
 		strings.Contains(text, "response body closed") ||
-		strings.Contains(text, "stream error") ||
-		strings.Contains(text, "server sent goaway") ||
-		strings.Contains(text, "enhance_your_calm") ||
-		strings.Contains(text, "refused_stream") ||
 		strings.Contains(text, "connection closed")
 }

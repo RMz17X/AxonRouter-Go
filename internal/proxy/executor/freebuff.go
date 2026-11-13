@@ -347,6 +347,12 @@ func ForwardFreebuff(w http.ResponseWriter, req *Request) error {
 		// Otherwise force re-claim session once and retry. Drop the lease
 		// only when it still holds OUR instance id: a sibling's fresh row
 		// must survive (compare-and-delete), or the hijack war restarts.
+		// The client hung up: the stale-session answer is not an answer, and
+		// re-claiming a session plus replaying the chat would spend two more
+		// upstream requests on a turn nobody is waiting for.
+		if err := guardRetryAttempt(ctx); err != nil {
+			return err
+		}
 		if sess != nil {
 			dropFreebuffLease(store, token, model, sess.InstanceID)
 		}
