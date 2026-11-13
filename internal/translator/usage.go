@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -273,4 +274,73 @@ func PromptEstimateFromContext(ctx context.Context) int {
 		return v
 	}
 	return 0
+}
+
+var (
+	base64Marker     = []byte(";base64,")
+	claudeDataMarker = []byte(`"data":`)
+)
+
+// EstimatePromptTokens approximates a request body's prompt-token count
+// from its size: roughly four bytes per token over the body's text,
+// excluding inline base64 media payloads. A base64 image's byte length
+// says nothing about its token cost (an image is ~1-2K tokens at any
+// resolution), so counting it would inflate the estimate and make the
+// usage floor fabricate prompt tokens for image turns; skipping the
+// request entirely — the old behaviour — left every image-carrying
+// history unestimated, so a segment-counting upstream's prompt total
+// passed through unfloored. Two payload shapes are recognised: data
+// URIs (";base64," followed by the payload) in any API dialect, and
+// Claude-native media blocks ("data": "<payload>").
+func EstimatePromptTokens(body []byte) int {
+	return (len(body) - base64PayloadBytes(body) + 3) / 4
+}
+
+func base64PayloadBytes(body []byte) int {
+	total := 0
+	for i := 0; i < len(body); {
+		j := bytes.Index(body[i:], base64Marker)
+		if j < 0 {
+			break
+		}
+		start := i + j + len(base64Marker)
+		n := base64Run(body, start)
+		total += n
+		i = start + n
+	}
+	for i := 0; i < len(body); {
+		j := bytes.Index(body[i:], claudeDataMarker)
+		if j < 0 {
+			break
+		}
+		k := i + j + len(claudeDataMarker)
+		for k < len(body) && (body[k] == ' ' || body[k] == '\t') {
+			k++
+		}
+		if k >= len(body) || body[k] != '"' {
+			i = k
+			continue
+		}
+		n := base64Run(body, k+1)
+		if n >= 100 {
+			total += n
+		}
+		i = k + 1 + n
+	}
+	return total
+}
+
+// base64Run returns the length of the base64 alphabet run starting at i.
+func base64Run(body []byte, i int) int {
+	n := 0
+	for j := i; j < len(body); j++ {
+		c := body[j]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '+' || c == '/' || c == '=' || c == '-' || c == '_' {
+			n++
+			continue
+		}
+		break
+	}
+	return n
 }

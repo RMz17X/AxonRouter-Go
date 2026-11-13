@@ -2,7 +2,6 @@ package chat
 
 import (
 	json "axonrouter/proxy/internal/fastjson"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -130,9 +129,7 @@ func (h *ChatHandler) HandleResponses(w http.ResponseWriter, r *http.Request) {
 		if _, ok := workingBody["stream_options"]; !ok {
 			workingBody["stream_options"] = map[string]any{"include_usage": true}
 		}
-		if !bytes.Contains(body, []byte(";base64,")) {
-			ctx = translator.WithPromptEstimate(ctx, (len(body)+3)/4)
-		}
+		ctx = translator.WithPromptEstimate(ctx, translator.EstimatePromptTokens(body))
 	}
 
 	requiredCaps := DetectRequiredCapabilities(body)

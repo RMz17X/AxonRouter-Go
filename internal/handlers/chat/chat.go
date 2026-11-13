@@ -399,11 +399,11 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	ctx = withClientIP(ctx, requestClientIP(r))
 	// Body-size input estimate for streams whose upstream ignores
 	// include_usage: the translator falls back to it in the terminal usage
-	// block so the client's meter still moves. Inline base64 media makes the
-	// raw byte count meaningless, so those requests go unestimated rather
-	// than wildly over.
-	if reqBody.Stream && !claudeNative && !bytes.Contains(body, []byte(";base64,")) {
-		ctx = translator.WithPromptEstimate(ctx, (len(body)+3)/4)
+	// block so the client's meter still moves. The estimate discounts
+	// inline base64 media payloads, whose byte length says nothing about
+	// their token cost.
+	if reqBody.Stream && !claudeNative {
+		ctx = translator.WithPromptEstimate(ctx, translator.EstimatePromptTokens(body))
 	}
 
 	requiredCaps := DetectRequiredCapabilities(body)

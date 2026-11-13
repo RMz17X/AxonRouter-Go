@@ -880,8 +880,8 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// from the attempt's own body. An estimate already on the context
 	// is the entry handler's, computed on the client's original body,
 	// and wins.
-	if isStream && translator.PromptEstimateFromContext(ctx) == 0 && !bytes.Contains(body, []byte(";base64,")) {
-		ctx = translator.WithPromptEstimate(ctx, (len(body)+3)/4)
+	if isStream && translator.PromptEstimateFromContext(ctx) == 0 {
+		ctx = translator.WithPromptEstimate(ctx, translator.EstimatePromptTokens(body))
 	}
 
 	providerCfg, err := h.getProviderConfig(provider, connData)
