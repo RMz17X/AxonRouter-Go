@@ -732,7 +732,7 @@ func (h *ChatHandler) getProviderConfig(provider string, connData *ConnectionDat
 		//
 		// A custom node's baseUrl is a PREFIX rather than an endpoint the
 		// operator named, so it is completed by a different rule (#768).
-		baseURL := compatibleNodeLaneURL(provider, connectionAPIType(connData), connData.BaseURL)
+		baseURL := compatibleNodeLaneURL(provider, h.compatibleNodeAPIType(provider, connData), connData.BaseURL)
 		if cfg, ok := providers.KnownProviders[provider]; ok {
 			cloned := cfg
 			cloned.BaseURL = baseURL
