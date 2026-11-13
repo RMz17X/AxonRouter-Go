@@ -27,14 +27,24 @@ type ClaudeToOpenAIStreamState struct {
 }
 
 // terminalUsage returns the usage for the terminal chunk, substituting the
-// body-size prompt estimate when the upstream reported zero prompt tokens.
-// MiniMax's mavis gateway reports input_tokens: 0 in message_start and
-// never revises it, so without this every client of a Claude-wire provider
-// sees prompt_tokens: 0 and its context meter stays at 0% for the whole
-// session. The state itself is updated, so the usage recorded for the
-// request matches what the client was sent.
+// body-size prompt estimate when the upstream's reported prompt total is
+// not credible against the request that was actually forwarded.
+// MiniMax's mavis gateway reports input_tokens: 0 in message_start, and
+// the message_delta figure it later sends counts only the newest segment
+// of the conversation — a few hundred tokens against a forwarded prompt
+// of several hundred thousand (measured on staging, 2026-11-13: 3,643 of
+// 4,616 MiniMax-served smart-combo requests with ≥30K-token prompts
+// closed with prompt_tokens < 3,000, so every client's context meter
+// read ~0% on those turns). A reporter whose total is not even half the
+// body-size estimate is not describing the prompt; the estimate, derived
+// from the exact forwarded body, is the truthful figure. Honest
+// reporters track the body within tokenizer variance, far above the
+// half-estimate line, and keep their own number. The state itself is
+// updated, so the usage recorded for the request matches what the
+// client was sent.
 func (state *ClaudeToOpenAIStreamState) terminalUsage() *OpenAIUsage {
-	if state.Usage != nil && state.Usage.PromptTokens == 0 && state.PromptEstimate > 0 {
+	if state.Usage != nil && state.PromptEstimate > 0 &&
+		state.Usage.PromptTokens*2 < state.PromptEstimate {
 		state.Usage.PromptTokens = state.PromptEstimate
 	}
 	return state.Usage
