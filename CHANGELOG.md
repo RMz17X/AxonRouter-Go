@@ -1,5 +1,144 @@
 # Changelog
 
+## [v1.10.47] - 2026-11-13
+
+title: Claude-wire prompt total floored at the body-size estimate when upstream under-reports
+version: v1.10.47
+
+## Fixed
+- Clients of Claude-wire providers (MiniMax Code) still saw a ~0%
+  context meter on most smart-combo turns even after the zero-usage
+  fix: mavis reports input_tokens 0 in message_start, and the
+  message_delta figure adopted later counts only the newest segment
+  of the conversation, so a turn that forwarded a several-hundred-
+  thousand-token prompt closed with prompt_tokens in the hundreds
+  (staging census 2026-11-13: 3,643 of 4,616 MiniMax-served `auto`
+  requests with ≥30K-token prompts ended with prompt_tokens < 3,000;
+  antigravity-served turns were unaffected). terminalUsage now
+  substitutes the gateway's body-size prompt estimate whenever the
+  reported total is less than half that estimate — a total that low
+  cannot describe the forwarded body — while honest reporters, whose
+  totals track the body within tokenizer variance, keep their own
+  number. The recorded usage matches the corrected wire value, as
+  before.
+
+### Fix: a custom OpenAI-compatible node on the Responses wire now nests the reasoning effort
+
+- A user-added OpenAI-compatible node whose stored `apiType` is `responses` fronts an endpoint that speaks the Responses API, and that API rejects a top-level `reasoning_effort` with 400 ("moved to reasoning.effort"). The gateway decided the wire from the resolved base URL alone, which ends in `/responses` only while the connection row kept its `apiType` in sync — a connection written before that sync resolved to a URL that said nothing about the wire. The request was then treated as a Chat Completions one, the thinking pass wrote the top-level field, and the whole turn died on the upstream's 400.
+- The wire is now taken from the node's DECLARATION, which is the signal upstream uses as well (`getTargetFormat` reads `resolveOpenAICompatibleApiType`). A node declared `responses` gets the Responses wire stamped onto its resolved config, and the declaration is read from the node itself when the connection's copy is missing — the node is the declaration; the copy on the connection is a convenience.
+- The effort is then nested where the Responses API expects it: `reasoning: {effort, summary}` instead of a top-level `reasoning_effort`. The same stamp also keeps the token-field normaliser off and points the request at the Responses forwarder, so the body and the route agree.
+- The Chat Completions lane is untouched: a compatible node there keeps the top-level `reasoning_effort`, because that is the field a Chat endpoint accepts. Nothing global changed — the node still has no registry entry, its model's capability still says `openai`, and the wire is still decided per request by the lane it goes out on. The nesting applies to the Responses lane only, and the isolation is pinned by a test.
+- Verified with the new `TestOpenAICompatibleNode_*` (the Responses lane nests, the Chat lane keeps the top-level field, and a client that already sent `reasoning.effort` keeps it nested), `TestCompatibleNodeSpeaksResponses` (the declaration decides), `TestUpstreamSpeaksResponses_DeclaredFormatWins` (the stamped wire is honoured) and `TestGetProviderConfig_StampsResponsesWireForCompatibleNode` (the stamp reaches the resolved config).
+
+### Fix: a request whose client hung up is no longer retried, walked through the account pool, or parked in a cooldown
+
+- A client that disconnected mid-turn was still served as a provider failure. The retry paths keyed on the upstream's status alone, so a 502/503/504 that arrived while the client was leaving was replayed against the same upstream, the account pool was walked to the next credential, and the account that answered was cooled down over a disconnect the gateway did not cause. The client was told "upstream error" (a bare 502) for a turn it had already abandoned.
+- Upstream (#5639) makes the abort a first-class outcome: a caller abort is not a provider failure, so it is never retried and never walked through the fallback URLs. The port keeps the same contract in the shape Go has it — the request context is the signal, not the error's name, since an `*url.Error` wrapping `context.Canceled` says nothing about the caller.
+- The transient retry in the proxy now asks the context before every attempt: a canceled request returns the abort itself instead of the upstream's 502/503/504. The CommandCode executor's own retry does the same, so a 502 that arrives during a disconnect is not replayed. The zcode executor's 429-replay loop no longer hands its 429 envelope back as if it were an answer when the client is gone.
+- The account path stops at the abort: the fallback loop returns the canonical 499 (the same body the combo path always sent) instead of walking to the next connection, and the retryable-status branch — the one that locks the model and cools the account — is skipped entirely. A healthy credential is no longer parked in a cooldown over a disconnect.
+- The combo loops check the context at the start of every pass and every candidate, so a canceled request does not enter a second pass either.
+- An HTTP/2 stream reset is now recognised as a transport failure (`server sent GOAWAY`, `ENHANCE_YOUR_CALM`, `REFUSED_STREAM`), so the egress pool that produced it is charged for it instead of staying in rotation. A client cancel stays unmatched: a client that left says nothing about the pool.
+- Verified with the new `TestRetryTransientUpstream_*` (the abort is not retried, does not arrive as an upstream status, and a live client keeps its retries), `TestForwardCommandcode*` (the same for the CommandCode executor) and the client-abort classification tests in `handlers/chat`.
+
+### Fix: the usage-only trailer of an OpenAI passthrough stream was billed as if the upstream reported nothing
+
+- A supplier that delivers the real usage on a later chunk than the finish chunk — the SinarCloud-style shape, where the finish_reason is on one frame and the counters on the next one with an empty delta — lost its usage entirely on the OpenAI passthrough lane. The gateway parsed the usage block out of each read block on its own, so a frame that straddled a read boundary was never seen: the turn was logged as if the upstream reported nothing, `cached_tokens` landed at 0, and the cache hit was charged at the full input rate. On a long-cached workload that is the difference between the cached rate and the full rate on the whole prompt.
+- The relay now reassembles complete SSE frames before reading the usage out of them: the tail of an unterminated frame is held until its terminator arrives, so the frame that carries the counters is parsed wherever the read boundary happened to fall. Both the LF and the CRLF spelling of the frame separator are recognised, because upstreams differ on the line ending they emit.
+- Each frame's usage is merged into what the earlier frames reported instead of replacing it. The finish chunk and the usage-only trailer are two frames of the same turn, and the trailer holds the real counters; a field left at zero means "not reported", not "reported zero", so a missing count never erases a count another frame actually carried. An estimated prompt count — the body-size fallback for an upstream that reports `prompt_tokens: 0` — never displaces a real one.
+- The Claude-translated lane was already safe: it reads the stream through the frame scanner, which reassembles frames on its own.
+- The accumulated usage lives on the relay that reads the stream, not in the request context and not in the process-global last-usage. Upstream keeps the same accumulator local to the stream (the `usage` variable of `createSSEStream`), and that is what keeps the merge safe: merging against shared state would let a concurrent request's cache count bleed into this turn and misprice it.
+- Verified end to end against `pricing.EstimateCost`, the same call the usage logger makes: a turn of 1437 prompt tokens with a 1344-token cache hit on `gpt-4o` costs $0.0019625 with the trailer conserved, against $0.0036425 when the whole prompt is charged at the full input rate — the 1.9x difference the fix restores on every cache hit.
+
+### Fix: a custom openai-compatible node sends a Responses body on its /responses lane
+
+- A custom openai-compatible node whose stored `apiType` is `"responses"` had its URL moved to the `/responses` lane, but its body was never converted: the gateway posted a Chat Completions payload (`messages[]` plus nested tools `{type:"function",function:{name}}`) to an endpoint that accepts only a Responses payload (`input[]` plus FLAT tools `{type:"function",name}`). Upstreams answer `"function tool name is required"`, and a tool-less request `"request has no system prompt or conversation content"` — two symptoms of one lane/format drift, the same class as the `/messages` bug fixed in #797.
+- The root cause was dispatch, not translation. `executor.Get` is an exact map lookup and a custom node id is dynamic (`openai-compatible-responses-<suffix>`), so no registered executor could claim it and the request fell through to the generic Chat forwarder. `CompatibleNodeWires` leaves such a node's Format as the OpenAI default by design, so nothing downstream knew to translate.
+- Both conversion halves already existed and are reused rather than reimplemented: `buildResponsesBody` rewrites the request (`messages`→`input`, nested tools→flat, `max_tokens`→`max_output_tokens`), and `handleCodexStream` reads the Responses reply back into Chat chunks, or relays it untouched when the client itself speaks Responses. The new `ForwardCompatibleResponses` is the same three-step shape as `ForwardGrokCLI`, minus the provider-specific headers and model rewrites a custom node does not need.
+- `resolveExecutor` centralises the choice so both dispatch sites share it: the main one and the 401-retry path, which reuses the same body and would otherwise have reintroduced the bug after a token refresh. The gate is the existing `UpstreamSpeaksResponses`, already true for a base URL ending in `/responses`, so no new table or provider-id check is introduced. It is consulted only when no registered executor matched, leaving `codex`, `grok-cli`, `muse` and `opencode*` on their own, and returns nil for Claude-wire requests. A non-200 surfaces as an `upstreamError` so account fallback can try the next connection instead of streaming a provider error page as content.
+- Verified with the new table-driven executor tests (outbound body carries `input[]` with no `messages[]` leak, a flat tool declaration with name and schema intact, an already-Responses body passed through unwrapped, a 429 returned as an error) plus the new `TestResolveExecutor` dispatch table.
+
+title: SSRF guard: exempt a hostname-named egress proxy
+version: v1.10.47
+
+## Fixed
+- A proxy configured as `connectionProxyUrl` with a hostname endpoint
+  (`hatch-egress-proxy:3128`, resolving inside 198.18.0.0/15) was always
+  refused by the socket-level SSRF guard: the allowlist matched only
+  literal addresses, while the guard sees the resolved IP the transport
+  actually dials. Every upstream call through such a proxy died with
+  `proxyconnect tcp: dial tcp 198.19.0.1:3128: request to private/reserved
+  IP blocked by SSRF protection`.
+- The configured proxy names are now resolved and their answers compared
+  against the dial address. The DNS answer is cached behind
+  `golang.org/x/sync/singleflight` with a 5-minute TTL for answers and a
+  30-second TTL for failures, so the hot path pays no lookup and a proxy
+  that is briefly unresolvable recovers quickly.
+- The exemption stays the proxy itself, never its reserved range: another
+  port on the same address, another host that shares it, and a proxy that
+  resolves elsewhere all stay refused, as do the reserved ranges as
+  request targets.
+- The shared lookup runs detached from caller cancellation
+  (`context.WithoutCancel`): a singleflight flight inherits its first
+  caller's context, so one unrelated client hangup would otherwise cancel
+  the lookup for every waiter and cache the cancellation as a failure —
+  refusing every proxied dial for the failure TTL.
+
+### Streaming: every SSE lane sends anti-buffering response headers
+
+- Chat streams could arrive stuttered ("patah-patah") even on a localhost setup: the gateway pinned `Accept-Encoding: identity` on the upstream side (so providers cannot answer with a buffered gzip burst) but sent no anti-buffering headers on the downstream side, leaving each client — and any proxy or sidecar between the gateway and the IDE — free to hold back and coalesce chunks.
+- `proxy.WriteSSEHeaders` now sets `X-Accel-Buffering: no` and upgrades `Cache-Control` to `no-cache, no-transform` on every streaming response. `X-Accel-Buffering` is what nginx-class reverse proxies honor to disable response buffering; `no-transform` tells intermediaries not to recompress or otherwise meddle with the body mid-stream. Because every proxy lane (OpenAI, Claude, Gemini/Antigravity, DeepSeek, Grok, Perplexity, Zed, Bedrock, the Responses bridge, the chat forward path) builds its headers through this one function, the fix covers all providers at once.
+- The standalone header writers that did not route through `WriteSSEHeaders` were aligned with it: the Gemini v1beta stream writer (`batch6_v1beta.go`), the bypass handler (`bypass.go`), the `/v1/responses` context-length error stream (`responses.go`), the translator-send fallback header block, and the Kiro, Command Code, Trae, Windsurf and Perch executors — they now call `proxy.WriteSSEHeaders` instead of hand-rolling the same three headers, so they can no longer drift.
+- `Content-Type` stays exactly `text/event-stream` (no charset suffix) — tests assert the exact string and SSE payloads are UTF-8 by the spec anyway.
+- Verified with the new `TestWriteSSEHeaders` header table plus the full `proxy`, `proxy/executor` and `handlers/chat` suites.
+
+title: Claude streamed turns: record the real prompt-cache usage
+version: v1.10.47
+
+## Fixed
+- A streamed Claude-native turn reported its counters in two frames:
+  `message_start` carries the input side (`input_tokens`,
+  `cache_read_input_tokens`, `cache_creation_input_tokens`) under
+  `message.usage`, and `message_delta` carries the output side
+  (`output_tokens`) at the top level. The passthrough lanes read usage
+  one frame at a time with `ParseClaudeUsage`, which only understands a
+  top-level `usage` object — so neither frame was ever complete: the
+  prompt count lost the cache and the output count lost the prompt.
+  Every streamed Claude turn was logged with `cached_tokens = 0` and a
+  prompt count that fell back to the character estimate, which made a
+  warm prompt cache read as a cold one in the usage history and billed
+  the turn at the full input rate.
+- `translator.AccumulateClaudeStreamUsage` now folds the two frames into
+  one running record and returns a NEW pointer on a recognised event, so
+  a caller can tell "this frame changed the usage" from a no-op by
+  identity and a `message_delta` never clobbers the prompt and cache
+  figures `message_start` established. The folded record's
+  `prompt_tokens` is cache-INCLUSIVE (`input + cache_read +
+  cache_creation`), matching the canonical OpenAI convention the pricing
+  table assumes.
+- Wired into every streamed Claude path: the Claude-client passthrough
+  (`handleClaudeMessagesStream`), the wire-OpenAI relay served by a
+  Claude-native upstream (`sseStream`'s decloaker branch and its
+  `SSECopy` branch), and the chat handler's passthrough. The accumulator
+  runs BEFORE the generic parser, so a `message_delta` — which carries a
+  top-level `usage` object and would otherwise be read as a whole usage
+  record with `prompt_tokens = 0` — cannot wipe the cache figures.
+
+### Fix: mid-stream aborts reach Claude clients as `overloaded_error`
+
+- A mid-stream abort — an upstream cut or a stall watchdog firing — reached Claude-format clients as an SSE error event of type `server_error`. The frame carries no HTTP status, and Claude Code retries a streamed error event ONLY when its type is `overloaded_error` (the type Anthropic itself uses for transient failures); `server_error` is read as fatal, so every upstream cut ended the run without a retry.
+- The Claude frame now uses `overloaded_error`. The human-readable message and the machine code (`upstream_error`, `gateway_timeout`, `request_aborted`, `internal_server_error`) are unchanged — only the type changes, because every abort that reaches this frame is transient.
+- The OpenAI and Gemini frames are untouched: they keep `server_error`, which their clients read.
+- Verified with the new `TestBuildStreamErrorBytes_ClaudeUsesOverloadedError` and `TestBuildStreamErrorBytes_OpenAIKeepsServerError` plus the full `proxy` suite.
+
+### Fix: OpenAI reasoning tokens are charged once
+
+- Every OpenAI-shaped reasoning turn was billed twice. `OpenAI Chat Completions` and the `Responses` API report `reasoning_tokens` as a SUBSET of `completion_tokens`/`output_tokens`, but the cost formula charged the full completion count at the output rate and then the reasoning slice again at the reasoning rate — overcharging a reasoning response by its reasoning slice (1.8x on the worked example: prompt 100, completion 1000, reasoning 800, output rate 10, reasoning rate 10 → 0.0181 instead of 0.0101).
+- `OpenAIUsage` now carries the upstream's own `total_tokens`, and a new `ReasoningIncludedInOutput` marker records whether the reasoning count sits inside the output count. The marker is set where the usage is parsed (`ParseResponseUsage`, `ParseResponsesUsage`, the OpenAI→Claude translation) and travels with the usage record into the cost estimate.
+- The families that report reasoning APART from the output keep charging it on top: the OpenAI-compatible upstreams that report reasoning on top (total = prompt + completion + reasoning, xAI-style) are detected through the total and stay additive. The marker is false by default, so an unmarked usage keeps the old behaviour rather than silently losing its reasoning charge.
+- Gemini/Antigravity is one of the families that reports reasoning apart from the output — `thoughtsTokenCount`/`candidatesTokenDetails.reasoningTokens` is a slice the `candidatesTokenCount` output does NOT contain — so its reasoning stays additive. The marker being false by default is not what makes that safe: a Gemini-native response is translated into a Chat Completions body, and that body is read back by the Claude and the `/v1/responses` lanes, which mark the usage as a subset whenever the body carries no total to disprove it. The translated body now carries the total (prompt + output + reasoning), which is the figure that proves the additive reading, so those lanes keep charging Gemini's reasoning on top (0.0181 on the worked example). Before that, the missing total made the marker fall back to "subset" and undercharged the Gemini lane by its whole reasoning slice (0.0101 instead of 0.0181).
+- The Responses envelope always includes the reasoning slice in `output_tokens`, so its marker is set unconditionally — there is no additive variant of that shape.
+- Verified with the new `TestCalculateCost_ReasoningSubsetIsChargedOnce` (subset vs additive vs floored remainder), the subset-detection table in `internal/translator`, `TestGeminiNonStreamReasoningStaysAdditive` and `TestOpenAINonStreamReasoningStaysSubset` (the money on the Gemini and the OpenAI non-stream lanes), and the full `pricing`, `translator`, `proxy` and `handlers/chat` suites.
+
 ## [v1.10.46] - 2026-11-13
 
 title: Cap the staging build's CPU with a BUILD_JOBS budget
