@@ -868,6 +868,21 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// the requested id for logs/usage; wireModel is suffix-free.
 	body, wireModel, thinkingIntent := h.prepareInboundThinking(ctx, provider, model, body, f.Endpoint == "/v1/v1/messages" || f.Endpoint == "/v1/messages")
 	ctx = translator.WithUsageCapture(ctx)
+	// The entry handlers seed the body-size prompt estimate only for
+	// non-Claude-native streaming requests, so an attempt that reaches
+	// here through a Claude-native dispatch (a Messages-speaking combo
+	// member re-entered as a Messages request) carries no estimate at
+	// all — and a segment-counting upstream's prompt total then passes
+	// to the client unfloored, pinning its context meter at ~0% (the
+	// unfloored lane in the 2026-11-13 meter census: identical forwarded
+	// prompts closing at prompt_tokens 89 on one lane and 446K on the
+	// other). Seed it here, at the one point every attempt crosses,
+	// from the attempt's own body. An estimate already on the context
+	// is the entry handler's, computed on the client's original body,
+	// and wins.
+	if isStream && translator.PromptEstimateFromContext(ctx) == 0 && !bytes.Contains(body, []byte(";base64,")) {
+		ctx = translator.WithPromptEstimate(ctx, (len(body)+3)/4)
+	}
 
 	providerCfg, err := h.getProviderConfig(provider, connData)
 	if err != nil {
