@@ -58,6 +58,9 @@ describe('loadPickerExtras', () => {
       customModels: [],
       disabledModels: {},
       deprecations: {},
+      modelCaps: {},
+      connectedProviders: [],
+      providerStats: {},
     })
   })
 

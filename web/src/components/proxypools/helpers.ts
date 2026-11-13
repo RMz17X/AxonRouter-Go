@@ -22,12 +22,12 @@ export function getLatencyBadge(
   if (!latency || latency <= 0) return null
   const ms = Math.round(latency)
   if (ms < 300) {
-    return { variant: 'success', text: `${ms}ms` }
+    return { variant: 'success', text: `⚡ ${ms}ms` }
   }
   if (ms <= 800) {
-    return { variant: 'warning', text: `${ms}ms` }
+    return { variant: 'warning', text: `⏳ ${ms}ms` }
   }
-  return { variant: 'error', text: `${ms}ms` }
+  return { variant: 'error', text: `🐢 ${ms}ms` }
 }
 
 /**
