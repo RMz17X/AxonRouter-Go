@@ -10,7 +10,7 @@ import (
 	"axonrouter/proxy/internal/translator"
 )
 
-// TestCaptureUsageFromSSEChunk_ResponsesSSE verifies that captureUsageFromSSEChunk
+// TestCaptureUsageFromSSEChunk_ResponsesSSE verifies that the usage capture
 // parses usage from Responses API terminal events (response.completed, response.done)
 // so that cached_tokens and token counts are preserved when Codex CLI streams via /v1/responses.
 func TestCaptureUsageFromSSEChunk_ResponsesSSE(t *testing.T) {
@@ -18,7 +18,8 @@ func TestCaptureUsageFromSSEChunk_ResponsesSSE(t *testing.T) {
 
 	chunk := []byte("event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"usage\":{\"input_tokens\":5200,\"output_tokens\":180,\"total_tokens\":5380,\"input_tokens_details\":{\"cached_tokens\":4096},\"output_tokens_details\":{\"reasoning_tokens\":64}}}}\n\n")
 
-	captureUsageFromSSEChunk(ctx, chunk)
+	capture := newUsageCapture(ctx)
+	capture.captureFrame(chunk)
 
 	usage := translator.GetAndClearUsage(ctx)
 	if usage == nil {

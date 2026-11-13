@@ -25,8 +25,19 @@ const maxUsageFrame = 1 << 20
 //
 // The assembler therefore holds the tail of an unterminated frame and only
 // parses a frame once its terminator has arrived.
+//
+// The accumulated usage lives HERE, on the capture, not in the request
+// context and not in the process-global last-usage. Upstream keeps the same
+// accumulator local to the stream (the `usage` variable of createSSEStream),
+// and that is what makes the merge safe: reading the previous usage back
+// out of shared state would let a concurrent request's cache count bleed
+// into this turn and misprice it.
 type usageCapture struct {
-	ctx  context.Context
+	ctx context.Context
+	// acc is the usage accumulated over the frames seen so far.
+	acc *translator.OpenAIUsage
+	// tail is the fragment of an unterminated frame, held back until its
+	// terminator arrives.
 	tail []byte
 }
 
@@ -56,7 +67,7 @@ func (u *usageCapture) feed(chunk []byte) {
 		}
 		frame := data[:idx+sepLen]
 		data = data[idx+sepLen:]
-		captureUsageFromSSEChunk(u.ctx, frame)
+		u.captureFrame(frame)
 	}
 	// The remainder is an incomplete frame: hold it for the next block. The
 	// bound keeps a stream that never terminates a frame from growing the
@@ -74,7 +85,7 @@ func (u *usageCapture) flush() {
 	if len(u.tail) == 0 {
 		return
 	}
-	captureUsageFromSSEChunk(u.ctx, u.tail)
+	u.captureFrame(u.tail)
 	u.tail = u.tail[:0]
 }
 
@@ -94,14 +105,13 @@ func sseFrameBoundary(data []byte) (int, int) {
 	return -1, 0
 }
 
-// captureUsageFromSSEChunk records the usage block carried by one complete
-// SSE frame.
+// captureFrame records the usage block carried by one complete SSE frame.
 //
-// A frame without a usage block leaves the recorded usage alone: the
+// A frame without a usage block leaves the accumulated usage alone: the
 // upstream reported nothing new, and an estimate must not overwrite the
 // real numbers an earlier frame carried (upstream decolua/9router #5616).
-func captureUsageFromSSEChunk(ctx context.Context, chunk []byte) {
-	trimmed := bytes.TrimSpace(chunk)
+func (u *usageCapture) captureFrame(frame []byte) {
+	trimmed := bytes.TrimSpace(frame)
 	if len(trimmed) > maxUsageFrame {
 		trimmed = trimmed[:maxUsageFrame]
 	}
@@ -125,7 +135,7 @@ func captureUsageFromSSEChunk(ctx context.Context, chunk []byte) {
 		// was sent.
 		estimated := false
 		if usage.PromptTokens == 0 {
-			if est := translator.PromptEstimateFromContext(ctx); est > 0 {
+			if est := translator.PromptEstimateFromContext(u.ctx); est > 0 {
 				usage.PromptTokens = est
 				estimated = true
 			}
@@ -136,11 +146,11 @@ func captureUsageFromSSEChunk(ctx context.Context, chunk []byte) {
 		// turn, and the trailer holds the real counters. A frame whose
 		// numbers are an estimate never overwrites real ones (upstream
 		// decolua/9router #5616).
-		previous := translator.PeekUsage(ctx)
-		if previous != nil {
-			usage = mergeUsage(previous, usage, estimated)
+		if u.acc != nil {
+			usage = mergeUsage(u.acc, usage, estimated)
 		}
-		translator.SetUsage(ctx, usage)
+		u.acc = usage
+		translator.SetUsage(u.ctx, usage)
 	})
 }
 

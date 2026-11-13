@@ -160,14 +160,6 @@ func SetLastUsage(u *OpenAIUsage) {
 	lastUsage = u
 }
 
-// GetLastUsage returns the stored last usage without clearing it.
-// Deprecated: use PeekUsage instead.
-func GetLastUsage() *OpenAIUsage {
-	lastUsageMu.Lock()
-	defer lastUsageMu.Unlock()
-	return lastUsage
-}
-
 // GetAndClearLastUsage returns and clears the stored last usage.
 // Deprecated: use GetAndClearUsage instead.
 func GetAndClearLastUsage() *OpenAIUsage {
@@ -245,24 +237,6 @@ func SetUsage(ctx context.Context, u *OpenAIUsage) {
 	}
 	// Fallback to global for backward compatibility
 	SetLastUsage(u)
-}
-
-// PeekUsage returns the usage recorded on the context WITHOUT clearing it.
-//
-// A relay that reads the usage out of a stream needs to look at what the
-// earlier frames reported before it records what the current one carries:
-// the finish chunk and the usage-only trailer are two frames of the same
-// turn, and the trailer holds the real counters. Clearing the value would
-// make the merge impossible.
-func PeekUsage(ctx context.Context) *OpenAIUsage {
-	if ctx != nil {
-		if h, ok := ctx.Value(usageCtxKey{}).(*usageHolder); ok {
-			h.mu.Lock()
-			defer h.mu.Unlock()
-			return h.usage
-		}
-	}
-	return GetLastUsage()
 }
 
 // GetAndClearUsage retrieves and clears usage from the request context (or global fallback if no holder).
