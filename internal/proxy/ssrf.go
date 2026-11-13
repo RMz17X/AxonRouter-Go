@@ -115,10 +115,10 @@ func newProxyAllowlist(hosts ...string) *proxyAllowlist {
 // which is a resolved "ip:port", never a name. A literal address therefore
 // matches exactly, and a proxy URL written without a port exempts its host on
 // any port (the operator named that host as their proxy; the port is implied by
-// the scheme). A proxy named by *hostname* cannot be compared there without a
-// DNS lookup in the dial path, and is not matched — the reported case, and every
-// local proxy, is written as a literal address, while a hostname proxy that
-// resolves to a public IP is never blocked to begin with.
+// the scheme). A proxy named by *hostname* is matched by resolution instead:
+// the configured name is looked up and its answers compared against the dial
+// address (see matchesResolved), because by the time the guard runs the name is
+// already gone.
 func (a *proxyAllowlist) allow(hostPort string) {
 	if a == nil || hostPort == "" {
 		return
@@ -138,22 +138,34 @@ func (a *proxyAllowlist) allow(hostPort string) {
 }
 
 // allows reports whether address matches a remembered proxy endpoint. address is
-// the dial target as the ControlContext receives it ("host:port"); a proxy URL
-// without an explicit port is remembered bare, so the bare host is tried too.
-func (a *proxyAllowlist) allows(address, host string) bool {
+// the dial target as the ControlContext receives it ("host:port" — a resolved
+// "ip:port" for a named proxy, since Go resolves the name before the guard
+// runs); a proxy URL without an explicit port is remembered bare, so the bare
+// host is tried too.
+//
+// A proxy named by hostname is additionally matched by resolution: the
+// operator wrote "hatch-egress-proxy:3128" and Podman-internal DNS answers
+// 198.19.0.1 (a reserved range), so comparing strings never matches.
+// matchesResolved looks the remembered names up and compares IPs; the DNS
+// answer is cached there, so the hot path keeps paying no lookup.
+func (a *proxyAllowlist) allows(ctx context.Context, address, host string) bool {
 	if a == nil {
 		return false
 	}
 	a.mu.RLock()
-	defer a.mu.RUnlock()
-	if len(a.hosts) == 0 {
-		return false
-	}
-	if _, ok := a.hosts[address]; ok {
+	_, exact := a.hosts[address]
+	_, bare := a.hosts[host]
+	empty := len(a.hosts) == 0
+	a.mu.RUnlock()
+	if exact || bare {
 		return true
 	}
-	_, ok := a.hosts[host]
-	return ok
+	if empty {
+		return false
+	}
+	// The dial address is an IP the guard is about to refuse. Exempt it only
+	// when it is one of the configured proxies' resolved addresses.
+	return a.matchesResolved(ctx, address, host)
 }
 
 // proxyFromEnvironment is http.ProxyFromEnvironment, indirect so a test can
@@ -203,8 +215,11 @@ func newSafeDialerForProxy(allow *proxyAllowlist) *net.Dialer {
 			}
 			// The operator's own egress proxy is not the SSRF surface: the
 			// request never reaches an internal target through it that the
-			// request-scoped checks above have not already judged.
-			if allow.allows(address, host) {
+			// request-scoped checks above have not already judged. The match
+			// is against the address actually dialled — the resolved proxy IP
+			// for a hostname-named proxy — so it exempts the proxy, not a
+			// private *target* that happens to share its range.
+			if allow.allows(ctx, address, host) {
 				return nil
 			}
 			// netguard.ParseIP strips an IPv6 zone. net.ParseIP answers nil

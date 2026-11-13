@@ -102,8 +102,10 @@ func TestSafeDialerAllowsTheOperatorsProxyAndNothingElse(t *testing.T) {
 
 // A proxy URL written without a port is remembered bare, while the dial address
 // always carries one — the host matches on any port. A name that is not a
-// literal address is not matched at all, because Go resolves it before the
-// address reaches ControlContext.
+// literal address is matched by resolution: Go resolves it before the address
+// reaches ControlContext, so the guard compares the resolved IP against what
+// the configured proxy name answers with (see
+// TestSafeDialerMatchesAHostnameProxyByResolution).
 func TestSafeDialerMatchesAProxyWrittenAsALiteralAddress(t *testing.T) {
 	withProxyResolver(t, "")
 
@@ -114,9 +116,10 @@ func TestSafeDialerMatchesAProxyWrittenAsALiteralAddress(t *testing.T) {
 		}
 	})
 
-	t.Run("a hostname proxy is not matched once the address is resolved", func(t *testing.T) {
-		// Documented limitation, not an accident: by the time the guard runs,
-		// the name is gone.
+	t.Run("a hostname proxy that does not resolve stays blocked", func(t *testing.T) {
+		// No DNS answer for the configured name, so there is no address to
+		// exempt and the dial is refused like any other private target.
+		withProxyNameResolution(t, map[string]string{})
 		dialer := newSafeDialerForProxy(newProxyAllowlist("proxy.internal:3128"))
 		if err := dialer.ControlContext(context.Background(), "tcp", "10.0.0.7:3128", nil); !errors.Is(err, ErrSSRFBlocked) {
 			t.Errorf("ControlContext(10.0.0.7:3128) = %v, want ErrSSRFBlocked", err)

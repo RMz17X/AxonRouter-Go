@@ -48,7 +48,13 @@ The Go binary owns proxy routing, dashboard APIs, auth, persistence, OAuth, medi
 | `internal/handlers/chat/` | Model resolution, combos, account fallback, translation, forwarding |
 | `internal/providers/` | Provider catalog/configuration and model capabilities |
 | `internal/proxy/executor/` | Provider-specific upstream adapters and stream handling |
+| `internal/proxy/ssrf.go` | Socket-level SSRF guard and the operator's egress-proxy exemption |
+| `internal/proxy/ssrf_proxy_resolve.go` | Resolution-based matching of a hostname-named egress proxy against the SSRF guard |
 | `internal/translator/` | OpenAI/Claude/Gemini request, response, and stream transformations |
+| `internal/translator/response.go` | Usage parsing, the OpenAI→Claude non-streaming translation, and shared SSE helpers |
+| `internal/translator/response_claude_stream.go` | OpenAI→Claude SSE chunk translation and the terminal-close path |
+| `internal/translator/response_claude_terminal.go` | The terminal `message_delta`/`message_stop` pair and its usage block |
+| `internal/translator/claude_stream_usage.go` | Folds a streamed Claude turn's two usage frames into one cache-aware record |
 | `internal/middleware/` | Request IDs, body limits, logging/path normalization, API/dashboard/admin auth |
 | `internal/db/` | PostgreSQL repositories (pgx via `DATABASE_URL`), partitioned usage ledgers, DB-serialized leases and rotation |
 | `internal/speedlayer/` | Hot-state store: memory / Valkey / PostgreSQL-degradation backends behind a breaker |
@@ -212,7 +218,7 @@ sequenceDiagram
 5. **Select a connection.** Connections are ordered by priority/updated time and checked for active state, exclusions, strict model assignment, health, and per-model cooldowns.
 6. **Prepare upstream request.** OAuth tokens are refreshed when expired, provider token formats are normalized, token savers apply, and provider-specific schemas/cloaking are added. Tool schemas are sanitized where required.
 7. **Dispatch provider.** `NewChatHandler` registers provider executors. Registered adapters are dispatched first; Gemini-native and OpenAI-compatible defaults follow when no provider-specific executor exists.
-8. **Stream or return JSON.** Streaming responses are copied incrementally or translated event-by-event. Each successful event is flushed; usage is captured in request-scoped state.
+8. **Stream or return JSON.** Streaming responses are copied incrementally or translated event-by-event. Each successful event is flushed; usage is captured in request-scoped state. A streamed Claude turn reports its counters in two frames — `message_start` carries the input and prompt-cache counters, `message_delta` the output counter — so `translator.AccumulateClaudeStreamUsage` folds them into one running record (`internal/translator/claude_stream_usage.go`) instead of reading one frame at a time. The folded record's `prompt_tokens` is cache-INCLUSIVE (`input + cache_read + cache_creation`), so the pricing table charges the cached part at the cache rate.
 9. **Fail over safely.** Upstream errors are classified, retryable connections can be locked with exponential/cooldown state, and fallback stops once response headers are committed. A reactive 401 can refresh OAuth and retry once.
 10. **Record telemetry.** Pending in-flight state is published live; completed requests update usage history/daily aggregates and the recent-request ring.
 
@@ -234,6 +240,19 @@ sequenceDiagram
 - **Capability adapter:** scan the request for features such as tools, vision, or reasoning and prefer compatible candidates.
 
 Combo state, provider connection state, health, and some settings are persisted in JSON-backed rows and scopes. Treat those payloads as compatibility surfaces.
+
+### Outbound egress and the SSRF guard
+
+`internal/proxy/ssrf.go` installs a socket-level guard on every outbound dial: after DNS resolution, `ControlContext` refuses a connection to a private, loopback, link-local, cloud-metadata, carrier-grade-NAT, or reserved address. `internal/netguard` owns that classification so every layer answers the question the same way.
+
+One exemption exists: the operator's own egress proxy. A request routed through a proxy never dials the target itself, so applying the guard to the proxy's own address protects nothing and breaks the operator's egress path instead. The proxy endpoint is remembered in a `proxyAllowlist` and matched against the dial address.
+
+Matching has two halves, because the guard only ever sees a resolved `ip:port`:
+
+- A proxy written as a literal address (`127.0.0.1:8888`) matches by string. A URL written without a port is remembered bare, so the host is exempt on any port.
+- A proxy written as a **hostname** (`hatch-egress-proxy:3128`) is matched by **resolution** (`internal/proxy/ssrf_proxy_resolve.go`): the configured name is resolved and its answers compared against the dial address. The DNS answer is cached — `golang.org/x/sync/singleflight` collapses concurrent dials into one lookup, with a 5-minute TTL for answers and a 30-second TTL for failures — so the hot path pays no lookup. The shared lookup runs under `context.WithoutCancel`: a singleflight flight inherits its first caller's context, so an unrelated client hangup would otherwise cancel the lookup for every waiter and cache the cancellation as a failure.
+
+The exemption covers the proxy itself, never its reserved range. Another port on the same address, another host that shares it, and a proxy that resolves elsewhere all stay refused, as do the reserved ranges as request targets.
 
 ### Error cooldown
 
