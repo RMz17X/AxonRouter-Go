@@ -20,7 +20,6 @@ func TestCaptureUsageFromSSEChunk_ResponsesSSE(t *testing.T) {
 
 	capture := newUsageCapture(ctx)
 	capture.captureFrame(chunk)
-
 	usage := translator.GetAndClearUsage(ctx)
 	if usage == nil {
 		t.Fatal("expected usage to be recorded in context, got nil")

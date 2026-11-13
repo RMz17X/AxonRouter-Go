@@ -281,6 +281,11 @@ func sseStream(o sseStreamOpts) error {
 			var writeErr error
 			doneSent := false
 			sawTerminal := false // saw message_delta (with stop_reason) or message_stop
+			// A Claude-native combo member whose tool names were fitted
+			// reaches this passthrough: the frames carry their own usage, and
+			// the turn is only accounted for if the frames are read as a
+			// stream (#1102).
+			var streamUsage *translator.OpenAIUsage
 			err := proxy.ScanStream(upstream, func(chunk []byte) {
 				if writeErr != nil || doneSent {
 					return
@@ -295,6 +300,10 @@ func sseStream(o sseStreamOpts) error {
 					}
 					if bytes.Contains(ev.Payload, []byte(`"message_delta"`)) || bytes.Contains(ev.Payload, []byte(`"message_stop"`)) {
 						sawTerminal = true
+					}
+					if acc := translator.AccumulateClaudeStreamUsage(streamUsage, ev.Payload); acc != streamUsage {
+						streamUsage = acc
+						translator.SetUsage(ctx, streamUsage)
 					}
 					if bytes.Equal(bytes.TrimSpace(ev.Payload), []byte("[DONE]")) {
 						line := fmt.Appendf(nil, "data: [DONE]\n\n")
@@ -371,6 +380,11 @@ func sseStream(o sseStreamOpts) error {
 		// of the relayed bytes: the frame that carries it routinely
 		// straddles a read boundary, so the capture reassembles frames
 		// before parsing them (upstream decolua/9router #5616).
+		//
+		// The same capture also accumulates the Claude stream usage, so a
+		// turn whose counters arrive in two frames (message_start carries
+		// the input and cache counters, message_delta the output counter)
+		// is still logged whole (#1102).
 		capture := newUsageCapture(ctx)
 		err := proxy.SSECopy(hw, upstream, flusher, func(chunk []byte) {
 			if ttft != nil && *ttft == 0 {
@@ -440,6 +454,27 @@ func sseStream(o sseStreamOpts) error {
 		translator.SetUsage(ctx, usage)
 	}
 	return err
+}
+
+// captureUsageFromSSEChunk accumulates usage from SSE frames across chunks.
+//
+// The capture is threaded through the calls so it survives between them: it
+// holds the running usage (a turn whose counters arrive in two frames — a
+// Claude message_start carrying the input and cache counters, a message_delta
+// carrying the output counter — is only logged whole when the accumulator
+// survives, upstream luqman-v1/9router-go #1102) and it holds the tail of an
+// unterminated frame, so a frame that straddles a read boundary is still
+// reassembled before it is parsed (upstream decolua/9router #5616).
+//
+// The accumulator lives on the capture, not in the request context and not in
+// process-global state, so a concurrent request's numbers cannot bleed into
+// this turn.
+func captureUsageFromSSEChunk(ctx context.Context, capture *usageCapture, chunk []byte) *usageCapture {
+	if capture == nil {
+		capture = newUsageCapture(ctx)
+	}
+	capture.feed(chunk)
+	return capture
 }
 
 // jsonResponse writes the upstream JSON response with optional translation.

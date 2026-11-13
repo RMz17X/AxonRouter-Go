@@ -30,6 +30,12 @@ func handleClaudeMessagesStream(w http.ResponseWriter, req *Request, upstream io
 		hw := proxy.NewHeartbeatWriter(req.Ctx, w, 0)
 		defer hw.Close()
 		flusher := proxy.WriteSSEHeaders(hw)
+		// A streamed Claude turn reports its usage in two frames: the input
+		// and cache counters in message_start, the output counter in
+		// message_delta. The running total is threaded through the frames so
+		// the turn is logged with its real cache figures instead of an
+		// estimate (#1102).
+		var streamUsage *translator.OpenAIUsage
 		writeFrame := func(eventType string, payload []byte) {
 			if req.TTFT != nil && *req.TTFT == 0 {
 				*req.TTFT = time.Since(startTime).Milliseconds()
@@ -62,10 +68,9 @@ func handleClaudeMessagesStream(w http.ResponseWriter, req *Request, upstream io
 			if flusher != nil {
 				flusher.Flush()
 			}
-			raw := append([]byte(`{"message":`), payload...)
-			raw = append(raw, '}')
-			if usage := translator.ParseClaudeUsage(raw); usage != nil {
-				translator.SetUsage(req.Ctx, usage)
+			if acc := translator.AccumulateClaudeStreamUsage(streamUsage, payload); acc != streamUsage {
+				streamUsage = acc
+				translator.SetUsage(req.Ctx, streamUsage)
 			}
 		}
 		return proxy.ScanStreamEvents(upstream, func(ev proxy.SSEEvent) bool {

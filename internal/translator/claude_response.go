@@ -215,8 +215,21 @@ func TranslateClaudeChunkToOpenAI(payload []byte, state *ClaudeToOpenAIStreamSta
 			state.Usage.CompletionTokens = int(outTokens)
 			// The delta's usage is cumulative and can carry the real
 			// input count even when message_start reported none.
+			//
+			// It must not, however, overwrite the count message_start
+			// established: that total is cache-INCLUSIVE (input +
+			// cache_read + cache_creation), while the delta reports only
+			// the uncached input. Adopting it verbatim dropped the cache
+			// from the prompt total — a streamed turn with a warm prompt
+			// cache was billed as a cold one. The cache figures are added
+			// back, so a delta that knows the uncached input still yields
+			// the inclusive total (#1102).
 			if inTokens := usageInt(u["input_tokens"]); inTokens > 0 {
-				state.Usage.PromptTokens = inTokens
+				if state.Usage.PromptCacheIncluded {
+					state.Usage.PromptTokens = inTokens + state.Usage.GetCachedTokens() + state.Usage.CacheCreationInputTokens
+				} else {
+					state.Usage.PromptTokens = inTokens
+				}
 			}
 		}
 		if delta, ok := raw["delta"].(map[string]any); ok {

@@ -122,6 +122,15 @@ func (u *usageCapture) captureFrame(frame []byte) {
 		if bytes.Equal(bytes.TrimSpace(payload), []byte("[DONE]")) {
 			return
 		}
+		// A Claude event is handled first: message_delta carries only
+		// output_tokens, and the generic parsers would otherwise replace
+		// the prompt and cache figures that message_start established
+		// (upstream luqman-v1/9router-go #1102).
+		if next := translator.AccumulateClaudeStreamUsage(u.acc, payload); next != u.acc {
+			u.acc = next
+			translator.SetUsage(u.ctx, u.acc)
+			return
+		}
 		usage := translator.ParseResponseUsage(payload)
 		if usage == nil {
 			usage = translator.ParseResponsesUsage(payload)
