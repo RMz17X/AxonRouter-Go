@@ -26,6 +26,7 @@ func TestBrowserLoginProvidersInCatalog(t *testing.T) {
 			models: []string{
 				"deepseek-v4-pro", "deepseek-v4-pro-think",
 				"deepseek-v4-pro-search", "deepseek-v4-pro-think-search",
+				"deepseek-v4.1-flash",
 				"deepseek-v4-flash", "deepseek-v4-flash-think",
 				"deepseek-v4-flash-search", "deepseek-v4-flash-think-search",
 				"deepseek-chat", "deepseek-reasoner",
@@ -45,6 +46,7 @@ func TestBrowserLoginProvidersInCatalog(t *testing.T) {
 				"gemini-3.1-pro", "gemini-3.1-flash-lite",
 				"gemini-pro", "gemini-flash", "gemini-flash-lite", "gemini-argon",
 				"gemini-3-pro", "gemini-4-argon",
+				"imagen-3", "imagen-3.0-generate-002",
 			},
 		},
 	}

@@ -1786,6 +1786,10 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "DeepSeek V4 Pro Think+Search"
     },
     {
+      "id": "deepseek-v4.1-flash",
+      "name": "DeepSeek V4.1 Flash"
+    },
+    {
       "id": "deepseek-v4-flash",
       "name": "DeepSeek V4 Flash"
     },
@@ -2325,6 +2329,14 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     {
       "id": "gemini-4-argon",
       "name": "Gemini 4 Argon"
+    },
+    {
+      "id": "imagen-3",
+      "name": "Imagen 3"
+    },
+    {
+      "id": "imagen-3.0-generate-002",
+      "name": "Imagen 3.0 Generate 002"
     }
   ],
   "claude-web": [
