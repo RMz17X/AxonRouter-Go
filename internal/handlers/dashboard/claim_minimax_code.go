@@ -283,7 +283,15 @@ func ClaimAllMiniMaxConnections(ctx context.Context, repo *db.Repo) (MiniMaxClai
 	}
 	results := make([]MiniMaxClaimResult, 0, len(allConns))
 
-	log.Printf("[minimax-claim] Starting check across %d active MiniMax connection(s)...", len(allConns))
+	// Fast pre-filter: read today's ledger in one batch query to skip
+	// already-claimed accounts in memory with zero network calls and zero delay.
+	claimedMap := make(map[string]int)
+	if repo != nil {
+		claimedMap = repo.MinimaxClaimedTodayMap()
+	}
+
+	log.Printf("[minimax-claim] Starting check across %d active MiniMax connection(s) (%d already claimed today in ledger)...",
+		len(allConns), len(claimedMap))
 
 	for i, conn := range allConns {
 		select {
@@ -297,6 +305,22 @@ func ClaimAllMiniMaxConnections(ctx context.Context, repo *db.Repo) (MiniMaxClai
 		if conn.Name != nil && *conn.Name != "" {
 			connName = *conn.Name
 		}
+
+		// Instant fast-path: skip already claimed accounts without dialing MiniMax
+		if dayNo, already := claimedMap[conn.ID]; already {
+			summary.AlreadyClaimed++
+			results = append(results, MiniMaxClaimResult{
+				ConnectionID: conn.ID,
+				Name:         connName,
+				Provider:     conn.Provider,
+				Status:       "already_claimed",
+				Claimed:      false,
+				StreakDay:    dayNo,
+				Message:      fmt.Sprintf("Already claimed for today (Day %d)", dayNo),
+			})
+			continue
+		}
+
 		log.Printf("[minimax-claim] [%d/%d] Processing %s (%s)...", i+1, len(allConns), connName, conn.ID)
 
 		res := ClaimMiniMaxForConnection(ctx, repo, conn)
@@ -314,7 +338,8 @@ func ClaimAllMiniMaxConnections(ctx context.Context, repo *db.Repo) (MiniMaxClai
 			summary.Errors++
 		}
 
-		// Gentle throttling between requests to avoid rate limits
+		// Gentle throttling between upstream requests to avoid rate limits.
+		// Only pause when an actual network call was performed.
 		if i+1 < len(allConns) {
 			select {
 			case <-ctx.Done():

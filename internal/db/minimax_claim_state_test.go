@@ -55,6 +55,15 @@ func TestMiniMaxClaimState_Lifecycle(t *testing.T) {
 	if !claimed || dayNo != 6 {
 		t.Fatalf("expected updated dayNo=6, got %d", dayNo)
 	}
+
+	// Verify MinimaxClaimedTodayMap batch read
+	m := repo.MinimaxClaimedTodayMap()
+	if m["conn-test-1"] != 6 {
+		t.Fatalf("expected conn-test-1 in claimed map with dayNo 6, got %v", m)
+	}
+	if _, ok := m["conn-test-2"]; ok {
+		t.Fatalf("conn-test-2 should not be in claimed map")
+	}
 }
 
 func TestMiniMaxClaimState_StaleDateNotClaimedToday(t *testing.T) {

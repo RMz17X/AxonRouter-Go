@@ -116,3 +116,28 @@ func (r *Repo) MinimaxClaimedToday(connectionID string) (bool, int) {
 	}
 	return true, dayNo
 }
+
+// MinimaxClaimedTodayMap returns a map of all connection IDs claimed today (WIB)
+// mapped to their streak day number. Used to eliminate N+1 queries and avoid
+// throttling pauses when processing already-claimed accounts in bulk sweeps.
+func (r *Repo) MinimaxClaimedTodayMap() map[string]int {
+	result := make(map[string]int)
+	if r == nil || r.db == nil {
+		return result
+	}
+	today := MinimaxClaimDateToday()
+	rows, err := r.Query(`SELECT connectionId, dayNo FROM minimaxClaimState WHERE claimDate = ?`, today)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		var dayNo int
+		if err := rows.Scan(&id, &dayNo); err == nil && id != "" {
+			result[id] = dayNo
+		}
+	}
+	return result
+}
