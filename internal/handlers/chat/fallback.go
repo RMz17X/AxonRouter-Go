@@ -103,7 +103,7 @@ func (h *ChatHandler) handleAccountFallback(
 		return fwdErr
 	}
 
-	if !handlerutil.IsProbeContext(ctx) && !h.Repo.IsProviderAvailable(provider, model) {
+	if !handlerutil.IsProbeContext(ctx) && (!h.Repo.IsProviderAvailable(provider, model) || IsProviderModelBroken(provider, model)) {
 		log.WarnCtx(ctx, "fallback", "skip unhealthy", "provider", provider, "model", model)
 		return fmt.Errorf("provider %s/%s is unhealthy", provider, model)
 	}
@@ -293,6 +293,9 @@ func (h *ChatHandler) handleAccountFallback(
 			IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
 		}); err == nil {
 			RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 200, nil, time.Since(attemptStart).Milliseconds())
+			if !handlerutil.IsProbeContext(ctx) {
+				RecordProviderModelSuccess(provider, model)
+			}
 			if sessionID := handlerutil.GetSessionID(ctx); sessionID != "" && affinityEligible {
 				h.getSessionAffinity().Bind(provider, model, sessionID, connObj.ID)
 			}
@@ -300,6 +303,9 @@ func (h *ChatHandler) handleAccountFallback(
 		} else {
 			lastErr = err
 			observ.IncFallback(provider, model, observ.FallbackReasonUpstreamError)
+			if !handlerutil.IsProbeContext(ctx) && !isClientCanceled(ctx, err) && providerBreakerShouldCount(err) {
+				RecordProviderModelFailure(provider, model)
+			}
 			RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 0, err, time.Since(attemptStart).Milliseconds())
 			var ue *upstreamError
 			if errors.As(lastErr, &ue) {
