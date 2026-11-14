@@ -154,6 +154,16 @@ var ErrorRules = []ErrorRule{
 	{Text: "当前账号类型暂不支持该模型", CooldownMs: cooldownLong},
 	{Text: "额度已用尽", CooldownMs: cooldownLong},
 
+	// ElevenLabs character quota (account-wide exhausted until billing reset)
+	{Text: "character_limit_exceeded", CooldownMs: QuotaExhaustedCooldownMs, Quota: true, Exhausted: true},
+	{Text: "reached your character limit", CooldownMs: QuotaExhaustedCooldownMs, Quota: true, Exhausted: true},
+
+	// DeepAI frontier model requirements (ModelScoped: free models stay available)
+	{Text: "machine_required", CooldownMs: 86400000, ModelScoped: true},
+	{Text: "free daily theos", CooldownMs: 86400000, ModelScoped: true},
+	{Text: "daily free theos", CooldownMs: 86400000, ModelScoped: true},
+	{Text: "social_login_required", CooldownMs: cooldownBannedAccount},
+
 	// --- Generic credit / balance exhaustion (upstream ERROR_RULES,
 	// COOLDOWN.monthlyExhausted): account-wide lock, marked exhausted,
 	// 30 days. These precede the older 1-hour quota spellings below,
@@ -287,6 +297,14 @@ var quotaExhaustedPatterns = []string{
 	"billing required",
 	"payment required",
 	"balance=0",
+	// ElevenLabs character quota
+	"character limit",
+	"character_limit_exceeded",
+	"reached your character limit",
+	// DeepAI Theos quota
+	"free daily theos",
+	"daily free theos",
+	"machine_required",
 	// CodeBuddy words a spent model quota as a frequency limit and states when
 	// it resets: "usage exceeds frequency limit ... reset at <timestamp>". It is
 	// not a transient throttle, so it belongs with the exhausted budgets rather

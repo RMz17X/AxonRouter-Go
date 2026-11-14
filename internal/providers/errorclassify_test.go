@@ -230,3 +230,26 @@ func TestClassifyErrorWithPolicy(t *testing.T) {
 		t.Errorf("expected standard fallback on 500, got %+v", cls500)
 	}
 }
+
+func TestClassifyError_DeepAIAndElevenLabs(t *testing.T) {
+	// ElevenLabs character quota exhaustion
+	elCls := ClassifyError(401, "You have reached your character limit for the billing period.", 0)
+	if !elCls.ShouldFallback || !elCls.Exhausted {
+		t.Errorf("expected ElevenLabs character limit to be Exhausted=true, got %+v", elCls)
+	}
+	if !LooksLikeQuotaExhausted("character_limit_exceeded") {
+		t.Errorf("expected LooksLikeQuotaExhausted to match character_limit_exceeded")
+	}
+
+	// DeepAI frontier model machine_required -> model-scoped lock
+	daiModelCls := ClassifyError(403, "machine_required", 0)
+	if !daiModelCls.ShouldFallback || !daiModelCls.ModelScoped {
+		t.Errorf("expected machine_required to be ModelScoped=true, got %+v", daiModelCls)
+	}
+
+	// DeepAI social_login_required -> banned/unverified account
+	daiSocialCls := ClassifyError(403, "social_login_required", 0)
+	if !daiSocialCls.ShouldFallback || !daiSocialCls.BannedAccount {
+		t.Errorf("expected social_login_required to be BannedAccount=true, got %+v", daiSocialCls)
+	}
+}

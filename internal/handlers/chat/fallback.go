@@ -1947,6 +1947,13 @@ func extractErrorText(body []byte) string {
 				parts = append(parts, msg)
 			} else if detail, ok := rawMap["detail"].(string); ok && detail != "" {
 				parts = append(parts, detail)
+			} else if dm, ok := rawMap["detail"].(map[string]any); ok {
+				if msg, ok := dm["message"].(string); ok && msg != "" {
+					parts = append(parts, msg)
+				}
+				if st, ok := dm["status"].(string); ok && st != "" {
+					parts = append(parts, st)
+				}
 			}
 		}
 
@@ -1999,9 +2006,30 @@ func extractErrorText(body []byte) string {
 }
 
 var (
-	resetsInRegex           = regexp.MustCompile(`(?i)resets?\s+in\s+([0-9hms\.]+)`)
+	resetsInRegex           = regexp.MustCompile(`(?i)(?:resets?|try\s+again|retry)\s+(?:in|after)\s+(?:about\s+)?([0-9]+(?:\.[0-9]+)?\s*(?:seconds?|sec|minutes?|min|hours?|hr|ms)\b|[0-9hms\.]+)`)
 	codebuddyResetDateRegex = regexp.MustCompile(`(?i)(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})(?:\s*UTC\+?([0-9:]+))?`)
 )
+
+func normalizeDurationString(s string) string {
+	s = strings.ToLower(strings.TrimRight(strings.TrimSpace(s), "."))
+	s = strings.ReplaceAll(s, " ", "")
+	for _, suf := range []string{"seconds", "second", "sec"} {
+		if strings.HasSuffix(s, suf) {
+			return strings.TrimSuffix(s, suf) + "s"
+		}
+	}
+	for _, suf := range []string{"minutes", "minute", "min"} {
+		if strings.HasSuffix(s, suf) {
+			return strings.TrimSuffix(s, suf) + "m"
+		}
+	}
+	for _, suf := range []string{"hours", "hour", "hr"} {
+		if strings.HasSuffix(s, suf) {
+			return strings.TrimSuffix(s, suf) + "h"
+		}
+	}
+	return s
+}
 
 const (
 	minResetCooldown = 5 * time.Second
@@ -2038,7 +2066,7 @@ func extractResetDuration(body []byte) (time.Duration, bool) {
 		}
 		if rpcErr.Error.Message != "" {
 			if matches := resetsInRegex.FindStringSubmatch(rpcErr.Error.Message); len(matches) > 1 {
-				raw := strings.TrimRight(matches[1], ".")
+				raw := normalizeDurationString(matches[1])
 				if dur, err := time.ParseDuration(raw); err == nil && dur > 0 {
 					return clampResetDuration(dur), true
 				}
@@ -2048,7 +2076,7 @@ func extractResetDuration(body []byte) (time.Duration, bool) {
 
 	// 2. Fallback regex on raw body string
 	if matches := resetsInRegex.FindSubmatch(body); len(matches) > 1 {
-		raw := strings.TrimRight(string(matches[1]), ".")
+		raw := normalizeDurationString(string(matches[1]))
 		if dur, err := time.ParseDuration(raw); err == nil && dur > 0 {
 			return clampResetDuration(dur), true
 		}
@@ -2111,6 +2139,9 @@ func extractRetryAfter(body []byte) string {
 		ResetsAlt  string `json:"resets_at"`
 		Error      struct {
 			RetryAfter string `json:"retryAfter"`
+			RetryAlt   string `json:"retry_after"`
+			ResetsAt   string `json:"resetsAt"`
+			ResetsAlt  string `json:"resets_at"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
@@ -2130,6 +2161,15 @@ func extractRetryAfter(body []byte) string {
 	}
 	if parsed.Error.RetryAfter != "" {
 		return parsed.Error.RetryAfter
+	}
+	if parsed.Error.RetryAlt != "" {
+		return parsed.Error.RetryAlt
+	}
+	if parsed.Error.ResetsAt != "" {
+		return parsed.Error.ResetsAt
+	}
+	if parsed.Error.ResetsAlt != "" {
+		return parsed.Error.ResetsAlt
 	}
 	return ""
 }
@@ -2213,6 +2253,10 @@ func isModelQuotaText(errorText string) bool {
 		strings.Contains(upper, "MODEL_CAPACITY_EXHAUSTED") ||
 		strings.Contains(upper, "CONCURRENCY CAPACITY") ||
 		strings.Contains(upper, "MODEL_CONCURRENCY") ||
+		// DeepAI paid machine requirement (unmetered models remain available)
+		strings.Contains(upper, "MACHINE_REQUIRED") ||
+		strings.Contains(upper, "FREE DAILY THEOS") ||
+		strings.Contains(upper, "DAILY FREE THEOS") ||
 		// Qoder's billing envelope: code 110/112 or a pricingUrl field
 		// (qoderIsBillingBlock). The refusal is per model — the account's
 		// free models keep working while a paid one is out of credits.

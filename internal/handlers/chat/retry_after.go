@@ -68,6 +68,12 @@ func maxCooldownFor(provider string) time.Duration {
 	if provider == "antigravity" || provider == "ag" {
 		return maxResetCooldown
 	}
+	if provider == "deepai" || provider == "dai" {
+		return 60 * time.Second
+	}
+	if provider == "elevenlabs" || provider == "el" {
+		return 60 * time.Second
+	}
 	return maxResetCooldown
 }
 
