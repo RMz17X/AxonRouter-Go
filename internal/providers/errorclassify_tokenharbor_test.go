@@ -163,3 +163,74 @@ func TestClassifyTokenHarbor_Scenarios(t *testing.T) {
 		}
 	})
 }
+
+func TestClassifyTokenHarbor_EmailVerificationRequired(t *testing.T) {
+	body := `{"content":"","error":"Verify your email address to use the API. We sent a confirmation link when you signed up -- open it, or request a new one at https://tokenharbor.ai/dashboard, then retry this request. (code email_verification_required)","status":403}`
+
+	t.Run("signature deactivates the key", func(t *testing.T) {
+		cls, ok := classifyTokenHarbor(http.StatusForbidden, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if !cls.DeactivateKey {
+			t.Error("expected DeactivateKey to be TRUE for email verification refusal")
+		}
+		if cls.CooldownMs != 0 {
+			t.Errorf("expected no cooldown, got %dms", cls.CooldownMs)
+		}
+		if !cls.ShouldFallback {
+			t.Error("expected ShouldFallback TRUE so the request rotates to another account")
+		}
+	})
+
+	t.Run("still deactivates when the gateway rewrote 403 into 502", func(t *testing.T) {
+		cls, ok := classifyTokenHarbor(http.StatusBadGateway, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if !cls.DeactivateKey {
+			t.Error("expected DeactivateKey TRUE regardless of status rewrite")
+		}
+	})
+
+	t.Run("bare code also matches", func(t *testing.T) {
+		cls, ok := classifyTokenHarbor(http.StatusForbidden, "email_verification_required", 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if !cls.DeactivateKey {
+			t.Error("expected DeactivateKey TRUE for bare code")
+		}
+	})
+
+	t.Run("other providers are untouched", func(t *testing.T) {
+		if _, ok := classifyTokenHarbor(http.StatusForbidden, body, 0, "openai"); ok {
+			t.Error("expected no match for non-tokenharbor provider")
+		}
+	})
+
+	t.Run("unrelated 403 is not terminal", func(t *testing.T) {
+		cls, ok := classifyTokenHarbor(http.StatusForbidden, "forbidden: key not allowed", 0, "tokenharbor")
+		if ok && cls.DeactivateKey {
+			t.Error("expected unrelated 403 NOT to deactivate the key")
+		}
+	})
+}
+
+func TestIsTokenHarborEmailVerificationRequired(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"(code email_verification_required)", true},
+		{"Verify your email address to use the API", true},
+		{"verify your EMAIL ADDRESS", true},
+		{"rate limit reached", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := IsTokenHarborEmailVerificationRequired(c.in); got != c.want {
+			t.Errorf("IsTokenHarborEmailVerificationRequired(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}

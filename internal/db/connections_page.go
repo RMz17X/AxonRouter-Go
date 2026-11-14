@@ -47,6 +47,8 @@ var FatalDisableErrorSignatures = []string{
 	"account disabled",
 	"validation_required",
 	"verify your account",
+	"email_verification_required",
+	"verify your email address",
 	"invalid_grant",
 	"token refresh rejected",
 }

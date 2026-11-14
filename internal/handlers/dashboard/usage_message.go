@@ -24,6 +24,7 @@ func cleanUsageMessage(msg string) string {
 		"terms of service", "tos_violation", "account disabled",
 		"disabled in this account", "account suspended",
 		"validation_required", "verify your account",
+		"email_verification_required", "verify your email address",
 	} {
 		if strings.Contains(lower, keep) {
 			return capUsageMessage(msg)

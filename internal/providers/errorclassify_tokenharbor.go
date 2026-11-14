@@ -16,7 +16,22 @@ var (
 	tokenharborRetryAboutRe     = regexp.MustCompile(`(?i)retry\s+in\s+about\s+(\d+)\s*sec`)
 	tokenharborEgressIpRegex    = regexp.MustCompile(`(?i)(?:sharing\s+this\s+network\s+address|many\s+free\s+accounts|too\s+many\s+requests\s+from\s+(?:this|your)\s+(?:ip|network))`)
 	tokenharborServerBusyRegex  = regexp.MustCompile(`(?i)(?:under\s+heavy\s+load|server_busy|service_busy|slowed\s+down\s+for\s+a\s+few\s+minutes)`)
+	tokenharborEmailVerifyRe   = regexp.MustCompile(`(?i)(?:email_verification_required|verify\s+your\s+email\s+address)`)
 )
+
+// IsTokenHarborEmailVerificationRequired reports whether the error is the
+// "confirm your email address" refusal: the account exists and its key is
+// valid, but the vendor never got a confirmation click, so the API refuses
+// every call with 403. Nothing the router does can clear it — only the
+// operator opening the confirmation link can. The account is dead weight in
+// the pool until then: it must leave rotation instead of burning a 403
+// attempt on every sweep.
+func IsTokenHarborEmailVerificationRequired(text string) bool {
+	if text == "" {
+		return false
+	}
+	return tokenharborEmailVerifyRe.MatchString(text)
+}
 
 // ParseTokenHarborRetryDuration extracts cooldown duration from TokenHarbor error messages.
 // Returns 0, false if not matched.
@@ -141,6 +156,29 @@ func classifyTokenHarbor(statusCode int, rawError string, backoffLevel int, prov
 			NewBackoffLevel: backoffLevel,
 			ModelScoped:     false, // LOCK THIS ACCOUNT/KEY
 			Exhausted:       false, // Temporary throttle, not permanently exhausted
+		}, true
+	}
+
+	// 5. Email Verification Required (code email_verification_required)
+	// The key works; the mailbox was never confirmed. The refusal is
+	// permanent until a human clicks the vendor's confirmation link, so the
+	// account is disabled outright (DeactivateKey -> DisableConnectionWithReason,
+	// which clears isActive and writes the stored verdict) instead of being
+	// parked behind a cooldown it can never outgrow.
+	//
+	// Matched on the signature alone, not on a status code: TokenHarbor
+	// answers 403 with an empty "content" field, and the gateway's
+	// empty-turn check rewrites that into 502 before it reaches the
+	// classifier. Keying off 403 alone would let the refusal fall through
+	// to the generic 5xx rule and stay alive as a transient cooldown.
+	if IsTokenHarborEmailVerificationRequired(lowerError) {
+		return ErrorClassification{
+			ShouldFallback:  true,
+			DeactivateKey:   true, // terminal: the account leaves routing
+			CooldownMs:      0,
+			NewBackoffLevel: backoffLevel,
+			ModelScoped:     false,
+			Exhausted:       false,
 		}, true
 	}
 

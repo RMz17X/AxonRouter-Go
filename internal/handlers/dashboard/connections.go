@@ -565,9 +565,15 @@ func (h *DashboardHandler) autoDisableFatalConnections(conns []*models.ProviderC
 		}
 		c.IsActive = 0
 		lower := strings.ToLower(errMsg)
-		if strings.Contains(lower, "validation_required") || strings.Contains(lower, "verify your account") {
+		switch {
+		case providers.IsTokenHarborEmailVerificationRequired(lower):
+			// Terminal, not re-checkable: only a human clicking the
+			// vendor's confirmation link clears it, so the account is
+			// disabled outright rather than flagged for verification.
+			_ = h.Repo.DisableConnectionWithReason(c.ID, http.StatusForbidden, enrichAppealMessage(errMsg))
+		case strings.Contains(lower, "validation_required") || strings.Contains(lower, "verify your account"):
 			_ = h.Repo.SetConnectionVerificationRequired(c.ID, errMsg)
-		} else {
+		default:
 			_ = h.Repo.DisableConnectionWithReason(c.ID, http.StatusForbidden, enrichAppealMessage(errMsg))
 		}
 	}

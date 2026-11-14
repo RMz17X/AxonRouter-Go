@@ -1186,10 +1186,20 @@ func (h *DashboardHandler) persistProbeResult(conn *models.ProviderConnection, r
 			strings.Contains(lower, "account disabled")
 		isValidationReq := strings.Contains(lower, "validation_required") ||
 			strings.Contains(lower, "verify your account")
+		isEmailVerification := providers.IsTokenHarborEmailVerificationRequired(lower)
 		isDeadAuth := strings.Contains(lower, "invalid_grant") ||
 			strings.Contains(lower, "token refresh rejected") ||
 			strings.Contains(lower, "account banned")
 		if isToSDisabled {
+			raw["status"] = "disabled"
+			raw["testStatus"] = "disabled"
+			conn.IsActive = 0
+			_ = h.Repo.SetConnectionStatus(conn.ID, false)
+		} else if isEmailVerification {
+			// Terminal: the vendor refuses every call until a human
+			// confirms the mailbox. A probe cannot clear it, so the
+			// account leaves routing instead of being parked behind a
+			// cooldown it can never outgrow.
 			raw["status"] = "disabled"
 			raw["testStatus"] = "disabled"
 			conn.IsActive = 0
