@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.58] - 2026-11-15
+
+### Fixed
+- Circuit breaker feed moved to the real chokepoint: v1.10.56 counted only the sequential fallback loop, but tokenharbor traffic mostly flows through hedged waves, whose attempts never passed that loop — the breaker never tripped (1,296 tokenharbor failures in the first six minutes after the flip, no circuit opened). Attempts in every lane pass through tryForwardWithConnection, so failures are now counted at its upstream-error site and successes at its usage-log site (probe traffic excluded on both). Counting is windowed instead of strictly consecutive: 30 failures within 5 minutes with successes at or below a tenth of the failures opens the circuit, so a provider with a trickle of successes through a mostly-dead pool still trips, while a healthy provider having an unlucky minute does not.
+
 ## [v1.10.57] - 2026-11-15
 
 ### Fixed
