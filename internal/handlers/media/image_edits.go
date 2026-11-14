@@ -21,6 +21,23 @@ const (
 	errUnsupportedImageMime = "Unsupported image format: use PNG, JPEG, WEBP or GIF"
 )
 
+// mediaItemLimitForEndpoint returns the item ceiling for a media endpoint.
+//
+// Every endpoint uses MediaMaxItems except the ones whose own contract
+// promises a larger count. /v1/images/edits follows the upstream cap of 16
+// images (imageEdits.js MAX_IMAGES), so the global default of 8 is wrong for
+// it: the default existed to catch a runaway request on a lane that never had
+// a documented count, and applying it here refused requests the endpoint
+// promises to accept.
+func mediaItemLimitForEndpoint(endpoint string) int {
+	switch endpoint {
+	case "/v1/images/edits", "/images/edits":
+		return maxImageEdits
+	default:
+		return MediaMaxItems
+	}
+}
+
 // HandleImageEdits handles POST /v1/images/edits (multipart/form-data and application/json).
 // It parses the request, validates required fields, converts image files or values
 // to base64 Data URIs / URLs, packages the request as JSON, and forwards it via
@@ -264,9 +281,12 @@ func (h *MediaHandler) handleMultipartImageEdits(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if len(imageFiles) > int(MediaMaxItems) {
-		handlerutil.WriteJSONError(w, http.StatusRequestEntityTooLarge,
-			fmt.Sprintf("request contains %d media items; this endpoint accepts at most %d", len(imageFiles), MediaMaxItems))
+	// The image count is capped by the same number the JSON lane uses, so the
+	// two lanes answer one contract: a request carrying more images than the
+	// endpoint accepts is refused the same way whichever way it spelled them.
+	if len(imageFiles) > maxImageEdits {
+		handlerutil.WriteJSONError(w, http.StatusBadRequest,
+			fmt.Sprintf("At most %d images are allowed", maxImageEdits))
 		return
 	}
 

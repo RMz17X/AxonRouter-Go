@@ -862,7 +862,13 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 	// lane passes through. This still sits before model resolution and before
 	// connection selection, which is what matters: an oversized request never
 	// reaches an upstream call, because the call is what gets billed.
-	if _, refused := guardMediaInput(w, r.Header.Get("Content-Type"), body); refused {
+	//
+	// The item ceiling is per-endpoint. /v1/images/edits documents a larger
+	// image count than the global default, and the global default cut it short:
+	// a data-URI image is measured as a media item while a URL image is not
+	// measured at all, so the same nine-image request was forwarded as URLs
+	// and refused as data URIs. One endpoint, one count, one answer.
+	if _, refused := guardMediaInputWithLimit(w, r.Header.Get("Content-Type"), body, mediaItemLimitForEndpoint(endpoint)); refused {
 		return
 	}
 	modelInfo, err := h.ChatH.ResolveModel(model)

@@ -198,13 +198,24 @@ func (use *mediaInputUse) recordItem(n int64, audioVideo bool) {
 // be answered with the item count, the less actionable of the two: the count
 // says "send fewer", while the size says which file to shrink.
 func (use mediaInputUse) capViolation() string {
+	return use.capViolationWith(MediaMaxItems)
+}
+
+// capViolationWith is capViolation against an explicit item ceiling.
+//
+// The default ceiling is MediaMaxItems, which is right for most media lanes.
+// An endpoint whose own contract allows more items than the global default
+// passes its own limit here: the global default exists to catch a runaway
+// request on a lane that never had a documented item count, and it must not
+// cut an endpoint short of the count its own contract promises.
+func (use mediaInputUse) capViolationWith(maxItems int) string {
 	switch {
 	case use.MaxItem > MediaMaxItemBytes:
 		return fmt.Sprintf("media input too large: one item is %s, the per-item limit is %s",
 			middleware.HumanBytes(use.MaxItem), middleware.HumanBytes(MediaMaxItemBytes))
-	case use.Items > MediaMaxItems:
+	case use.Items > maxItems:
 		return fmt.Sprintf("media input too large: request carries %d items, the limit is %d",
-			use.Items, MediaMaxItems)
+			use.Items, maxItems)
 	}
 	return ""
 }
@@ -243,10 +254,24 @@ func isGatewayOwnedHeader(name string) bool {
 // stream the upstream body straight to the client and headers can no longer
 // change once the status line is out.
 func guardMediaInput(w http.ResponseWriter, contentType string, body []byte) (mediaInputUse, bool) {
+	return guardMediaInputWithLimit(w, contentType, body, MediaMaxItems)
+}
+
+// guardMediaInputWithLimit is guardMediaInput against an explicit item
+// ceiling. The per-item byte ceiling is unchanged; only the count moves.
+//
+// The count has to be per-endpoint because the global default (MediaMaxItems)
+// is smaller than the count some endpoints promise in their own contract. When
+// the global default cut such an endpoint short, the refusal depended on the
+// encoding rather than on the request: nine image URLs measured as zero media
+// (a URL carries no bytes to measure) and were forwarded, while nine data
+// URIs measured as nine items and were refused with 413. The same request
+// shape answered differently depending on how the client spelled the image.
+func guardMediaInputWithLimit(w http.ResponseWriter, contentType string, body []byte, maxItems int) (mediaInputUse, bool) {
 	use, err := measureMediaInput(contentType, body)
 	// A cap a partial measurement already exceeded is still real: what was
 	// counted before the body stopped parsing is a lower bound.
-	if msg := use.capViolation(); msg != "" {
+	if msg := use.capViolationWith(maxItems); msg != "" {
 		handlerutil.WriteJSONError(w, http.StatusRequestEntityTooLarge, msg)
 		return use, true
 	}

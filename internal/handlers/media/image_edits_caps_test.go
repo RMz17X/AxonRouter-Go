@@ -2,6 +2,7 @@ package media
 
 import (
 	"bytes"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -13,11 +14,15 @@ func TestHandleImageEdits_MultipartCapsEnforced(t *testing.T) {
 	_, repo := setupImageEditsEnv(t)
 	handler := imageEditsHandler(repo)
 
-	// 1. More than MediaMaxItems (8) images should be rejected with 413
+	// 1. More images than the endpoint accepts should be rejected with 400.
+	// The ceiling is maxImageEdits (16, the upstream count), the same number
+	// the JSON lane applies — before this the two lanes answered one request
+	// shape differently, and the multipart lane answered 413 with a count
+	// that did not match the endpoint's own contract.
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("prompt", "test multiple images")
-	for i := 0; i < 9; i++ {
+	for i := 0; i < maxImageEdits+1; i++ {
 		fw, err := mw.CreateFormFile("image", "test.png")
 		if err != nil {
 			t.Fatalf("create form file %d: %v", i, err)
@@ -32,11 +37,11 @@ func TestHandleImageEdits_MultipartCapsEnforced(t *testing.T) {
 
 	handler.HandleImageEdits(rec, req)
 
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("expected status 413 for > 8 images, got %d: %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for > %d images, got %d: %s", maxImageEdits, rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "at most 8") {
-		t.Errorf("expected error to mention limit of 8 items, got: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), fmt.Sprintf("At most %d images are allowed", maxImageEdits)) {
+		t.Errorf("expected error to mention the image limit of %d, got: %s", maxImageEdits, rec.Body.String())
 	}
 
 	// 2. A file exceeding MediaMaxItemBytes (25MB) should be rejected
