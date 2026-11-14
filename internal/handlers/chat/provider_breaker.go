@@ -7,6 +7,7 @@ import (
 
 	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/providers"
+	"axonrouter/proxy/internal/translator"
 )
 
 // provider_breaker.go — a circuit breaker per (provider, model) pair.
@@ -20,28 +21,33 @@ import (
 // zero successes — and every mimo-v2.6-flash:free request still routed
 // there first, burning hedging and fallback budget fleet-wide.
 //
-// This breaker watches the fleet-wide outcome per (provider, model):
-// providerBreakerThreshold consecutive upstream failures with no
-// intervening success open the circuit for providerBreakerCooldown.
-// While open, the pair is treated exactly like an unhealthy provider
-// (the fallback loop refuses it up front, combos skip the member), so
-// requests move on immediately instead of chewing through accounts.
-// A single success closes the circuit again, and once the cooldown
-// lapses the next attempts re-test the provider naturally.
+// The breaker is fed from tryForwardWithConnection, the one chokepoint
+// every attempt lane (sequential fallback, hedged waves, combo members)
+// passes through. Within a rolling window it counts upstream failures
+// and successes per (provider, model); when failures reach
+// providerBreakerFailureThreshold while successes stay at or below a
+// tenth of the failures — a pool that is down, not merely unlucky —
+// the circuit opens for providerBreakerCooldown. While open, the pair
+// is treated exactly like an unhealthy provider (the fallback loop
+// refuses it up front, combos skip the member), so requests move on
+// immediately instead of chewing through accounts. A success closes
+// the circuit at once; once the cooldown lapses, fresh attempts
+// re-test the provider and re-trip the breaker if it is still dead.
 //
 // State is in-memory only, like the dahl concurrency block: a restart
 // forgets the verdict, and a still-dead provider re-trips it within
 // seconds at any real traffic volume.
 const (
-	providerBreakerThreshold = 20
-	providerBreakerWindow    = 10 * time.Minute
-	providerBreakerCooldown  = 10 * time.Minute
+	providerBreakerFailureThreshold = 30
+	providerBreakerWindow           = 5 * time.Minute
+	providerBreakerCooldown         = 10 * time.Minute
 )
 
 type providerBreakerState struct {
-	consecutiveFailures int
-	windowStart         time.Time
-	blockedUntil        time.Time
+	failures     int
+	successes    int
+	windowStart  time.Time
+	blockedUntil time.Time
 }
 
 var (
@@ -60,9 +66,12 @@ func providerBreakerKey(provider, model string) string {
 // providerBreakerShouldCount reports whether an attempt failure is
 // evidence about the provider (vs about the request): retryable
 // upstream statuses, 5xx, and transport/executor errors count;
-// request-level refusals (400-class) do not.
+// request-level refusals and model-behaviour mismatches do not.
 func providerBreakerShouldCount(err error) bool {
 	if err == nil {
+		return false
+	}
+	if errors.Is(err, translator.ErrDecoyOnlyResponse) {
 		return false
 	}
 	var ue *upstreamError
@@ -70,6 +79,20 @@ func providerBreakerShouldCount(err error) bool {
 		return providers.RetryableStatusCodes[ue.StatusCode] || ue.StatusCode >= 500
 	}
 	return true
+}
+
+func providerBreakerStateFor(key string, now time.Time) *providerBreakerState {
+	st, ok := providerBreaker[key]
+	if !ok {
+		st = &providerBreakerState{windowStart: now}
+		providerBreaker[key] = st
+	}
+	if now.Sub(st.windowStart) > providerBreakerWindow && !now.Before(st.blockedUntil) {
+		st.failures = 0
+		st.successes = 0
+		st.windowStart = now
+	}
+	return st
 }
 
 // RecordProviderModelFailure feeds one failed upstream attempt into
@@ -82,25 +105,18 @@ func RecordProviderModelFailure(provider, model string) {
 	key := providerBreakerKey(provider, model)
 	tripped := false
 	providerBreakerMu.Lock()
-	st, ok := providerBreaker[key]
-	if !ok {
-		st = &providerBreakerState{windowStart: now}
-		providerBreaker[key] = st
-	}
+	st := providerBreakerStateFor(key, now)
 	if now.Before(st.blockedUntil) {
-		// Still failing while open (a pinned or probe lane reached the
-		// upstream anyway): push the verdict out instead of letting it
-		// lapse mid-outage.
+		// Still failing while open (a pinned lane reached the upstream
+		// anyway): push the verdict out instead of letting it lapse
+		// mid-outage.
 		st.blockedUntil = now.Add(providerBreakerCooldown)
 	} else {
-		if now.Sub(st.windowStart) > providerBreakerWindow {
-			st.consecutiveFailures = 0
-			st.windowStart = now
-		}
-		st.consecutiveFailures++
-		if st.consecutiveFailures >= providerBreakerThreshold {
+		st.failures++
+		if st.failures >= providerBreakerFailureThreshold && st.successes*10 <= st.failures {
 			st.blockedUntil = now.Add(providerBreakerCooldown)
-			st.consecutiveFailures = 0
+			st.failures = 0
+			st.successes = 0
 			st.windowStart = now
 			tripped = true
 		}
@@ -113,16 +129,29 @@ func RecordProviderModelFailure(provider, model string) {
 	}
 }
 
-// RecordProviderModelSuccess closes the pair's circuit: one success
-// proves the provider serves this model again, whatever came before.
+// RecordProviderModelSuccess feeds one successful upstream attempt:
+// it closes an open circuit at once and otherwise counts toward the
+// window's success share that keeps an unlucky-but-alive provider
+// from tripping the breaker.
 func RecordProviderModelSuccess(provider, model string) {
 	if provider == "" || model == "" {
 		return
 	}
+	now := time.Now()
 	key := providerBreakerKey(provider, model)
+	closed := false
 	providerBreakerMu.Lock()
-	delete(providerBreaker, key)
+	if st, ok := providerBreaker[key]; ok && now.Before(st.blockedUntil) {
+		delete(providerBreaker, key)
+		closed = true
+	} else {
+		providerBreakerStateFor(key, now).successes++
+	}
 	providerBreakerMu.Unlock()
+	if closed {
+		log.Info("breaker", "provider model circuit closed by a success",
+			"provider", provider, "model", model)
+	}
 }
 
 // IsProviderModelBroken reports whether the pair's circuit is open.

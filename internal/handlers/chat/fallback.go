@@ -293,9 +293,6 @@ func (h *ChatHandler) handleAccountFallback(
 			IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
 		}); err == nil {
 			RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 200, nil, time.Since(attemptStart).Milliseconds())
-			if !handlerutil.IsProbeContext(ctx) {
-				RecordProviderModelSuccess(provider, model)
-			}
 			if sessionID := handlerutil.GetSessionID(ctx); sessionID != "" && affinityEligible {
 				h.getSessionAffinity().Bind(provider, model, sessionID, connObj.ID)
 			}
@@ -303,9 +300,6 @@ func (h *ChatHandler) handleAccountFallback(
 		} else {
 			lastErr = err
 			observ.IncFallback(provider, model, observ.FallbackReasonUpstreamError)
-			if !handlerutil.IsProbeContext(ctx) && !isClientCanceled(ctx, err) && providerBreakerShouldCount(err) {
-				RecordProviderModelFailure(provider, model)
-			}
 			RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 0, err, time.Since(attemptStart).Milliseconds())
 			var ue *upstreamError
 			if errors.As(lastErr, &ue) {
@@ -1604,6 +1598,9 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		h.fillEgressIP(logInfo, connData, providerCfg)
 		logInfo.ConnName, logInfo.ConnEmail = identityNames(h.connIdentityKVOr(f, connectionID))
 		h.logUsage(ctx, logInfo, usage, latencyMs, body, metrics)
+		if !handlerutil.IsProbeContext(ctx) {
+			RecordProviderModelSuccess(provider, model)
+		}
 		metrics.ResponseBuf.Reset()
 
 		if connData != nil {
@@ -1710,6 +1707,9 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 
 	if !errors.As(fwdErr, &zc) {
 		observ.IncUpstreamError(provider, model, statusCode)
+		if !handlerutil.IsProbeContext(ctx) && !isClientCanceled(ctx, fwdErr) && providerBreakerShouldCount(fwdErr) {
+			RecordProviderModelFailure(provider, model)
+		}
 	}
 	// A client that hung up is not an upstream failure. Returning the raw error
 	// here made every abort surface as a bare 502 at the write sites in chat.go:
