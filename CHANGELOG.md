@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.55] - 2026-11-14
+
+### Perf
+- **minimax**: Pre-filter already-claimed accounts via batch ledger read (`MinimaxClaimedTodayMap`) and eliminate 350ms throttling sleeps on skipped accounts, accelerating background claim sweeps over hundreds of accounts from minutes to milliseconds.
+
 ## [v1.10.54] - 2026-11-14
 
 ### Fixed
