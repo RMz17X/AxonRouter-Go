@@ -1881,15 +1881,15 @@
 
                 {#if isMiniMaxClaimProvider(conn.provider)}
                   {@const claimStatus = minimaxClaimStatus[conn.id]}
-                  {#if claimStatus?.isClaimed}
+                  {#if claimStatus?.isClaimed || claimStatus?.todayStatus === 3}
                     <span
                       class="flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border border-border-subtle bg-surface-2 px-2 text-[11px] font-medium text-text-muted"
                       title="Daily reward already claimed today"
                     >
-                      <span class="material-symbols-outlined text-[15px]">check_circle</span>
-                      <span>Day {claimStatus.dayNo}</span>
+                      <span class="material-symbols-outlined text-[15px] text-emerald-500">check_circle</span>
+                      <span>Day {claimStatus?.dayNo || '—'}</span>
                     </span>
-                  {:else if claimStatus === undefined || claimStatus === null || claimStatus.todayStatus === 2}
+                  {:else if claimStatus?.todayStatus === 2}
                     <button
                       type="button"
                       disabled={isLoading || rowBusy || minimaxClaimingId === conn.id}
@@ -1903,6 +1903,13 @@
                       </span>
                       <span>Claim</span>
                     </button>
+                  {:else if minimaxClaimStatusInFlight.has(conn.id)}
+                    <span
+                      class="flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border border-border-subtle bg-surface-2 px-2 text-[11px] font-medium text-text-muted"
+                      title="Checking daily claim status..."
+                    >
+                      <span class="material-symbols-outlined text-[15px] animate-spin">sync</span>
+                    </span>
                   {/if}
                 {/if}
 

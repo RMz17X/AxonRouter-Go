@@ -61,6 +61,25 @@ type MiniMaxSignInStatus struct {
 	Days         []any  `json:"days,omitempty"`
 }
 
+// isMiniMaxTruthy parses boolean-like values from MiniMax API JSON.
+func isMiniMaxTruthy(v any) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case int:
+		return val != 0
+	case int64:
+		return val != 0
+	case float64:
+		return val != 0
+	case string:
+		s := strings.ToLower(strings.TrimSpace(val))
+		return s == "true" || s == "1" || s == "yes"
+	default:
+		return false
+	}
+}
+
 // CheckMiniMaxSignInStatus queries the check-in status for an account.
 func CheckMiniMaxSignInStatus(ctx context.Context, site miniMaxCodeSite, access, userID string) (int, int, int, []any, error) {
 	env, err := miniMaxCodeAccountCall(ctx, site, "/minimax-cloud/api/v1/signin/status", access, userID, nil, "minimax signin status")
@@ -77,7 +96,7 @@ func CheckMiniMaxSignInStatus(ctx context.Context, site miniMaxCodeSite, access,
 		if !ok {
 			continue
 		}
-		if isToday, _ := day["is_today"].(bool); isToday {
+		if isMiniMaxTruthy(day["is_today"]) {
 			status := int(usageNum(day["status"], 0))
 			dNo := int(usageNum(day["day_no"], 0))
 			pts := int(usageNum(day["points"], 0))
@@ -127,6 +146,18 @@ func ClaimMiniMaxForConnection(ctx context.Context, repo *db.Repo, conn *models.
 		Status:       "error",
 	}
 
+	// Fast path: if the ledger shows this connection already claimed today,
+	// avoid the upstream call entirely.
+	if repo != nil {
+		if claimed, dayNo := repo.MinimaxClaimedToday(conn.ID); claimed {
+			res.Status = "already_claimed"
+			res.Claimed = false
+			res.StreakDay = dayNo
+			res.Message = fmt.Sprintf("Already claimed for today (Day %d)", dayNo)
+			return res
+		}
+	}
+
 	site, ok := resolveMiniMaxSite(conn.Provider)
 	if !ok {
 		res.Status = "skipped"
@@ -166,6 +197,9 @@ func ClaimMiniMaxForConnection(ctx context.Context, repo *db.Repo, conn *models.
 
 	// Status 3 means already checked in today
 	if todayStatus == 3 {
+		if repo != nil {
+			_ = repo.RecordMiniMaxClaimed(conn.ID, dayNo, pts)
+		}
 		res.Status = "already_claimed"
 		res.Claimed = false
 		res.Points = pts
@@ -196,6 +230,10 @@ func ClaimMiniMaxForConnection(ctx context.Context, repo *db.Repo, conn *models.
 	res.Points = claimedPts
 	res.StreakDay = claimedDay
 	res.Message = fmt.Sprintf("Successfully claimed %d points for Day %d!", claimedPts, claimedDay)
+
+	if repo != nil {
+		_ = repo.RecordMiniMaxClaimed(conn.ID, claimedDay, claimedPts)
+	}
 
 	// Invalidate quota usage cache so the tracker shows fresh points immediately
 	InvalidateUsageCache(conn.ID)
@@ -330,6 +368,22 @@ func (h *DashboardHandler) HandleGetMiniMaxClaimStatus(w http.ResponseWriter, r 
 		return
 	}
 
+	// Fast path: if the ledger shows this connection already claimed today,
+	// return claimed status immediately without an upstream HTTP round trip.
+	if h.Repo != nil {
+		if claimed, dayNo := h.Repo.MinimaxClaimedToday(connID); claimed {
+			resp := MiniMaxSignInStatus{
+				ConnectionID: connID,
+				TodayStatus:  3,
+				DayNo:        dayNo,
+				IsClaimed:    true,
+			}
+			storeClaimStatus(connID, resp)
+			handlerutil.WriteJSON(w, http.StatusOK, resp)
+			return
+		}
+	}
+
 	conn, err := h.Repo.GetProviderConnectionByID(connID)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusInternalServerError, err.Error())
@@ -370,6 +424,9 @@ func (h *DashboardHandler) HandleGetMiniMaxClaimStatus(w http.ResponseWriter, r 
 		Points:       pts,
 		IsClaimed:    todayStatus == 3,
 		Days:         days,
+	}
+	if todayStatus == 3 && h.Repo != nil {
+		_ = h.Repo.RecordMiniMaxClaimed(connID, dayNo, pts)
 	}
 	storeClaimStatus(connID, resp)
 

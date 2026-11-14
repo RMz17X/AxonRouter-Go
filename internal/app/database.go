@@ -95,6 +95,17 @@ func ProvideDatabase(lc fx.Lifecycle, cfg *config.Config) (*sql.DB, error) {
 		}
 	}
 
+	// MiniMax daily-claim ledger: remembers which connection already
+	// claimed today's reward so the quota page stops rendering Claim
+	// buttons on done accounts when the upstream status read flakes.
+	// Same best-effort contract as the schema bootstrap above.
+	if err := db.EnsureMinimaxClaimStateTable(conn); err != nil {
+		_, statErr := conn.Exec("SELECT 1")
+		if statErr == nil {
+			return nil, fmt.Errorf("database minimax claim state: %w", err)
+		}
+	}
+
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
 			return conn.Close()

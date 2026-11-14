@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -371,7 +372,7 @@ func startMiniMaxAutoClaimScheduler(ctx context.Context, repo *db.Repo) {
 		}
 
 		log.Println("[minimax-claim] running initial scheduled claim sweep...")
-		_, _, _ = dashboard.ClaimAllMiniMaxConnections(ctx, repo)
+		sweepMiniMaxClaim(ctx, repo)
 
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -382,8 +383,29 @@ func startMiniMaxAutoClaimScheduler(ctx context.Context, repo *db.Repo) {
 				return
 			case <-ticker.C:
 				log.Println("[minimax-claim] running periodic scheduled claim sweep...")
-				_, _, _ = dashboard.ClaimAllMiniMaxConnections(ctx, repo)
+				sweepMiniMaxClaim(ctx, repo)
 			}
 		}
 	}()
+}
+
+// sweepMiniMaxClaim runs one claim sweep and logs both the failure path and
+// the summary. Swallowing the error here made a dead scheduler invisible:
+// the log showed "running sweep" and nothing else, so the only way to tell
+// whether the nightly check-in actually happened was to grep DB rows.
+func sweepMiniMaxClaim(ctx context.Context, repo *db.Repo) {
+	summary, _, err := dashboard.ClaimAllMiniMaxConnections(ctx, repo)
+	if err != nil {
+		if strings.Contains(err.Error(), "already running") {
+			log.Println("[minimax-claim] sweep skipped: another claim run is still in progress")
+			return
+		}
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		log.Printf("[minimax-claim] scheduled sweep failed: %v", err)
+		return
+	}
+	log.Printf("[minimax-claim] scheduled sweep done: %d total, %d newly claimed (%d pts), %d already claimed, %d errors, %d skipped",
+		summary.Total, summary.Claimed, summary.TotalPoints, summary.AlreadyClaimed, summary.Errors, summary.Skipped)
 }
