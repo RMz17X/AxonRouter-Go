@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.59] - 2026-11-15
+
+### Fixed
+- TokenHarbor accounts blocked by an unconfirmed mailbox left the routing pool: the vendor refuses every request with HTTP 403 and code `email_verification_required`, and only a human opening the confirmation link can clear it — no cooldown can outgrow that refusal, so the accounts stayed in rotation and burned a 403 on every sweep. The classifier now returns `DeactivateKey` on the signature, the connection probe disables the account on the same signal, the fatal-disable sweep disables it instead of flagging it verification-required, and the SQL pre-filter that feeds that sweep matches the signature too, so accounts that already stored the error are picked up as well.
+
 ## [v1.10.58] - 2026-11-15
 
 ### Fixed
