@@ -4,7 +4,7 @@
 - The image reference is accepted in every shape the OpenAI SDKs send: a plain string, an array of strings, `{"image_url": {"url": ...}}` and `{"url": ...}`. Before the fix an array or an object failed to unmarshal and the request was answered 400 even though the payload was valid.
 - `{"file_id": ...}` is refused with the upstream message and the request is not forwarded, because a file reference carries no bytes to send.
 - `mask` is refused with the upstream message in both lanes. No provider lane reads it, so forwarding it advertised a capability that does not exist.
-- The JSON lane applies the same image cap as the multipart lane and refuses a request above it instead of forwarding an unbounded list.
+- The JSON lane applies the same image cap as the multipart lane and refuses a request above it instead of forwarding an unbounded list. The cap is 8 media items per request, the same ceiling the other media endpoints use, so both lanes of this endpoint agree. The upstream 9router accepts 16; the lower number is deliberate and matches the rest of this gateway, and the refusal names both counts so the operator can see which limit applied.
 - The forwarded request is presented to the provider as `application/json` in both lanes.
 - A body over the request ceiling is answered 413 naming the limit, not 400 reporting a malformed request.
 - Multipart dispatch is case-insensitive: `Multipart/Form-Data` reaches the multipart lane instead of failing on a JSON parse error.
