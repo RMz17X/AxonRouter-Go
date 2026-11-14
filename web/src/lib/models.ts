@@ -1699,6 +1699,114 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "GPT 5.3 Codex"
     }
   ],
+  "dai": [
+    {
+      "id": "glm-5.3-flash",
+      "name": "GLM 5.3 Flash"
+    },
+    {
+      "id": "deepseek-v4.1-flash",
+      "name": "DeepSeek V4.1 Flash"
+    },
+    {
+      "id": "mimo-2.6-flash",
+      "name": "MiMo 2.6 Flash"
+    },
+    {
+      "id": "qwen-3.8-flash",
+      "name": "Qwen 3.8 Flash"
+    },
+    {
+      "id": "minimax-m3.1-flash",
+      "name": "minimax M3.1 Flash"
+    },
+    {
+      "id": "solar-mini-4",
+      "name": "Solar Mini 4"
+    },
+    {
+      "id": "gpt-6-luna",
+      "name": "GPT 6 Luna"
+    },
+    {
+      "id": "mimo-2.6-pro",
+      "name": "MiMo 2.6 Pro"
+    },
+    {
+      "id": "glyph-cluster",
+      "name": "Glyph Cluster"
+    },
+    {
+      "id": "deepai-cyber",
+      "name": "DeepAI Cyber"
+    },
+    {
+      "id": "minimax-m3",
+      "name": "minimax M3"
+    },
+    {
+      "id": "glm-5.3",
+      "name": "GLM 5.3"
+    },
+    {
+      "id": "kimi-k3",
+      "name": "Kimi K3"
+    },
+    {
+      "id": "muse-spark-1.3",
+      "name": "Muse Spark 1.3"
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "name": "GPT 6.1 Sol"
+    },
+    {
+      "id": "gemini-4-argon",
+      "name": "Gemini 4 Argon"
+    },
+    {
+      "id": "claude-opus-5-5",
+      "name": "Claude Opus 5.5"
+    },
+    {
+      "id": "muse-wonder",
+      "name": "Muse Wonder"
+    },
+    {
+      "id": "qwen-3.8-max-prime",
+      "name": "Qwen 3.8 Max Prime"
+    },
+    {
+      "id": "claude-fable-5-2",
+      "name": "Claude Fable 5.2"
+    },
+    {
+      "id": "gpt-6-astra",
+      "name": "GPT 6 Astra"
+    }
+  ],
+  "daifree": [
+    {
+      "id": "chat-standard",
+      "name": "Chat Standard",
+      "isFree": true
+    },
+    {
+      "id": "chat-genius",
+      "name": "Chat Genius",
+      "isFree": true
+    },
+    {
+      "id": "standard",
+      "name": "Standard",
+      "isFree": true
+    },
+    {
+      "id": "super-genius",
+      "name": "Super Genius",
+      "isFree": true
+    }
+  ],
   "deepgram": [
     {
       "id": "nova-3",

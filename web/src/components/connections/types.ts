@@ -68,6 +68,11 @@ const ICON_ALIASES: Record<string, string> = {
   'zcode': 'glm',
   'kilocode-free': 'kilocode',
   'kcf': 'kilocode',
+  // DeepAI Free and DeepAI share the same brand mark. An alias rather than a
+  // committed copy of `deepai.png`: a duplicate file is never served
+  // (getIconPath resolves the alias first) and only drifts from the original.
+  'deepai-free': 'deepai',
+  'daifree': 'deepai',
   'openai-compatible-chat-liquid': 'liquid',
   'openai-compatible-liquid': 'liquid',
 }

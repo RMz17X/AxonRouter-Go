@@ -48,6 +48,12 @@ func TestDashboardCatalogListsEveryRoutedModel(t *testing.T) {
 		"gemini-cli":   "gc",
 		"ocg":          "opencode-go",
 		"codebuddy-cn": "cbcn",
+		// DeepAI's dashboard block is keyed by the short alias the upstream
+		// registry publishes, not by the provider id — the same shape as
+		// antigravity→ag above. Without this mapping the gateway would serve
+		// 21 models the dashboard does not list.
+		"deepai":      "dai",
+		"deepai-free": "daifree",
 	}
 	checked := 0
 	for pid, models := range ProviderModels {
