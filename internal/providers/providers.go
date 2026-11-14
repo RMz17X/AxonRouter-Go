@@ -670,6 +670,24 @@ var KnownProviders = map[string]ProviderConfig{
 		DefaultAPIKey: "public",
 		NoAuth:        true,
 	},
+	"deepai-free": {
+		BaseURL:       "https://api.deepai.org/hacking_is_a_serious_crime",
+		AuthHeader:    "api-key",
+		AuthScheme:    "raw",
+		DefaultAPIKey: "anonymous",
+		NoAuth:        true,
+	},
+	"deepai": {
+		BaseURL:    "https://api.deepai.org/deepai_code/chat/completions",
+		AuthHeader: "api-key",
+		AuthScheme: "raw",
+		StaticHeaders: map[string]string{
+			"X-DeepAI-Code-Theos":    "5",
+			"User-Agent":             "DeepAI-Code",
+			"X-DeepAI-Code-Instance": "a3f9c1d2e4b60817b1a2c3d4e5f60718",
+			"X-DeepAI-Code-Machine":  "a3f9c1d2e4b60817b1a2c3d4e5f60718a3f9c1d2e4b60817b1a2c3d4e5f60718",
+		},
+	},
 	"nanobanana": {
 		BaseURL:    "https://api.nanobananaapi.ai/v1/chat/completions",
 		AuthHeader: "Authorization",

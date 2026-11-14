@@ -336,6 +336,31 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Notice:        &Notice{Text: "Free AI models powered by Kilo AI Gateway. No account or API key required (IP rate-limited to 200 req/hr)."},
 		ModelsFetcher: &Fetcher{URL: "https://api.kilo.ai/api/gateway/models", Type: "kilocode-free"},
 	},
+	"deepai-free": {
+		ID:           "deepai-free",
+		Name:         "DeepAI Free",
+		Alias:        "daifree",
+		Category:     CategoryFree,
+		Color:        "#0F172A",
+		Icon:         "brain",
+		Priority:     45,
+		NoAuth:       true,
+		ServiceKinds: []string{"llm"},
+		Website:      "https://deepai.org",
+		Notice:       &Notice{Text: "Anonymous free chat models from DeepAI. No account or API key required."},
+	},
+	"deepai": {
+		ID:           "deepai",
+		Name:         "DeepAI",
+		Alias:        "dai",
+		Category:     CategoryAPIKey,
+		Color:        "#1E293B",
+		Icon:         "brain",
+		Priority:     35,
+		ServiceKinds: []string{"llm"},
+		Website:      "https://deepai.org",
+		Notice:       &Notice{SignupURL: "https://deepai.org", Text: "DeepAI API / DeepAI Code platform models."},
+	},
 	// ZCode (zcode.z.ai) rides the same Z.ai account as glm-coding but is its
 	// own gateway: it serves the Start Plan / Weekend Build quota, which the
 	// coding-plan lane does not. Registered here because the catalog the

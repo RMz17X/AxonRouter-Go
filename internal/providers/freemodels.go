@@ -128,6 +128,12 @@ var freeModelCatalog = []freeBudget{
 	{"gemini", "gemini-3-flash-preview", regimeRecurringDaily, ""},
 	{"gemini", "gemini-3.1-flash-lite", regimeRecurringDaily, ""},
 
+	// DeepAI Free (anonymous try-it derivation, keyless).
+	{"deepai-free", "chat-standard", regimeKeyless, "DeepAI — Chat Standard"},
+	{"deepai-free", "chat-genius", regimeKeyless, "DeepAI — Chat Genius"},
+	{"deepai-free", "standard", regimeKeyless, "DeepAI — Standard"},
+	{"deepai-free", "super-genius", regimeKeyless, "DeepAI — Super Genius"},
+
 	// Clixad (daily free credits allocation).
 	{"clixad", "gpt-5-nano", regimeRecurringDaily, ""},
 	{"clixad", "gemini-2.5-flash-lite", regimeRecurringDaily, ""},

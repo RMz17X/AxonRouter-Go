@@ -34,6 +34,8 @@ func RegisterAll() {
 	Register("hyperbolic", func() Executor { return ForwardOpenAI })
 	Register("kilocode", func() Executor { return ForwardOpenAI })
 	Register("kilocode-free", func() Executor { return ForwardOpenAI })
+	Register("deepai-free", func() Executor { return ForwardDeepAI })
+	Register("deepai", func() Executor { return ForwardOpenAI })
 	Register("nanobanana", func() Executor { return ForwardOpenAI })
 	Register("opencode-go", func() Executor { return ForwardOpencodeGo })
 	Register("opencode-zen", func() Executor { return ForwardOpencodeZen })

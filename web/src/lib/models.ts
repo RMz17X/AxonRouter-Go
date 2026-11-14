@@ -58,6 +58,8 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "coqui": "coqui",
   "cursor": "cu",
   "deepgram": "dg",
+  "deepai": "dai",
+  "deepai-free": "daifree",
   "deepseek": "ds",
   "deepseek-web": "ds-web",
   "devin-cli": "devin-cli",
