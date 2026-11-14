@@ -274,7 +274,7 @@ func TestImageEditsMultipartStillWorks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create form file: %v", err)
 	}
-	_, _ = fw.Write([]byte("fake png bytes"))
+	_, _ = fw.Write([]byte("\x89PNG\r\n\x1a\nfake png bytes"))
 	_ = mw.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", &buf)

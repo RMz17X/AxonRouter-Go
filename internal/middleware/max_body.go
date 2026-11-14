@@ -42,6 +42,7 @@ func MediaBodyLimitRules() []BodyLimitRule {
 		{Suffix: "/videos/edits", MaxBytes: MediaMaxBodySize},
 		{Suffix: "/videos/extensions", MaxBytes: MediaMaxBodySize},
 		{Suffix: "/audio/transcriptions", MaxBytes: MediaMaxBodySize},
+		{Suffix: "/images/edits", MaxBytes: MediaMaxBodySize},
 	}
 }
 

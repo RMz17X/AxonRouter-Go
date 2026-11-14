@@ -113,6 +113,7 @@ func TestBodyLimitRulesCoverMediaUploads(t *testing.T) {
 		"/videos/edits",
 		"/videos/extensions",
 		"/audio/transcriptions",
+		"/images/edits",
 	}
 	for _, path := range mediaPaths {
 		t.Run("media "+path, func(t *testing.T) {
