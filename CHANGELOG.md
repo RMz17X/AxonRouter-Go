@@ -1,5 +1,42 @@
 # Changelog
 
+## [v1.10.54] - 2026-11-14
+
+### Fixed
+- **minimax**: Persist daily reward claim state in PostgreSQL ledger table (`minimaxClaimState`) so claimed accounts do not re-render the Claim button on quota pages when upstream signin status reads are flaky or delayed.
+- **minimax**: Enhance `is_today` parsing to accept truthy values (booleans, numeric, string flags) to prevent spurious 502 status failures.
+- **dashboard**: Quota tracker fail-closed on unknown claim status, showing the Claim button only when `todayStatus === 2` is explicitly confirmed.
+
+### Fix: the retention prune no longer deletes usageHistory rows before their numbers reach the daily rollup
+
+- The usage ledger is the billing ledger, and the retention prune (the boot-time pass behind `usageHistoryRetentionDays`, and the operator's `POST /api/settings/database/prune-usage`) DELETEs the rows it trims. Nothing wrote those rows' numbers anywhere first: the daily rollup (`usageDaily`) is filled by the live request path, so every row the prune removed took its day with it. The analytics that read the rollup — the Overview totals, the daily chart buckets, the trailing-year heatmap — lost those days permanently, and no amount of re-pruning brought them back.
+- The prune now rolls the doomed rows up into `usageDaily` BEFORE it deletes them (`Repo.RollupUsageHistoryBeforeDate`). The row's tokens, cost and request count are folded into its day's summary first, so the day survives the deletion of the rows that made it.
+- The rollup never double counts. The live path writes `usageDaily` in real time, so a day that already carries a summary must not absorb its raw rows again — the rollup backfills only the days the gateway never summarised (the days it was offline). The write goes through `Repo.FoldUsageDaily`, the same transactional fold the live path uses, so the day row is locked for the merge and a summary that lands mid-rollup is merged rather than overwritten.
+- The rollup keys its days by the process-local calendar day, the same anchor the live daily writer and the chart reader bucket by, so a day's traffic is not split across two date keys.
+- A failed ledger row folds as an error (requests and errors, no token movement), mirroring the live path's error fold — the day keeps its error count after the prune.
+- Upstream (#1056/#1059) landed the same fix. This port keeps the upstream's shape and adds the parts the fork's shape needs: the local-day anchor (upstream keyed on UTC, which split a day in two east of UTC), the fork's two success spellings (`success` from the chat writer, `ok` from the report writer), the fork's error-fold shape, and the transactional fold in place of upstream's full-row replace.
+- Verified with `TestPruneUsageHistory_RollsUpBeforeDeleting` (the pruned rows' totals land in `usageDaily` with the right tokens and cost, and the raw rows are gone), `TestPruneUsageHistory_RollupIsIdempotent` (an existing live summary is left untouched, and a day without one absorbs its rows exactly once however often the rollup runs), `TestPruneUsageHistory_RollupCountsFailedRequests` and `TestRollupUsageHistoryBeforeDate_KeepsLocalDayAnchor` — all against a real PostgreSQL.
+
+### feat(images): add OpenAI-compatible /v1/images/edits endpoint
+
+- `POST /v1/images/edits` now accepts both standard `multipart/form-data` and `application/json` payloads, bringing full compatibility with OpenAI SDKs and third-party tooling.
+- Parses `image` (file upload or URL/base64 Data URI), optional `mask`, `prompt`, `model`, `size`, `response_format`, `background`, `quality`, and `n`.
+- Forwards parsed requests to configured image edit providers (Codex or OpenAI-compatible backends) via the media forwarding pipeline.
+- Verified with table-driven tests for multipart parsing, JSON parsing, error validation on missing required fields, and provider routing.
+
+### feat(stream): output generation rate (tok/s) and max gap
+
+- Track token generation timing during SSE streaming in `internal/handlers/shared/types.go`:
+  `StreamMetrics` now records `OutputTokens`, `FirstToken`, `LastToken` and `MaxGapMs`.
+- `StreamMetrics.NoteOutput` stamps each streamed chunk and widens the max inter-token gap;
+  `TokPerSec` reports output tokens divided by elapsed seconds (tok/s).
+- Each streamed chunk is timed in the chat forwarder (`forward.go`, the Claude translation
+  branch) and via a `streamNoteWriter` wrapper around the response buffer in `fallback.go`,
+  so executor-backed providers are covered too without touching the SSE wire protocol.
+- The stream summary log line (`logUsage` in `usage.go`) now carries `tok_per_sec` and
+  `max_gap_ms` alongside the existing TTFT, latency and token figures.
+- Added unit tests in `internal/handlers/shared/types_test.go`.
+
 ## [v1.10.53] - 2026-11-14
 
 ### Added
