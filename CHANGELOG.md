@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.10.57] - 2026-11-15
+
+### Fixed
+- DeepAI was routable in the gateway but invisible in the dashboard: `web/public/providers/deepai.png` never existed, so every DeepAI tile fell back to the generic OpenAI glyph, and `web/src/lib/models.ts` carried only the `deepai`→`dai` alias mapping without a model block, so `getModelsByProviderId()` returned `[]` and the Available Models list rendered empty. The provider now ships DeepAI's own favicon (128×128) and the dashboard lists the same 21 models the gateway routes under `dai/` plus the 4 anonymous `daifree/` chat models. `deepai-free` and `daifree` resolve to the same artwork through `ICON_ALIASES` rather than a duplicated file.
+
+### Fixed
+- Rate-limit cooldowns for DeepAI and ElevenLabs swallowed the whole pool: a generic 429 throttle limit parsed no upstream duration and fell back to an exponential backoff that could park an account for minutes, and the upstream quota errors those two providers actually return (`character_limit_exceeded`, `machine_required`, `free daily theos`) matched no classification rule, so a character-limit exhaustion disabled the account outright instead of only the exhausted scope. Retry durations are now parsed from natural-language bodies (`try again in 30 seconds`, `resets in …`) and from structured keys (`retry_after`, `retryAfter`, `resets_at`, `resetsAt`), generic throttles for those two providers are capped at a 60-second cooldown so rotation keeps working, ElevenLabs character-limit exhaustion is marked exhausted rather than banned, and DeepAI frontier quotas lock the model instead of the account so unmetered models keep serving.
+
 ## [v1.10.56] - 2026-11-14
 
 ### Fixed
