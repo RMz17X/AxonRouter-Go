@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.10.69",
+  "latestVersion": "1.10.70",
   "releaseNotes": "v1.10.62: Restore provider connection counts in the media and STT dashboard views. The global connection list is no longer shipped to the browser on boot, so the media tiles that filtered it reported \"No connections\" for every provider. Counts now come from the /api/providers/stats aggregate, the per-provider roster is fetched per provider per page, and the pool toggle is one server-side statement (POST /api/providers/bulk-active)."
 }

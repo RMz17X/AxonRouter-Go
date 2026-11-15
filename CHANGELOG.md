@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.70] - 2026-11-15
+
+### Changed
+- The media provider detail pages now render the exact same Connections UI as the provider detail page. The Connections card of `ProviderDetailView` — toolbar (search, bulk reset, delete-selected, apply-proxy, bulk JWT import, export keys, share), round-robin/sticky strategy, proxy group lock, per-account rows with health, quota and cooldown state, one-by-one testing, priority reorder, and its add/edit/header-overrides modals — was extracted verbatim into a shared `ProviderConnectionsSection` component (2,624 lines) that both pages render. `ProviderDetailView` keeps its header status strip, all-connections toggle, freebuff flow, and models section reading the same connection state, now published by the section through bindable props; its own markup and handlers are otherwise unchanged (6,550 → 4,132 lines). The media pages' bespoke `MediaConnectionsCard` is deleted: media providers gain the full connection management surface (their pagination total now comes from provider stats, as on the detail page), and there is one roster UI to maintain instead of two divergent ones.
+
 ## [v1.10.69] - 2026-11-15
 
 ### Fixed
