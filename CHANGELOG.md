@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.68] - 2026-11-15
+
+### Fixed
+- CI test `TestAntigravityQuota_CoalescingAndThrottle` counted every HTTP call to its mock server, so the weekly fold (v1.10.66) — which adds a best-effort `retrieveUserQuotaSummary` fetch beside `fetchAvailableModels` — made a refresh count as 2 calls and failed the coalescing/throttle assertions in both the test and race-detector jobs. The mock now counts only `fetchAvailableModels` calls, which is the refresh whose coalescing and 30 s throttle the test measures; the weekly fetch keeps its own separate 3-minute cache. No production code changes.
+
 ## [v1.10.67] - 2026-11-15
 
 ### Fixed
