@@ -174,26 +174,8 @@ func IsAntigravityModelBlocked(connectionID, model string) bool {
 	// Check family weekly + 5h-session quotas (parity with
 	// decolua/9router#4209: session exhaustion blocks the family even when
 	// weekly remains).
-	if strings.Contains(model, "argon") {
-		for _, key := range []string{"argon_weekly", "argon_session"} {
-			if wq, exists := modelsMap[key]; exists {
-				if quotaEntryExhausted(wq, now) {
-					agQuotaMu.RUnlock()
-					return true
-				}
-			}
-		}
-	} else if strings.HasPrefix(model, "gemini-") {
-		for _, key := range []string{"gemini_weekly", "gemini_session"} {
-			if wq, exists := modelsMap[key]; exists {
-				if quotaEntryExhausted(wq, now) {
-					agQuotaMu.RUnlock()
-					return true
-				}
-			}
-		}
-	} else if strings.HasPrefix(model, "claude-") || strings.HasPrefix(model, "gpt-") {
-		for _, key := range []string{"claude_gpt_weekly", "claude_gpt_session"} {
+	if weeklyKey, sessionKey := antigravityFamilyKeys(model); weeklyKey != "" {
+		for _, key := range []string{weeklyKey, sessionKey} {
 			if wq, exists := modelsMap[key]; exists {
 				if quotaEntryExhausted(wq, now) {
 					agQuotaMu.RUnlock()
@@ -211,6 +193,68 @@ func IsAntigravityModelBlocked(connectionID, model string) bool {
 // here until reset".
 func quotaEntryExhausted(q AntigravityModelQuota, now time.Time) bool {
 	return q.RemainingPercentage <= 0 && !q.ResetAt.IsZero() && q.ResetAt.After(now)
+}
+
+// agWeeklyNearZeroPercent is the weekly-family remaining level at or below
+// which a 429 is treated as weekly exhaustion. The weekly bucket is the one
+// that actually gates generation (agy and the dashboard quota page both
+// display it); at ~0.1% remaining, production-sized generations draw bare
+// RESOURCE_EXHAUSTED 429s almost every time (measured 2026-11-15: 96 flash
+// failures against 4 successes pool-wide in 31 minutes), so the sliver is
+// not routable capacity — the account is done until the weekly reset.
+const agWeeklyNearZeroPercent = 1.0
+
+// antigravityFamilyKeys maps a model to the weekly and 5h-session quota keys
+// of its family in the quota cache. Empty strings mean the model belongs to
+// no tracked family.
+func antigravityFamilyKeys(model string) (weeklyKey, sessionKey string) {
+	switch {
+	case strings.Contains(model, "argon"):
+		return "argon_weekly", "argon_session"
+	case strings.HasPrefix(model, "gemini-"):
+		return "gemini_weekly", "gemini_session"
+	case strings.HasPrefix(model, "claude-") || strings.HasPrefix(model, "gpt-"):
+		return "claude_gpt_weekly", "claude_gpt_session"
+	}
+	return "", ""
+}
+
+// foldWeeklyIntoModelQuotas makes the family buckets binding on the per-model
+// entries: a model's effective remaining is the minimum of its per-model
+// fraction and its family's weekly and session fractions, and when a family
+// bucket is the binding one its (later) reset governs. fetchAvailableModels
+// per-model fractions do NOT reflect weekly group exhaustion — they read
+// 1.0 while the weekly bucket sits at 0.1% and generation 429s — so without
+// this fold every consumer of the cache (selection block, tokenmaxxing
+// scoring, the dashboard) sees an account as healthy while upstream refuses
+// it. The family entries themselves are also stored under their own keys,
+// which is what IsAntigravityModelBlocked's family checks read.
+func foldWeeklyIntoModelQuotas(quotas map[string]AntigravityModelQuota, weekly map[string]AntigravityWeeklyQuota) {
+	for modelKey, q := range quotas {
+		weeklyKey, sessionKey := antigravityFamilyKeys(modelKey)
+		for _, famKey := range []string{weeklyKey, sessionKey} {
+			if famKey == "" {
+				continue
+			}
+			wq, ok := weekly[famKey]
+			if !ok {
+				continue
+			}
+			if wq.RemainingPercentage < q.RemainingPercentage {
+				q.RemainingPercentage = wq.RemainingPercentage
+				if wq.ResetAt.After(q.ResetAt) {
+					q.ResetAt = wq.ResetAt
+				}
+			}
+		}
+		quotas[modelKey] = q
+	}
+	for k, wq := range weekly {
+		quotas[k] = AntigravityModelQuota{
+			RemainingPercentage: wq.RemainingPercentage,
+			ResetAt:             wq.ResetAt,
+		}
+	}
 }
 
 // RefreshAntigravityQuota fetches live quota for a connection from v1internal:fetchAvailableModels.
@@ -339,17 +383,18 @@ func RefreshAntigravityQuota(ctx context.Context, client *http.Client, connectio
 		}
 	}
 
-	// If no model quotas found (e.g. Free-tier accounts have weekly quotas only),
-	// best-effort fetch weekly quota summary (parity with Next.js open-sse/services/usage/google.js #3892)
-	if len(quotas) == 0 {
-		if weekly, err := FetchAntigravityWeeklyQuota(ctx, client, accessToken, projectID, userAgent); err == nil && len(weekly) > 0 {
-			for k, wq := range weekly {
-				quotas[k] = AntigravityModelQuota{
-					RemainingPercentage: wq.RemainingPercentage,
-					ResetAt:             wq.ResetAt,
-				}
-			}
-		}
+	// The weekly quota summary is ALWAYS fetched and folded in, not only
+	// when the per-model map is empty: the weekly family bucket is the limit
+	// that gates generation (it is what agy and the dashboard quota page
+	// display), while per-model fractions stay at 1.0 long after the weekly
+	// bucket is spent. Fetching it only for free-tier accounts left every
+	// account with per-model data permanently blind to its weekly state, so
+	// an exhausted account kept being routed and 429'd instead of parked
+	// until the weekly reset. Best-effort: a failed summary fetch leaves
+	// the per-model quotas untouched. (Parity with Next.js
+	// open-sse/services/usage/google.js #3892 for the summary itself.)
+	if weekly, err := FetchAntigravityWeeklyQuota(ctx, client, accessToken, projectID, userAgent); err == nil && len(weekly) > 0 {
+		foldWeeklyIntoModelQuotas(quotas, weekly)
 	}
 
 	// Re-assert active strike blocks so optimistic quota cannot resurrect blocked pair
@@ -435,6 +480,22 @@ func HandleAntigravityQuotaError(p AntigravityQuotaError) *time.Time {
 	}
 
 	now := time.Now().UTC()
+
+	// Family weekly gate: the weekly bucket is what actually refuses
+	// generation, and its 429s are the bare RESOURCE_EXHAUSTED shape with
+	// no explicit quota marker, so the per-model logic below waves them
+	// through as generic. When the refreshed weekly entry for this model's
+	// family is exhausted — or at the near-zero sliver where production
+	// generations effectively always fail — park the model until the
+	// weekly reset instead of letting the pool keep retrying it.
+	if weeklyKey, _ := antigravityFamilyKeys(p.Model); weeklyKey != "" {
+		if wq, ok := quotas[weeklyKey]; ok && !wq.ResetAt.IsZero() && wq.ResetAt.After(now) && wq.RemainingPercentage <= agWeeklyNearZeroPercent {
+			BlockAntigravityModelUntil(p.ConnectionID, p.Model, wq.ResetAt)
+			log.Warn("ag_quota", "weekly quota exhausted; CACHE_BLOCK until weekly reset", "connection", shortConn, "model", p.Model, "weeklyRemaining", wq.RemainingPercentage, "resetAt", wq.ResetAt.Format(time.RFC3339))
+			res := wq.ResetAt
+			return &res
+		}
+	}
 	for _, m := range checkModels {
 		if q, ok := quotas[m]; ok {
 			if quotaEntryExhausted(q, now) {
