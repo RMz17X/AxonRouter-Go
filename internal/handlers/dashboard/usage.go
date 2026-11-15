@@ -239,12 +239,12 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 
 	// Short response cache (upstream route.js): served before proxy
 	// resolution and token refresh, so a hit costs no upstream call at all.
-	// ?force=1 is the caller's explicit re-read and skips the lookup.
-	if r.URL.Query().Get("force") != "1" {
-		if body, ok := cachedUsageResponse(connID); ok {
-			writeRawUsageResponse(w, body)
-			return
-		}
+	// ?force=1 is the caller's explicit re-read, evicts the cache, and skips the lookup.
+	if r.URL.Query().Get("force") == "1" {
+		InvalidateUsageCache(connID)
+	} else if body, ok := cachedUsageResponse(connID); ok {
+		writeRawUsageResponse(w, body)
+		return
 	}
 
 	// Live provider quota fetchers (ports of open-sse/services/usage/*.js).

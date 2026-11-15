@@ -345,7 +345,7 @@
     // the upstream read as well).
     for (const target of activeTargets) {
       const conn = visible.find((c) => c.id === target.id)
-      if (conn && isMiniMaxClaimProvider(conn.provider)) void fetchMiniMaxClaimStatus(conn)
+      if (conn && isMiniMaxClaimProvider(conn.provider)) void fetchMiniMaxClaimStatus(conn, force)
     }
 
     await runQuotaFetchCycle<ConnectionUsageResponse>({
@@ -673,11 +673,11 @@
     )
   }
 
-  async function fetchMiniMaxClaimStatus(conn: ProviderConnection): Promise<void> {
-    if (conn.id in minimaxClaimStatus || minimaxClaimStatusInFlight.has(conn.id)) return
+  async function fetchMiniMaxClaimStatus(conn: ProviderConnection, force = false): Promise<void> {
+    if (!force && (conn.id in minimaxClaimStatus || minimaxClaimStatusInFlight.has(conn.id))) return
     minimaxClaimStatusInFlight.add(conn.id)
     try {
-      const status = await api.getMiniMaxClaimStatus(conn.id)
+      const status = await api.getMiniMaxClaimStatus(conn.id, force)
       minimaxClaimStatus = { ...minimaxClaimStatus, [conn.id]: status ?? null }
     } catch {
       minimaxClaimStatus = { ...minimaxClaimStatus, [conn.id]: null }
@@ -973,6 +973,10 @@
   }
 
   async function refreshProvider(connectionId: string, provider: string): Promise<void> {
+    if (isMiniMaxClaimProvider(provider)) {
+      const conn = connections.find((c) => c.id === connectionId)
+      if (conn) void fetchMiniMaxClaimStatus(conn, true)
+    }
     await fetchQuota(connectionId, provider, { force: true })
   }
 
@@ -980,6 +984,10 @@
     if (refreshingAll) return
     refreshingAll = true
     countdown = REFRESH_INTERVAL_MS / 1000
+
+    if (force) {
+      minimaxClaimStatus = {}
+    }
 
     // Throttle Claude: poll its quota every Nth auto-tick (manual force bypasses)
     const tick = ++tickCount
@@ -1661,6 +1669,19 @@
           {/each}
         </select>
       {/if}
+
+      <!-- Dedicated Force Refresh Button -->
+      <button
+        type="button"
+        onclick={() => refreshAll(true)}
+        disabled={refreshingAll || connectionsLoading}
+        aria-label="Refresh all quotas now"
+        title="Refresh all quotas now (Force live update)"
+        class="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-border-subtle bg-surface-2 px-2.5 text-xs text-text-main transition-colors hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span class="material-symbols-outlined text-[16px] {refreshingAll ? 'animate-spin' : ''}">refresh</span>
+        <span class="hidden sm:inline">Refresh</span>
+      </button>
 
       <Menu label="Quota tracker actions" triggerIcon="tune" minWidth="17rem">
         <MenuItem

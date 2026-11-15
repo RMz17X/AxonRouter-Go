@@ -2464,9 +2464,9 @@ export const api = {
       }
     ),
   // MiniMax Code Daily Rewards Claim
-  getMiniMaxClaimStatus: (connectionId: string) =>
+  getMiniMaxClaimStatus: (connectionId: string, force = false) =>
     request<MiniMaxSignInStatus>(
-      `/api/usage/${encodeURIComponent(connectionId)}/minimax-claim`
+      `/api/usage/${encodeURIComponent(connectionId)}/minimax-claim${force ? '?force=1' : ''}`
     ),
   claimMiniMaxReward: (connectionId: string) =>
     request<MiniMaxClaimResult>(

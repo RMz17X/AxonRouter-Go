@@ -388,14 +388,18 @@ func (h *DashboardHandler) HandleGetMiniMaxClaimStatus(w http.ResponseWriter, r 
 		return
 	}
 
-	if cached, ok := cachedClaimStatus(connID); ok {
+	isForced := r.URL.Query().Get("force") == "1"
+	if isForced {
+		invalidateClaimStatus(connID)
+	} else if cached, ok := cachedClaimStatus(connID); ok {
 		handlerutil.WriteJSON(w, http.StatusOK, cached)
 		return
 	}
 
 	// Fast path: if the ledger shows this connection already claimed today,
 	// return claimed status immediately without an upstream HTTP round trip.
-	if h.Repo != nil {
+	// When force=1 is explicitly requested by operator, skip fast path to read upstream.
+	if !isForced && h.Repo != nil {
 		if claimed, dayNo := h.Repo.MinimaxClaimedToday(connID); claimed {
 			resp := MiniMaxSignInStatus{
 				ConnectionID: connID,

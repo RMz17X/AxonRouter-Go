@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.10.72] - 2026-11-16
+
+### Added
+- Dedicated **Refresh** button on Quota Tracker dashboard toolbar. Clicking manual refresh bypasses the 5-minute MiniMax reward claim cache and evicts short usage response caches (`?force=1`), immediately fetching live claim and quota data from upstream.
+- Combo `maxContext` declaration field and PostgreSQL schema definition.
+
 ## [v1.10.71] - 2026-11-16
 
 ## Codex quota: a window without a percent figure is unknown, not untouched

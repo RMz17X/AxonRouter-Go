@@ -411,4 +411,5 @@ var pgGoOnlyColumns = [][3]string{
 	{"providerNodes", "quotaResetId", "BIGINT DEFAULT 0"},
 	{"providerNodes", "contractExpiresAt", "TEXT DEFAULT ''"},
 	{"combos", "matchRules", "TEXT DEFAULT '[]'"},
+	{"combos", "maxContext", "INTEGER"},
 }

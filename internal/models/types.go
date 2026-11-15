@@ -102,6 +102,18 @@ type Combo struct {
 	Kind      *string `json:"kind,omitempty"`
 	Models    string  `json:"models"`   // JSON string representing model selection details
 	Strategy  string  `json:"strategy"` // routing strategy: "fallback", "round-robin", "capacity", "fusion"
+	// MaxContext is the operator's declared context ceiling for this combo.
+	// It is what the combo PROMISES: /v1/models publishes it as the combo's
+	// context_length, so a client sizes its requests against this number
+	// rather than against the smallest seat in the tree. A member still has
+	// its own hard limit — the effective limit for a member is the smaller of
+	// the two — so a request that does not fit the member it lands on moves
+	// to the next member and fails outright when the member tried last
+	// cannot take it either.
+	//
+	// Nil means the combo declares nothing: the published limit stays the
+	// computed smallest-seat window, as before.
+	MaxContext *int `json:"maxContext,omitempty"`
 	CreatedAt string  `json:"createdAt"`
 	UpdatedAt string  `json:"updatedAt"`
 	// MatchRules is the raw JSON of the combo's smart rules. Empty means the
