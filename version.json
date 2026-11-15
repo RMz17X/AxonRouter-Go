@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.10.59",
-  "releaseNotes": "v1.9.53: Optimize provider detail view with on-demand server-side pagination and O(1) cached stats lookup, eliminating bulk 17MB payload downloads."
+  "latestVersion": "1.10.60",
+  "releaseNotes": "v1.10.60: Align /v1/images/edits with the OpenAI request contract. Unknown OpenAI fields (input_fidelity, output_format, output_compression, background, quality, user) are forwarded instead of dropped, the SDK image shapes (array, {image_url}, {url}) are accepted, file_id and mask references are refused with the upstream message, the forwarded request is presented as application/json, an oversized body answers 413 naming the limit, multipart dispatch is case-insensitive, a non-raster upload is refused instead of being coerced to image/png, and the image count is one number (16) enforced the same way in both lanes."
 }
