@@ -198,16 +198,39 @@ type StreamMetrics struct {
 	TTFT        int64       // ms from request start to first chunk
 	ResponseBuf ResponseBuf // accumulated response content (capped)
 
-	// Output generation rate metrics (streaming turns). OutputTokens counts
-	// output tokens captured in the streamed response buffer; FirstToken and
-	// LastToken bracket the streamed output; MaxGapMs is the widest gap between
+	// Output generation rate metrics (streaming turns). outputTokens counts
+	// output tokens captured in the streamed response buffer; firstToken and
+	// lastToken bracket the streamed output; maxGapMs is the widest gap between
 	// two consecutive streamed chunks, in milliseconds. All are logged in the
 	// stream summary without touching the SSE wire protocol.
-	OutputTokens int
-	FirstToken   time.Time
-	LastToken    time.Time
-	MaxGapMs     int64
+	//
+	// The counters are unexported so every read and write goes through the
+	// locked accessors below; a direct field write from a caller would race
+	// the stream writer that owns them.
+	outputTokens int
+	firstToken   time.Time
+	lastToken    time.Time
+	maxGapMs     int64
 	mu           sync.Mutex
+}
+
+// Reset clears the per-attempt capture state so a retry starts from a clean
+// slate. The reactive OAuth refresh path retries the same request in place
+// with the same metrics value; without a reset the second attempt inherits the
+// first attempt's buffer, first/last token stamps and max gap, so the token
+// rate and the gap metric describe two attempts mixed together and the
+// reported max gap swallows the refresh latency.
+func (m *StreamMetrics) Reset() {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ResponseBuf.Reset()
+	m.outputTokens = 0
+	m.firstToken = time.Time{}
+	m.lastToken = time.Time{}
+	m.maxGapMs = 0
 }
 
 // SetOutputTokens records the number of output tokens the turn produced. It is
@@ -218,11 +241,22 @@ func (m *StreamMetrics) SetOutputTokens(n int) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.OutputTokens = n
+	m.outputTokens = n
+}
+
+// OutputTokenCount returns the number of output tokens recorded for the
+// turn. It is the locked read of outputTokens.
+func (m *StreamMetrics) OutputTokenCount() int {
+	if m == nil {
+		return 0
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.outputTokens
 }
 
 // MaxGap returns the widest gap between two consecutive streamed chunks, in
-// milliseconds. It is the locked read of MaxGapMs, so a summary log taken
+// milliseconds. It is the locked read of maxGapMs, so a summary log taken
 // while a chunk is still landing cannot race the writer.
 func (m *StreamMetrics) MaxGap() int64 {
 	if m == nil {
@@ -230,7 +264,7 @@ func (m *StreamMetrics) MaxGap() int64 {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.MaxGapMs
+	return m.maxGapMs
 }
 
 // NoteOutput records one streamed chunk arriving at now, updating the first
@@ -242,12 +276,12 @@ func (m *StreamMetrics) NoteOutput(now time.Time) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.FirstToken.IsZero() {
-		m.FirstToken = now
-	} else if gap := now.Sub(m.LastToken).Milliseconds(); gap > m.MaxGapMs {
-		m.MaxGapMs = gap
+	if m.firstToken.IsZero() {
+		m.firstToken = now
+	} else if gap := now.Sub(m.lastToken).Milliseconds(); gap > m.maxGapMs {
+		m.maxGapMs = gap
 	}
-	m.LastToken = now
+	m.lastToken = now
 }
 
 // ElapsedMs returns the ms from the first streamed chunk to the last, or zero
@@ -269,21 +303,21 @@ func (m *StreamMetrics) TokPerSec() float64 {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.OutputTokens == 0 {
+	if m.outputTokens == 0 {
 		return 0
 	}
 	if elapsed := m.elapsedMsLocked(); elapsed > 0 {
-		return float64(m.OutputTokens) / (float64(elapsed) / 1000)
+		return float64(m.outputTokens) / (float64(elapsed) / 1000)
 	}
 	return 0
 }
 
 // elapsedMsLocked is ElapsedMs with the lock already held.
 func (m *StreamMetrics) elapsedMsLocked() int64 {
-	if m.FirstToken.IsZero() || m.LastToken.IsZero() {
+	if m.firstToken.IsZero() || m.lastToken.IsZero() {
 		return 0
 	}
-	return m.LastToken.Sub(m.FirstToken).Milliseconds()
+	return m.lastToken.Sub(m.firstToken).Milliseconds()
 }
 
 // UpstreamError is an alias for proxy.UpstreamError — retryable errors from upstream.

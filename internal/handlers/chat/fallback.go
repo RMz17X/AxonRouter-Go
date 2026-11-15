@@ -1439,6 +1439,11 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		if rErr == nil && refreshedKey != "" && refreshedKey != apiKey {
 			log.InfoCtx(ctx, "fallback", "reactive 401 token refresh success, retrying request", "conn", connectionID)
 			apiKey = NormalizeProviderToken(provider, refreshedKey)
+			// The retry reuses this metrics value, and the first attempt may
+			// already have captured chunks before the 401. Reset it so the
+			// rate and max-gap metrics describe the retry alone instead of
+			// blending two attempts and counting the refresh pause as a gap.
+			metrics.Reset()
 			if exec := resolveExecutor(provider, wireModel, providerCfg, claudeNative, upstreamClaude); exec != nil {
 				retryReq := &executor.Request{
 					Ctx:            ctx,

@@ -45,13 +45,13 @@ func TestStreamMetrics_TokPerSec(t *testing.T) {
 	m := &StreamMetrics{}
 
 	// Nothing streamed: zero on every axis.
-	if m.TokPerSec() != 0 || m.ElapsedMs() != 0 || m.OutputTokens != 0 {
+	if m.TokPerSec() != 0 || m.ElapsedMs() != 0 || m.OutputTokenCount() != 0 {
 		t.Fatalf("empty metrics must report zero: tokPerSec=%v elapsed=%d tokens=%d",
-			m.TokPerSec(), m.ElapsedMs(), m.OutputTokens)
+			m.TokPerSec(), m.ElapsedMs(), m.OutputTokenCount())
 	}
 
 	// First chunk seeds both ends.
-	m.OutputTokens = 3
+	m.SetOutputTokens(3)
 	m.NoteOutput(now)
 	m.NoteOutput(now)
 	if got := m.ElapsedMs(); got != 0 {
@@ -62,13 +62,13 @@ func TestStreamMetrics_TokPerSec(t *testing.T) {
 	}
 
 	// A gap later: rate scales with elapsed time, max gap tracks.
-	m.OutputTokens = 10
+	m.SetOutputTokens(10)
 	oneSec := now.Add(time.Second)
 	m.NoteOutput(oneSec)
 	if got := m.ElapsedMs(); got != 1000 {
 		t.Errorf("elapsed=%d, want 1000", got)
 	}
-	if got := m.MaxGapMs; got != 1000 {
+	if got := m.MaxGap(); got != 1000 {
 		t.Errorf("maxGap=%d, want 1000", got)
 	}
 	if got := m.TokPerSec(); got != 10 {
@@ -76,10 +76,10 @@ func TestStreamMetrics_TokPerSec(t *testing.T) {
 	}
 
 	// An in-stream stall: two chunks far apart, then more tokens.
-	m.OutputTokens = 20
+	m.SetOutputTokens(20)
 	twoSec := oneSec.Add(2 * time.Second)
 	m.NoteOutput(twoSec)
-	if got := m.MaxGapMs; got != 2000 {
+	if got := m.MaxGap(); got != 2000 {
 		t.Errorf("maxGap=%d, want 2000", got)
 	}
 	// Rate = total output tokens over total elapsed time: 20 tok / 3 s.
