@@ -102,6 +102,68 @@ func (r *Repo) SetConnectionStatus(id string, isActive bool) error {
 	return nil
 }
 
+// SetProviderConnectionsActive flips every connection of one provider to
+// the given active state in a single statement.
+//
+// The dashboard's per-provider toggle used to issue one PUT per connection.
+// A provider with a thousand-plus accounts (Cloudflare AI in the media
+// pool) turned one click into a thousand sequential HTTP round trips, which
+// parked the browser for minutes and could leave the pool half-toggled when
+// the tab was closed mid-flight. The statement here is one write over the
+// provider's whole pool, so the toggle is atomic by construction.
+//
+// The data blob is updated in the same statement, mirroring the per-row
+// SetConnectionStatus: the status/testStatus pair is what the dashboard
+// reads back, and a row whose isActive says "active" while its blob still
+// says "disabled" renders as a broken account in every list.
+func (r *Repo) SetProviderConnectionsActive(provider string, isActive bool) (int64, error) {
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	var query string
+	var args []any
+	if isActive {
+		query = `UPDATE providerConnections
+		 SET isActive = 1,
+		     data = ` + jsonSetExpr("data",
+			jsonSetPairAt(jsonStringLiteral("active"), "status"),
+			jsonSetPairAt(jsonStringLiteral("active"), "testStatus"),
+			jsonSetPairAt(jsonNullSQLValue(), "lastError"),
+			jsonSetPairAt(jsonNullSQLValue(), "disabledReason"),
+			jsonSetPairAt(jsonNullSQLValue(), "disabledAt"),
+			jsonSetPairAt(jsonNullSQLValue(), "oauthLockedUntil"),
+			jsonSetPairAt(jsonNullSQLValue(), keyOAuthLockEligibleAt),
+			jsonSetPairAt(jsonIntLiteral(0), "oauthFailureCount"),
+		)+`,
+		     updatedAt = ?
+		 WHERE provider = ?`
+		args = append(args, now, provider)
+	} else {
+		query = `UPDATE providerConnections
+		 SET isActive = 0,
+		     data = ` + jsonSetExpr("data",
+			jsonSetPairAt(jsonStringLiteral("disabled"), "status"),
+			jsonSetPairAt(jsonStringLiteral("disabled"), "testStatus"),
+		)+`,
+		     updatedAt = ?
+		 WHERE provider = ?`
+		args = append(args, now, provider)
+	}
+
+	res, err := r.Exec(r.Rebind(query), args...)
+	if err != nil {
+		return 0, fmt.Errorf("set provider connections active %s: %w", provider, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		// The write landed; only the count is unavailable. The caller
+		// treats a zero count as "nothing to do", so reporting it as
+		// an error would fail a toggle that actually succeeded.
+		affected = 0
+	}
+	r.invalidateProviderConnections()
+	return affected, nil
+}
+
 // SetConnectionPriority updates the priority and updatedAt of a provider connection.
 func (r *Repo) SetConnectionPriority(id string, priority int) error {
 	now := time.Now().UTC().Format(time.RFC3339)

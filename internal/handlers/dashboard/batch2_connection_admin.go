@@ -278,6 +278,67 @@ func (h *DashboardHandler) HandleBulkResetStatus(w http.ResponseWriter, r *http.
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "count": count})
 }
 
+// HandleBulkActive serves POST /api/providers/bulk-active: flips every
+// connection of one provider to active or inactive in a single write.
+//
+// The dashboard's per-provider toggle used to fan out one PUT per
+// connection from the browser. A provider with a thousand-plus accounts
+// (Cloudflare AI in the media pool) turned one click into a thousand
+// sequential HTTP round trips — the tab parked for minutes, and closing it
+// mid-flight left the pool half-toggled. One statement over the provider's
+// whole pool is atomic by construction.
+//
+// An explicit id list is honoured instead of the whole provider, so the
+// same route can serve a selected subset.
+func (h *DashboardHandler) HandleBulkActive(w http.ResponseWriter, r *http.Request) {
+	body, ok := readBulkBody(w, r, http.StatusBadRequest, "Failed to update connection state")
+	if !ok {
+		return
+	}
+	if body.Provider == "" && len(body.IDs) == 0 {
+		handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "provider or ids is required"})
+		return
+	}
+	// "active" defaults to true so a body that only names the provider
+	// activates the pool; an explicit false deactivates it.
+	targetActive := true
+	if body.Action != "" {
+		switch strings.ToLower(strings.TrimSpace(body.Action)) {
+		case "activate", "enable", "active", "on", "true":
+			targetActive = true
+		case "deactivate", "disable", "inactive", "off", "false":
+			targetActive = false
+		default:
+			handlerutil.WriteJSON(w, http.StatusBadRequest, map[string]any{"error": "action must be activate or deactivate"})
+			return
+		}
+	}
+
+	if len(body.IDs) > 0 {
+		count := 0
+		for _, id := range body.IDs {
+			if id == "" {
+				continue
+			}
+			if err := h.Repo.SetConnectionStatus(id, targetActive); err != nil {
+				handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to update connection state"})
+				return
+			}
+			count++
+		}
+		handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "count": count})
+		return
+	}
+
+	provider := providers.ResolveAlias(body.Provider)
+	affected, err := h.Repo.SetProviderConnectionsActive(provider, targetActive)
+	if err != nil {
+		handlerutil.WriteJSON(w, http.StatusInternalServerError, map[string]any{"error": "Failed to update connection state"})
+		return
+	}
+	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "count": affected})
+}
+
 // HandleBulkProxy serves POST /api/providers/bulk-proxy: bulk proxy binding
 // over a provider's connections (or an explicit id list), written into
 // data.providerSpecificData exactly as AxonRouter's bulkUpdateProviderProxy.

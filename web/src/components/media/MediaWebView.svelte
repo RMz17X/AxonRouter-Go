@@ -5,14 +5,19 @@
   import Badge from '../../lib/ui/Badge.svelte'
   import ProviderArtwork from '../providers/ProviderArtwork.svelte'
   import Button from '../../lib/ui/Button.svelte'
+  import { getMediaProviderStats, type MediaSummaryStats } from './mediaTypes'
   interface Props {
     connections?: ProviderConnection[]
+    /** Per-provider counters from /api/providers/stats. The global connection
+     *  list is no longer loaded on boot, so a tile that filters it would read
+     *  "No connections" for every provider. */
+    providerStats?: MediaSummaryStats
     combos?: Combo[]
     onRefresh: () => void
     onSelectProvider: (kind: 'webSearch' | 'webFetch', providerId: string) => void
   }
 
-  let { connections = [], combos = [], onRefresh, onSelectProvider }: Props = $props()
+  let { connections = [], providerStats = {}, combos = [], onRefresh, onSelectProvider }: Props = $props()
 
   let searchProviders = $derived(getProvidersByKind('webSearch'))
   let fetchProviders = $derived(getProvidersByKind('webFetch'))
@@ -35,11 +40,12 @@
     }
   }
 
+  // Counts come from the per-provider aggregate, not from the global
+  // connection list: that list is no longer shipped to the browser on boot,
+  // so filtering it reported "No connections" for every provider.
   function getStats(providerId: string, noAuth = false) {
-    const list = connections.filter((c) => c.provider === providerId)
-    const connected = list.filter((c) => (c.testStatus === 'active' || c.testStatus === 'success' || !c.testStatus) && c.isActive === 1 && !c.lastError).length
-    const error = list.filter((c) => c.testStatus === 'error' || !!c.lastError).length
-    return { total: list.length, connected, error, allDisabled: list.length > 0 && list.every((c) => c.isActive === 0), noAuth }
+    const s = getMediaProviderStats(connections, providerId, noAuth, providerStats)
+    return { total: s.total, connected: s.active, error: s.errorCount, allDisabled: s.status === 'disabled', noAuth }
   }
 
   function openCreateDialog(kind: 'webSearch' | 'webFetch') {

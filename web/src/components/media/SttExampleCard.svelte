@@ -1,18 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, getStoredAPIKey, type APIKey, type ProviderConnection } from '../../api/client'
+  import { api, getStoredAPIKey, type APIKey } from '../../api/client'
   import { copyToClipboard } from '../../lib/clipboard'
   import { getModelKind, getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from '../../lib/models'
   import { parseCustomModelsResponse, subscribeCustomModelsChanged } from '../../lib/customModels'
   import Card from '../../lib/ui/Card.svelte'
+  import { loadMediaRoster, mediaRoster } from './mediaConnectionStore.svelte'
 
   interface Props {
     providerId: string
     apiKeys?: APIKey[]
-    connections?: ProviderConnection[]
   }
 
-  let { providerId, apiKeys = [], connections = [] }: Props = $props()
+  let { providerId, apiKeys = [] }: Props = $props()
 
   let builtinSttModels = $derived(getModelsByProviderId(providerId).filter((m) => getModelKind(m) === 'stt'))
   let customSttModels = $state<any[]>([])
@@ -48,7 +48,19 @@
   let copiedRes = $state(false)
 
   let activeApiKey = $state('')
-  let connectionCount = $derived(connections.filter((c) => c.provider === providerId && c.isActive !== 0).length)
+  // The connection count comes from the per-provider roster store, not from
+  // the global connection list: the dashboard stopped shipping that list to
+  // the browser on boot, so filtering it always yielded zero and the card
+  // claimed the provider had no active connections.
+  let connectionCount = $derived(
+    mediaRoster(providerId).connections.filter((c) => c.provider === providerId && c.isActive !== 0).length
+  )
+
+  // Load this provider's roster so the count above is real.
+  $effect(() => {
+    const pid = providerId
+    void loadMediaRoster(pid, 1, 25)
+  })
 
   onMount(() => {
     const stored = getStoredAPIKey()

@@ -1590,6 +1590,18 @@ export const api = {
         body: JSON.stringify(payload),
       }
     ),
+  // bulkActive flips a whole provider pool (or an explicit id list) to
+  // active/inactive in one server-side statement. The browser-side fan-out
+  // this replaces cost one HTTP round trip per account — a thousand-account
+  // provider turned one click into a thousand requests.
+  bulkActive: (payload: { provider?: string; ids?: string[]; action?: string }) =>
+    request<{ ok: boolean; count?: number }>(
+      '/api/providers/bulk-active',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    ),
   // CodeBuddy-family bulk JWT import (codebuddy-cn / codebuddy-intl /
   // workbuddy): the pasted text is parsed server-side (account JSON,
   // JSON lines, or name|token lines) and answered with counts plus a

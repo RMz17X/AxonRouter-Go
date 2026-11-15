@@ -1,7 +1,6 @@
 import type { ProviderConnection } from '../../api/client'
 
 export type MediaKind = 'embedding' | 'image' | 'tts' | 'stt' | 'video' | 'systemone' | 'webSearch' | 'webFetch'
-
 export interface MediaKindInfo {
   kind: MediaKind
   title: string
@@ -77,33 +76,96 @@ export interface MediaProviderStats {
   connections: ProviderConnection[]
 }
 
+/**
+ * The per-provider aggregate shape served by GET /api/providers/stats:
+ * provider id -> auth type -> counters.
+ */
+export type MediaSummaryStats = Record<
+  string,
+  Record<
+    string,
+    {
+      total?: number
+      connected?: number
+      error?: number
+      exhausted?: number
+      allDisabled?: boolean
+      states?: Record<string, number>
+    }
+  >
+>
+
+/**
+ * Counts a provider's connections for a media tile.
+ *
+ * `summaryStats` is the aggregate the dashboard already loads from
+ * /api/providers/stats. It is the preferred source: the full connection
+ * list is no longer shipped to the browser on boot, so a tile that filters
+ * the (now empty) global list would render "No connections" for a provider
+ * with hundreds of live accounts.
+ *
+ * The connection list is still accepted, and is used as a fallback for
+ * callers that hold a provider's roster directly (the detail page loads one
+ * provider's rows on demand).
+ */
 export function getMediaProviderStats(
   connections: ProviderConnection[],
   providerId: string,
-  noAuth?: boolean
+  noAuth?: boolean,
+  summaryStats?: MediaSummaryStats
 ): MediaProviderStats {
   const list = connections.filter((c) => c.provider === providerId)
-  const activeList = list.filter((c) => c.isActive === 1)
-  const errorList = list.filter((c) => c.testStatus === 'error' || (c.testStatus !== 'active' && c.testStatus !== 'passed' && Boolean(c.lastError)))
-  const allDisabled = list.length > 0 && activeList.length === 0
+
+  let total: number
+  let active: number
+  let errorCount: number
+  let allDisabled: boolean
+
+  const provStats = summaryStats?.[providerId]
+  if (provStats && Object.keys(provStats).length > 0) {
+    total = 0
+    active = 0
+    errorCount = 0
+    allDisabled = true
+    for (const stat of Object.values(provStats)) {
+      total += stat.total || 0
+      active += stat.connected || 0
+      errorCount += stat.error || 0
+      if (!stat.allDisabled && (stat.connected || 0) > 0) allDisabled = false
+    }
+    // A provider with rows but no live connection is "disabled", not
+    // "none" — the aggregate reports total > 0 in that case.
+    if (total === 0) allDisabled = false
+  } else {
+    total = list.length
+    const activeList = list.filter((c) => c.isActive === 1)
+    active = activeList.length
+    errorCount = list.filter(
+      (c) => c.testStatus === 'error' || (c.testStatus !== 'active' && c.testStatus !== 'passed' && Boolean(c.lastError))
+    ).length
+    allDisabled = total > 0 && activeList.length === 0
+  }
 
   let status: 'connected' | 'ready' | 'error' | 'none' | 'disabled' = 'none'
-  if (errorList.length > 0) {
+  if (errorCount > 0) {
     status = 'error'
   } else if (allDisabled) {
     status = 'disabled'
-  } else if (activeList.length > 0) {
+  } else if (active > 0) {
     status = 'connected'
   } else if (noAuth) {
     status = 'ready'
-  } else {
-    status = 'none'
+  } else if (total > 0) {
+    // Rows exist but none are connected and none are in error: the pool is
+    // present but parked (cooldown, validation, model lock). Reporting
+    // "none" here would read as "no accounts configured".
+    status = 'disabled'
   }
 
   return {
-    total: list.length,
-    active: activeList.length,
-    errorCount: errorList.length,
+    total,
+    active,
+    errorCount,
     status,
     connections: list,
   }

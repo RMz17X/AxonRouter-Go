@@ -1,22 +1,22 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, getStoredAPIKey, type APIKey, type ProviderConnection, type Settings } from '../../api/client'
+  import { api, getStoredAPIKey, type APIKey, type Settings } from '../../api/client'
   import { emailPrivacy, formatEmailLabel } from '../../lib/privacy'
   import { copyToClipboard } from '../../lib/clipboard'
   import { getModelKind, getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from '../../lib/models'
   import { parseCustomModelsResponse, subscribeCustomModelsChanged } from '../../lib/customModels'
   import type { ProviderCatalogItem } from '../../lib/providers'
-  import Badge from '../../lib/ui/Badge.svelte'
-  import ProviderArtwork from '../providers/ProviderArtwork.svelte'
   import { type MediaKind, MEDIA_KIND_INFO } from './mediaTypes'
+  import { loadMediaRoster, mediaRoster } from './mediaConnectionStore.svelte'
 
   import TtsExampleCard from './TtsExampleCard.svelte'
   import SttExampleCard from './SttExampleCard.svelte'
+  import MediaConnectionsCard from './MediaConnectionsCard.svelte'
+  import MediaProviderHeader from './MediaProviderHeader.svelte'
 
   interface Props {
     provider: ProviderCatalogItem
     kind: MediaKind
-    connections?: ProviderConnection[]
     apiKeys?: APIKey[]
     settings?: Settings
     onBack: () => void
@@ -26,7 +26,6 @@
   let {
     provider,
     kind,
-    connections = [],
     apiKeys = [],
     settings = {},
     onBack,
@@ -58,158 +57,15 @@
   let kindTitle = $derived(KIND_LABELS[kind] || MEDIA_KIND_INFO[kind]?.title || kind)
   let parentPath = $derived(KIND_PATHS[kind] || `/dashboard/media-providers/${kind}`)
 
-  // Strategy & Round Robin
-  let isRoundRobin = $state(false)
-  let stickyLimit = $state('1')
+  // The playground's connection picker reads the same per-provider roster the
+  // Connections card loads. The global connection list is no longer shipped
+  // to the browser, so this cannot be derived from `connections` any more.
+  let playgroundConns = $derived(mediaRoster(provider.id).connections)
 
   $effect(() => {
-    const strategy = settings?.providerStrategies?.[provider.id]
-    isRoundRobin = strategy?.fallbackStrategy === 'round-robin'
-    stickyLimit = String(strategy?.stickyRoundRobinLimit ?? 1)
+    const pid = provider.id
+    void loadMediaRoster(pid, 1, 25)
   })
-
-  async function toggleRoundRobin() {
-    isRoundRobin = !isRoundRobin
-    const current = settings?.providerStrategies || {}
-    const updated = {
-      ...current,
-      [provider.id]: {
-        ...(current[provider.id] || {}),
-        fallbackStrategy: isRoundRobin ? 'round-robin' : 'priority',
-        stickyRoundRobinLimit: Number(stickyLimit) || 1
-      }
-    }
-    try {
-      await api.updateSettings({ providerStrategies: updated })
-      onRefresh()
-    } catch (e) {
-      console.error('Failed to toggle round robin', e)
-    }
-  }
-
-  async function handleStickyLimitChange() {
-    if (!isRoundRobin) return
-    const current = settings?.providerStrategies || {}
-    const updated = {
-      ...current,
-      [provider.id]: {
-        ...(current[provider.id] || {}),
-        fallbackStrategy: 'round-robin',
-        stickyRoundRobinLimit: Number(stickyLimit) || 1
-      }
-    }
-    try {
-      await api.updateSettings({ providerStrategies: updated })
-      onRefresh()
-    } catch (e) {
-      console.error('Failed to update sticky limit', e)
-    }
-  }
-
-  // Connections state
-  let providerConns = $derived(connections.filter((c) => c.provider === provider.id))
-  let showAddConnModal = $state(false)
-  let newConnKey = $state('')
-  let newConnName = $state('')
-  let newConnError = $state('')
-  let isSavingConn = $state(false)
-
-  let editingConn = $state<ProviderConnection | null>(null)
-  let editConnName = $state('')
-  let isEditingActive = $state(true)
-  // Non-null while a reorder request is in flight.
-  let reorderingConnId = $state<string | null>(null)
-
-  async function handleToggleConnActive(conn: ProviderConnection) {
-    try {
-      await api.updateConnection(conn.id, { isActive: conn.isActive === 1 ? 0 : 1 })
-      onRefresh()
-    } catch (e) {
-      console.error('Failed to toggle connection active', e)
-    }
-  }
-
-  async function handleDeleteConn(id: string) {
-    if (!confirm('Are you sure you want to delete this connection?')) return
-    try {
-      await api.deleteConnection(id)
-      onRefresh()
-    } catch (e) {
-      console.error('Failed to delete connection', e)
-    }
-  }
-
-  // Single server-side transactional call instead of two independent PUTs:
-  // a partial failure between those two writes left two rows sharing a
-  // priority, and a stable sort over tied priorities made every later click a
-  // literal no-op. The in-flight flag also stops a second click from firing a
-  // swap computed from the same stale list.
-  async function handleMovePriority(idx: number, delta: -1 | 1) {
-    const conn = providerConns[idx]
-    if (!conn || reorderingConnId) return
-    const target = providerConns[idx + delta]
-    if (!target) return
-    reorderingConnId = conn.id
-    try {
-      await api.reorderConnection(conn.id, delta < 0 ? 'up' : 'down')
-      onRefresh()
-    } catch (e) {
-      alert(`Reorder failed: ${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      reorderingConnId = null
-    }
-  }
-
-  async function handleSaveNewConnection() {
-    if (!newConnKey.trim()) {
-      newConnError = 'API Key is required.'
-      return
-    }
-    isSavingConn = true
-    newConnError = ''
-    try {
-      await api.createConnection({
-        provider: provider.id,
-        authType: 'apikey',
-        apiKey: newConnKey.trim(),
-        name: newConnName.trim() || undefined
-      })
-      showAddConnModal = false
-      newConnKey = ''
-      newConnName = ''
-      onRefresh()
-    } catch (err) {
-      newConnError = err instanceof Error ? err.message : String(err)
-    } finally {
-      isSavingConn = false
-    }
-  }
-
-  function handleOpenEditConn(conn: ProviderConnection) {
-    editingConn = conn
-    editConnName = formatEmailLabel(conn.displayName || conn.name, $emailPrivacy) || ''
-    isEditingActive = conn.isActive === 1
-  }
-
-  async function handleSaveEditedConn() {
-    if (!editingConn) return
-    try {
-      const payload: { name?: string; isActive?: number } = {
-        isActive: isEditingActive ? 1 : 0
-      }
-      const trimmed = editConnName.trim()
-      const original = (editingConn.displayName || editingConn.name || '').trim()
-      const masked = formatEmailLabel(original, $emailPrivacy).trim()
-      if (trimmed !== original && trimmed !== masked) {
-        payload.name = trimmed || undefined
-      }
-      await api.updateConnection(editingConn.id, payload)
-      editingConn = null
-      onRefresh()
-    } catch (err) {
-      alert(`Save failed: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  }
 
   // Models state — upstream parity (ModelsCard kindFilter): builtin filtered by
   // kind + custom models for this provider+kind (providerAlias match, builtin dedupe).
@@ -609,205 +465,15 @@
 </script>
 
 <div class="flex flex-col gap-8 animate-fade-in max-w-7xl mx-auto">
-  <!-- 1. Header (Back button, Provider Avatar, Name, Get Key, Service Badges) -->
-  <div>
-    <a
-      class="inline-flex items-center gap-1 text-sm text-text-muted hover:text-primary transition-colors mb-4 cursor-pointer"
-      href={parentPath}
-      onclick={(e) => { e.preventDefault(); onBack() }}
-    >
-      <span class="material-symbols-outlined text-lg">arrow_back</span>
-      {kindTitle}
-    </a>
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-      <div
-        class="size-12 rounded-lg flex items-center justify-center shrink-0 border border-border/40 overflow-hidden"
-        style="background-color: {provider.color ? provider.color + '15' : '#88888815'}"
-      >
-        <ProviderArtwork
-          id={provider.id}
-          alt={provider.name}
-          class="object-contain size-8 rounded text-sm leading-none font-semibold"
-        />
-      </div>
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-3">
-          <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-text-main">{provider.name}</h1>
-          {#if provider.notice?.apiKeyUrl || provider.website}
-            <a
-              href={provider.notice?.apiKeyUrl || provider.website}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="text-xs text-primary hover:underline inline-flex items-center gap-1"
-            >
-              <span class="material-symbols-outlined text-sm">open_in_new</span>
-              Get API Key
-            </a>
-          {/if}
-          <!-- Media tabs never mount the Providers view, so without a toggle
-               here the masking applied elsewhere is unreachable from the
-               seven tabs that mount this component. -->
-          <button
-            type="button"
-            onclick={() => emailPrivacy.toggle()}
-            aria-pressed={$emailPrivacy}
-            class="ml-auto flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2 text-xs transition-colors cursor-pointer {$emailPrivacy
-              ? 'border-brand-500/40 bg-brand-500/10 text-brand-500 font-medium'
-              : 'border-border-subtle bg-surface text-text-muted hover:text-text-main hover:bg-surface-2'}"
-            title={$emailPrivacy ? 'Show full email' : 'Mask / hide email'}
-          >
-            <span class="material-symbols-outlined text-[16px]">{$emailPrivacy ? 'visibility_off' : 'visibility'}</span>
-            <span class="hidden sm:inline">{$emailPrivacy ? 'Email Masked' : 'Mask Email'}</span>
-          </button>
-        </div>
-        <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-          {#each provider.serviceKinds || [] as sk}
-            <Badge tone={sk.toLowerCase() === kind.toLowerCase() ? 'primary' : 'default'} size="sm">
-              {sk.toUpperCase()}
-            </Badge>
-          {/each}
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- 1-2. Header + Notice Banner. Extracted to its own component: the
+       email-masking toggle lives with the header that owns it. -->
+  <MediaProviderHeader {provider} {kind} {kindTitle} {parentPath} onBack={onBack} />
 
-  <!-- 2. Notice Banner (Free tier / sign up) -->
-  {#if provider.notice?.text}
-    <div class="flex flex-col gap-2 rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 sm:flex-row sm:items-center">
-      <span class="material-symbols-outlined text-[16px] text-blue-500 shrink-0">info</span>
-      <p class="min-w-0 flex-1 text-xs leading-relaxed text-blue-600 dark:text-blue-400">{provider.notice.text}</p>
-      {#if provider.notice.apiKeyUrl}
-        <a
-          href={provider.notice.apiKeyUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="inline-flex justify-center rounded bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-600 sm:py-0.5"
-        >
-          Get API Key →
-        </a>
-      {/if}
-    </div>
-  {/if}
-
-  <!-- 3. Connections Card. NoAuth providers have no connections to list, and
-       their proxy strategy is NOT set here: the card that owns it lives on the
-       provider's Connections detail page (ProviderDetailView). This page used
-       to render that card too, offering a chat-egress setting media handlers
-       never read — one setting, one home. -->
+  <!-- 3. Connections Card. Extracted to its own component: the roster is
+       fetched per provider now that the dashboard no longer ships the
+       whole connection list to the browser. -->
   {#if !provider.noAuth}
-    <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6">
-      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-        <h2 class="text-lg font-semibold text-text-main">Connections</h2>
-        <div class="flex flex-wrap items-center gap-2">
-          <span class="text-xs text-text-muted font-medium">Round Robin</span>
-          <div class="flex items-center gap-3">
-            <button
-              type="button"
-              role="switch"
-              aria-label="Round Robin"
-              aria-checked={isRoundRobin}
-              onclick={toggleRoundRobin}
-              class="relative inline-flex shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-brand-500/30 {isRoundRobin ? 'bg-brand-500' : 'bg-surface-3'} w-11 h-6"
-            >
-              <span class="pointer-events-none inline-block rounded-full bg-white shadow-sm transform transition duration-200 ease-in-out {isRoundRobin ? 'translate-x-5' : 'translate-x-0.5'} size-5 mt-0.5"></span>
-            </button>
-          </div>
-          {#if isRoundRobin}
-            <div class="flex flex-wrap items-center gap-1.5 ml-2">
-              <span class="text-xs text-text-muted">Sticky:</span>
-              <input
-                type="number"
-                min="1"
-                bind:value={stickyLimit}
-                onchange={handleStickyLimitChange}
-                class="w-16 px-2 py-1 text-xs border border-border rounded-md bg-background text-text-main focus:outline-none focus:border-brand-500"
-              />
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      {#if providerConns.length === 0}
-        <div class="flex flex-col items-center justify-center py-8 border border-dashed border-border rounded-xl text-text-muted text-xs gap-2">
-          <span>No connections yet for {provider.name}.</span>
-          <button
-            type="button"
-            onclick={() => (showAddConnModal = true)}
-            class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 transition-colors cursor-pointer"
-          >
-            <span class="material-symbols-outlined text-sm">add</span>
-            Add Connection
-          </button>
-        </div>
-      {:else}
-        <div class="flex flex-col gap-2">
-          {#each providerConns as conn, idx (conn.id)}
-            <div class="flex flex-col gap-2 p-3 rounded-lg border border-border bg-sidebar/50 sm:flex-row sm:items-center sm:justify-between">
-              <div class="flex items-center gap-2 min-w-0">
-                <div class="flex flex-col items-center gap-0.5 shrink-0">
-                  <button
-                    type="button"
-                    disabled={idx === 0 || !!reorderingConnId}
-                    onclick={() => handleMovePriority(idx, -1)}
-                    class="p-1 text-text-muted hover:text-text-main disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                    title="Move Up"
-                  >
-                    <span class="material-symbols-outlined text-sm">keyboard_arrow_up</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={idx === providerConns.length - 1 || !!reorderingConnId}
-                    onclick={() => handleMovePriority(idx, 1)}
-                    class="p-1 text-text-muted hover:text-text-main disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                    title="Move Down"
-                  >
-                    <span class="material-symbols-outlined text-sm">keyboard_arrow_down</span>
-                  </button>
-                </div>
-                <span class="material-symbols-outlined text-base text-text-muted shrink-0">key</span>
-                <span class="text-sm font-medium text-text-main truncate">{formatEmailLabel(conn.displayName || conn.name || conn.email || conn.id, $emailPrivacy)}</span>
-                <button
-                  type="button"
-                  onclick={() => handleToggleConnActive(conn)}
-                  class="px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer transition-colors {conn.isActive === 1 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-surface-2 text-text-muted border border-border'}"
-                >
-                  {conn.isActive === 1 ? 'active' : 'disabled'}
-                </button>
-                <span class="text-xs text-text-muted font-mono">#{idx + 1}</span>
-              </div>
-              <div class="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onclick={() => handleOpenEditConn(conn)}
-                  class="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg border border-border hover:bg-surface-2 text-text-main transition-colors cursor-pointer"
-                >
-                  <span class="material-symbols-outlined text-sm">edit</span>
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onclick={() => handleDeleteConn(conn.id)}
-                  class="inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg border border-red-500/20 text-red-500 hover:bg-red-500/10 transition-colors cursor-pointer"
-                >
-                  <span class="material-symbols-outlined text-sm">delete</span>
-                  Delete
-                </button>
-              </div>
-            </div>
-          {/each}
-          <div class="pt-2">
-            <button
-              type="button"
-              onclick={() => (showAddConnModal = true)}
-              class="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors cursor-pointer"
-            >
-              <span class="material-symbols-outlined text-sm">add</span>
-              Add
-            </button>
-          </div>
-        </div>
-      {/if}
-    </div>
+    <MediaConnectionsCard {provider} {settings} {onRefresh} />
   {/if}
 
   <!-- 4. Models Card (for kinds that have models) -->
@@ -921,9 +587,9 @@
 
   <!-- 6. Example Playground Card -->
   {#if kind === 'tts'}
-    <TtsExampleCard providerId={provider.id} {apiKeys} {connections} />
+    <TtsExampleCard providerId={provider.id} {apiKeys} />
   {:else if kind === 'stt'}
-    <SttExampleCard providerId={provider.id} {apiKeys} {connections} />
+    <SttExampleCard providerId={provider.id} {apiKeys} />
   {:else}
     <div class="bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-soft)] p-6">
     <h2 class="text-lg font-semibold text-text-main mb-4">Example</h2>
@@ -978,7 +644,7 @@
             class="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary text-text-main"
           >
             <option value="">Auto (by priority)</option>
-            {#each providerConns as conn}
+            {#each playgroundConns as conn}
               <option value={conn.id}>{formatEmailLabel(conn.displayName || conn.name || conn.email || conn.id.slice(0, 8), $emailPrivacy)}</option>
             {/each}
           </select>
@@ -1175,120 +841,3 @@
     </div>
   {/if}
 </div>
-
-<!-- Modal: Add Connection -->
-{#if showAddConnModal}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div
-      class="absolute inset-0 bg-black/50 transition-opacity"
-      onclick={() => (showAddConnModal = false)}
-      role="presentation"
-    ></div>
-    <div class="relative w-full max-w-md bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] p-6 z-10 flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h3 class="text-base font-semibold text-text-main">Add {provider.name} Connection</h3>
-        <button
-          type="button"
-          onclick={() => (showAddConnModal = false)}
-          class="p-1 rounded text-text-muted hover:text-text-main cursor-pointer"
-        >
-          <span class="material-symbols-outlined text-lg">close</span>
-        </button>
-      </div>
-      {#if newConnError}
-        <div class="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 text-xs">
-          {newConnError}
-        </div>
-      {/if}
-      <div class="flex flex-col gap-1.5">
-        <label for="new-conn-key" class="text-xs font-medium text-text-muted">API Key / Token</label>
-        <input
-          id="new-conn-key"
-          type="password"
-          bind:value={newConnKey}
-          placeholder="Enter API key"
-          class="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-text-main focus:outline-none focus:border-brand-500 font-mono"
-        />
-      </div>
-      <div class="flex flex-col gap-1.5">
-        <label for="new-conn-name" class="text-xs font-medium text-text-muted">Display Name (optional)</label>
-        <input
-          id="new-conn-name"
-          type="text"
-          bind:value={newConnName}
-          placeholder="e.g. Primary Account"
-          class="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-text-main focus:outline-none focus:border-brand-500"
-        />
-      </div>
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-border">
-        <button
-          type="button"
-          onclick={() => (showAddConnModal = false)}
-          class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-2 hover:bg-surface-3 text-text-main border border-border cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onclick={handleSaveNewConnection}
-          disabled={isSavingConn}
-          class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors cursor-pointer disabled:opacity-50"
-        >
-          {isSavingConn ? 'Saving...' : 'Add Connection'}
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}
-
-<!-- Modal: Edit Connection -->
-{#if editingConn}
-  <div class="fixed inset-0 z-50 flex items-center justify-center p-4">
-    <div
-      class="absolute inset-0 bg-black/50 transition-opacity"
-      onclick={() => (editingConn = null)}
-      role="presentation"
-    ></div>
-    <div class="relative w-full max-w-md bg-surface border border-border-subtle rounded-brand-lg shadow-[var(--shadow-elev)] p-6 z-10 flex flex-col gap-4">
-      <div class="flex items-center justify-between">
-        <h3 class="text-base font-semibold text-text-main">Edit Connection</h3>
-        <button
-          type="button"
-          onclick={() => (editingConn = null)}
-          class="p-1 rounded text-text-muted hover:text-text-main cursor-pointer"
-        >
-          <span class="material-symbols-outlined text-lg">close</span>
-        </button>
-      </div>
-      <div class="flex flex-col gap-1.5">
-        <label for="edit-conn-name" class="text-xs font-medium text-text-muted">Display Name</label>
-        <input
-          id="edit-conn-name"
-          type="text"
-          bind:value={editConnName}
-          class="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background text-text-main focus:outline-none focus:border-brand-500"
-        />
-      </div>
-      <div class="flex items-center justify-between py-1">
-        <span class="text-xs font-medium text-text-muted">Active</span>
-        <input type="checkbox" bind:checked={isEditingActive} class="size-4 rounded text-brand-500 focus:ring-brand-500" />
-      </div>
-      <div class="flex items-center justify-end gap-2 pt-2 border-t border-border">
-        <button
-          type="button"
-          onclick={() => (editingConn = null)}
-          class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-2 hover:bg-surface-3 text-text-main border border-border cursor-pointer"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onclick={handleSaveEditedConn}
-          class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors cursor-pointer"
-        >
-          Save
-        </button>
-      </div>
-    </div>
-  </div>
-{/if}

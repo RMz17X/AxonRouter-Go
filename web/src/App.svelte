@@ -622,7 +622,6 @@
                 <MediaProviderDetail
                   provider={selectedMediaCatalogItem}
                   kind="embedding"
-                  {connections}
                   {apiKeys}
                   {settings}
                   onBack={() => {
@@ -634,6 +633,7 @@
               {:else}
                 <MediaKindView
                   kind="embedding"
+                  {providerStats}
                   {connections}
                   {apiKeys}
                   {settings}
@@ -647,7 +647,6 @@
                 <MediaProviderDetail
                   provider={selectedMediaCatalogItem}
                   kind="image"
-                  {connections}
                   {apiKeys}
                   {settings}
                   onBack={() => {
@@ -659,6 +658,7 @@
               {:else}
                 <MediaKindView
                   kind="image"
+                  {providerStats}
                   {connections}
                   {apiKeys}
                   {settings}
@@ -672,7 +672,6 @@
                 <MediaProviderDetail
                   provider={selectedMediaCatalogItem}
                   kind="tts"
-                  {connections}
                   {apiKeys}
                   {settings}
                   onBack={() => {
@@ -684,6 +683,7 @@
               {:else}
                 <MediaKindView
                   kind="tts"
+                  {providerStats}
                   {connections}
                   {apiKeys}
                   {settings}
@@ -697,7 +697,6 @@
                 <MediaProviderDetail
                   provider={selectedMediaCatalogItem}
                   kind="stt"
-                  {connections}
                   {apiKeys}
                   {settings}
                   onBack={() => {
@@ -709,6 +708,7 @@
               {:else}
                 <MediaKindView
                   kind="stt"
+                  {providerStats}
                   {connections}
                   {apiKeys}
                   {settings}
@@ -722,7 +722,6 @@
                 <MediaProviderDetail
                   provider={selectedMediaCatalogItem}
                   kind="video"
-                  {connections}
                   {apiKeys}
                   {settings}
                   onBack={() => {
@@ -734,6 +733,7 @@
               {:else}
                 <MediaKindView
                   kind="video"
+                  {providerStats}
                   {connections}
                   {apiKeys}
                   {settings}
@@ -747,7 +747,6 @@
                 <MediaProviderDetail
                   provider={selectedMediaCatalogItem}
                   kind={selectedMedia.kind as any}
-                  {connections}
                   {apiKeys}
                   {settings}
                   onBack={() => {
@@ -759,6 +758,7 @@
               {:else}
                 <MediaKindView
                   kind="systemone"
+                  {providerStats}
                   {connections}
                   {apiKeys}
                   {settings}
@@ -772,7 +772,6 @@
                 <MediaProviderDetail
                   provider={selectedMediaCatalogItem}
                   kind={selectedMedia.kind as any}
-                  {connections}
                   {apiKeys}
                   {settings}
                   onBack={() => {
@@ -783,6 +782,7 @@
                 />
               {:else}
                 <MediaWebView
+                  {providerStats}
                   {connections}
                   {combos}
                   onRefresh={loadData}

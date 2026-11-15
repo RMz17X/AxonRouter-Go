@@ -5,11 +5,16 @@
   import Card from '../../lib/ui/Card.svelte'
   import Toggle from '../../lib/ui/Toggle.svelte'
   import ProviderArtwork from '../providers/ProviderArtwork.svelte'
+  import { getMediaProviderStats, type MediaSummaryStats } from './mediaTypes'
 
   interface Props {
     provider: ProviderCatalogItem
     kind: string
     connections: ProviderConnection[]
+    /** Per-provider counters from /api/providers/stats. The connection list
+     *  is no longer loaded globally, so this is where a tile's counts come
+     *  from — without it every provider reads "No connections". */
+    providerStats?: MediaSummaryStats
     isCustom?: boolean
     onToggle?: (providerId: string, newActive: boolean) => void
     onSelect?: () => void
@@ -19,34 +24,18 @@
     provider,
     kind,
     connections = [],
+    providerStats = {},
     isCustom = false,
     onToggle,
     onSelect,
   }: Props = $props()
 
-  function getEffectiveStatus(conn: ProviderConnection): string {
-    const isCooldown = Object.entries(conn).some(
-      ([k, v]) => k.startsWith('modelLock_') && v && new Date(v as string).getTime() > Date.now()
-    )
-    return conn.testStatus === 'unavailable' && !isCooldown ? 'active' : (conn.testStatus || 'active')
-  }
-
   let isNoAuth = $derived(!!provider.noAuth)
-  let providerConns = $derived(connections.filter((c) => c.provider === provider.id))
-  let connected = $derived(
-    providerConns.filter((c) => {
-      const s = getEffectiveStatus(c)
-      return s === 'active' || s === 'success'
-    }).length
-  )
-  let error = $derived(
-    providerConns.filter((c) => {
-      const s = getEffectiveStatus(c)
-      return s === 'error' || s === 'expired' || s === 'unavailable'
-    }).length
-  )
-  let total = $derived(providerConns.length)
-  let allDisabled = $derived(total > 0 && providerConns.every((c) => c.isActive === 0))
+  let stats = $derived(getMediaProviderStats(connections, provider.id, isNoAuth, providerStats))
+  let total = $derived(stats.total)
+  let connected = $derived(stats.active)
+  let error = $derived(stats.errorCount)
+  let allDisabled = $derived(stats.status === 'disabled')
 
   let bgColor = $derived(
     provider.color && provider.color.length > 7

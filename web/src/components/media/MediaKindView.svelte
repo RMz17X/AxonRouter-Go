@@ -9,11 +9,13 @@
   import AddCompatibleNodeModal from '../connections/AddCompatibleNodeModal.svelte'
   import MediaProviderCard from './MediaProviderCard.svelte'
   import MediaProviderDetail from './MediaProviderDetail.svelte'
-  import { MEDIA_KIND_INFO, type MediaKind } from './mediaTypes'
+  import { MEDIA_KIND_INFO, type MediaKind, type MediaSummaryStats } from './mediaTypes'
+  import { setProviderConnectionsActive } from './mediaConnectionStore.svelte'
 
   interface Props {
     kind: MediaKind
     connections?: ProviderConnection[]
+    providerStats?: MediaSummaryStats
     apiKeys?: APIKey[]
     settings?: Settings
     combos?: Combo[]
@@ -25,6 +27,7 @@
   let {
     kind,
     connections = [],
+    providerStats = {},
     apiKeys = [],
     settings = {},
     combos = [],
@@ -77,12 +80,20 @@
 
   let allProviders = $derived([...providers, ...customProviders])
 
+  // Flips a whole provider pool in one server-side statement.
+  //
+  // The previous implementation filtered the global connection list and
+  // issued one PUT per connection. That list is no longer loaded on boot,
+  // so the fan-out covered zero rows and the toggle silently did nothing;
+  // even with the list present, a thousand-account provider meant a
+  // thousand sequential requests.
   async function handleToggleProvider(providerId: string, newActive: boolean) {
-    const list = connections.filter((c) => c.provider === providerId)
-    await Promise.allSettled(
-      list.map((c) => api.updateConnection(c.id, { isActive: newActive ? 1 : 0 }))
-    )
-    onRefresh()
+    try {
+      await setProviderConnectionsActive(providerId, newActive)
+      onRefresh()
+    } catch (err) {
+      alert(`Failed to ${newActive ? 'enable' : 'disable'} provider: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   async function handleCreateCombo() {
@@ -137,7 +148,6 @@
   <MediaProviderDetail
     provider={selectedProvider}
     {kind}
-    {connections}
     {apiKeys}
     {settings}
     onBack={() => (selectedProvider = null)}
@@ -206,6 +216,7 @@
             {provider}
             {kind}
             {connections}
+            {providerStats}
             onToggle={handleToggleProvider}
             onSelect={() => {
               if (onSelectProvider) {
@@ -221,6 +232,7 @@
             {provider}
             {kind}
             {connections}
+            {providerStats}
             isCustom
             onToggle={handleToggleProvider}
             onSelect={() => {
