@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { api, getStoredAPIKey, type APIKey, type Settings } from '../../api/client'
   import { emailPrivacy, formatEmailLabel } from '../../lib/privacy'
   import { copyToClipboard } from '../../lib/clipboard'
@@ -64,7 +64,9 @@
 
   $effect(() => {
     const pid = provider.id
-    void loadMediaRoster(pid, 1, 25)
+    // untrack: loading must not subscribe this effect to the roster entry
+    // the loader writes (that loop flooded /api/connections).
+    untrack(() => void loadMediaRoster(pid, 1, 25))
   })
 
   // Models state — upstream parity (ModelsCard kindFilter): builtin filtered by

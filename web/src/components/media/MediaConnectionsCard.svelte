@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { untrack } from 'svelte'
   import { api, type ProviderConnection, type Settings } from '../../api/client'
   import { emailPrivacy, formatEmailLabel } from '../../lib/privacy'
   import type { ProviderCatalogItem } from '../../lib/providers'
@@ -22,18 +22,16 @@
   let connPageSize = $state(MEDIA_ROSTER_PAGE_SIZE)
   let isLoading = $state(false)
 
-  onMount(() => {
-    void loadMediaRoster(provider.id, connPage, connPageSize)
-  })
-
   $effect(() => {
     // The effect reads the provider id and the page, so both changes
-    // refetch. The roster is not a dependency: writing it must not loop.
-    void provider.id
-    void connPage
-    void connPageSize
+    // refetch. The load itself runs untracked: the loader writes the
+    // roster entry, and subscribing this effect to that entry looped the
+    // fetch forever (the store now also dedupes per page key).
+    const pid = provider.id
+    const page = connPage
+    const pageSize = connPageSize
     isLoading = true
-    loadMediaRoster(provider.id, connPage, connPageSize).finally(() => {
+    untrack(() => loadMediaRoster(pid, page, pageSize)).finally(() => {
       isLoading = false
     })
   })

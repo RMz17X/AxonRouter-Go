@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { api, getStoredAPIKey, type APIKey } from '../../api/client'
   import { copyToClipboard } from '../../lib/clipboard'
   import { getModelKind, getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from '../../lib/models'
@@ -59,7 +59,7 @@
   // Load this provider's roster so the count above is real.
   $effect(() => {
     const pid = providerId
-    void loadMediaRoster(pid, 1, 25)
+    untrack(() => void loadMediaRoster(pid, 1, 25))
   })
 
   onMount(() => {

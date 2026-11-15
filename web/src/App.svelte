@@ -93,6 +93,12 @@
   let isLoading = $state(true)
   let isAuthChecking = $state(true)
   let isAuthenticatedState = $state(false)
+  // Flips when the provider catalog lands. PROVIDER_CATALOG is a plain
+  // mutated array (not reactive), so deriveds that read it need this
+  // signal to recompute — without it a refreshed deep link into a media
+  // provider detail kept the null it computed against the empty catalog
+  // and fell back to the provider list forever.
+  let catalogReady = $state(false)
   // A share link waiting to be reviewed, and the import surface that fills it.
   // The receiver modal is the only place a link is confirmed and written.
   let pendingAddLinks = $state<ProviderShareLink[]>([])
@@ -173,6 +179,7 @@
     // install would render an error where the login form belongs.
     try {
       await loadProviderCatalog()
+      catalogReady = true
     } catch (err) {
       console.error('provider catalog failed to load', err)
     }
@@ -374,6 +381,7 @@
   })
   let selectedMediaCatalogItem = $derived.by(() => {
     if (!selectedMedia) return null
+    void catalogReady
     return PROVIDER_CATALOG.find((p) => p.id === selectedMedia!.providerId) || null
   })
   let selectedProviderMeta = $derived.by(() => {
@@ -386,6 +394,7 @@
     }
     if (activeTab !== 'connections' || !selectedProviderId) return null
     const node = providerNodes.find((n) => n.id === selectedProviderId)
+    void catalogReady
     const cat = PROVIDER_CATALOG.find((p) => p.id === selectedProviderId)
     return {
       id: selectedProviderId,

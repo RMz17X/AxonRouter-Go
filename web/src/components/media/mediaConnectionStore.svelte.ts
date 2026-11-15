@@ -1,3 +1,4 @@
+import { untrack } from 'svelte'
 import { api, type ProviderConnection } from '../../api/client'
 
 /**
@@ -55,39 +56,82 @@ export function mediaRoster(providerId: string): MediaProviderRoster {
 }
 
 /**
+ * Load bookkeeping, deliberately kept OUTSIDE the reactive roster state.
+ *
+ * The loader's prologue writes the roster entry it also reads, so a caller
+ * running inside a Svelte $effect subscribed itself to that entry: every
+ * write re-ran the effect, which fetched again, which wrote again — an
+ * unbounded GET /api/connections loop that saturated the browser's socket
+ * pool (ERR_INSUFFICIENT_RESOURCES) and starved every other request on the
+ * page, including the example cards' Run calls. These plain maps make the
+ * loader idempotent instead: an in-flight key returns the same promise,
+ * and an already-loaded key is served from cache until invalidated, so no
+ * caller behaviour — effect, mount hook, or click handler — can refetch
+ * the same page twice.
+ */
+const rosterInflight = new Map<string, Promise<MediaProviderRoster>>()
+const rosterLoadedKey = new Map<string, string>()
+
+function rosterLoadKey(providerId: string, page: number, pageSize: number, search?: string): string {
+  return `${providerId}|${page}|${pageSize}|${search ?? ''}`
+}
+
+/**
  * Loads one page of a provider's roster and caches it.
  *
  * Returns the fresh roster so a caller can read the result directly without
  * waiting for the next reactive tick.
  */
-export async function loadMediaRoster(
+export function loadMediaRoster(
   providerId: string,
   page = 1,
   pageSize = MEDIA_ROSTER_PAGE_SIZE,
   search?: string
 ): Promise<MediaProviderRoster> {
-  if (!providerId) return EMPTY_ROSTER
-  rosters[providerId] = { ...rosterFor(providerId), loading: true, error: null }
-  try {
-    const data = await api.getConnectionsPage(providerId, page, pageSize, search || undefined)
-    const next: MediaProviderRoster = {
-      connections: data.connections,
-      total: data.total,
-      loading: false,
-      error: null,
-    }
-    rosters[providerId] = next
-    return next
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const next: MediaProviderRoster = { ...rosterFor(providerId), loading: false, error: message }
-    rosters[providerId] = next
-    return next
+  if (!providerId) return Promise.resolve(EMPTY_ROSTER)
+  const key = rosterLoadKey(providerId, page, pageSize, search)
+  const pending = rosterInflight.get(key)
+  if (pending) return pending
+  if (rosterLoadedKey.get(providerId) === key) {
+    return Promise.resolve(untrack(() => rosterFor(providerId)))
   }
+  const run = (async (): Promise<MediaProviderRoster> => {
+    // untrack: the roster reads/writes below must never subscribe a
+    // reactive caller (effect or derived) to the entry being loaded.
+    untrack(() => {
+      rosters[providerId] = { ...rosterFor(providerId), loading: true, error: null }
+    })
+    try {
+      const data = await api.getConnectionsPage(providerId, page, pageSize, search || undefined)
+      const next: MediaProviderRoster = {
+        connections: data.connections,
+        total: data.total,
+        loading: false,
+        error: null,
+      }
+      rosters[providerId] = next
+      rosterLoadedKey.set(providerId, key)
+      return next
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const next: MediaProviderRoster = {
+        ...untrack(() => rosterFor(providerId)),
+        loading: false,
+        error: message,
+      }
+      rosters[providerId] = next
+      return next
+    } finally {
+      rosterInflight.delete(key)
+    }
+  })()
+  rosterInflight.set(key, run)
+  return run
 }
 
 /** Drops a provider's cached roster, so the next read refetches it. */
 export function invalidateMediaRoster(providerId: string): void {
+  rosterLoadedKey.delete(providerId)
   if (rosters[providerId]) {
     rosters[providerId] = { ...rosters[providerId], connections: [], total: null, error: null }
   }
