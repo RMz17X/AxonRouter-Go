@@ -1,5 +1,19 @@
 # Changelog
 
+## [v1.10.62] - 2026-11-15
+
+### fix(media): the media and STT views reported "No connections" for every provider
+
+- Commit 68e94eb35 replaced the global `api.getConnections()` boot load with `api.getProviderStats()` and set `connections = []` in `App.svelte`. The media and STT views were never migrated: they still filtered that empty array, so every provider tile — Antigravity, Codex, Cloudflare, ElevenLabs — rendered "No connections" despite hundreds of live accounts.
+- The per-provider toggle silently did nothing for the same reason: it fanned out over the same empty list.
+- The tile counts now come from the `/api/providers/stats` aggregate, which the dashboard already loads. A provider whose rows exist but are all parked reports "disabled" rather than "none" — "none" read as "no accounts configured".
+- Each provider's roster is fetched on demand, one provider at a time and one page at a time, with the pager driven by the server-reported total. A thousand-account provider never crosses the wire to render a badge.
+- The pool toggle is now one server-side statement (`POST /api/providers/bulk-active`). The browser fan-out it replaces cost one PUT per account, so a thousand-account provider turned one click into a thousand sequential requests, and closing the tab mid-flight left the pool half-toggled. Activating a pool clears the stale `lastError` / `disabledReason` / `disabledAt` / `oauthLockedUntil` / `oauthFailureCount` fields, so a re-enabled connection is not immediately re-disabled by its old verdict.
+- The TTS and STT example cards count their provider's connections from the roster store for the same reason.
+- The connection reorder is one transactional server call. Two independent PUTs could leave two rows sharing a priority, and a stable sort over tied priorities made every later click a literal no-op.
+- `MediaProviderDetail.svelte` no longer owns connection state at all; the connections card and the header were extracted into their own components (1294 -> 843 lines).
+- Covered by `TestSetProviderConnectionsActive`, which pins cross-provider isolation, the affected count, the stale-field clearing on activate, and the unknown-provider no-op.
+
 ## [v1.10.61] - 2026-11-15
 
 ### fix(web): the provider-artwork check followed a stale hardcoded list
