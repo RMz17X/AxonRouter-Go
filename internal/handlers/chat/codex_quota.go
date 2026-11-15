@@ -215,14 +215,17 @@ func RefreshCodexQuota(ctx context.Context, client *http.Client, connectionID, a
 // codexQuotaFromUsage converts a wham snapshot into the cached shape.
 func codexQuotaFromUsage(usage *codexquota.Usage) CodexConnectionQuota {
 	q := CodexConnectionQuota{Plan: usage.Plan}
-	if usage.Session != nil {
+	// A window present in the payload but carrying no percent figure is
+	// unknown, not untouched: it must not read as 100% remaining and wave
+	// requests through, so it does not count as an exposed window here.
+	if usage.Session != nil && usage.Session.HasPercent {
 		q.Session = CodexQuotaWindow{
 			RemainingPercentage: usage.Session.Remaining(),
 			ResetAt:             codexResetOrZero(usage.Session.ResetAt),
 		}
 		q.HasSession = true
 	}
-	if usage.Weekly != nil {
+	if usage.Weekly != nil && usage.Weekly.HasPercent {
 		q.Weekly = CodexQuotaWindow{
 			RemainingPercentage: usage.Weekly.Remaining(),
 			ResetAt:             codexResetOrZero(usage.Weekly.ResetAt),

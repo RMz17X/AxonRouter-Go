@@ -1,5 +1,12 @@
 # Changelog
 
+## [v1.10.71] - 2026-11-16
+
+## Codex quota: a window without a percent figure is unknown, not untouched
+
+- `codexquota.Window` now records `HasPercent`: whether the wham/usage payload actually carried a `used_percent`/`percent_used` figure for the window (a non-finite figure counts as absent too).
+- The chat-side quota cache only treats a Codex window as exposed when it has a percent reading. Previously a present-but-percentless window was read as 0% used — 100% remaining — so quota-aware routing would never block on it; now it is skipped like an absent window instead of waving requests through. Dashboard display is unchanged.
+
 ## [v1.10.70] - 2026-11-15
 
 ### Changed

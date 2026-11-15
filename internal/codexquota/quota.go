@@ -14,10 +14,13 @@ import (
 )
 
 // Window is one Codex rate-limit window. UsedPercent is 0..100; ResetAt is nil
-// when the response omitted a parseable reset.
+// when the response omitted a parseable reset. HasPercent records whether the
+// response actually carried a percent figure: a present window without one is
+// "unknown", not "100% remaining", and quota-aware routing must not trust it.
 type Window struct {
 	UsedPercent float64
 	ResetAt     *time.Time
+	HasPercent  bool
 }
 
 // Remaining is the percentage of the window still available.
@@ -89,15 +92,18 @@ func toWindow(w *wireWindow) *Window {
 		return nil
 	}
 	used := 0.0
+	hasPercent := false
+	var rawPercent *float64
 	if w.UsedPercent != nil {
-		used = *w.UsedPercent
+		rawPercent = w.UsedPercent
 	} else if w.PercentUsed != nil {
-		used = *w.PercentUsed
+		rawPercent = w.PercentUsed
 	}
-	if math.IsNaN(used) || math.IsInf(used, 0) {
-		used = 0
+	if rawPercent != nil && !math.IsNaN(*rawPercent) && !math.IsInf(*rawPercent, 0) {
+		used = *rawPercent
+		hasPercent = true
 	}
-	out := &Window{UsedPercent: math.Max(0, math.Min(100, used))}
+	out := &Window{UsedPercent: math.Max(0, math.Min(100, used)), HasPercent: hasPercent}
 	for _, v := range []any{w.ResetAt, w.ResetsAt, w.ResetAtAlt} {
 		if t := parseResetTime(v); t != nil {
 			out.ResetAt = t
