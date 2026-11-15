@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.63] - 2026-11-15
+
+### Fixed
+- Antigravity 429s were concurrency, not quota — and the gateway manufactured them. Probing an account whose weekly quota summary read 100% remaining showed single requests succeeding in every variation (daily host, streaming, 135K-token prompt, the fleet's own proxy egress) while a 12-way parallel burst drew the bare RESOURCE_EXHAUSTED 429 on a third of the calls: the consumer endpoint enforces a tight per-account concurrency ceiling, and hedging/retries/shared clients stacked parallel generations onto the same healthy accounts until it answered. Worse, the generic classifier read that bare 429 as quota exhaustion and escalated the account backoff (one account reached backoff level 7 with its quota untouched). The gateway now caps in-flight attempts per antigravity connection at 3 — an attempt that finds the cap full fails fast and rotates to the next account without recording a failure, and a pinned attempt at cap falls through to rotation — and the classifier treats the bare RESOURCE_EXHAUSTED shape (no explicit quota markers) as model-scoped with a fixed 30s cooldown and no backoff escalation. Google's 503 "No capacity available for model" verdict gets the same model-scoped treatment (60s) instead of an account sentence. Real quota verdicts, which carry QUOTA_EXHAUSTED / "Individual quota reached" / RATE_LIMIT_EXCEEDED, keep their existing handling.
+
 ## [v1.10.62] - 2026-11-15
 
 ### fix(media): the media and STT views reported "No connections" for every provider
