@@ -34,7 +34,7 @@
 
   let rows = $state<RequestDetailItem[]>([])
   let statusFilter = $state<'all' | 'success' | 'failed' | 'stream' | 'json'>('all')
-  let accountFilter = $state('')
+  let providerFilter = $state('')
   let search = $state('')
   let showAllMobile = $state(false)
 
@@ -192,8 +192,8 @@
   // default, upstream's own), so "stream" is everything not marked JSON.
   let streamCount = $derived(rows.filter((r) => r.isStream !== false).length)
   let jsonCount = $derived(rows.filter((r) => r.isStream === false).length)
-  let accounts = $derived(
-    [...new Set(rows.map((r) => r.account).filter((a): a is string => Boolean(a)))].sort()
+  let providers = $derived(
+    [...new Set(rows.map((r) => r.provider).filter((p): p is string => Boolean(p)))].sort()
   )
 
   let filtered = $derived.by(() => {
@@ -203,7 +203,7 @@
       if (statusFilter === 'failed' && !isFailed(row)) return false
       if (statusFilter === 'stream' && row.isStream === false) return false
       if (statusFilter === 'json' && row.isStream !== false) return false
-      if (accountFilter && (row.account || '') !== accountFilter) return false
+      if (providerFilter && (row.provider || '') !== providerFilter) return false
       if (q) {
         const hay = `${row.model || ''} ${row.provider || ''} ${row.account || ''} ${row.apiKey || ''} ${row.apiKeyName || ''} ${row.clientApiKey || ''} ${row.clientIp || ''}`.toLowerCase()
         if (!hay.includes(q)) return false
@@ -329,17 +329,17 @@
     </div>
 
     <select
-      bind:value={accountFilter}
-      aria-label="Filter by account"
+      bind:value={providerFilter}
+      aria-label="Filter by provider"
       class="cursor-pointer rounded-brand border border-border bg-surface px-2 py-1.5 text-xs text-text-main"
     >
-      <option value="">All accounts</option>
-      {#each accounts as account (account)}
-        <option value={account}>{account}</option>
+      <option value="">All providers</option>
+      {#each providers as provider (provider)}
+        <option value={provider}>{providerDisplayName(provider)}</option>
       {/each}
     </select>
 
-    <label class="relative min-w-0 flex-1 sm:max-w-64">
+    <label class="relative ml-auto w-full min-w-0 sm:w-64">
       <span class="material-symbols-outlined pointer-events-none absolute top-1/2 left-2 -translate-y-1/2 text-[16px] text-text-muted" aria-hidden="true">search</span>
       <input
         type="text"
