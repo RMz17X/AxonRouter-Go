@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.66] - 2026-11-15
+
+### Fixed
+- Antigravity chat routing was blind to the quota that actually gates generation. `RefreshAntigravityQuota` read the per-model fractions from `fetchAvailableModels` and only fetched the `retrieveUserQuotaSummary` weekly buckets when that map came back empty — but per-model fractions stay at 1.0 long after the weekly family bucket is spent (measured live 2026-11-15: albiyan01011 showed Gemini weekly 0.11% remaining in agy and on the dashboard quota page, which read the summary correctly, while the chat path still read the account as fully healthy). The gateway therefore kept routing production traffic into drained accounts: a gemini-3.8-flash attempt after 390 s of total antigravity silence still drew an instant bare `RESOURCE_EXHAUSTED` 429, the same account's gemini-2.5-flash (outside the 3.8 weekly group) succeeded, and the pool-wide census read 96 flash failures against 4 successes in 31 minutes. The weekly summary is now always fetched (best-effort, behind its existing 3-minute cache) and folded into the cached quotas: each model's effective remaining is the minimum of its per-model fraction and its family's weekly and 5h-session fractions with the binding bucket's reset, and the family entries are stored under their own keys so the selection block in `IsAntigravityModelBlocked` — which already checked those keys — finally has something to read. On a 429/409, `HandleAntigravityQuotaError` now also checks the model's family weekly entry directly: at or below 1% remaining it parks the model until the weekly reset instead of waving the bare 429 through as generic, because at that sliver production-sized generations effectively always fail.
+
 ## [v1.10.65] - 2026-11-15
 
 ### Changed
