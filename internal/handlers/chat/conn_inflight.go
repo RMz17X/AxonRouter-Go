@@ -21,7 +21,18 @@ import (
 //
 // The registry is in-memory only: a restart forgets the counts, which
 // is correct — in-flight attempts do not survive one either.
-const antigravityMaxInFlightPerConn = 3
+//
+// The cap is 1 — strictly sequential per account, the shape a single
+// interactive Antigravity user produces (and the shape that works when
+// the account is driven from the official client). A cap of 3 shipped
+// first and the post-flip census still read 89 failures against 3
+// successes in 14 minutes: production generations are large streaming
+// requests that occupy the account for tens of seconds, so any overlap
+// at all draws the bare 429. The successes in that window clustered in
+// the low-concurrency minutes right after the provider breaker closed,
+// when attempts happened to run one at a time. Rotation across the
+// account pool provides the fleet's parallelism instead.
+const antigravityMaxInFlightPerConn = 1
 
 var errConnInFlightCap = errors.New("connection at its in-flight cap")
 
