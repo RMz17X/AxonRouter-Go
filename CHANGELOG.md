@@ -1,5 +1,10 @@
 # Changelog
 
+## [v1.10.67] - 2026-11-15
+
+### Fixed
+- The v1.10.66 weekly-quota fold read the right endpoint from the wrong host. `FetchAntigravityWeeklyQuota` built its `retrieveUserQuotaSummary` URL from `antigravityQuotaBaseURL` (PROD `cloudcode-pa.googleapis.com`), but PROD returns a different weekly view for that RPC — the dashboard usage path already knew this and reads the summary from DAILY (`daily-cloudcode-pa.googleapis.com`, the host that actually serves generation). Post-flip production logs proved the fold inert: repeated quota refreshes on 429'd connections, zero weekly CACHE_BLOCKs, the same accounts retried minute after minute. The chat path now resolves the summary host through `weeklyQuotaBaseURL()` — DAILY in production, while a test override of `antigravityQuotaBaseURL` still routes both RPCs to the same local mock — so the weekly buckets the fold and the near-zero park consume are the serving host's real ones.
+
 ## [v1.10.66] - 2026-11-15
 
 ### Fixed
