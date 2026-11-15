@@ -1,2 +1,0 @@
-### Changed
-- Usage page (Realtime Requests card): the account dropdown is now a provider filter — "All providers" plus one entry per provider present in the feed, shown under its display name — and the search input no longer sits merged with the filters on the left: it is pushed to the right end of the filter bar (full-width on its own row on narrow screens). The search itself is unchanged and still matches model, provider, account, and API key text.
