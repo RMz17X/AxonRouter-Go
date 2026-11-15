@@ -59,7 +59,7 @@ export interface CustomModelData {
 // aliases several other ids the same way (`perplexity-agent`, `vercel-ai-gateway`,
 // `minimax-code`, `opencode-zen`, `ollama-search`) but this repo ships distinct
 // artwork for all of those, so aliasing them here would throw away a real logo.
-const ICON_ALIASES: Record<string, string> = {
+export const ICON_ALIASES: Record<string, string> = {
   'zai-search': 'glm',
   // ZCode rides the GLM/Z.ai brand and wears the same mark. This is an alias
   // rather than a committed copy of `glm.png`: a duplicate file is never

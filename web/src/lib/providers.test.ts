@@ -12,6 +12,7 @@ import {
 import { parseProviderRegistry } from './providers.registry-test'
 import { resolve } from 'node:path'
 import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from './models'
+import { ICON_ALIASES } from '../components/connections/types'
 import { pathToTab, TAB_ROUTES } from './router'
 
 // The catalog is served by the Go registry (internal/providers), so the suite
@@ -215,10 +216,19 @@ describe('providers & media separation', () => {
     // without an asset under web/public/providers is a 404 on every surface
     // that draws it. Only the alias table may point at another provider's file.
     const assets = new Set(readdirSync(join(import.meta.dir, '../../public/providers')))
-    const shared = new Set(['zai-search', 'zcode'])
+    // The alias table is the single source of truth for ids whose artwork is
+    // filed under another provider. A hardcoded list here went stale the
+    // moment `deepai-free` was aliased to `deepai` and CI started failing on
+    // a provider the dashboard renders correctly.
+    const aliased = new Set(Object.keys(ICON_ALIASES))
     const missing = PROVIDER_CATALOG.filter(
-      (p) => !shared.has(p.id) && !assets.has(`${p.id}.png`) && !assets.has(`${p.id}.svg`)
+      (p) => !aliased.has(p.id) && !assets.has(`${p.id}.png`) && !assets.has(`${p.id}.svg`)
     ).map((p) => p.id)
     assert.deepStrictEqual(missing, [], `providers without artwork: ${missing.join(', ')}`)
+    // An alias is only safe while its target artwork exists.
+    const dangling = Object.entries(ICON_ALIASES)
+      .filter(([, target]) => !assets.has(`${target}.png`) && !assets.has(`${target}.svg`))
+      .map(([alias, target]) => `${alias} -> ${target}`)
+    assert.deepStrictEqual(dangling, [], `icon aliases without artwork: ${dangling.join(', ')}`)
   })
 })
