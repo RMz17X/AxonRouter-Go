@@ -150,6 +150,7 @@
     {kind}
     {apiKeys}
     {settings}
+    {providerStats}
     onBack={() => (selectedProvider = null)}
     {onRefresh}
   />

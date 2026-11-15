@@ -11,7 +11,8 @@
 
   import TtsExampleCard from './TtsExampleCard.svelte'
   import SttExampleCard from './SttExampleCard.svelte'
-  import MediaConnectionsCard from './MediaConnectionsCard.svelte'
+  import ProviderConnectionsSection from '../connections/ProviderConnectionsSection.svelte'
+  import { normalizeProxyTarget } from '../../lib/proxyBindings'
   import MediaProviderHeader from './MediaProviderHeader.svelte'
 
   interface Props {
@@ -19,6 +20,7 @@
     kind: MediaKind
     apiKeys?: APIKey[]
     settings?: Settings
+    providerStats?: Record<string, Record<string, any>>
     onBack: () => void
     onRefresh: () => void
   }
@@ -28,6 +30,7 @@
     kind,
     apiKeys = [],
     settings = {},
+    providerStats = {},
     onBack,
     onRefresh
   }: Props = $props()
@@ -55,6 +58,34 @@
   }
 
   let kindTitle = $derived(KIND_LABELS[kind] || MEDIA_KIND_INFO[kind]?.title || kind)
+
+  // Strategy state for the shared Connections section: seeded from
+  // settings here (the media page has no loadData of its own), with the
+  // same extraction ProviderDetailView's loadData performs.
+  let connIsRoundRobin = $state(false)
+  let connStickyLimit = $state('1')
+  let connLockedProxyGroup = $state('')
+  let connLockedProxyPoolId = $state('')
+
+  $effect(() => {
+    const strategy = settings?.providerStrategies?.[provider.id]
+    connIsRoundRobin = strategy?.fallbackStrategy === 'round-robin'
+    connStickyLimit = String(strategy?.stickyRoundRobinLimit ?? 1)
+    connLockedProxyGroup =
+      (strategy?.proxyPoolId?.startsWith('group:') || strategy?.proxyPoolId?.startsWith('type:') ? strategy.proxyPoolId : '') ||
+      (strategy?.proxyGroup ? normalizeProxyTarget(strategy.proxyGroup) : '') ||
+      ''
+    const rawStrategyPoolId = strategy?.proxyPoolId
+    connLockedProxyPoolId =
+      rawStrategyPoolId &&
+      !rawStrategyPoolId.startsWith('group:') &&
+      !rawStrategyPoolId.startsWith('type:') &&
+      !rawStrategyPoolId.includes(',') &&
+      rawStrategyPoolId !== '__none__' &&
+      rawStrategyPoolId !== 'direct'
+        ? rawStrategyPoolId
+        : ''
+  })
   let parentPath = $derived(KIND_PATHS[kind] || `/dashboard/media-providers/${kind}`)
 
   // The playground's connection picker reads the same per-provider roster the
@@ -471,11 +502,21 @@
        email-masking toggle lives with the header that owns it. -->
   <MediaProviderHeader {provider} {kind} {kindTitle} {parentPath} onBack={onBack} />
 
-  <!-- 3. Connections Card. Extracted to its own component: the roster is
-       fetched per provider now that the dashboard no longer ships the
-       whole connection list to the browser. -->
+  <!-- 3. Connections Card: the shared ProviderConnectionsSection, the
+       same component the provider detail page renders — one roster UI
+       (toolbar, proxy lock, probing, modals) for both pages. -->
   {#if !provider.noAuth}
-    <MediaConnectionsCard {provider} {settings} {onRefresh} />
+    <ProviderConnectionsSection
+      providerId={provider.id}
+      {provider}
+      {providerStats}
+      {settings}
+      bind:isRoundRobin={connIsRoundRobin}
+      bind:stickyLimit={connStickyLimit}
+      bind:lockedProxyGroup={connLockedProxyGroup}
+      bind:lockedProxyPoolId={connLockedProxyPoolId}
+      {onRefresh}
+    />
   {/if}
 
   <!-- 4. Models Card (for kinds that have models) -->

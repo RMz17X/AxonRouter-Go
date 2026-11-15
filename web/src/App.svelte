@@ -633,6 +633,7 @@
                   kind="embedding"
                   {apiKeys}
                   {settings}
+                  {providerStats}
                   onBack={() => {
                     selectedMedia = null
                     navigate('media-embedding')
@@ -658,6 +659,7 @@
                   kind="image"
                   {apiKeys}
                   {settings}
+                  {providerStats}
                   onBack={() => {
                     selectedMedia = null
                     navigate('media-image')
@@ -683,6 +685,7 @@
                   kind="tts"
                   {apiKeys}
                   {settings}
+                  {providerStats}
                   onBack={() => {
                     selectedMedia = null
                     navigate('media-tts')
@@ -708,6 +711,7 @@
                   kind="stt"
                   {apiKeys}
                   {settings}
+                  {providerStats}
                   onBack={() => {
                     selectedMedia = null
                     navigate('media-stt')
@@ -733,6 +737,7 @@
                   kind="video"
                   {apiKeys}
                   {settings}
+                  {providerStats}
                   onBack={() => {
                     selectedMedia = null
                     navigate('media-video')
@@ -758,6 +763,7 @@
                   kind={selectedMedia.kind as any}
                   {apiKeys}
                   {settings}
+                  {providerStats}
                   onBack={() => {
                     selectedMedia = null
                     navigate('media-systemone')
@@ -783,6 +789,7 @@
                   kind={selectedMedia.kind as any}
                   {apiKeys}
                   {settings}
+                  {providerStats}
                   onBack={() => {
                     selectedMedia = null
                     navigate('media-web')
