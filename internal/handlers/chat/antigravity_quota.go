@@ -36,6 +36,27 @@ type AntigravityWeeklyQuota struct {
 // serves chat traffic. A var (not const) so tests can point it at a local server.
 var antigravityQuotaBaseURL = "https://cloudcode-pa.googleapis.com"
 
+const antigravityProdBaseURL = "https://cloudcode-pa.googleapis.com"
+
+// antigravityDailyBaseURL hosts the weekly quota summary for the chat path.
+// PROD returns a different weekly view for retrieveUserQuotaSummary — the
+// dashboard usage path learned this earlier and reads the summary from
+// DAILY, the host that actually serves generation (see
+// internal/handlers/dashboard/usage_providers.go). The chat path kept
+// reading it from PROD, so the weekly fold saw PROD's view instead of the
+// serving host's exhausted buckets and never parked a drained account.
+const antigravityDailyBaseURL = "https://daily-cloudcode-pa.googleapis.com"
+
+// weeklyQuotaBaseURL resolves the host for retrieveUserQuotaSummary: DAILY
+// in production; when tests override antigravityQuotaBaseURL to a local
+// mock, the same mock serves both RPCs.
+func weeklyQuotaBaseURL() string {
+	if antigravityQuotaBaseURL != antigravityProdBaseURL {
+		return antigravityQuotaBaseURL
+	}
+	return antigravityDailyBaseURL
+}
+
 var (
 	agQuotaMu       sync.RWMutex
 	agQuotaCache    = make(map[string]map[string]AntigravityModelQuota) // connectionID -> model -> quota
@@ -732,7 +753,7 @@ func FetchAntigravityWeeklyQuota(ctx context.Context, client *http.Client, acces
 		agWeeklyMu.Unlock()
 	}
 
-	url := antigravityQuotaBaseURL + "/v1internal:retrieveUserQuotaSummary"
+	url := weeklyQuotaBaseURL() + "/v1internal:retrieveUserQuotaSummary"
 	reqBody := map[string]any{}
 	if projectID != "" {
 		reqBody["project"] = projectID
