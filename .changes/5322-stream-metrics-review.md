@@ -1,0 +1,9 @@
+### fix(stream): the output-generation metrics reported the wrong numbers (#5322 review)
+
+The independent review of #5322 pinned two MAJOR findings and one MINOR finding in the streaming instrumentation that backs the output rate.
+
+- The Gemini lane wrote every chunk into the capture buffer and stamped the output timing itself, and then handed the same chunk to the Responses bridge, which wrote it into the buffer again. A `/v1/responses` client served by a Gemini model therefore captured every chunk twice, in two wire shapes: the raw OpenAI chunk and the Responses event. The logged response body was doubled, the buffer held twice the memory for nothing, and the chunk counter counted each chunk twice. The direct write is now skipped when a bridge is active, since the bridge already captures the frame and stamps the timing.
+- The reactive OAuth refresh retries the request in place with the same metrics value. The first attempt could already have captured chunks before the 401, so the retry inherited that buffer, that token count and those gap stamps: the reported rate blended two attempts, and the reported max gap swallowed the refresh pause as if it were upstream silence. `StreamMetrics` now carries a `Reset` that clears the per-attempt state, and the retry path calls it before the second attempt.
+- The metric counters were exported fields, so any caller could write them without the lock the stream writer holds. They are unexported now and reached through the locked accessors, with `OutputTokenCount()` as the read side.
+- Returning 0 tok/s instead of the upstream's Infinity is deliberate and unchanged: `+Inf` breaks JSON log serialization.
+- Covered by `TestGeminiStreamWithResponsesBridgeCapturesChunkOnce`, `TestStreamMetricsResetClearsEveryAttempt` and the accessor tests in `internal/handlers/shared/types_test.go`. The bridge test was negative-control checked — reverting the guard makes it fail.
