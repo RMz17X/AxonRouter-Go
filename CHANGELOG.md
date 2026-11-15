@@ -1,5 +1,32 @@
 # Changelog
 
+## [v1.10.60] - 2026-11-15
+
+### fix(images): align /v1/images/edits with the OpenAI request contract
+
+- The JSON lane rebuilt the upstream body from a fixed struct, so every field outside `image`, `prompt`, `model`, `size`, `response_format` and `n` was dropped before the request left the gateway. `input_fidelity`, `output_format`, `output_compression`, `background`, `quality` and `user` now reach the provider unchanged.
+- The image reference is accepted in every shape the OpenAI SDKs send: a plain string, an array of strings, `{"image_url": {"url": ...}}` and `{"url": ...}`. Before the fix an array or an object failed to unmarshal and the request was answered 400 even though the payload was valid.
+- `{"file_id": ...}` is refused with the upstream message and the request is not forwarded, because a file reference carries no bytes to send.
+- `mask` is refused with the upstream message in both lanes. No provider lane reads it, so forwarding it advertised a capability that does not exist.
+- Both lanes cap the image count at 16, the upstream count (`MAX_IMAGES`). Before the fix the two lanes carried different ceilings — 16 in the JSON lane, 8 in the multipart lane — and the global media guard added a third: it measures only media that carries bytes, so an image spelled as a URL was measured as zero items and one spelled as a data URI as one item. The same nine-image request was therefore forwarded as URLs and refused as data URIs. The count is now one number for the endpoint, enforced the same way in both lanes and for both encodings.
+- The forwarded request is presented to the provider as `application/json` in both lanes.
+- A body over the request ceiling is answered 413 naming the limit, not 400 reporting a malformed request.
+- Multipart dispatch is case-insensitive: `Multipart/Form-Data` reaches the multipart lane instead of failing on a JSON parse error.
+- An upload whose bytes are not a PNG, JPEG, WEBP or GIF is refused instead of being coerced to `image/png` and forwarded.
+- `POST /images/edits` is now covered by the media body-size rule, so the per-item image ceiling is enforced on this path.
+- Covered by nine regression tests in `internal/handlers/media/image_edits_parity_test.go`, each pinned to one finding of the independent review of #5548, plus `internal/handlers/media/image_edits_cap_encoding_test.go` for the count being independent of how the image is spelled.
+- Remaining deviation: the endpoint refuses an over-cap request with 400, while the global media guard answers 413 for the same class of problem. The lane-level check runs first because it can name the endpoint's own limit, which is the more actionable of the two.
+
+### fix(stream): the output-generation metrics reported the wrong numbers (#5322 review)
+
+The independent review of #5322 pinned two MAJOR findings and one MINOR finding in the streaming instrumentation that backs the output rate.
+
+- The Gemini lane wrote every chunk into the capture buffer and stamped the output timing itself, and then handed the same chunk to the Responses bridge, which wrote it into the buffer again. A `/v1/responses` client served by a Gemini model therefore captured every chunk twice, in two wire shapes: the raw OpenAI chunk and the Responses event. The logged response body was doubled, the buffer held twice the memory for nothing, and the chunk counter counted each chunk twice. The direct write is now skipped when a bridge is active, since the bridge already captures the frame and stamps the timing.
+- The reactive OAuth refresh retries the request in place with the same metrics value. The first attempt could already have captured chunks before the 401, so the retry inherited that buffer, that token count and those gap stamps: the reported rate blended two attempts, and the reported max gap swallowed the refresh pause as if it were upstream silence. `StreamMetrics` now carries a `Reset` that clears the per-attempt state, and the retry path calls it before the second attempt.
+- The metric counters were exported fields, so any caller could write them without the lock the stream writer holds. They are unexported now and reached through the locked accessors, with `OutputTokenCount()` as the read side.
+- Returning 0 tok/s instead of the upstream's Infinity is deliberate and unchanged: `+Inf` breaks JSON log serialization.
+- Covered by `TestGeminiStreamWithResponsesBridgeCapturesChunkOnce`, `TestStreamMetricsResetClearsEveryAttempt` and the accessor tests in `internal/handlers/shared/types_test.go`. The bridge test was negative-control checked — reverting the guard makes it fail.
+
 ## [v1.10.59] - 2026-11-15
 
 ### Fixed
