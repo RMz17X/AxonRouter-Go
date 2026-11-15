@@ -91,16 +91,24 @@ func (h *ChatHandler) handleAccountFallback(
 			ConnData: connData, Body: body, Attempts: 1,
 			IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
 		})
-		if fwdErr != nil {
-			// A pinned attempt skips the fallback loop below, so the loop's
-			// pool-fitness classification never sees its failures — most
-			// importantly the idle prober's, which pins every connection it
-			// checks. Classify the failure here so a stalling egress is
-			// penalized no matter which lane exposed it. There is no retry:
-			// pinned means pinned.
-			h.classifyPoolFailure(ctx, provider, model, connObj.ID, connData, fwdErr)
+		if fwdErr != nil && isConnInFlightCapError(fwdErr) {
+			// The pinned account is at its in-flight cap: that is not a
+			// failure and carries no verdict on the connection, so fall
+			// through to the rotation loop below and let another account
+			// serve this request instead of failing it.
+			log.DebugCtx(ctx, "fallback", "pinned connection at in-flight cap, rotating", "conn", connObj.ID)
+		} else {
+			if fwdErr != nil {
+				// A pinned attempt skips the fallback loop below, so the loop's
+				// pool-fitness classification never sees its failures — most
+				// importantly the idle prober's, which pins every connection it
+				// checks. Classify the failure here so a stalling egress is
+				// penalized no matter which lane exposed it. There is no retry:
+				// pinned means pinned.
+				h.classifyPoolFailure(ctx, provider, model, connObj.ID, connData, fwdErr)
+			}
+			return fwdErr
 		}
-		return fwdErr
 	}
 
 	if !handlerutil.IsProbeContext(ctx) && (!h.Repo.IsProviderAvailable(provider, model) || IsProviderModelBroken(provider, model)) {
@@ -245,6 +253,7 @@ func (h *ChatHandler) handleAccountFallback(
 	// of burning a healthy account.
 	excludedPools := map[string]bool{}
 	var lastErr error
+	sawConnInFlightCap := false
 	attemptsSent := 0
 	decoyOnlyFails := 0
 	maxAccountAttempts := 10
@@ -297,6 +306,15 @@ func (h *ChatHandler) handleAccountFallback(
 				h.getSessionAffinity().Bind(provider, model, sessionID, connObj.ID)
 			}
 			return nil
+		} else if isConnInFlightCapError(err) {
+			// The account is at its in-flight cap: rotate without
+			// recording a failure, a lock, or an attempt against the
+			// per-request budget — nothing was sent upstream.
+			sawConnInFlightCap = true
+			excludeIDs = append(excludeIDs, connObj.ID)
+			log.DebugCtx(attemptCtx, "fallback", "connection at in-flight cap, rotating",
+				"conn", connObj.ID, "provider", provider, "model", model)
+			continue
 		} else {
 			lastErr = err
 			observ.IncFallback(provider, model, observ.FallbackReasonUpstreamError)
@@ -544,6 +562,9 @@ func (h *ChatHandler) handleAccountFallback(
 			return clientClosedError()
 		}
 		return opencodeClosureError(provider, model, lastErr)
+	}
+	if sawConnInFlightCap {
+		return &upstreamError{StatusCode: http.StatusTooManyRequests, Body: []byte(`{"error":{"message":"all connections for this provider are at their in-flight limit","type":"rate_limit_error","code":429}}`)}
 	}
 	return fmt.Errorf("no available connections for provider: %s", provider)
 }
@@ -861,6 +882,17 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	ctx = withConnAccount(ctx, f.ConnName, f.ConnEmail)
 	provider, model := f.Provider, f.Model
 	connectionID, connData := f.ConnectionID, f.ConnData
+	// Antigravity's per-account concurrency ceiling (see conn_inflight.go):
+	// refuse the attempt locally once the connection is at its cap, so the
+	// caller rotates instead of drawing the bare-429 the ceiling answers.
+	// Probes bypass the cap — they are single, brief, and their job is to
+	// measure the upstream, not to compete with serving traffic.
+	if providers.ResolveAlias(provider) == "antigravity" && !handlerutil.IsProbeContext(ctx) {
+		if !tryAcquireConnSlot(connectionID, antigravityMaxInFlightPerConn) {
+			return errConnInFlightCap
+		}
+		defer releaseConnSlot(connectionID)
+	}
 	body, isStream := f.Body, f.IsStream
 	translateResponse, endpoint := f.TranslateResponse, f.Endpoint
 	// Unified thinking normalisation, inbound half: capture the client's

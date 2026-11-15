@@ -725,6 +725,10 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 		return cls
 	}
 
+	if cls, ok := classifyAntigravity(statusCode, lowerError, backoffLevel, provider); ok {
+		return cls
+	}
+
 	// Model capability mismatch (e.g. text model receiving vision/image input)
 	if statusCode == http.StatusBadRequest && strings.Contains(lowerError, "image_url") && (strings.Contains(lowerError, "unsupported") || strings.Contains(lowerError, "not supported")) {
 		return ErrorClassification{
