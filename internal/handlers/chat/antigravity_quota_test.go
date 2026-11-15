@@ -5,6 +5,7 @@ import (
 	json "encoding/json/v2"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,9 +84,15 @@ func TestAntigravityQuota_RefreshAndBlock(t *testing.T) {
 func TestAntigravityQuota_CoalescingAndThrottle(t *testing.T) {
 	ClearAntigravityQuotaCache()
 
+	// Count only fetchAvailableModels calls: since the weekly fold,
+	// RefreshAntigravityQuota also best-effort fetches
+	// retrieveUserQuotaSummary (own 3-minute cache), and coalescing /
+	// throttle are properties of the per-model refresh measured here.
 	callCount := 0
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		if strings.HasSuffix(r.URL.Path, "fetchAvailableModels") {
+			callCount++
+		}
 		time.Sleep(50 * time.Millisecond) // simulate delay
 		resp := map[string]any{
 			"models": map[string]any{
