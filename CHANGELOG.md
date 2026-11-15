@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.10.69] - 2026-11-15
+
+### Fixed
+- Media provider pages flooded `GET /api/connections` until the browser gave up. The v1.10.62 roster store's loader writes the same reactive roster entry its prologue reads, so every `$effect` that called `loadMediaRoster` subscribed itself to that entry: write → effect re-runs → fetch → write, unbounded (10–60 req/s for as long as the page stayed open). Chrome exhausted its per-origin socket pool (`ERR_INSUFFICIENT_RESOURCES`), which also starved unrelated calls like `/api/version/check` and made the example cards' Run buttons unusable — the generate request never reliably left the browser, and a clicked Run stuck on "Running…". The loader is now idempotent: per page-key in-flight dedupe plus a loaded-key cache that only `invalidateMediaRoster` clears, with its roster reads/writes untracked; the calling effects in the detail page, connections card, and TTS/STT example cards run the load untracked, and the connections card's duplicate `onMount` load is gone. One page visit now costs one roster request per component that needs it, and every media example (image, TTS, STT, video, embedding) can actually run.
+- Refreshing a media provider deep link (e.g. `/dashboard/media-providers/image/antigravity`) landed on the provider list instead of the detail page. `selectedMediaCatalogItem` derives from `PROVIDER_CATALOG`, a plain array mutated in place when the catalog fetch lands — not a reactive source — and the top bar reads that derived before the catalog arrives, caching the null it computed against the empty catalog for the rest of the session. App now flips a `catalogReady` state when `loadProviderCatalog()` resolves, and the catalog-reading deriveds depend on it, so a deep link resolves to its provider as soon as the catalog lands. The same latent staleness in `selectedProviderMeta` (provider detail deep links) is covered by the same signal.
+
 ## [v1.10.68] - 2026-11-15
 
 ### Fixed
