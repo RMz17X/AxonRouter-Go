@@ -5,10 +5,12 @@ import (
 	json "encoding/json/v2"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"axonrouter/proxy/internal/db"
 	"axonrouter/proxy/internal/fetchgate"
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/log"
@@ -303,6 +305,9 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 			log.Warn("usage", "forced credential refresh failed", "provider", conn.Provider, "conn", connID, "error", retry.err)
 		} else if retry.refreshed {
 			if retried, retryOK := fetchProviderUsage(fetchCtx, conn.Provider, data); retryOK {
+				if (conn.Provider == "minimax-code" || conn.Provider == "minimax-code-global") && h.Repo != nil {
+					applyMiniMaxClaimedCreditsFallback(h.Repo, conn.ID, retried.quotas)
+				}
 				h.maybeAutoReleaseQuotaLocks(fetchCtx, connID, retried.quotas)
 				h.writeUsageResponse(w, connID, retried.toResponse())
 				return
@@ -310,6 +315,9 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 		}
 	}
 	if ok {
+		if (conn.Provider == "minimax-code" || conn.Provider == "minimax-code-global") && h.Repo != nil {
+			applyMiniMaxClaimedCreditsFallback(h.Repo, conn.ID, res.quotas)
+		}
 		h.maybeAutoReleaseQuotaLocks(fetchCtx, connID, res.quotas)
 		h.writeUsageResponse(w, connID, res.toResponse())
 		return
@@ -418,4 +426,29 @@ func (h *DashboardHandler) HandleGetUsageProviders(w http.ResponseWriter, r *htt
 	handlerutil.WriteJSON(w, http.StatusOK, map[string]any{
 		"providers": list,
 	})
+}
+
+// applyMiniMaxClaimedCreditsFallback checks if an account's live balance is 0 or missing,
+// and if so, populates Credits from the recorded points in the minimax claim state table.
+func applyMiniMaxClaimedCreditsFallback(repo *db.Repo, connID string, quotas map[string]any) {
+	if repo == nil || quotas == nil {
+		return
+	}
+	cq, hasCredits := quotas["Credits"].(map[string]any)
+	needsFallback := false
+	if hasCredits {
+		total := usageNum(cq["total"], 0)
+		if total <= 0 {
+			needsFallback = true
+		}
+	} else if len(quotas) == 0 || (len(quotas) == 1 && quotas["Plan"] != nil) {
+		needsFallback = true
+	}
+
+	if needsFallback {
+		if pts := repo.GetMinimaxClaimPoints(connID); pts > 0 {
+			quotas["Credits"] = creditsQuota(strconv.Itoa(pts))
+			delete(quotas, "Plan")
+		}
+	}
 }

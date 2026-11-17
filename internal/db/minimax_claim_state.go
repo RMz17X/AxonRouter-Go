@@ -100,21 +100,44 @@ func (r *Repo) RecordMiniMaxClaimed(connectionID string, dayNo, points int) erro
 // which is the correct fail-open: the ledger may only ever skip an
 // upstream call it is sure about, never claim one happened that did not.
 func (r *Repo) MinimaxClaimedToday(connectionID string) (bool, int) {
+	claimed, dayNo, _ := r.MinimaxClaimedTodayWithPoints(connectionID)
+	return claimed, dayNo
+}
+
+// MinimaxClaimedTodayWithPoints reports whether the connection has a ledger row
+// dated today (WIB) along with the recorded streak day number and points.
+func (r *Repo) MinimaxClaimedTodayWithPoints(connectionID string) (bool, int, int) {
 	if r == nil || r.db == nil || connectionID == "" {
-		return false, 0
+		return false, 0, 0
 	}
 	var date string
-	var dayNo int
+	var dayNo, points int
 	err := r.QueryRow(
-		`SELECT claimDate, dayNo FROM minimaxClaimState WHERE connectionId = ?`,
-		connectionID).Scan(&date, &dayNo)
+		`SELECT claimDate, dayNo, points FROM minimaxClaimState WHERE connectionId = ?`,
+		connectionID).Scan(&date, &dayNo, &points)
 	if err != nil {
-		return false, 0
+		return false, 0, 0
 	}
 	if date != MinimaxClaimDateToday() {
-		return false, 0
+		return false, 0, 0
 	}
-	return true, dayNo
+	return true, dayNo, points
+}
+
+// GetMinimaxClaimPoints returns the latest recorded check-in points for a connection.
+// Returns 0 if no record exists or points <= 0.
+func (r *Repo) GetMinimaxClaimPoints(connectionID string) int {
+	if r == nil || r.db == nil || connectionID == "" {
+		return 0
+	}
+	var points int
+	err := r.QueryRow(
+		`SELECT points FROM minimaxClaimState WHERE connectionId = ?`,
+		connectionID).Scan(&points)
+	if err != nil {
+		return 0
+	}
+	return points
 }
 
 // MinimaxClaimedTodayMap returns a map of all connection IDs claimed today (WIB)

@@ -35,10 +35,18 @@ func TestMiniMaxClaimState_Lifecycle(t *testing.T) {
 		t.Fatalf("RecordMiniMaxClaimed failed: %v", err)
 	}
 
-	// Verify it reports claimed today with correct dayNo
+	// Verify it reports claimed today with correct dayNo and points
 	claimed, dayNo = repo.MinimaxClaimedToday("conn-test-1")
 	if !claimed || dayNo != 5 {
 		t.Fatalf("expected claimed=true dayNo=5, got claimed=%v, dayNo=%d", claimed, dayNo)
+	}
+
+	claimedWithPts, dayNoWithPts, pts := repo.MinimaxClaimedTodayWithPoints("conn-test-1")
+	if !claimedWithPts || dayNoWithPts != 5 || pts != 800 {
+		t.Fatalf("expected claimed=true dayNo=5 pts=800, got claimed=%v dayNo=%d pts=%d", claimedWithPts, dayNoWithPts, pts)
+	}
+	if gotPts := repo.GetMinimaxClaimPoints("conn-test-1"); gotPts != 800 {
+		t.Fatalf("expected GetMinimaxClaimPoints=800, got %d", gotPts)
 	}
 
 	// Another connection is unaffected

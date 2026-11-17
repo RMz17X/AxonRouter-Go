@@ -215,3 +215,25 @@ func TestMiniMaxCodePlanLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestApplyMiniMaxClaimedCreditsFallback_NilRepoOrQuotas(t *testing.T) {
+	// Should not panic on nil repo or quotas
+	applyMiniMaxClaimedCreditsFallback(nil, "conn-1", nil)
+	applyMiniMaxClaimedCreditsFallback(nil, "conn-1", map[string]any{})
+}
+
+func TestCreditsQuota_PositiveBalance(t *testing.T) {
+	q := creditsQuota("400")
+	if q["isCreditBalance"] != true {
+		t.Fatalf("expected isCreditBalance=true")
+	}
+	if q["currency"] != "credits" {
+		t.Fatalf("expected currency=credits")
+	}
+	if q["total"] != float64(400) {
+		t.Fatalf("expected total=400, got %v", q["total"])
+	}
+	if q["remainingPercentage"] != float64(100) {
+		t.Fatalf("expected remainingPercentage=100, got %v", q["remainingPercentage"])
+	}
+}

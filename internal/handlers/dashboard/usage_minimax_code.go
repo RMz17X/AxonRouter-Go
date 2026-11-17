@@ -83,8 +83,32 @@ func fetchMiniMaxCodeUsage(ctx context.Context, provider, accessToken, userID st
 	}
 
 	quotas := map[string]any{}
-	if plan.balance != "" {
+	creditBalanceNum := usageNum(plan.balance, 0)
+	if creditBalanceNum > 0 {
 		quotas["Credits"] = creditsQuota(plan.balance)
+	} else {
+		// In free or newly onboarded accounts, the matrix membership endpoint
+		// often reports 0 balance or delays syncing check-in reward points.
+		// Query the sign-in status to see if daily check-in points have been earned.
+		if status, _, pts, days, sErr := CheckMiniMaxSignInStatus(ctx, site, accessToken, userID); sErr == nil {
+			claimedPoints := 0
+			for _, raw := range days {
+				if d, ok := raw.(map[string]any); ok {
+					if int(usageNum(d["status"], 0)) == 3 {
+						claimedPoints += int(usageNum(d["points"], 0))
+					}
+				}
+			}
+			if claimedPoints > 0 {
+				quotas["Credits"] = creditsQuota(strconv.Itoa(claimedPoints))
+			} else if status == 3 && pts > 0 {
+				quotas["Credits"] = creditsQuota(strconv.Itoa(pts))
+			} else if plan.balance != "" {
+				quotas["Credits"] = creditsQuota(plan.balance)
+			}
+		} else if plan.balance != "" {
+			quotas["Credits"] = creditsQuota(plan.balance)
+		}
 	}
 	if plan.hasTokenPlan && plan.opGroupID != "" {
 		windows, wErr := miniMaxCodePlanWindows(ctx, site, accessToken, plan.opGroupID)

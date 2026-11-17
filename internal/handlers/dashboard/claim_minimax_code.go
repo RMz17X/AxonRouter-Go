@@ -400,11 +400,12 @@ func (h *DashboardHandler) HandleGetMiniMaxClaimStatus(w http.ResponseWriter, r 
 	// return claimed status immediately without an upstream HTTP round trip.
 	// When force=1 is explicitly requested by operator, skip fast path to read upstream.
 	if !isForced && h.Repo != nil {
-		if claimed, dayNo := h.Repo.MinimaxClaimedToday(connID); claimed {
+		if claimed, dayNo, pts := h.Repo.MinimaxClaimedTodayWithPoints(connID); claimed {
 			resp := MiniMaxSignInStatus{
 				ConnectionID: connID,
 				TodayStatus:  3,
 				DayNo:        dayNo,
+				Points:       pts,
 				IsClaimed:    true,
 			}
 			storeClaimStatus(connID, resp)
