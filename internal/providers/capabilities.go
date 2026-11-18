@@ -665,11 +665,18 @@ var providerCapabilities = map[string]map[string]Capabilities{
 	},
 	// MiniMax Code (mcode) credits lane — Anthropic messages on the mavis
 	// gateway, thinking as adaptive effort via output_config.effort
-	// (claude-adaptive). Limits are the static catalog magpie's minimax plugin
-	// ships; the M2.7 pair always thinks and takes no effort knob in MiniMax
-	// Code itself, hence thinkingCanDisable:false. Port of upstream
-	// decolua/9router open-sse/providers/capabilities.js.
+	// (claude-adaptive). Limits mirror the catalog the provider itself serves
+	// (agent.minimax.cn|io/mavis/api/v1/models, read 2026-11-18): M3.1 Flash
+	// and M3 both publish 512000 context / 128000 output, and the M2.7 pair
+	// keeps the window it shipped with after the catalog stopped listing it.
+	// Every id the registry publishes needs a row here: without one the model
+	// falls through to the substring table's generic floor (128000/4096), which
+	// is exactly what mmg/MiniMax-M3.1-Flash used to advertise. M3.1 Flash is
+	// forced_on, the M2.7 pair always thinks and takes no effort knob, hence
+	// thinkingCanDisable:false. Port of upstream decolua/9router
+	// open-sse/providers/capabilities.js plus the catalog read.
 	"minimax-code": {
+		"MiniMax-M3.1-Flash":         {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "claude-adaptive", ThinkingCanDisable: new(false), ContextWindow: 512000, MaxOutput: 128000},
 		"MiniMax-M3.1-Flash-Preview": {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "claude-adaptive", ThinkingCanDisable: new(false), ContextWindow: 512000, MaxOutput: 128000},
 		"MiniMax-M3":                 {Vision: true, Reasoning: true, Tools: true, ThinkingFormat: "claude-adaptive", ContextWindow: 512000, MaxOutput: 128000},
 		"MiniMax-M2.7":               {Reasoning: true, Tools: true, ThinkingFormat: "claude-adaptive", ThinkingCanDisable: new(false), ContextWindow: 200000, MaxOutput: 128000},

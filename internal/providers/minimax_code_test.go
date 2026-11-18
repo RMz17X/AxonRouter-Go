@@ -113,9 +113,11 @@ func TestMiniMaxCodeThinkingLevels(t *testing.T) {
 		model    string
 		want     []string
 	}{
+		{"minimax-code", "MiniMax-M3.1-Flash", []string{"low", "medium", "high", "xhigh", "max"}},
 		{"minimax-code", "MiniMax-M3.1-Flash-Preview", []string{"low", "medium", "high", "xhigh", "max"}},
 		{"minimax-code", "MiniMax-M3", []string{"none", "high"}},
 		{"minimax-code", "MiniMax-M2.7", []string{"low", "medium", "high", "xhigh", "max"}},
+		{"minimax-code-global", "MiniMax-M3.1-Flash", []string{"low", "medium", "high", "xhigh", "max"}},
 		{"minimax-code-global", "MiniMax-M3.1-Flash-Preview", []string{"low", "medium", "high", "xhigh", "max"}},
 		{"minimax-code-global", "MiniMax-M3", []string{"none", "high"}},
 		// The published aliases must resolve to the same sets as the ids.
@@ -141,6 +143,7 @@ func TestMiniMaxCodeCapabilities(t *testing.T) {
 		vision     bool
 		canDisable bool
 	}{
+		{"MiniMax-M3.1-Flash", true, false},
 		{"MiniMax-M3.1-Flash-Preview", true, false},
 		{"MiniMax-M3", true, true},
 		{"MiniMax-M2.7", false, false},
@@ -167,5 +170,32 @@ func TestMiniMaxCodeCapabilities(t *testing.T) {
 				t.Errorf("global caps = %+v, want the same as %+v", global, caps)
 			}
 		})
+	}
+}
+
+// The catalog the mcode sites serve (agent.minimax.cn|io/mavis/api/v1/models)
+// is the only source of truth for these windows. A model without a row in the
+// minimax-code table falls through to the substring table's 128000/4096 floor,
+// which is what mmg/MiniMax-M3.1-Flash advertised until the table caught up.
+func TestMiniMaxCodeCatalogLimits(t *testing.T) {
+	want := map[string][2]int{
+		"MiniMax-M3.1-Flash":         {512000, 128000},
+		"MiniMax-M3.1-Flash-Preview": {512000, 128000},
+		"MiniMax-M3":                 {512000, 128000},
+		"MiniMax-M2.7":               {200000, 128000},
+		"MiniMax-M2.7-highspeed":     {200000, 128000},
+	}
+	for _, provider := range []string{"minimax-code", "minimax-code-global"} {
+		for model, limits := range want {
+			t.Run(provider+"/"+model, func(t *testing.T) {
+				caps := GetCapabilitiesDetailForModel(provider, model)
+				if caps.ContextWindow != limits[0] {
+					t.Errorf("ContextWindow = %d, want %d", caps.ContextWindow, limits[0])
+				}
+				if caps.MaxOutput != limits[1] {
+					t.Errorf("MaxOutput = %d, want %d", caps.MaxOutput, limits[1])
+				}
+			})
+		}
 	}
 }
