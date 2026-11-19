@@ -70,7 +70,11 @@ func (h *ChatHandler) handleAccountFallback(
 	isStream bool,
 	translateResponse bool,
 	endpoint string,
-) error {
+) (retErr error) {
+	// Publish a short gate verdict on every classified refusal, whichever
+	// writer ends up emitting the error. The defer runs before the caller
+	// writes a status, so the header is still settable here.
+	defer func() { publishOpenCodeGateVerdict(w, provider, retErr) }()
 	if isClientCanceled(ctx, nil) {
 		return clientClosedError()
 	}
@@ -252,6 +256,10 @@ func (h *ChatHandler) handleAccountFallback(
 	// resolver filters them out, so the retry walks to the next egress instead
 	// of burning a healthy account.
 	excludedPools := map[string]bool{}
+	// Distinct proxy pools refused by the opencode gate in this request. The
+	// account loop can visit hundreds of connections; without a bound a fresh
+	// credential on an already-parked egress would walk all of them.
+	egressRotations := 0
 	var lastErr error
 	sawConnInFlightCap := false
 	attemptsSent := 0
@@ -263,6 +271,11 @@ func (h *ChatHandler) handleAccountFallback(
 	for _, c := range allConns {
 		if isClientCanceled(ctx, lastErr) {
 			return clientClosedError()
+		}
+		if egressRotations >= opencodeEgressRotateMax() {
+			log.WarnCtx(ctx, "fallback", "egress rotation cap reached, stopping account attempts",
+				"provider", provider, "model", model, "rotations", egressRotations)
+			break
 		}
 		// The first-byte budget is spent: another attempt would start against
 		// an expired deadline and fail immediately, so the chain stops here
@@ -459,15 +472,30 @@ func (h *ChatHandler) handleAccountFallback(
 			// binding a pool (errNoUsablePool) and the retry goes direct.
 			// Cooling the account down would mark it unhealthy over an egress
 			// verdict, so the cooldown stays untouched.
-			if isOpencodeFreeTierRefusal(provider, ue) {
-				if poolID := connData.ProxyPoolID; poolID != "" {
-					log.WarnCtx(attemptCtx, "fallback", "opencode free-tier refusal, rotating proxy pool",
-						"conn", connObj.ID, "provider", provider, "model", model, "pool", poolID)
+			if isOpencodeEgressRefusal(provider, ue) {
+				poolID := attemptPoolID(connData)
+				if poolID != "" {
+					strike, parked := parkOpenCodeEgress(provider, poolID, ue)
+					log.WarnCtx(attemptCtx, "fallback", "opencode egress parked, rotating pool",
+						"conn", connObj.ID, "provider", provider, "model", model,
+						"pool", poolID, "strike", strike, "parkedSec", int(parked.Seconds()))
 					excludedPools[poolID] = true
+					egressRotations++
 					continue
 				}
-				log.WarnCtx(attemptCtx, "fallback", "opencode free-tier refusal, not locking the account",
+				log.WarnCtx(attemptCtx, "fallback", "opencode egress refusal, not locking the account",
 					"conn", connObj.ID, "provider", provider, "model", model)
+				excludeIDs = append(excludeIDs, connObj.ID)
+				continue
+			}
+			if isOpencodeFreeTierRefusal(provider, ue) {
+				// A 403 is a request-shape verdict, not an egress strike.
+				// Rotate once so a different edge may serve the request, but
+				// leave account cooldown and the strike ledger untouched.
+				if poolID := attemptPoolID(connData); poolID != "" {
+					excludedPools[poolID] = true
+					egressRotations++
+				}
 				excludeIDs = append(excludeIDs, connObj.ID)
 				continue
 			}
@@ -646,14 +674,14 @@ func classifyOpencodeFreeTierRefusal(provider string, body []byte) opencodeRefus
 		strings.Contains(lower, "region"):
 		return opencodeRefusalDetail{
 			StatusCode: http.StatusForbidden,
-			ErrorType:  "free_tier_region_blocked",
+			ErrorType:  opencodeClassifiedRegionBlocked,
 			Message:    fmt.Sprintf("OpenCode's free tier is not available in your region (%s). Route through a proxy pool in a supported country.", provider),
 		}
 
 	case isOpencodeQuotaRefusal(lower, token):
 		return opencodeRefusalDetail{
 			StatusCode: http.StatusTooManyRequests,
-			ErrorType:  "free_tier_quota_exhausted",
+			ErrorType:  opencodeClassifiedQuotaExhausted,
 			Message:    fmt.Sprintf("OpenCode free tier rate limit or quota exceeded for this egress. Retry in about 60s, rotate proxy pool, or use a paid %s key.", provider),
 			RetryAfter: 60,
 		}
@@ -664,7 +692,7 @@ func classifyOpencodeFreeTierRefusal(provider string, body []byte) opencodeRefus
 		strings.Contains(lower, "version deprecated"):
 		return opencodeRefusalDetail{
 			StatusCode: http.StatusUpgradeRequired,
-			ErrorType:  "free_tier_upgrade_required",
+			ErrorType:  opencodeClassifiedUpgradeRequired,
 			Message:    "OpenCode client version is deprecated or requires upgrade.",
 		}
 
@@ -672,7 +700,7 @@ func classifyOpencodeFreeTierRefusal(provider string, body []byte) opencodeRefus
 		strings.Contains(lower, "abuse"):
 		return opencodeRefusalDetail{
 			StatusCode: http.StatusServiceUnavailable,
-			ErrorType:  "free_tier_abuse_detected",
+			ErrorType:  opencodeClassifiedAbuseDetected,
 			Message:    "OpenCode free tier gateway flagged abuse traffic on this egress. Route through a clean residential/ISP proxy pool, or retry in about 30s.",
 			RetryAfter: 30,
 		}
@@ -681,7 +709,7 @@ func classifyOpencodeFreeTierRefusal(provider string, body []byte) opencodeRefus
 		const retryAfterSeconds = 30
 		return opencodeRefusalDetail{
 			StatusCode: http.StatusServiceUnavailable,
-			ErrorType:  "free_tier_unavailable",
+			ErrorType:  opencodeClassifiedUnavailable,
 			Message: fmt.Sprintf(
 				"OpenCode's free tier is not serving requests right now. This is an upstream condition rather than a problem with your request or credentials. Retry in about %ds, or use a paid %s key or another provider.",
 				retryAfterSeconds, provider,
