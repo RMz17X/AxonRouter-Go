@@ -100,3 +100,4 @@ scripts/__pycache__/
 screenshots/modal_verification/
 scripts/harvest_*.py
 scripts/perch_auto_refresh.py
+dist/

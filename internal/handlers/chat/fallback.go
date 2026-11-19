@@ -341,12 +341,18 @@ func (h *ChatHandler) handleAccountFallback(
 			// the single point every attempt passes through, so the error
 			// arriving here is already the timeout error.
 			if timedOut, waited := firstByteTimeoutError(ctx, err); timedOut {
-				log.WarnCtx(attemptCtx, "fallback", "first-byte timeout, rotating without locking",
-					"conn", connObj.ID, "provider", provider, "model", model,
-					"waitedMs", waited.Milliseconds())
 				excludeIDs = append(excludeIDs, connObj.ID)
 				lastErr = firstByteTimeoutUpstreamError(waited)
 				attemptsSent++
+				if spent, _ := firstByteBudgetSpent(ctx); spent {
+					log.WarnCtx(attemptCtx, "fallback", "first-byte budget spent, stopping account rotation",
+						"conn", connObj.ID, "provider", provider, "model", model,
+						"waitedMs", waited.Milliseconds())
+					break
+				}
+				log.WarnCtx(attemptCtx, "fallback", "first-byte timeout, rotating without locking",
+					"conn", connObj.ID, "provider", provider, "model", model,
+					"waitedMs", waited.Milliseconds())
 				continue
 			}
 			var ue *upstreamError
@@ -928,12 +934,14 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	defer cancelAttempt()
 	ctx = attemptCtx
 	// Antigravity's per-account concurrency ceiling (see conn_inflight.go):
-	// refuse the attempt locally once the connection is at its cap, so the
-	// caller rotates instead of drawing the bare-429 the ceiling answers.
+	// refuse the attempt once the shared counter says the connection is at
+	// its cap, so the caller rotates instead of drawing the bare-429 the
+	// ceiling answers. The counter spans replicas; a local one would let
+	// every node admit one generation per account.
 	// Probes bypass the cap — they are single, brief, and their job is to
 	// measure the upstream, not to compete with serving traffic.
 	if providers.ResolveAlias(provider) == "antigravity" && !handlerutil.IsProbeContext(ctx) {
-		if !tryAcquireConnSlot(connectionID, antigravityMaxInFlightPerConn) {
+		if !tryAcquireConnSlot(ctx, connectionID, antigravityMaxInFlightPerConn) {
 			return errConnInFlightCap
 		}
 		defer releaseConnSlot(connectionID)

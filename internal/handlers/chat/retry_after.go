@@ -234,6 +234,11 @@ func (p *passRetry) writeError(cw *committedResponseWriter, lastErr *upstreamErr
 	if rawRetryAfter == "" && p.earliest > 0 {
 		rawRetryAfter = strconv.Itoa(max(ceilSeconds(p.earliest), 1))
 	}
+	// The published wait is capped here, before it reaches the client: the
+	// value the upstream asked for decides whether the client retries at all,
+	// and a wait past the clients' own ceiling turns a retryable status into
+	// a terminal one. See handlerutil.ClientRetryAfterCapSeconds.
+	rawRetryAfter = handlerutil.ClampedRetryAfter(rawRetryAfter)
 
 	masked := MaskClientFacingError(lastErr.StatusCode, lastErr.Body, rawRetryAfter, true)
 

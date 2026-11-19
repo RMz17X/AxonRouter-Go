@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"axonrouter/proxy/internal/models"
 )
@@ -72,8 +73,10 @@ func providerInClause(column string, values []string, args *[]any) string {
 //     api-key provider) — isUsageEligibleConnection.
 //   - account status: IsEffectivelyActive(isActive, "", cooldown)
 //     reduces, for an empty testStatus and lastError, to isActive = 1
-//     with no live modelLock_* entry in data — HasActiveCooldown's raw
-//     substring check over the JSON text.
+//     with no live modelLock_* entry in data. A lock is live only while
+//     its stored RFC3339 timestamp is in the future — matching
+//     providers.HasActiveCooldown — so expired markers no longer keep
+//     a recovered account in the inactive bucket.
 //   - search: literal substring (LIKE-escaped) over the identity
 //     fields the page displays, mirroring upstream's SQL search set.
 func clientUsageWhere(f ClientUsagePageFilter, level int) (string, []any) {
@@ -86,12 +89,16 @@ func clientUsageWhere(f ClientUsagePageFilter, level int) (string, []any) {
 		args = append(args, f.Provider)
 	}
 	if level >= 2 {
-		active := "(isActive = 1 AND strpos(COALESCE(data::text, ''), '\"modelLock_') = 0)"
+		active := "(isActive = 1 AND NOT EXISTS (SELECT 1 FROM jsonb_each_text(data) AS l(k, v)" +
+			" WHERE l.k LIKE 'modelLock_%' AND l.v LIKE '____-__-__T%'" +
+			" AND l.v::timestamptz > ?))"
 		switch f.AccountStatus {
 		case "active":
 			clauses = append(clauses, active)
+			args = append(args, time.Now().UTC())
 		case "inactive":
 			clauses = append(clauses, "NOT "+active)
+			args = append(args, time.Now().UTC())
 		}
 		if strings.TrimSpace(f.Search) != "" {
 			clauses = append(clauses, clientUsageSearchClause(&args, f.Search))

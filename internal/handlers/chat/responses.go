@@ -4,7 +4,6 @@ import (
 	json "axonrouter/proxy/internal/fastjson"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -189,6 +188,11 @@ func (h *ChatHandler) newResponsesContext(r *http.Request, requestedModel string
 	// The dispatching key decides which guardrail policy governs the response.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
 	ctx = withClientIP(ctx, requestClientIP(r))
+	// The first-byte budget is opened here, once per request, so every attempt
+	// in the fallback chain shares it. See HandleChatCompletions for why the
+	// wait for the upstream's first byte has to be bounded below the edge
+	// proxy's own idle timeout.
+	ctx = WithFirstByteDeadline(ctx, ResolveFirstByteDeadline())
 
 	providerCfg, err := h.getProviderConfig(modelInfo.Provider, nil)
 	if err == nil && executor.UpstreamSpeaksResponses(modelInfo.Provider, modelInfo.Model, providerCfg) {
@@ -254,5 +258,8 @@ func (h *ChatHandler) handleResponsesSingleModel(ctx context.Context, w http.Res
 		cw.Write(ue.Body)
 		return
 	}
-	handlerutil.WriteJSONError(cw, http.StatusBadGateway, fmt.Sprintf("upstream error: %v", result))
+	// The structured line is what makes this failure attributable; see
+	// logTerminalUpstreamFailure.
+	logTerminalUpstreamFailure(ctx, "responses", modelInfo.Provider, modelInfo.Model, result, cw.IsCommitted())
+	writeTerminalFailure(cw, result)
 }

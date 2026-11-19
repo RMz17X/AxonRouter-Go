@@ -1,8 +1,10 @@
 package chat
 
 import (
+	"context"
 	"errors"
-	"sync"
+
+	"axonrouter/proxy/internal/speedlayer"
 )
 
 // conn_inflight.go — per-connection in-flight caps for providers whose
@@ -19,8 +21,13 @@ import (
 // full fails fast with errConnInFlightCap and the caller rotates to
 // the next account instead of manufacturing another upstream 429.
 //
-// The registry is in-memory only: a restart forgets the counts, which
-// is correct — in-flight attempts do not survive one either.
+// The count lives in the speed layer, not in this process: with more
+// than one replica a local counter would admit one generation per node
+// per account, which is exactly the overlap the upstream rejects.
+// Boot still installs a memory store in single-node mode, so the
+// single-replica behaviour is unchanged. A speed-layer error fails
+// open — an unavailable cache must not take the gateway down, even
+// at the cost of a missed cap on that attempt.
 //
 // The cap is 1 — strictly sequential per account, the shape a single
 // interactive Antigravity user produces (and the shape that works when
@@ -32,42 +39,55 @@ import (
 // the low-concurrency minutes right after the provider breaker closed,
 // when attempts happened to run one at a time. Rotation across the
 // account pool provides the fleet's parallelism instead.
-const antigravityMaxInFlightPerConn = 1
+const (
+	antigravityMaxInFlightPerConn = 1
+	connSlotKeyPrefix             = "connslot:"
+)
 
 var errConnInFlightCap = errors.New("connection at its in-flight cap")
 
-var (
-	connInFlightMu sync.Mutex
-	connInFlight   = make(map[string]int)
-)
+func connSlotKey(connID string) string { return connSlotKeyPrefix + connID }
 
-// tryAcquireConnSlot takes one in-flight slot for the connection and
-// reports whether it got one.
-func tryAcquireConnSlot(connID string, limit int) bool {
+// tryAcquireConnSlot atomically takes one in-flight slot for the
+// connection and reports whether it got one. An increment above the
+// cap is rolled back immediately; the caller then rotates to another
+// account without sending anything upstream.
+func tryAcquireConnSlot(ctx context.Context, connID string, limit int) bool {
 	if connID == "" || limit <= 0 {
 		return true
 	}
-	connInFlightMu.Lock()
-	defer connInFlightMu.Unlock()
-	if connInFlight[connID] >= limit {
-		return false
+	store := speedlayer.Default()
+	opCtx, cancel := speedlayer.OpContext(ctx)
+	defer cancel()
+	value, err := store.AddCounter(opCtx, connSlotKey(connID), 1)
+	if err != nil {
+		return true
 	}
-	connInFlight[connID]++
-	return true
+	if value <= int64(limit) {
+		return true
+	}
+	// Release must not inherit the request's cancellation: the client
+	// may be gone while the failure path still unwinds.
+	rollbackCtx, rollbackCancel := speedlayer.OpContext(context.Background())
+	defer rollbackCancel()
+	_, _ = store.AddCounter(rollbackCtx, connSlotKey(connID), -1)
+	return false
 }
 
-// releaseConnSlot returns one in-flight slot for the connection.
+// releaseConnSlot returns one in-flight slot to the shared counter.
 func releaseConnSlot(connID string) {
 	if connID == "" {
 		return
 	}
-	connInFlightMu.Lock()
-	defer connInFlightMu.Unlock()
-	if connInFlight[connID] <= 1 {
-		delete(connInFlight, connID)
-		return
+	store := speedlayer.Default()
+	ctx, cancel := speedlayer.OpContext(context.Background())
+	defer cancel()
+	value, err := store.AddCounter(ctx, connSlotKey(connID), -1)
+	if err == nil && value < 0 {
+		// A generation that outlived the counter's sliding TTL would
+		// otherwise leave a negative slot behind and admit extra work.
+		_ = store.Delete(ctx, connSlotKey(connID))
 	}
-	connInFlight[connID]--
 }
 
 // isConnInFlightCapError reports whether an attempt was refused by the

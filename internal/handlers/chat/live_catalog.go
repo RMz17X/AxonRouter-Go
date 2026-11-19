@@ -34,7 +34,7 @@ import (
 const (
 	liveCatalogTTL       = 30 * time.Minute
 	liveCatalogNegTTL    = 30 * time.Minute
-	liveCatalogFastHTTP  = 1500 * time.Millisecond
+	liveCatalogFastHTTP  = 1000 * time.Millisecond
 	kiroCatalogHTTP      = 3 * time.Second
 	kiroRuntimeSDKVer    = "1.0.0"
 	kiroAgentOS          = "windows"
@@ -258,9 +258,17 @@ func liveCatalogStoreModels(key string, discovered []LiveModel) {
 }
 
 func liveCatalogStoreNegative(key string) {
+	liveCatalogStoreNegativeWithTTL(key, liveCatalogNegTTL)
+}
+
+func liveCatalogStoreNegativeWithTTL(key string, ttl time.Duration) {
 	liveCatalogStore.mu.Lock()
 	defer liveCatalogStore.mu.Unlock()
-	liveCatalogStore.entries[key] = liveCatalogEntry{expiresAt: time.Now().Add(liveCatalogNegTTL)}
+	newExp := time.Now().Add(ttl)
+	if cur, ok := liveCatalogStore.entries[key]; ok && cur.expiresAt.After(newExp) {
+		return
+	}
+	liveCatalogStore.entries[key] = liveCatalogEntry{expiresAt: newExp}
 }
 
 // ---- Kiro (AWS CodeWhisperer ListAvailableModels) ----
@@ -507,6 +515,12 @@ func (h *ChatHandler) fetchCompatibleNodeModels(ctx context.Context, conn *model
 	resp, err := h.Client.Do(req)
 	if err != nil {
 		log.Warn("models", "compatible node catalog fetch failed", "conn", conn.ID, "error", err)
+		cacheKey := liveCatalogKey(providerID, conn, connData)
+		if strings.Contains(err.Error(), "SSRF protection") {
+			liveCatalogStoreNegativeWithTTL(cacheKey, 24*time.Hour)
+		} else if strings.Contains(err.Error(), "context deadline exceeded") || strings.Contains(err.Error(), "i/o timeout") {
+			liveCatalogStoreNegativeWithTTL(cacheKey, 2*time.Hour)
+		}
 		return nil
 	}
 	defer resp.Body.Close()

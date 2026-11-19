@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
+
+	"axonrouter/proxy/internal/handlerutil"
 )
 
 // MaskedClientError holds the sanitized HTTP status code, response body, and
@@ -88,10 +89,12 @@ func MaskClientFacingError(statusCode int, body []byte, rawRetryAfter string, is
 		maskedStatus = http.StatusServiceUnavailable
 		// Clamp Retry-After to max 2s so client doesn't freeze for minutes
 		if rawRetryAfter != "" {
-			if sec, err := strconv.Atoi(strings.TrimSpace(rawRetryAfter)); err == nil && sec > 2 {
+			if sec, ok := handlerutil.ClampClientRetryAfter(rawRetryAfter); ok && sec > 2 {
 				maskedRetry = "2"
+			} else if ok {
+				maskedRetry = strconv.Itoa(sec)
 			} else {
-				maskedRetry = rawRetryAfter
+				maskedRetry = "1"
 			}
 		} else {
 			maskedRetry = "1"
@@ -163,13 +166,13 @@ func MaskClientFacingError(statusCode int, body []byte, rawRetryAfter string, is
 		return MaskedClientError{
 			StatusCode: maskedStatus,
 			Body:       jsonBody,
-			RetryAfter: rawRetryAfter,
+			RetryAfter: handlerutil.ClampedRetryAfter(rawRetryAfter),
 		}
 	}
 
 	return MaskedClientError{
 		StatusCode: maskedStatus,
 		Body:       body,
-		RetryAfter: rawRetryAfter,
+		RetryAfter: handlerutil.ClampedRetryAfter(rawRetryAfter),
 	}
 }

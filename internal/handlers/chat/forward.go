@@ -117,6 +117,36 @@ func (h *ChatHandler) forwardRequest(
 	// response headers instead of the attempt start.
 	noteUpstreamProgress(ctx)
 
+	// The body is wrapped before anything reads it, so that a read that is
+	// already in flight when the deadline fires is interrupted rather than
+	// left to block.
+	//
+	// Go's transport honours the request context for the dial and for the
+	// response headers, and its read loop watches the context while the body
+	// is read — so cancelling the context does abort a pending read. What it
+	// reports then, however, is the context's cause, which for a cancelled
+	// client request is context.Canceled. The gateway cannot tell "the client
+	// left" from "the upstream was too slow" by looking at that alone, so the
+	// reader reports the deadline itself as ErrDeadlineExceeded.
+	//
+	// The non-streaming lane is the one that matters most: it reads the whole
+	// body before it writes a single header, so the client sees nothing at
+	// all for the entire generation. Measured on 2026-11-18: 809 client-side
+	// timeouts in 36 hours, 622 of them from one non-streaming client.
+	if isStream {
+		// The streaming lane releases the deadline once the first byte is
+		// out. After that the response has started, the stall watchdog
+		// governs the gap between events, and a deadline that kept running
+		// would cut a long generation in half — 281 requests ran longer than
+		// 100 seconds that day and still answered 200.
+		resp.Body = internalproxy.NewFirstByteDeadlineReader(ctx, resp.Body)
+	} else {
+		resp.Body = internalproxy.NewDeadlineReader(ctx, resp.Body)
+	}
+
+	// The closer follows the wrapper, so that the wrapper's own Close runs
+	// and the timer it owns is stopped rather than left to fire against a
+	// body the serving path has already finished with.
 	var bodyCloser io.Closer = resp.Body
 	defer func() {
 		if bodyCloser != nil {

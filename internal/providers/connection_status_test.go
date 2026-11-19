@@ -1,6 +1,9 @@
 package providers
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestEffectiveStatus(t *testing.T) {
 	tests := []struct {
@@ -163,6 +166,7 @@ func TestStatusVariant(t *testing.T) {
 }
 
 func TestHasActiveCooldown(t *testing.T) {
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name string
 		data string
@@ -171,15 +175,28 @@ func TestHasActiveCooldown(t *testing.T) {
 		{"empty", "", false},
 		{"whitespace", "   ", false},
 		{"no lock", `{"testStatus":"active"}`, false},
-		{"lock present", `{"modelLock_gpt-5":"2026-10-30T00:00:00Z"}`, true},
-		{"null lock still counts as a key", `{"modelLock_gpt-5":null}`, true},
+		{"live lock", `{"modelLock_gpt-5":"2026-11-19T13:00:00Z"}`, true},
+		{"expired lock", `{"modelLock_gpt-5":"2026-11-19T11:00:00Z"}`, false},
+		{"cleared lock", `{"modelLock_gpt-5":null}`, false},
+		{"empty lock", `{"modelLock_gpt-5":""}`, false},
+		{"malformed timestamp", `{"modelLock_gpt-5":"soon"}`, false},
+		{"live lock among other entries", `{"apiKey":"sk-x","modelLock_gpt-5":"2026-11-19T13:00:00Z"}`, true},
+		{"expired lock among other entries", `{"apiKey":"sk-x","modelLock_gpt-5":"2026-11-19T11:00:00Z"}`, false},
+		{"lock text in unrelated value", `{"lastError":"modelLock_gpt-5 leftover"}`, false},
+		{"invalid json", `{not json`, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := HasActiveCooldown(tt.data); got != tt.want {
-				t.Errorf("HasActiveCooldown(%q) = %v, want %v", tt.data, got, tt.want)
+			if got := hasActiveCooldownAt(tt.data, now); got != tt.want {
+				t.Errorf("hasActiveCooldownAt(%q) = %v, want %v", tt.data, got, tt.want)
 			}
 		})
+	}
+	if !HasActiveCooldown(`{"modelLock_gpt-5":"2099-01-01T00:00:00Z"}`) {
+		t.Error("HasActiveCooldown: future lock must be active")
+	}
+	if HasActiveCooldown(`{"modelLock_gpt-5":"2001-01-01T00:00:00Z"}`) {
+		t.Error("HasActiveCooldown: historical lock must not be active")
 	}
 }
 

@@ -3,6 +3,7 @@ package providers
 import (
 	"encoding/json"
 	"strings"
+	"time"
 )
 
 // Connection status vocabulary, mirroring the upstream Next.js 9router
@@ -52,19 +53,40 @@ func EffectiveStatus(isActive int, testStatus string, hasActiveCooldown bool) st
 	return EffectiveStatusWithError(isActive, testStatus, hasActiveCooldown, "")
 }
 
-// HasActiveCooldown reports whether a connection's data JSON carries any
-// live modelLock_* entry. These are written by the chat path when a model
-// returns 429/capacity, and cleared when the lock expires or the operator
-// resets health. A live lock means the account is currently in a cooldown
-// window for at least one model.
+// HasActiveCooldown reports whether a connection's data JSON carries a
+// live modelLock_* entry: a flattened modelLock_<model> key whose stored
+// RFC3339 timestamp is still in the future. A cleared (null) or elapsed
+// lock is a historical marker, not a cooldown — the old substring check
+// kept every account that had ever been locked in "rate_limited" forever.
 func HasActiveCooldown(dataJSON string) bool {
-	if strings.TrimSpace(dataJSON) == "" {
+	return hasActiveCooldownAt(dataJSON, time.Now())
+}
+
+func hasActiveCooldownAt(dataJSON string, now time.Time) bool {
+	if !strings.Contains(dataJSON, `"modelLock_`) {
 		return false
 	}
-	// Fast path: scan the raw JSON for the prefix. This avoids unmarshalling
-	// the whole blob on every status check, and is safe because modelLock_*
-	// keys are always written by this codebase, never by user input.
-	return strings.Contains(dataJSON, `"modelLock_`)
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(dataJSON), &data); err != nil {
+		return false
+	}
+	for key, raw := range data {
+		if !strings.HasPrefix(key, "modelLock_") {
+			continue
+		}
+		var untilStr string
+		if err := json.Unmarshal(raw, &untilStr); err != nil || untilStr == "" {
+			continue
+		}
+		until, err := time.Parse(time.RFC3339, untilStr)
+		if err != nil {
+			continue
+		}
+		if until.After(now) {
+			return true
+		}
+	}
+	return false
 }
 
 // ConnectionStatus resolves the effective status of a connection row,

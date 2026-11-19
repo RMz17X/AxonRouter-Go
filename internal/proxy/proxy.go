@@ -341,6 +341,33 @@ func doRequestOnce(ctx context.Context, client *http.Client, method, url string,
 	if err != nil {
 		return nil, fmt.Errorf("upstream request: %w", err)
 	}
+
+	// The upstream's response headers have arrived: the wait for the first
+	// byte is over, and the response may now stream for as long as it needs.
+	// The bound that was waiting for it is released here, so that it cannot
+	// cut a long generation in half.
+	//
+	// Releasing it here rather than in the caller matters because this is
+	// the one place that knows the upstream answered. Every path that
+	// produces a response — the OpenAI forward, the Gemini native forward,
+	// the provider executors — goes through this function, so the release
+	// covers all of them.
+	//
+	// Only a successful response releases the bound. A retryable failure
+	// status does not: the caller is going to retry the request, and that
+	// retry is another wait for a first byte that has not happened yet.
+	// Releasing on a 429 would leave the retry unbounded, which is the
+	// silent gap the bound exists to close.
+	//
+	// The release sits after the replay cases on purpose. A response that
+	// arrived through the insecure-TLS replay or the direct replay after a
+	// proxy failure is a response just as much, and releasing only on the
+	// first attempt left the bound armed for the whole generation — it
+	// fired mid-stream and ended an answer that was still coming.
+	if resp.StatusCode == http.StatusOK {
+		ReleaseDeadline(ctx)
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		errBody, readErr := io.ReadAll(io.LimitReader(resp.Body, 1*1024*1024))
 		resp.Body.Close()

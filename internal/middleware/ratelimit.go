@@ -1095,7 +1095,10 @@ func rejectBudgetExhausted(w http.ResponseWriter, d budget.Decision) {
 		if secs < 1 {
 			secs = 1
 		}
-		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		// Clamped to the ceiling the clients accept: a wait past it is not
+		// honoured by the client, so publishing it turns a retryable refusal
+		// into a terminal error.
+		w.Header().Set("Retry-After", strconv.Itoa(handlerutil.ClampRetryAfterSeconds(secs)))
 	}
 	if d.Axis == "cost" {
 		w.Header().Set("X-Budget-Limit", budget.FormatMicros(d.Limits.LimitMicros))
@@ -1316,7 +1319,12 @@ func rejectRateLimited(w http.ResponseWriter, keyID string, limits Limits, retry
 	log.Warn("rate limit", "key", keyID, "retryAfter", retryAfter, "scope", scope)
 	observ.IncRateLimitReject(rateLimitScope(scope), keyID)
 
-	w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+	// The wait is clamped to the ceiling the clients of this API accept. The
+	// gateway's own window is 60 s and the concurrency queue timeout is 60 s,
+	// and each publishes its bound plus a second — one second past what the
+	// pi-ai retry helper accepts, which turns a retryable refusal into a
+	// terminal error on the client.
+	w.Header().Set("Retry-After", strconv.Itoa(handlerutil.ClampRetryAfterSeconds(retryAfter)))
 	if limits.RPM > 0 {
 		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limits.RPM))
 		w.Header().Set("X-RateLimit-Limit-RPM", strconv.Itoa(limits.RPM))

@@ -101,6 +101,14 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	// right policy. A keyless caller leaves it unset and the tap stays inert.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
 	ctx = withClientIP(ctx, requestClientIP(r))
+	// The first-byte budget is opened here, once per request, so every attempt
+	// in the fallback chain shares it. The edge proxy in front of this gateway
+	// closes an idle connection at its own timeout; without a budget the
+	// gateway can wait longer than that edge is willing to, and the edge
+	// answers the client with a 524 the gateway never produced and cannot
+	// explain. Measured on 2026-11-18: 809 such edge timeouts in 36 hours,
+	// 622 of them from one non-streaming client.
+	ctx = WithFirstByteDeadline(ctx, ResolveFirstByteDeadline())
 
 	// Check prompt/response cache for non-streaming requests before model
 	// resolution: a hit answers the turn without touching a provider, so it
@@ -281,7 +289,18 @@ func (h *ChatHandler) handleSingleModel(ctx context.Context, w http.ResponseWrit
 			cw.Write(masked.Body)
 			return
 		}
-		handlerutil.WriteJSONError(cw, http.StatusBadGateway, fmt.Sprintf("upstream error: %v", result))
+		// The generic 502 is the one failure a client cannot act on and the
+		// gateway cannot explain: the upstream error is not an upstreamError,
+		// so the status came from the fallback layer itself ("no active
+		// connections", "provider is unhealthy", an exhausted combo). The
+		// terminal log line carried only a status and a duration, which left
+		// the 2026-11-18 failures unattributable — 96 of 245 chat 502s had
+		// no way to be traced to a cause. This line carries the shape of the
+		// failure instead: the provider and model it happened on, the
+		// classification, and whether the request had already committed a
+		// response.
+		logTerminalUpstreamFailure(ctx, "chat", modelInfo.Provider, modelInfo.Model, result, cw.IsCommitted())
+		writeTerminalFailure(cw, result)
 	}
 }
 
@@ -397,6 +416,11 @@ func (h *ChatHandler) HandleMessages(w http.ResponseWriter, r *http.Request) {
 	// inert.
 	ctx = withGuardrailKey(ctx, requestKeyID(r))
 	ctx = withClientIP(ctx, requestClientIP(r))
+	// The first-byte budget is opened here, once per request, so every attempt
+	// in the fallback chain shares it. See HandleChatCompletions for why the
+	// wait for the upstream's first byte has to be bounded below the edge
+	// proxy's own idle timeout.
+	ctx = WithFirstByteDeadline(ctx, ResolveFirstByteDeadline())
 	// Body-size input estimate for streams whose upstream ignores
 	// include_usage: the translator falls back to it in the terminal usage
 	// block so the client's meter still moves. The estimate discounts
@@ -484,7 +508,10 @@ func (h *ChatHandler) handleMessagesSingleModel(ctx context.Context, w http.Resp
 			cw.Write(masked.Body)
 			return
 		}
-		handlerutil.WriteJSONError(cw, http.StatusBadGateway, fmt.Sprintf("upstream error: %v", result))
+		// The structured line is what makes this failure attributable; see
+		// logTerminalUpstreamFailure.
+		logTerminalUpstreamFailure(ctx, "messages", modelInfo.Provider, modelInfo.Model, result, cw.IsCommitted())
+		writeTerminalFailure(cw, result)
 	}
 }
 

@@ -816,6 +816,8 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 	// A model that recently timed out sits out its grace period.
 	models = h.withoutBenchedModels(comboName, models, timeoutGrace)
 
+	firstByteTimedOut := false
+
 	// If every model fails, retry the whole pass once after a bounded
 	// Retry-After wait so a transient provider blip doesn't surface as a hard
 	// 429 to the client.
@@ -851,6 +853,19 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 		for i, entry := range models {
 			if ctx.Err() != nil {
 				return
+			}
+			if firstByteTimedOut {
+				break
+			}
+			if spent, waited := firstByteBudgetSpent(ctx); spent {
+				log.WarnCtx(ctx, "combo", "first-byte budget spent, stopping combo rotation",
+					"combo", comboName, "waitedMs", waited.Milliseconds())
+				lastErr = &upstreamError{
+					StatusCode: http.StatusGatewayTimeout,
+					Body:       []byte(fmt.Sprintf(`{"error":{"message":"upstream did not produce a first byte before the deadline after %s","type":"timeout_error","code":504}}`, waited.Round(time.Millisecond))),
+				}
+				firstByteTimedOut = true
+				break
 			}
 			modelInfo := h.resolveModelEntry(entry)
 			if modelInfo == nil {
@@ -955,6 +970,19 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 
 			// Try up to 10 connections for this model entry
 			for connAttempt := 0; connAttempt < 10; connAttempt++ {
+				if firstByteTimedOut {
+					break
+				}
+				if spent, waited := firstByteBudgetSpent(ctx); spent {
+					log.WarnCtx(ctx, "combo", "first-byte budget spent, stopping combo connection rotation",
+						"combo", comboName, "model", modelInfo.Model, "waitedMs", waited.Milliseconds())
+					lastErr = &upstreamError{
+						StatusCode: http.StatusGatewayTimeout,
+						Body:       []byte(fmt.Sprintf(`{"error":{"message":"upstream did not produce a first byte before the deadline after %s","type":"timeout_error","code":504}}`, waited.Round(time.Millisecond))),
+					}
+					firstByteTimedOut = true
+					break
+				}
 				var connID string
 				var picked *ProviderConnection
 				var connData *ConnectionData
@@ -1062,6 +1090,17 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 					if timeoutGate != nil && timeoutGate.timedOut() && ctx.Err() == nil {
 						log.Warn("combo", "model response timeout, falling back to next model", "provider", modelInfo.Provider, "model", modelInfo.Model)
 						lastErr = comboTimeoutError()
+						break
+					}
+					if timedOut, waited := firstByteTimeoutError(ctx, fwdErr); timedOut {
+						log.WarnCtx(ctx, "combo", "first-byte timeout, stopping combo rotation",
+							"combo", comboName, "provider", modelInfo.Provider, "model", modelInfo.Model,
+							"waitedMs", waited.Milliseconds())
+						lastErr = &upstreamError{
+							StatusCode: http.StatusGatewayTimeout,
+							Body:       []byte(fmt.Sprintf(`{"error":{"message":"upstream did not produce a first byte before the deadline after %s","type":"timeout_error","code":504}}`, waited.Round(time.Millisecond))),
+						}
+						firstByteTimedOut = true
 						break
 					}
 					if errors.Is(fwdErr, internalproxy.ErrStreamingZeroContent) {
@@ -1283,7 +1322,7 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 
 		// All entries failed. Retry once only if a bounded wait is available;
 		// otherwise fall through to the error response below.
-		if lastErr == nil || ctx.Err() != nil || attempt == 1 || modelTimedOut {
+		if lastErr == nil || ctx.Err() != nil || attempt == 1 || modelTimedOut || firstByteTimedOut {
 			break
 		}
 	}
@@ -1292,7 +1331,7 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 		return
 	}
 
-	if lastErr != nil && isRetryableComboError(lastErr) {
+	if lastErr != nil && isRetryableComboError(lastErr) && !firstByteTimedOut {
 		if fallbackCombos := h.comboFallbackCombos(comboName); len(fallbackCombos) > 0 {
 			if visited == nil {
 				visited = make(map[string]bool)
@@ -1353,13 +1392,24 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 			log.Error("combo", "upstream error after headers committed", "error", lastErr)
 			return
 		}
+		// The terminal log line carries the class of the failure, so an
+		// exhausted combo is distinguishable from an exhausted single
+		// model, and a first-byte timeout is distinguishable from a bad
+		// upstream. Without it the 2026-11-18 incident left 96 of 245
+		// chat 502s unattributable.
+		logTerminalUpstreamFailure(ctx, "/v1/chat/completions", "combo", comboName, lastErr, false)
 		retry.writeError(cw, lastErr)
 		return
 	}
 	if cw.IsCommitted() {
 		return
 	}
-	handlerutil.WriteJSONError(cw, http.StatusBadGateway, "all combo models failed: no valid entries")
+	// No member of the combo produced anything at all. There is no upstream
+	// error to carry, so the class is spelled out rather than inferred from
+	// an empty error value.
+	logTerminalUpstreamFailure(ctx, "/v1/chat/completions", "combo", comboName,
+		fmt.Errorf("all combo models failed: no valid entries"), false)
+	handlerutil.WriteJSONError(cw, http.StatusServiceUnavailable, "all combo models failed: no valid entries")
 }
 
 // handleMessagesComboFallback iterates through combo models for the Claude endpoint.
@@ -1417,6 +1467,8 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 	// A model that recently timed out sits out its grace period.
 	models = h.withoutBenchedModels(comboName, models, timeoutGrace)
 
+	firstByteTimedOut := false
+
 	// If every model fails, retry the whole pass once after a bounded
 	// Retry-After wait so a transient provider blip doesn't surface as a hard
 	// 429 to the client.
@@ -1448,6 +1500,19 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 		for i, entry := range models {
 			if ctx.Err() != nil {
 				return
+			}
+			if firstByteTimedOut {
+				break
+			}
+			if spent, waited := firstByteBudgetSpent(ctx); spent {
+				log.WarnCtx(ctx, "combo", "first-byte budget spent, stopping combo rotation",
+					"combo", comboName, "waitedMs", waited.Milliseconds())
+				lastErr = &upstreamError{
+					StatusCode: http.StatusGatewayTimeout,
+					Body:       []byte(fmt.Sprintf(`{"error":{"message":"upstream did not produce a first byte before the deadline after %s","type":"timeout_error","code":504}}`, waited.Round(time.Millisecond))),
+				}
+				firstByteTimedOut = true
+				break
 			}
 			modelInfo := h.resolveModelEntry(entry)
 			if modelInfo == nil {
@@ -1531,6 +1596,19 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 
 			// Try up to 10 connections for this model entry
 			for connAttempt := 0; connAttempt < 10; connAttempt++ {
+				if firstByteTimedOut {
+					break
+				}
+				if spent, waited := firstByteBudgetSpent(ctx); spent {
+					log.WarnCtx(ctx, "combo", "first-byte budget spent, stopping combo connection rotation",
+						"combo", comboName, "model", modelInfo.Model, "waitedMs", waited.Milliseconds())
+					lastErr = &upstreamError{
+						StatusCode: http.StatusGatewayTimeout,
+						Body:       []byte(fmt.Sprintf(`{"error":{"message":"upstream did not produce a first byte before the deadline after %s","type":"timeout_error","code":504}}`, waited.Round(time.Millisecond))),
+					}
+					firstByteTimedOut = true
+					break
+				}
 				var connID string
 				var picked *ProviderConnection
 				var connData *ConnectionData
@@ -1628,6 +1706,17 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 					if timeoutGate != nil && timeoutGate.timedOut() && ctx.Err() == nil {
 						log.Warn("combo", "model response timeout, falling back to next model", "provider", modelInfo.Provider, "model", modelInfo.Model)
 						lastErr = comboTimeoutError()
+						break
+					}
+					if timedOut, waited := firstByteTimeoutError(ctx, fwdErr); timedOut {
+						log.WarnCtx(ctx, "combo", "first-byte timeout, stopping combo rotation",
+							"combo", comboName, "provider", modelInfo.Provider, "model", modelInfo.Model,
+							"waitedMs", waited.Milliseconds())
+						lastErr = &upstreamError{
+							StatusCode: http.StatusGatewayTimeout,
+							Body:       []byte(fmt.Sprintf(`{"error":{"message":"upstream did not produce a first byte before the deadline after %s","type":"timeout_error","code":504}}`, waited.Round(time.Millisecond))),
+						}
+						firstByteTimedOut = true
 						break
 					}
 					if errors.Is(fwdErr, internalproxy.ErrStreamingZeroContent) {
@@ -1797,7 +1886,7 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 
 		// All entries failed. Retry once only if a bounded wait is available;
 		// otherwise fall through to the error response below.
-		if lastErr == nil || ctx.Err() != nil || attempt == 1 || modelTimedOut {
+		if lastErr == nil || ctx.Err() != nil || attempt == 1 || modelTimedOut || firstByteTimedOut {
 			break
 		}
 	}
@@ -1806,7 +1895,7 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 		return
 	}
 
-	if lastErr != nil && isRetryableComboError(lastErr) {
+	if lastErr != nil && isRetryableComboError(lastErr) && !firstByteTimedOut {
 		if fallbackCombos := h.comboFallbackCombos(comboName); len(fallbackCombos) > 0 {
 			if visited == nil {
 				visited = make(map[string]bool)
@@ -1867,13 +1956,16 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 			log.Error("combo", "upstream error after headers committed", "error", lastErr)
 			return
 		}
+		logTerminalUpstreamFailure(ctx, "/v1/messages", "combo", comboName, lastErr, false)
 		retry.writeError(cw, lastErr)
 		return
 	}
 	if cw.IsCommitted() {
 		return
 	}
-	handlerutil.WriteJSONError(cw, http.StatusBadGateway, "all combo models failed: no valid entries")
+	logTerminalUpstreamFailure(ctx, "/v1/messages", "combo", comboName,
+		fmt.Errorf("all combo models failed: no valid entries"), false)
+	handlerutil.WriteJSONError(cw, http.StatusServiceUnavailable, "all combo models failed: no valid entries")
 }
 
 // entryExcludes returns the connections one combo entry must not select: the

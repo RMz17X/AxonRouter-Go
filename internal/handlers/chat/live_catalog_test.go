@@ -2,6 +2,7 @@ package chat
 
 import (
 	"testing"
+	"time"
 )
 
 func TestExpandKiroVariants(t *testing.T) {
@@ -145,4 +146,31 @@ func idsOf(models []LiveModel) []string {
 		out = append(out, m.ID)
 	}
 	return out
+}
+
+func TestLiveCatalogStoreNegativeWithTTL(t *testing.T) {
+	key := "test-neg-ttl-key"
+	liveCatalogStoreNegativeWithTTL(key, 24*time.Hour)
+
+	liveCatalogStore.mu.RLock()
+	entry, ok := liveCatalogStore.entries[key]
+	liveCatalogStore.mu.RUnlock()
+
+	if !ok {
+		t.Fatal("expected entry to exist in liveCatalogStore")
+	}
+	if time.Until(entry.expiresAt) < 23*time.Hour {
+		t.Errorf("expected expiresAt to be ~24h in the future, got %v", time.Until(entry.expiresAt))
+	}
+
+	// Calling normal liveCatalogStoreNegative should not lower the 24h expiration
+	liveCatalogStoreNegative(key)
+
+	liveCatalogStore.mu.RLock()
+	entry2, _ := liveCatalogStore.entries[key]
+	liveCatalogStore.mu.RUnlock()
+
+	if time.Until(entry2.expiresAt) < 23*time.Hour {
+		t.Errorf("liveCatalogStoreNegative must not overwrite longer TTL, got %v", time.Until(entry2.expiresAt))
+	}
 }
