@@ -297,6 +297,12 @@ var quotaExhaustedPatterns = []string{
 	"billing required",
 	"payment required",
 	"balance=0",
+	// MiniMax Code normalized/CJK credit exhaustion
+	"usage limit reached",
+	"余额不足",
+	"积分不足",
+	"额度不足",
+	"额度已用完",
 	// ElevenLabs character quota
 	"character limit",
 	"character_limit_exceeded",
@@ -370,6 +376,7 @@ var permanentFailurePatterns = []string{
 	"unauthorized",
 	"authentication_error",
 	"authentication failed",
+	"auth failed",
 	"permission denied",
 	"access denied",
 	"not authorized",
@@ -726,6 +733,10 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 	}
 
 	if cls, ok := classifyAntigravity(statusCode, lowerError, backoffLevel, provider); ok {
+		return cls
+	}
+
+	if cls, ok := classifyMinimaxCode(statusCode, lowerError, backoffLevel, provider); ok {
 		return cls
 	}
 

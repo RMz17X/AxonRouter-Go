@@ -264,6 +264,17 @@ func (h *ChatHandler) handleAccountFallback(
 		if isClientCanceled(ctx, lastErr) {
 			return clientClosedError()
 		}
+		// The first-byte budget is spent: another attempt would start against
+		// an expired deadline and fail immediately, so the chain stops here
+		// and reports the timeout. Without this the loop would walk every
+		// remaining candidate, each one failing on the spot, and the client
+		// would see the last of those failures instead of the timeout that
+		// actually describes the situation.
+		if spent, waited := firstByteBudgetSpent(ctx); spent {
+			log.WarnCtx(ctx, "fallback", "first-byte budget spent, stopping account rotation",
+				"provider", provider, "model", model, "waitedMs", waited.Milliseconds())
+			return firstByteTimeoutUpstreamError(waited)
+		}
 		if slices.Contains(excludeIDs, c.ID) {
 			continue
 		}
@@ -319,6 +330,25 @@ func (h *ChatHandler) handleAccountFallback(
 			lastErr = err
 			observ.IncFallback(provider, model, observ.FallbackReasonUpstreamError)
 			RecordAttemptFromContext(ctx, connObj.ID, connObjName(connObj), provider, model, 0, err, time.Since(attemptStart).Milliseconds())
+			// A first-byte timeout is not the account's fault: the upstream
+			// did not answer in time, which says nothing about the credential.
+			// The connection is excluded for this turn so the chain moves on,
+			// but no lock and no cooldown is written — a slow provider must
+			// not be recorded as a broken account, or a healthy pool drains
+			// itself under load.
+			//
+			// The reclassification itself happens in tryForwardWithConnection,
+			// the single point every attempt passes through, so the error
+			// arriving here is already the timeout error.
+			if timedOut, waited := firstByteTimeoutError(ctx, err); timedOut {
+				log.WarnCtx(attemptCtx, "fallback", "first-byte timeout, rotating without locking",
+					"conn", connObj.ID, "provider", provider, "model", model,
+					"waitedMs", waited.Milliseconds())
+				excludeIDs = append(excludeIDs, connObj.ID)
+				lastErr = firstByteTimeoutUpstreamError(waited)
+				attemptsSent++
+				continue
+			}
 			var ue *upstreamError
 			if errors.As(lastErr, &ue) {
 				if ue.StatusCode == http.StatusTooManyRequests || ue.StatusCode == http.StatusUnauthorized || ue.StatusCode == http.StatusForbidden {
@@ -882,6 +912,21 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	ctx = withConnAccount(ctx, f.ConnName, f.ConnEmail)
 	provider, model := f.Provider, f.Model
 	connectionID, connData := f.ConnectionID, f.ConnData
+
+	// The first-byte deadline bounds the wait for the upstream's first byte.
+	// It is applied here, on the attempt context, because this is the frame
+	// that owns the transport call, the peek and the body read: cancelling it
+	// unblocks the in-flight read and closes the upstream socket, so a
+	// timed-out attempt leaves nothing behind for the rest of the chain.
+	//
+	// The budget belongs to the request, not to this attempt. Every attempt
+	// derives its deadline from the same instant, so a chain that rotates
+	// through candidates cannot add their waits together past the edge's own
+	// idle timeout — which is what produced the 524s measured on
+	// 2026-11-18 (809 edge timeouts against a 120 s application timeout).
+	attemptCtx, cancelAttempt := firstByteAttemptContext(ctx)
+	defer cancelAttempt()
+	ctx = attemptCtx
 	// Antigravity's per-account concurrency ceiling (see conn_inflight.go):
 	// refuse the attempt locally once the connection is at its cap, so the
 	// caller rotates instead of drawing the bare-429 the ceiling answers.
@@ -1465,10 +1510,33 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 	// otherwise be logged, billed, and cooled down as a served turn.
 	fwdErr = guardrailStreamOutcome(gtap, fwdErr)
 
+	// A first-byte timeout is reclassified here, at the single point where
+	// every attempt passes: the pinned lane, the account-rotation loop and
+	// the combo lane all call this function, so each of them sees the same
+	// classification.
+	//
+	// The reclassification matters for two decisions. The client gets a 504
+	// instead of a 502, because the gateway waited and nothing answered —
+	// that is a timeout, not a bad upstream. And the account is not blamed:
+	// the failure is not an upstreamError carrying a retryable status, so the
+	// pool-fitness and lock paths leave the connection alone. A provider that
+	// is merely slow must not be recorded as broken, or a healthy pool drains
+	// itself the first time it is under load.
+	if fwdErr != nil {
+		if timedOut, waited := firstByteTimeoutError(ctx, fwdErr); timedOut {
+			log.WarnCtx(ctx, "fallback", "first-byte timeout, rotating without locking",
+				"provider", provider, "model", model, "conn", connectionID,
+				"waitedMs", waited.Milliseconds())
+			return firstByteTimeoutUpstreamError(waited)
+		}
+	}
+
 	var ue *upstreamError
 	if errors.As(fwdErr, &ue) && ue.StatusCode == http.StatusUnauthorized && connectionID != "" {
 		refreshedKey, _, rErr := h.forceRefreshOAuthToken(connectionID)
-		if rErr == nil && refreshedKey != "" && refreshedKey != apiKey {
+		if rErr != nil {
+			log.WarnCtx(ctx, "fallback", "reactive 401 token refresh failed", "conn", connectionID, "provider", provider, "error", rErr)
+		} else if refreshedKey != "" && refreshedKey != apiKey {
 			log.InfoCtx(ctx, "fallback", "reactive 401 token refresh success, retrying request", "conn", connectionID)
 			apiKey = NormalizeProviderToken(provider, refreshedKey)
 			// The retry reuses this metrics value, and the first attempt may

@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.10.73",
-  "releaseNotes": "v1.10.73: Fix MiniMax Code quota tracker credits display by falling back to daily sign-in claimed points when matrix commerce membership reports 0 balance or delays syncing check-in points."
+  "latestVersion": "1.10.74",
+  "releaseNotes": "v1.10.74: Auto-disable dead auth (401 auth failed) for MiniMax Code and 48-hour auto-cooldown for credit exhaustion."
 }

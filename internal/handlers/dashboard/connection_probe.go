@@ -211,8 +211,8 @@ var oauthProbeConfigs = map[string]oauthProbeConfig{
 	// MiniMax Code publishes its own catalogue on the agent gateway, so the
 	// probe proves the credential the same way the quota read does — and the
 	// token is refreshable, unlike the API-key MiniMax providers.
-	"minimax-code":        {url: miniMaxCodeCatalogURL, method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer ", checkExpiry: true, refreshable: true},
-	"minimax-code-global": {url: miniMaxCodeGlobalCatalogURL, method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer ", checkExpiry: true, refreshable: true},
+	"minimax-code":        {url: miniMaxCodeCatalogURL, method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer ", refreshable: true},
+	"minimax-code-global": {url: miniMaxCodeGlobalCatalogURL, method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer ", refreshable: true},
 	// A Muse Code subscription stores the minted Model API key as its bearer
 	// token, so the catalogue call proves the credential exactly the same way
 	// it does for a pasted dev.meta.ai key — and there is nothing to refresh,
@@ -234,12 +234,12 @@ var oauthProbeConfigs = map[string]oauthProbeConfig{
 		body:         `{"model":"` + providers.NousValidationModel + `","messages":[{"role":"user","content":"` + probeMessageContent + `"}],"max_tokens":1,"stream":false}`,
 		refreshable:  true,
 	},
-	"cursor":         {tokenExists: true},
-	"kilocode":       {url: kilocodeProbeURL, method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer "},
-	"cline":          {refreshable: true},
-	"clinepass":      {refreshable: true},
-	"freebuff":       {},
-	"gitlab":         {url: "https://gitlab.com/api/v4/user", method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer "},
+	"cursor":       {tokenExists: true},
+	"kilocode":     {url: kilocodeProbeURL, method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer "},
+	"cline":        {refreshable: true},
+	"clinepass":    {refreshable: true},
+	"freebuff":     {},
+	"gitlab":       {url: "https://gitlab.com/api/v4/user", method: http.MethodGet, authHeader: "Authorization", authPrefix: "Bearer "},
 	"codebuddy-cn": {tokenExists: true},
 	// CodeBuddy Intl / WorkBuddy test-connection probes the Keycloak
 	// userinfo endpoint of the realm the token's `iss` claim names
