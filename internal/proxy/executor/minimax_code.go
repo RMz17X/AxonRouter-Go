@@ -26,22 +26,22 @@ import (
 //
 // The word list is magpie's minimax plugin answer(); the CJK terms matter as
 // much as the English ones, because MiniMax Code answers in the account's own
-// language. A 402/403 that does NOT name the balance passes through untouched:
+// language. A 402/403/400 that does NOT name the balance passes through untouched:
 // that one is a real auth refusal and the on-401 refresh path should see it.
-var quotaWordRE = regexp.MustCompile(`(?i)insufficient|balance|credit|quota|exhaust|limit|余额|积分|额度|不足|用完|上限`)
+var quotaWordRE = regexp.MustCompile(`(?i)insufficient|balance|credit|quota|exhaust|limit|50110|余额|积分|额度|不足|用完|上限`)
 
 // NormalizeQuotaResponse rewrites a credits refusal into the 429 the account
 // loop understands.
 //
-// MiniMax Code reports credit exhaustion as 402/403 with a body that names the
-// balance. The account loop treats 401/403 as refresh-and-retry and 429 as
-// switch-to-the-next-account, so a credits refusal left at 402/403 would keep
-// retrying a half-spent account instead of failing over — or, on 403, spend a
+// MiniMax Code reports credit exhaustion as 402/403/400 (e.g. {"error":"not enough credits","errorCode":50110})
+// with a body that names the balance. The account loop treats 401/403 as refresh-and-retry and 429 as
+// switch-to-the-next-account, so a credits refusal left at 400/402/403 would keep
+// retrying a spent account instead of failing over — or, on 403, spend a
 // single-use refresh token per request before finally failing.
 //
 // A 429 is already the right signal and passes through unchanged.
 func NormalizeQuotaResponse(status int, body []byte) (int, []byte) {
-	if status != http.StatusPaymentRequired && status != http.StatusForbidden {
+	if status != http.StatusPaymentRequired && status != http.StatusForbidden && status != http.StatusBadRequest {
 		return status, body
 	}
 	if !quotaWordRE.Match(body) {
@@ -106,6 +106,10 @@ func ForwardMinimaxCode(w http.ResponseWriter, req *Request) error {
 		body = translator.SanitizeClaudePassthrough(body, translator.ClaudeIntentionalPrefill(req.Body))
 	} else {
 		body = EnsureClaudeMessagesFor(body, provider, req.ModelName)
+	}
+
+	if req.IsStream {
+		body = ensureMinimaxCodeStreamFlag(body)
 	}
 
 	resp, err := proxy.DoRequest(reqCtx(req), req.Client, http.MethodPost,
@@ -216,4 +220,21 @@ func randomSessionID() string {
 		return "axonrouter-go-session"
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// ensureMinimaxCodeStreamFlag guarantees that the outbound Anthropic Messages
+// payload contains "stream": true. MiniMax mavis gateway strictly keys its SSE
+// streaming on the JSON payload field; without it, the upstream returns a single
+// non-streaming application/json response even when Accept: text/event-stream is sent.
+func ensureMinimaxCodeStreamFlag(body []byte) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		return body
+	}
+	m["stream"] = true
+	out, err := json.Marshal(m, json.Deterministic(true))
+	if err != nil {
+		return body
+	}
+	return out
 }

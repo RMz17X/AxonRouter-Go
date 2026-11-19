@@ -299,6 +299,8 @@ var quotaExhaustedPatterns = []string{
 	"balance=0",
 	// MiniMax Code normalized/CJK credit exhaustion
 	"usage limit reached",
+	"not enough credits",
+	"50110",
 	"余额不足",
 	"积分不足",
 	"额度不足",

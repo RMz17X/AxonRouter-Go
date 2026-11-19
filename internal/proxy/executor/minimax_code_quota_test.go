@@ -51,6 +51,19 @@ func TestNormalizeQuotaResponse(t *testing.T) {
 			wantStatus: http.StatusTooManyRequests,
 		},
 		{
+			name:       "400 not enough credits becomes 429",
+			status:     http.StatusBadRequest,
+			body:       `{"error":"not enough credits","errorCode":50110}`,
+			wantStatus: http.StatusTooManyRequests,
+		},
+		{
+			name:       "400 generic bad request keeps status",
+			status:     http.StatusBadRequest,
+			body:       `{"error":{"message":"invalid model name"}}`,
+			wantStatus: http.StatusBadRequest,
+			wantKept:   true,
+		},
+		{
 			name:       "429 is already the right signal",
 			status:     http.StatusTooManyRequests,
 			body:       `{"error":{"message":"slow down"}}`,
@@ -146,5 +159,18 @@ func TestNormalizeQuotaResponse_ProducesFallbackError(t *testing.T) {
 	}
 	if ue.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("StatusCode = %d, want 429", ue.StatusCode)
+	}
+}
+
+func TestEnsureMinimaxCodeStreamFlag(t *testing.T) {
+	in := []byte(`{"model":"MiniMax-M3","max_tokens":100,"messages":[{"role":"user","content":"hi"}]}`)
+	out := ensureMinimaxCodeStreamFlag(in)
+
+	var parsed map[string]any
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if parsed["stream"] != true {
+		t.Errorf("expected stream: true, got %v", parsed["stream"])
 	}
 }

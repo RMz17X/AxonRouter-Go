@@ -129,6 +129,14 @@ func TestClassifyMinimaxCodeCreditExhausted(t *testing.T) {
 			wantCooldown:  minimaxCodeCreditExhaustedCooldownMs,
 		},
 		{
+			name:          "mmg 400 not enough credits errorCode 50110 parks 2d exhausted",
+			provider:      "mmg",
+			statusCode:    http.StatusBadRequest,
+			errorText:     `{"error":"not enough credits","errorCode":50110}`,
+			wantExhausted: true,
+			wantCooldown:  minimaxCodeCreditExhaustedCooldownMs,
+		},
+		{
 			name:          "mmg generic 429 throttle keeps exponential backoff",
 			provider:      "mmg",
 			statusCode:    http.StatusTooManyRequests,
@@ -168,6 +176,7 @@ func TestLooksLikeQuotaExhausted_MiniMax(t *testing.T) {
 		`usage limit reached: 余额不足`,
 		`积分不足`,
 		`额度已用完`,
+		`{"error":"not enough credits","errorCode":50110}`,
 	} {
 		if !LooksLikeQuotaExhausted(sample) {
 			t.Errorf("LooksLikeQuotaExhausted(%q) = false, want true", sample)

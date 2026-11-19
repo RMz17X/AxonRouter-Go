@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.10.74",
-  "releaseNotes": "v1.10.74: Auto-disable dead auth (401 auth failed) for MiniMax Code and 48-hour auto-cooldown for credit exhaustion."
+  "latestVersion": "1.10.75",
+  "releaseNotes": "v1.10.75: Fix MiniMax Code latency by normalizing 400 not enough credits (50110) into 48h cooldown and guaranteeing outbound stream flag."
 }

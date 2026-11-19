@@ -20,6 +20,9 @@ var minimaxCodeAuthFailureMarkers = []string{
 
 var minimaxCodeCreditExhaustedMarkers = []string{
 	"usage limit reached",
+	"not enough credits",
+	"not enough credit",
+	"50110",
 	"余额不足",
 	"积分不足",
 	"额度不足",
@@ -73,7 +76,7 @@ func classifyMinimaxCode(statusCode int, lowerError string, backoffLevel int, pr
 		}
 		return ErrorClassification{}, false
 	}
-	if statusCode == http.StatusTooManyRequests || statusCode == http.StatusPaymentRequired || statusCode == http.StatusForbidden {
+	if statusCode == http.StatusTooManyRequests || statusCode == http.StatusPaymentRequired || statusCode == http.StatusForbidden || statusCode == http.StatusBadRequest {
 		for _, marker := range minimaxCodeCreditExhaustedMarkers {
 			if strings.Contains(lowerError, marker) {
 				return ErrorClassification{
