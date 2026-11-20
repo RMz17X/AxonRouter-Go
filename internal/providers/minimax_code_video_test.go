@@ -17,6 +17,13 @@ func TestMiniMaxCodeGlobalVideoRegistration(t *testing.T) {
 	if cfg.VideoURL == "" {
 		t.Fatalf("%s has no VideoURL", canonical)
 	}
+	meta, ok := GetProviderMeta(canonical)
+	if !ok {
+		t.Fatalf("%s missing from ProviderRegistry", canonical)
+	}
+	if !slices.Contains(meta.ServiceKinds, "video") || !slices.Contains(meta.ServiceKinds, "llm") {
+		t.Errorf("ServiceKinds = %v, want llm and video", meta.ServiceKinds)
+	}
 	for _, model := range []string{"MiniMax-H3", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite", "MiniMax-H3-Max"} {
 		if !slices.Contains(ProviderModels[canonical], model) {
 			t.Errorf("%s missing from %s catalog", model, canonical)

@@ -1384,7 +1384,7 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Priority:      80,
 		Usage:         true,
 		AuthModes:     []string{"oauth"},
-		ServiceKinds:  []string{"llm"},
+		ServiceKinds:  []string{"llm", "video"},
 		Website:       "https://agent.minimax.io",
 		Notice:        &Notice{Text: "The international MiniMax Code site. Sign-ins are per site: an account on agent.minimax.cn says nothing about agent.minimax.io."},
 		ModelsFetcher: &Fetcher{URL: "https://agent.minimax.io/mavis/api/v1/models?region=en&buildEnv=prod", Type: "minimax-code"},
