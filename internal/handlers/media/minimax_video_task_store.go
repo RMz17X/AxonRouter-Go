@@ -16,8 +16,9 @@ const (
 )
 
 type miniMaxVideoTaskMeta struct {
-	Model string `json:"model"`
-	At    int64  `json:"at"`
+	Model  string `json:"model"`
+	ConnID string `json:"conn,omitempty"`
+	At     int64  `json:"at"`
 }
 
 func miniMaxMatrixTaskID(body []byte) string {
@@ -30,7 +31,7 @@ func miniMaxMatrixTaskID(body []byte) string {
 	return payload.TaskID
 }
 
-func (h *MediaHandler) rememberMiniMaxVideoTask(taskID, model string) error {
+func (h *MediaHandler) rememberMiniMaxVideoTask(taskID, model, connID string) error {
 	entries, err := h.Repo.GetKVScope(miniMaxVideoTaskScope)
 	if err != nil {
 		return err
@@ -62,26 +63,32 @@ func (h *MediaHandler) rememberMiniMaxVideoTask(taskID, model string) error {
 			_ = h.Repo.DeleteKV(miniMaxVideoTaskScope, oldestKey)
 		}
 	}
-	value, err := json.Marshal(miniMaxVideoTaskMeta{Model: model, At: now.Unix()})
+	value, err := json.Marshal(miniMaxVideoTaskMeta{Model: model, ConnID: connID, At: now.Unix()})
 	if err != nil {
 		return err
 	}
 	return h.Repo.SetKV(miniMaxVideoTaskScope, taskID, string(value))
 }
 
-func (h *MediaHandler) recallMiniMaxVideoModel(taskID string) string {
+// recallMiniMaxVideoTask returns the model and creating connection recorded
+// for a task. The query tool must be called on the same account that submitted
+// the job, so the connection is part of the association.
+func (h *MediaHandler) recallMiniMaxVideoTask(taskID string) (miniMaxVideoTaskMeta, bool) {
+	if h == nil || h.Repo == nil {
+		return miniMaxVideoTaskMeta{}, false
+	}
 	entries, err := h.Repo.GetKVScope(miniMaxVideoTaskScope)
 	if err != nil {
-		return miniMaxMatrixH3Model
+		return miniMaxVideoTaskMeta{}, false
 	}
 	raw, ok := entries[taskID]
 	if !ok {
-		return miniMaxMatrixH3Model
+		return miniMaxVideoTaskMeta{}, false
 	}
 	var meta miniMaxVideoTaskMeta
 	if json.Unmarshal([]byte(raw), &meta) != nil || meta.Model == "" ||
 		time.Since(time.Unix(meta.At, 0)) > miniMaxVideoTaskTTL {
-		return miniMaxMatrixH3Model
+		return miniMaxVideoTaskMeta{}, false
 	}
-	return meta.Model
+	return meta, true
 }

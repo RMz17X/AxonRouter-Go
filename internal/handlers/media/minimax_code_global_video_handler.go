@@ -146,7 +146,7 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 		} else {
 			h.Repo.UpdateConnectionLastUsed(conn.ID)
 			if taskID := miniMaxMatrixTaskID(res.Body); taskID != "" {
-				if err := h.rememberMiniMaxVideoTask(taskID, model); err != nil {
+				if err := h.rememberMiniMaxVideoTask(taskID, model, conn.ID); err != nil {
 					log.Warn("media", "minimax task model not persisted", "task", taskID, "error", err)
 				}
 			}
@@ -184,7 +184,12 @@ func (h *MediaHandler) handleMiniMaxVideoGet(w http.ResponseWriter, r *http.Requ
 		handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-code-global] "+err.Error())
 		return
 	}
-	queryBody, err := buildMiniMaxMatrixVideoQuery(h.recallMiniMaxVideoModel(id), id)
+	meta, _ := h.recallMiniMaxVideoTask(id)
+	queryModel := meta.Model
+	if queryModel == "" {
+		queryModel = miniMaxMatrixH3Model
+	}
+	queryBody, err := buildMiniMaxMatrixVideoQuery(queryModel, id)
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-code-global] "+err.Error())
 		return

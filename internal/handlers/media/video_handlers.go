@@ -76,7 +76,7 @@ func (h *MediaHandler) handleVideoGet(w http.ResponseWriter, r *http.Request, co
 			handlerutil.WriteJSONError(w, http.StatusBadRequest, "Connection not found: "+pinned)
 			return
 		}
-		if _, ok := videoConfigFor(conn.Provider); !ok {
+		if _, ok := videoConfigFor(conn.Provider); !ok && !isMiniMaxCodeGlobalVideoProvider(conn.Provider) {
 			handlerutil.WriteJSONError(w, http.StatusBadRequest,
 				fmt.Sprintf("Provider '%s' does not support video generation", conn.Provider))
 			return
@@ -89,6 +89,17 @@ func (h *MediaHandler) handleVideoGet(w http.ResponseWriter, r *http.Request, co
 			if _, ok := videoConfigFor(canonical); ok {
 				provider = canonical
 			}
+		}
+	}
+
+	// A MiniMax task id is opaque. The task store recorded the provider and
+	// the connection that submitted the job; the query tool must be called on
+	// that same account, so recover both instead of defaulting to the generic
+	// video provider.
+	if meta, ok := h.recallMiniMaxVideoTask(id); ok {
+		provider = "minimax-code-global"
+		if meta.ConnID != "" {
+			pinned = meta.ConnID
 		}
 	}
 

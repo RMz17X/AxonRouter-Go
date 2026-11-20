@@ -23,3 +23,7 @@
 - MiniMax Code video creates now dispatch to the Matrix MCP create path before
   the registry `VideoURL` gate, so the dedicated rotation and balance ranking
   are actually reachable instead of falling through to the generic media lane.
+- MiniMax video task polls recover the provider and creating connection from the
+  task store, so the media panel Poll button works on the same account without
+  a manual connection pin; a pinned MiniMax connection is accepted on the query
+  path too.
