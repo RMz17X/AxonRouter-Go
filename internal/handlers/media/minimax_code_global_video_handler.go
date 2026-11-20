@@ -8,6 +8,7 @@ import (
 
 	"axonrouter/proxy/internal/handlers/shared"
 	"axonrouter/proxy/internal/handlerutil"
+	"axonrouter/proxy/internal/log"
 	"axonrouter/proxy/internal/models"
 	"axonrouter/proxy/internal/providers"
 )
@@ -42,17 +43,32 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 			break
 		}
 		cfg := h.videoRegistryConfig(provider, connData)
+		target, err := miniMaxVideoCreateURL(cfg, connData)
+		if err != nil {
+			handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-code-global] "+err.Error())
+			return
+		}
 		start := time.Now()
 		res := h.videoProxy(r.Context(), provider, cfg, conn, connData, videoProxyParams{
 			Action:         action,
 			Body:           finalBody,
 			ContentType:    "application/json",
 			IdempotencyKey: r.Header.Get("Idempotency-Key"),
-			TargetOverride: miniMaxVideoCreateURL(cfg, connData),
+			TargetOverride: target,
 		})
 		h.logVideoUsage(r, provider, model, conn, connData, time.Since(start))
+		if status, msg, ok := miniMaxMatrixBizError(res.Body); ok {
+			writeVideoUpstreamError(w, &videoUpstreamResponse{Status: status,
+				ErrText: fmt.Sprintf("[%s] %s", provider, msg)})
+			return
+		}
 		if res.ErrText == "" {
 			h.Repo.UpdateConnectionLastUsed(conn.ID)
+			if taskID := miniMaxMatrixTaskID(res.Body); taskID != "" {
+				if err := h.rememberMiniMaxVideoTask(taskID, model); err != nil {
+					log.Warn("media", "minimax task model not persisted", "task", taskID, "error", err)
+				}
+			}
 			writeVideoResult(w, res, conn.ID)
 			return
 		}
@@ -77,11 +93,21 @@ func (h *MediaHandler) handleMiniMaxVideoGet(w http.ResponseWriter, r *http.Requ
 		handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-code-global] "+err.Error())
 		return
 	}
+	queryBody, err := buildMiniMaxMatrixVideoQuery(h.recallMiniMaxVideoModel(id), id)
+	if err != nil {
+		handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-code-global] "+err.Error())
+		return
+	}
 	start := time.Now()
 	res := h.videoProxy(r.Context(), provider, cfg, conn, connData, videoProxyParams{
-		RequestID: id, TargetOverride: target,
+		RequestID: id, QueryBody: queryBody, ContentType: "application/json", TargetOverride: target,
 	})
 	h.logVideoUsage(r, provider, "video", conn, connData, time.Since(start))
+	if status, msg, ok := miniMaxMatrixBizError(res.Body); ok {
+		writeVideoUpstreamError(w, &videoUpstreamResponse{Status: status,
+			ErrText: fmt.Sprintf("[%s] %s", provider, msg), RetryAfter: "10"})
+		return
+	}
 	if res.ErrText != "" {
 		writeVideoUpstreamError(w, res)
 		return
@@ -106,7 +132,7 @@ func (h *MediaHandler) handleMiniMaxVideoGet(w http.ResponseWriter, r *http.Requ
 		handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-code-global] "+task.errorText())
 		return
 	}
-	contentURL, err := miniMaxVideoContentURL(task.Content.URL)
+	contentURL, err := miniMaxVideoContentURL(task.contentURL())
 	if err != nil {
 		handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-code-global] "+err.Error())
 		return

@@ -3909,6 +3909,12 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "kind": "video"
     },
     {
+      "id": "MiniMax-Hailuo-2.3",
+      "name": "MiniMax Hailuo 2.3",
+      "params": ["prompt", "duration", "resolution", "aspect_ratio"],
+      "kind": "video"
+    },
+    {
       "id": "MiniMax-H3-Image",
       "name": "MiniMax H3 Image",
       "params": ["prompt", "n", "size", "aspect_ratio", "area", "output_format", "response_format", "disable_prompt_enhanced"],

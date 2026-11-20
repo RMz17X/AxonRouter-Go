@@ -1,5 +1,13 @@
 # Changelog
 
+## [v1.10.79] - 2026-11-21
+
+### MiniMax Code media: Matrix tool contract
+
+- Route `mmg` image and video generation through MiniMax Code's Matrix MCP tools (`image_synthesize`, `submit_video_generation`, `query_video_generation`) instead of the retired platform REST paths, including MCP envelope error codes and OpenAI-shaped image responses.
+- Register `MiniMax-Hailuo-2.3` as a video model and remember the submitted model per task so Matrix query can use the same model the client submitted.
+- Surface Matrix business codes (including 402 balance refusals and 503 delivery failures) with the correct HTTP status instead of reporting them as successful generations.
+
 ## [v1.10.78] - 2026-11-21
 
 ### MiniMax image and video generation

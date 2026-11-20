@@ -1304,11 +1304,18 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 			log.Warn("media", "multipart model rewrite skipped", "endpoint", endpoint, "error", err)
 		}
 	}
-	if isMiniMaxH3ImageRequest(modelInfo.Provider, modelInfo.Model, endpoint) {
+	matrixImage := isMiniMaxH3ImageRequest(modelInfo.Provider, modelInfo.Model, endpoint)
+	if matrixImage {
 		if err := validateMiniMaxImageBody(finalBody, modelInfo.Model); err != nil {
 			handlerutil.WriteJSONError(w, http.StatusBadRequest, "[minimax-h3-image] "+err.Error())
 			return
 		}
+		matrixBody, err := buildMiniMaxMatrixImageBody(finalBody)
+		if err != nil {
+			handlerutil.WriteJSONError(w, http.StatusBadRequest, "[minimax-h3-image] "+err.Error())
+			return
+		}
+		finalBody = matrixBody
 	}
 	client, clientErr := h.ChatH.GetClientForConnection(connData)
 	if clientErr != nil {
@@ -1340,46 +1347,55 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 	hasCustomBaseURL := connData != nil && connData.BaseURL != "" && connData.BaseURL != providerCfg.BaseURL
 
 	var targetURL string
-	switch endpoint {
-	case "/v1/images/generations", "/images/generations", "/v1/images/edits", "/images/edits":
-		if !hasCustomBaseURL && providerCfg.ImageURL != "" {
-			targetURL = providerCfg.ImageURL
-		} else {
-			targetURL = strings.TrimSuffix(baseURL, "/v1") + endpoint
+	if matrixImage {
+		var err error
+		targetURL, err = miniMaxMatrixToolURL(*providerCfg, connData, miniMaxMatrixImageTool)
+		if err != nil {
+			handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-h3-image] "+err.Error())
+			return
 		}
-	case "/v1/audio/speech", "/audio/speech":
-		if !hasCustomBaseURL && providerCfg.TTSURL != "" {
-			targetURL = providerCfg.TTSURL
-		} else {
-			targetURL = strings.TrimSuffix(baseURL, "/v1") + "/v1/audio/speech"
-		}
-	case "/v1/audio/transcriptions", "/audio/transcriptions":
-		if !hasCustomBaseURL && providerCfg.STTURL != "" {
-			targetURL = providerCfg.STTURL
-		} else {
-			targetURL = strings.TrimSuffix(baseURL, "/v1") + "/v1/audio/transcriptions"
-		}
-	case "/v1/videos/generations", "/videos/generations":
-		if !hasCustomBaseURL && providerCfg.VideoURL != "" {
-			if strings.HasSuffix(providerCfg.VideoURL, "/generations") {
-				targetURL = providerCfg.VideoURL
+	} else {
+		switch endpoint {
+		case "/v1/images/generations", "/images/generations", "/v1/images/edits", "/images/edits":
+			if !hasCustomBaseURL && providerCfg.ImageURL != "" {
+				targetURL = providerCfg.ImageURL
 			} else {
-				targetURL = strings.TrimRight(providerCfg.VideoURL, "/") + "/generations"
+				targetURL = strings.TrimSuffix(baseURL, "/v1") + endpoint
 			}
-		} else {
-			targetURL = strings.TrimSuffix(baseURL, "/v1") + "/v1/videos/generations"
-		}
-	case "/v1/systemone", "/systemone":
-		if !hasCustomBaseURL && providerCfg.SystemoneURL != "" {
-			targetURL = providerCfg.SystemoneURL
-		} else {
-			targetURL = strings.TrimSuffix(baseURL, "/v1") + "/v1/systemone"
-		}
-	default:
-		if strings.HasSuffix(baseURL, "/v1") && strings.HasPrefix(endpoint, "/v1/") {
-			targetURL = strings.TrimSuffix(baseURL, "/v1") + endpoint
-		} else {
-			targetURL = baseURL + endpoint
+		case "/v1/audio/speech", "/audio/speech":
+			if !hasCustomBaseURL && providerCfg.TTSURL != "" {
+				targetURL = providerCfg.TTSURL
+			} else {
+				targetURL = strings.TrimSuffix(baseURL, "/v1") + "/v1/audio/speech"
+			}
+		case "/v1/audio/transcriptions", "/audio/transcriptions":
+			if !hasCustomBaseURL && providerCfg.STTURL != "" {
+				targetURL = providerCfg.STTURL
+			} else {
+				targetURL = strings.TrimSuffix(baseURL, "/v1") + "/v1/audio/transcriptions"
+			}
+		case "/v1/videos/generations", "/videos/generations":
+			if !hasCustomBaseURL && providerCfg.VideoURL != "" {
+				if strings.HasSuffix(providerCfg.VideoURL, "/generations") {
+					targetURL = providerCfg.VideoURL
+				} else {
+					targetURL = strings.TrimRight(providerCfg.VideoURL, "/") + "/generations"
+				}
+			} else {
+				targetURL = strings.TrimSuffix(baseURL, "/v1") + "/v1/videos/generations"
+			}
+		case "/v1/systemone", "/systemone":
+			if !hasCustomBaseURL && providerCfg.SystemoneURL != "" {
+				targetURL = providerCfg.SystemoneURL
+			} else {
+				targetURL = strings.TrimSuffix(baseURL, "/v1") + "/v1/systemone"
+			}
+		default:
+			if strings.HasSuffix(baseURL, "/v1") && strings.HasPrefix(endpoint, "/v1/") {
+				targetURL = strings.TrimSuffix(baseURL, "/v1") + endpoint
+			} else {
+				targetURL = baseURL + endpoint
+			}
 		}
 	}
 	method := r.Method
@@ -1445,7 +1461,21 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode >= 400 {
+	responseStatus := resp.StatusCode
+	if matrixImage {
+		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, 4*1024*1024))
+		if readErr != nil {
+			handlerutil.WriteJSONError(w, http.StatusBadGateway, "[minimax-h3-image] upstream response read failed")
+			return
+		}
+		var translated []byte
+		responseStatus, translated = translateMiniMaxMatrixImageResult(raw)
+		resp.Body = io.NopCloser(bytes.NewReader(translated))
+		resp.Header.Del("Content-Length")
+		resp.Header.Set("Content-Type", "application/json")
+	}
+
+	if !matrixImage && resp.StatusCode >= 400 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1*1024))
 		log.Warn("media", "upstream error", "endpoint", endpoint, "provider", modelInfo.Provider, "model", modelInfo.Model, "conn", connIDStr, "status", resp.StatusCode, "body", string(errBody))
 		// Need to re-create body for copying
@@ -1453,10 +1483,10 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	copyUpstreamHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
+	w.WriteHeader(responseStatus)
 	io.Copy(w, resp.Body)
 
-	if resp.StatusCode == http.StatusOK && conn != nil {
+	if responseStatus == http.StatusOK && conn != nil {
 		h.Repo.UpdateConnectionLastUsed(conn.ID)
 		latencyMs := time.Since(start).Milliseconds()
 		logInfo := &shared.UsageLogInfo{

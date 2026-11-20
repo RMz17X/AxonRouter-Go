@@ -19,8 +19,6 @@ import (
 
 const (
 	miniMaxCodeGlobalProvider = "minimax-code-global"
-	miniMaxVideoCreatePath    = "/v2/video_generation"
-	miniMaxVideoQueryPath     = "/v2/query/video_generation/"
 	miniMaxVideoPollSeconds   = 10
 	miniMaxPromptMaxRunes     = 7000
 	miniMaxVideoMaxMediaItems = 12
@@ -35,9 +33,10 @@ type miniMaxVideoLimits struct {
 type miniMaxResolution string
 
 const (
-	miniMaxRes480P miniMaxResolution = "480P"
-	miniMaxRes768P miniMaxResolution = "768P"
-	miniMaxRes2K   miniMaxResolution = "2K"
+	miniMaxRes480P  miniMaxResolution = "480P"
+	miniMaxRes768P  miniMaxResolution = "768P"
+	miniMaxRes1080P miniMaxResolution = "1080P"
+	miniMaxRes2K    miniMaxResolution = "2K"
 )
 
 func miniMaxResolutionSet(values ...miniMaxResolution) map[string]bool {
@@ -53,6 +52,7 @@ var miniMaxVideoModels = map[string]miniMaxVideoLimits{
 	"MiniMax-H3-Highspeed": {miniMaxResolutionSet(miniMaxRes480P, miniMaxRes768P), 4, 15},
 	"MiniMax-H3-Lite":      {miniMaxResolutionSet(miniMaxRes480P, miniMaxRes768P), 4, 15},
 	"MiniMax-H3-Max":       {miniMaxResolutionSet(miniMaxRes480P, miniMaxRes768P), 5, 15},
+	"MiniMax-Hailuo-2.3":   {miniMaxResolutionSet(miniMaxRes768P, miniMaxRes1080P), 6, 10},
 }
 
 type miniMaxMediaRef struct {
@@ -82,28 +82,37 @@ func isMiniMaxCodeGlobalVideoProvider(provider string) bool {
 	return providers.ResolveAlias(provider) == miniMaxCodeGlobalProvider
 }
 
-// miniMaxVideoCreateURL returns the platform video endpoint. MiniMax Code's
-// stored baseUrl names the chat agent host and must not redirect video there;
-// only an explicit /v2/... override is honoured (useful for mock upstreams).
-func miniMaxVideoCreateURL(cfg providers.ProviderConfig, connData *shared.ConnectionData) string {
-	if connData != nil && connData.BaseURL != "" {
-		if u, err := url.Parse(connData.BaseURL); err == nil && u.Host != "" && strings.Contains(u.Path, "/v2/") {
-			return strings.TrimRight(connData.BaseURL, "/")
-		}
-	}
-	base := strings.TrimRight(cfg.VideoURL, "/")
-	if base == "" {
-		return "https://api.minimax.io" + miniMaxVideoCreatePath
-	}
-	return base
+type miniMaxMatrixMedia struct {
+	URL string `json:"url"`
 }
 
-func miniMaxVideoQueryURL(cfg providers.ProviderConfig, connData *shared.ConnectionData, taskID string) (string, error) {
-	u, err := url.Parse(miniMaxVideoCreateURL(cfg, connData))
-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return "", fmt.Errorf("invalid MiniMax video endpoint: %q", cfg.VideoURL)
-	}
-	return u.Scheme + "://" + u.Host + miniMaxVideoQueryPath + url.PathEscape(taskID), nil
+type miniMaxMatrixVideoRequest struct {
+	Model           string               `json:"model"`
+	Prompt          string               `json:"prompt"`
+	Duration        int                  `json:"duration"`
+	Resolution      string               `json:"resolution,omitempty"`
+	Ratio           string               `json:"ratio,omitempty"`
+	InputImage      *miniMaxMatrixMedia  `json:"input_image,omitempty"`
+	LastFrameImage  *miniMaxMatrixMedia  `json:"last_frame_image,omitempty"`
+	ReferenceImages []miniMaxMatrixMedia `json:"reference_images,omitempty"`
+	ReferenceVideos []miniMaxMatrixMedia `json:"reference_videos,omitempty"`
+	ReferenceAudios []miniMaxMatrixMedia `json:"reference_audios,omitempty"`
+}
+
+type miniMaxMatrixVideoQuery struct {
+	Model  string `json:"model"`
+	TaskID string `json:"task_id"`
+}
+
+// MiniMax Code video traffic is served by the Matrix MCP tools on the agent
+// host. The stored chat baseUrl supplies the host; a connection override may
+// point at a local mock, but it never redirects to the platform REST API.
+func miniMaxVideoCreateURL(cfg providers.ProviderConfig, connData *shared.ConnectionData) (string, error) {
+	return miniMaxMatrixToolURL(cfg, connData, miniMaxMatrixVideoSubmit)
+}
+
+func miniMaxVideoQueryURL(cfg providers.ProviderConfig, connData *shared.ConnectionData, _ string) (string, error) {
+	return miniMaxMatrixToolURL(cfg, connData, miniMaxMatrixVideoQueryTool)
 }
 
 func miniMaxVideoContentURL(raw string) (string, error) {
@@ -153,19 +162,73 @@ func validateMiniMaxVideoBody(raw []byte, model string) ([]byte, error) {
 	if req.Duration < limits.minDuration || req.Duration > limits.maxDuration {
 		return nil, fmt.Errorf("duration must be %d-%d seconds for %s", limits.minDuration, limits.maxDuration, model)
 	}
-	audio := true
-	if req.GenerateAudio != nil {
-		audio = *req.GenerateAudio
-	}
-	out := miniMaxCreateRequest{
-		Model:         model, // URL wins: a body cannot hijack the routed model.
-		Content:       items,
-		Duration:      req.Duration,
-		Resolution:    req.Resolution,
-		Ratio:         req.Ratio,
-		GenerateAudio: &audio,
+	out, err := buildMiniMaxMatrixVideoRequest(req, items, model)
+	if err != nil {
+		return nil, err
 	}
 	return json.Marshal(out)
+}
+
+func buildMiniMaxMatrixVideoRequest(req miniMaxCreateRequest, items []miniMaxContentItem, model string) (miniMaxMatrixVideoRequest, error) {
+	out := miniMaxMatrixVideoRequest{
+		Model:      miniMaxMatrixVideoModel(model),
+		Duration:   req.Duration,
+		Resolution: miniMaxMatrixVideoResolution(req.Resolution),
+		Ratio:      req.Ratio,
+	}
+	for _, item := range items {
+		if item.Type == "text" {
+			out.Prompt = strings.TrimSpace(item.Text)
+			continue
+		}
+		ref := miniMaxItemRef(item)
+		if ref == nil {
+			return out, fmt.Errorf("invalid %s reference", item.Type)
+		}
+		media := miniMaxMatrixMedia{URL: ref.URL}
+		switch item.Type {
+		case "image_url":
+			switch item.Role {
+			case "first_frame":
+				out.InputImage = &media
+			case "last_frame":
+				out.LastFrameImage = &media
+			case "reference_image":
+				out.ReferenceImages = append(out.ReferenceImages, media)
+			}
+		case "video_url":
+			out.ReferenceVideos = append(out.ReferenceVideos, media)
+		case "audio_url":
+			out.ReferenceAudios = append(out.ReferenceAudios, media)
+		}
+	}
+	if out.Prompt == "" {
+		return out, fmt.Errorf("prompt is required")
+	}
+	if out.InputImage != nil || out.LastFrameImage != nil {
+		out.Ratio = "adaptive"
+	}
+	return out, nil
+}
+func miniMaxMatrixVideoModel(model string) string {
+	if model == "MiniMax-Hailuo-2.3" {
+		return miniMaxMatrixHailuoModel
+	}
+	return miniMaxMatrixH3Model
+}
+
+// Matrix exposes only 768P and 2K for H3. Lower-variant aliases that accept
+// 480P are promoted to 768P, the nearest accepted resolution, instead of
+// sending a payload the MCP tool would reject.
+func miniMaxMatrixVideoResolution(resolution string) string {
+	if resolution == string(miniMaxRes480P) {
+		return string(miniMaxRes768P)
+	}
+	return resolution
+}
+
+func buildMiniMaxMatrixVideoQuery(model, taskID string) ([]byte, error) {
+	return json.Marshal(miniMaxMatrixVideoQuery{Model: miniMaxMatrixVideoModel(model), TaskID: taskID})
 }
 
 func validateMiniMaxContent(items []miniMaxContentItem) error {
@@ -260,10 +323,13 @@ func miniMaxItemRef(item miniMaxContentItem) *miniMaxMediaRef {
 }
 
 type miniMaxPollPayload struct {
-	TaskID  string `json:"task_id"`
-	Status  string `json:"status"`
-	FileID  string `json:"file_id"`
-	Content struct {
+	TaskID   string `json:"task_id"`
+	Status   string `json:"status"`
+	FileID   string `json:"file_id"`
+	VideoURL string `json:"video_url"` // Matrix query tool returns this directly.
+	Code     int    `json:"code"`
+	Message  string `json:"message"`
+	Content  struct {
 		URL string `json:"url"`
 	} `json:"content"`
 	Error    *miniMaxTaskError   `json:"error"`
@@ -291,10 +357,26 @@ func parseMiniMaxVideoPoll(body []byte) (miniMaxPollPayload, error) {
 			p = nested
 		}
 	}
-	if p.Status == "" && p.TaskID == "" && p.FileID == "" {
+	if p.Code != 0 && p.Message != "" && p.Error == nil {
+		if p.Status == "" {
+			p.Status = "failed"
+		}
+		p.Error = &miniMaxTaskError{Message: p.Message}
+	}
+	if p.Status == "" && p.Code == 0 && p.VideoURL != "" {
+		p.Status = "succeeded"
+	}
+	if p.Status == "" && p.TaskID == "" && p.FileID == "" && p.VideoURL == "" {
 		return p, fmt.Errorf("MiniMax poll response has no task state")
 	}
 	return p, nil
+}
+
+func (p miniMaxPollPayload) contentURL() string {
+	if p.VideoURL != "" {
+		return p.VideoURL
+	}
+	return p.Content.URL
 }
 
 func (p miniMaxPollPayload) terminal() bool {

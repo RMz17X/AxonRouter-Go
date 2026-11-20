@@ -130,7 +130,8 @@ type videoProxyParams struct {
 	RequestID      string // "" = create
 	Content        bool   // content download (GET only)
 	Body           []byte // final create body (model already stripped)
-	ContentType    string // incoming content type (create)
+	QueryBody      []byte // matrix query tool body (POST with RequestID set)
+	ContentType    string // incoming content type (create or query)
 	IdempotencyKey string
 	TargetOverride string // provider-specific URL; empty uses the generic builder
 	SkipAuth       bool   // CDN downloads must not receive the provider credential
@@ -202,12 +203,16 @@ func (h *MediaHandler) videoFetch(ctx context.Context, client *http.Client, prov
 	}()
 
 	method := http.MethodPost
-	if p.RequestID != "" {
+	if p.RequestID != "" && p.QueryBody == nil {
 		method = http.MethodGet
 	}
+	requestBody := p.Body
+	if p.QueryBody != nil {
+		requestBody = p.QueryBody
+	}
 	var bodyReader io.Reader
-	if method == http.MethodPost && p.Body != nil {
-		bodyReader = bytes.NewReader(p.Body)
+	if method == http.MethodPost && requestBody != nil {
+		bodyReader = bytes.NewReader(requestBody)
 	}
 	req, err := http.NewRequestWithContext(reqCtx, method, target, bodyReader)
 	if err != nil {
