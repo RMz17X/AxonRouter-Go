@@ -106,6 +106,16 @@ func ProvideDatabase(lc fx.Lifecycle, cfg *config.Config) (*sql.DB, error) {
 		}
 	}
 
+	// MiniMax credits snapshot: the dashboard quota read writes one row per
+	// connection, and the video lane orders candidates by the freshest known
+	// balance before the upstream confirms which account can pay.
+	if err := db.EnsureMiniMaxBalanceStateTable(conn); err != nil {
+		_, statErr := conn.Exec("SELECT 1")
+		if statErr == nil {
+			return nil, fmt.Errorf("database minimax balance state: %w", err)
+		}
+	}
+
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
 			return conn.Close()

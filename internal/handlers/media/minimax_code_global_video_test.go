@@ -261,6 +261,28 @@ func TestMiniMaxVideoRotationPolicy(t *testing.T) {
 	}
 }
 
+func TestMiniMaxVideoAttemptPreference(t *testing.T) {
+	candidates := []string{"rich", "poor"}
+	tests := []struct {
+		name    string
+		attempt int
+		pinned  string
+		want    string
+	}{
+		{name: "first candidate", attempt: 0, want: "rich"},
+		{name: "second candidate", attempt: 1, want: "poor"},
+		{name: "exhausted falls back to strategy", attempt: 2, want: ""},
+		{name: "pin wins", attempt: 0, pinned: "client-pin", want: "client-pin"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := miniMaxVideoAttemptPreference(tt.attempt, tt.pinned, candidates); got != tt.want {
+				t.Errorf("preference = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMiniMaxMatrixBizErrorBillingRefusal(t *testing.T) {
 	status, msg, ok := miniMaxMatrixBizError([]byte(`{"code":402,"message":"the remaining M Plan weekly limit and account credits cannot cover this MiniMax-H3 video generation"}`))
 	if !ok {

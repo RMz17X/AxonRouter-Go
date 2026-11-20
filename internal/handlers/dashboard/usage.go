@@ -14,6 +14,7 @@ import (
 	"axonrouter/proxy/internal/fetchgate"
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/log"
+	"axonrouter/proxy/internal/models"
 	"axonrouter/proxy/internal/providers"
 	"axonrouter/proxy/internal/proxy"
 )
@@ -306,6 +307,7 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 		} else if retry.refreshed {
 			if retried, retryOK := fetchProviderUsage(fetchCtx, conn.Provider, data); retryOK {
 				if (conn.Provider == "minimax-code" || conn.Provider == "minimax-code-global") && h.Repo != nil {
+					rememberMiniMaxBalance(h.Repo, conn, retried)
 					applyMiniMaxClaimedCreditsFallback(h.Repo, conn.ID, retried.quotas)
 				}
 				h.maybeAutoReleaseQuotaLocks(fetchCtx, connID, retried.quotas)
@@ -316,6 +318,7 @@ func (h *DashboardHandler) HandleGetConnectionUsage(w http.ResponseWriter, r *ht
 	}
 	if ok {
 		if (conn.Provider == "minimax-code" || conn.Provider == "minimax-code-global") && h.Repo != nil {
+			rememberMiniMaxBalance(h.Repo, conn, res)
 			applyMiniMaxClaimedCreditsFallback(h.Repo, conn.ID, res.quotas)
 		}
 		h.maybeAutoReleaseQuotaLocks(fetchCtx, connID, res.quotas)
@@ -450,5 +453,26 @@ func applyMiniMaxClaimedCreditsFallback(repo *db.Repo, connID string, quotas map
 			quotas["Credits"] = creditsQuota(strconv.Itoa(pts))
 			delete(quotas, "Plan")
 		}
+	}
+}
+
+// rememberMiniMaxBalance writes the credits row the quota read just produced
+// into the snapshot table the video lane ranks by. Best-effort: a failed
+// write leaves the previous snapshot in place and never fails the dashboard
+// read that already has its answer.
+func rememberMiniMaxBalance(repo *db.Repo, conn *models.ProviderConnection, res usageResult) {
+	if repo == nil || conn == nil {
+		return
+	}
+	if conn.Provider != "minimax-code" && conn.Provider != "minimax-code-global" {
+		return
+	}
+	credits, ok := res.quotas["Credits"].(map[string]any)
+	if !ok {
+		return
+	}
+	balance := int64(usageNum(credits["total"], 0))
+	if err := repo.UpdateMiniMaxBalance(conn.ID, conn.Provider, balance, res.plan); err != nil {
+		log.Warn("usage", "minimax balance snapshot not stored", "conn", conn.ID, "error", err)
 	}
 }

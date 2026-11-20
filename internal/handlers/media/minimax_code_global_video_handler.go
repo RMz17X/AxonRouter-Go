@@ -40,6 +40,49 @@ func miniMaxVideoAttemptLimit(lastStatus int) int {
 	return miniMaxVideoMaxAttempts
 }
 
+// miniMaxVideoBalanceMaxAge bounds how stale a credits snapshot may be before
+// it stops ordering candidates. A snapshot older than this is ignored rather
+// than trusted: credits move with every paid call.
+const miniMaxVideoBalanceMaxAge = 24 * time.Hour
+
+// miniMaxVideoCandidateOrder returns active connection ids richest-first,
+// bounded by the same rotation cap as a billing sweep. An empty result means
+// no fresh snapshot exists, and the caller falls back to the normal strategy.
+func (h *MediaHandler) miniMaxVideoCandidateOrder(provider string) []string {
+	if h == nil || h.Repo == nil {
+		return nil
+	}
+	snaps, err := h.Repo.MiniMaxBalanceSnapshots(provider, miniMaxVideoBalanceMaxAge)
+	if err != nil || len(snaps) == 0 {
+		return nil
+	}
+	max := miniMaxVideoBillingMaxAttempts
+	if len(snaps) < max {
+		max = len(snaps)
+	}
+	out := make([]string, 0, max)
+	for _, s := range snaps[:max] {
+		if s.ConnectionID != "" {
+			out = append(out, s.ConnectionID)
+		}
+	}
+	return out
+}
+
+// miniMaxVideoAttemptPreference picks the pin for one attempt. A client or
+// model pin always wins; otherwise the balance-ordered candidate for this
+// attempt is tried first, and once the list is exhausted the normal strategy
+// resumes.
+func miniMaxVideoAttemptPreference(attempt int, pinned string, candidates []string) string {
+	if pinned != "" {
+		return pinned
+	}
+	if attempt >= 0 && attempt < len(candidates) {
+		return candidates[attempt]
+	}
+	return ""
+}
+
 func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.Request, body []byte, action, provider, model, preferred string) {
 	if action != "generations" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest,
@@ -55,6 +98,11 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 		handlerutil.WriteJSONError(w, http.StatusBadRequest, "[minimax-code-global] "+err.Error())
 		return
 	}
+	pinned := preferred
+	var candidates []string
+	if pinned == "" {
+		candidates = h.miniMaxVideoCandidateOrder(provider)
+	}
 
 	var exclude []string
 	lastStatus, lastError := 0, ""
@@ -62,7 +110,8 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 		if attempt >= miniMaxVideoAttemptLimit(lastStatus) {
 			break
 		}
-		conn, connData, err := h.ChatH.GetBestConnectionWithContext(r.Context(), provider, preferred, exclude, model)
+		attemptPreferred := miniMaxVideoAttemptPreference(attempt, pinned, candidates)
+		conn, connData, err := h.ChatH.GetBestConnectionWithContext(r.Context(), provider, attemptPreferred, exclude, model)
 		if err != nil || conn == nil || connData == nil {
 			if attempt == 0 {
 				handlerutil.WriteJSONError(w, http.StatusServiceUnavailable, "No credentials for provider: "+provider)
