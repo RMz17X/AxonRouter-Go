@@ -29,6 +29,8 @@ func TestValidateMiniMaxVideoBody(t *testing.T) {
 		{"duration below minimum", "MiniMax-H3", `{"prompt":"a cat","duration":3,"resolution":"768P"}`, true},
 		{"max requires five seconds", "MiniMax-H3-Max", `{"prompt":"a cat","duration":4,"resolution":"768P"}`, true},
 		{"hailuo 6s", "MiniMax-Hailuo-2.3", `{"prompt":"a cat","duration":6,"resolution":"768P"}`, false},
+		{"minimal H3 payload", "MiniMax-H3", `{"model":"MiniMax-H3","prompt":"a cat"}`, false},
+		{"minimal Hailuo payload", "MiniMax-Hailuo-2.3", `{"model":"MiniMax-Hailuo-2.3","prompt":"a cat"}`, false},
 		{"hailuo rejects 2K", "MiniMax-Hailuo-2.3", `{"prompt":"a cat","duration":6,"resolution":"2K"}`, true},
 		{"hailuo rejects 5s", "MiniMax-Hailuo-2.3", `{"prompt":"a cat","duration":5,"resolution":"768P"}`, true},
 		{"frame and reference mixed", "MiniMax-H3", `{"content":[{"type":"text","text":"walk"},{"type":"image_url","role":"first_frame","image_url":{"url":"https://cdn.example/a.png"}},{"type":"image_url","role":"reference_image","image_url":{"url":"https://cdn.example/b.png"}}],"duration":6,"resolution":"768P"}`, true},
@@ -59,6 +61,9 @@ func TestValidateMiniMaxVideoBody(t *testing.T) {
 			}
 			if req.Duration == 0 {
 				t.Error("duration must be present in the Matrix body")
+			}
+			if req.Resolution == "" {
+				t.Error("resolution must be present in the Matrix body")
 			}
 		})
 	}

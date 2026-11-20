@@ -1,5 +1,12 @@
 # Changelog
 
+## [v1.10.80] - 2026-11-21
+
+### Video request defaults and dashboard curl example
+
+- Accept minimal `/v1/videos/generations` payloads by applying per-model defaults for `duration` and `resolution` before validation.
+- Show `duration`, `resolution`, and `ratio` in the dashboard's generated video curl example so copied requests are complete.
+
 ## [v1.10.79] - 2026-11-21
 
 ### MiniMax Code media: Matrix tool contract

@@ -307,14 +307,23 @@
     return `${origin}/v1/web/fetch`
   })
 
+  let videoExamplePayload = $derived.by(() => {
+    const model = selectedModelId || mediaModels[0]?.id || ''
+    const duration = model === 'MiniMax-H3-Max' ? 5 : 6
+    const resolution = model === 'MiniMax-H3' ? '2K' : '768P'
+    const prompt = exampleInput || 'A serene lake at sunset'
+    return `{"model":"${resolveQualifiedModel(model)}","prompt":"${prompt}","duration":${duration},"resolution":"${resolution}","ratio":"16:9"}`
+  })
+
   let exampleCurl = $derived.by(() => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3177'
     const key = activeApiKey || 'YOUR_KEY'
     const defaultModel = selectedModelId || mediaModels[0]?.id || ''
     const qualifiedModel = resolveQualifiedModel(defaultModel)
 
+
     if (kind === 'video') {
-      return `curl -X POST ${origin}/v1/videos/generations \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${key}" \\\n  -d '{"model":"${qualifiedModel}","prompt":"${exampleInput || 'A serene lake at sunset'}"}'`
+      return `curl -X POST ${origin}/v1/videos/generations \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${key}" \\\n  -d '${videoExamplePayload}'`
     }
     if (kind === 'image') {
       return `curl -X POST ${origin}/v1/images/generations \\\n  -H "Content-Type: application/json" \\\n  -H "Authorization: Bearer ${key}" \\\n  -d '{"model":"${qualifiedModel}","prompt":"${exampleInput || 'A cute cat wearing a hat'}","n":1,"size":"auto","quality":"auto","background":"auto","image_detail":"high","output_format":"png"}'`

@@ -143,6 +143,7 @@ func validateMiniMaxVideoBody(raw []byte, model string) ([]byte, error) {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return nil, fmt.Errorf("invalid JSON body: %w", err)
 	}
+	applyMiniMaxVideoDefaults(&req, model, limits)
 	items := req.Content
 	if strings.TrimSpace(req.Prompt) != "" {
 		if len(items) != 0 {
@@ -167,6 +168,28 @@ func validateMiniMaxVideoBody(raw []byte, model string) ([]byte, error) {
 		return nil, err
 	}
 	return json.Marshal(out)
+}
+
+// Matrix declares a default resolution but still requires a duration, so a
+// minimal OpenAI-style request needs router-side defaults. Pick the shortest
+// duration the model allows and a resolution the model actually accepts.
+func applyMiniMaxVideoDefaults(req *miniMaxCreateRequest, model string, limits miniMaxVideoLimits) {
+	if req.Duration == 0 {
+		req.Duration = limits.minDuration
+	}
+	if req.Resolution != "" {
+		return
+	}
+	switch model {
+	case "MiniMax-H3":
+		req.Resolution = string(miniMaxRes2K)
+	case "MiniMax-Hailuo-2.3":
+		req.Resolution = string(miniMaxRes768P)
+	default:
+		if limits.resolutions[string(miniMaxRes768P)] {
+			req.Resolution = string(miniMaxRes768P)
+		}
+	}
 }
 
 func buildMiniMaxMatrixVideoRequest(req miniMaxCreateRequest, items []miniMaxContentItem, model string) (miniMaxMatrixVideoRequest, error) {
