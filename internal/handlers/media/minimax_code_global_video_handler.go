@@ -16,10 +16,15 @@ import (
 const miniMaxVideoMaxAttempts = 2 // one core token refresh + one account rotation
 
 // A balance refusal means the account never accepted the job, so it is safe
-// to walk further down the connection list than an auth failure: there is no
-// upstream job to orphan. Bounded so a fleet of empty accounts cannot turn
-// one request into an unbounded sweep.
-const miniMaxVideoBillingMaxAttempts = 10
+// to walk the whole connection list rather than stopping after a handful:
+// the upstream only answers 402 when the account cannot pay, so the next
+// account is a fresh chance. Bounded so a request can never loop forever.
+const miniMaxVideoBillingMaxAttempts = 128
+
+// miniMaxBalanceInsufficient marks a connection that answered a paid-video
+// 402. It is not a real balance, but it sinks the account below every known
+// balance so the next create tries the accounts that can still pay first.
+const miniMaxBalanceInsufficient = -1
 
 // miniMaxVideoShouldRotate reports whether a refusal is account-scoped and
 // safe to retry on another connection. A 5xx is absent on purpose: the job may
@@ -152,6 +157,14 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 		// walk on; 401/403 keep the original single rotation. A 5xx is never
 		// replayed: the job may already exist upstream.
 		if miniMaxVideoShouldRotate(lastStatus) {
+			if lastStatus == http.StatusPaymentRequired && h.Repo != nil {
+				// The account cannot cover this paid task. Sink it in the
+				// snapshot ranking so the next create tries the accounts that
+				// can still pay first; a dashboard usage read overwrites it.
+				if err := h.Repo.UpdateMiniMaxBalance(conn.ID, provider, miniMaxBalanceInsufficient, ""); err != nil {
+					log.Warn("media", "minimax insufficient balance mark failed", "conn", conn.ID, "error", err)
+				}
+			}
 			exclude = append(exclude, conn.ID)
 			continue
 		}

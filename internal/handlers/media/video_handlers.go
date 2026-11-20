@@ -143,6 +143,22 @@ func (h *MediaHandler) handleVideoCreate(w http.ResponseWriter, r *http.Request,
 		h.forwardMediaRequest(w, r, body, "sora", path)
 		return
 	}
+
+	preferred := r.Header.Get("x-connection-id")
+	if preferred == "" {
+		preferred = r.Header.Get("x-provider-connection-id")
+	}
+	if preferred == "" {
+		preferred = info.ConnectionID
+	}
+	// MiniMax Code video is served by the Matrix MCP tools, not by the
+	// registry VideoURL the core video lane keys on. Route it before the
+	// videoConfigFor gate, otherwise the dedicated create/rotation path is
+	// unreachable and a billing refusal never leaves the first account.
+	if isMiniMaxCodeGlobalVideoProvider(provider) {
+		h.handleMiniMaxVideoCreate(w, r, body, action, provider, info.Model, preferred)
+		return
+	}
 	if _, ok := videoConfigFor(provider); !ok {
 		h.forwardMediaRequest(w, r, body, "sora", path)
 		return
@@ -174,18 +190,6 @@ func (h *MediaHandler) handleVideoCreate(w http.ResponseWriter, r *http.Request,
 		} else {
 			finalBody = handlerutil.UpdateModelInBody(body, info.Model)
 		}
-	}
-
-	preferred := r.Header.Get("x-connection-id")
-	if preferred == "" {
-		preferred = r.Header.Get("x-provider-connection-id")
-	}
-	if preferred == "" {
-		preferred = info.ConnectionID
-	}
-	if isMiniMaxCodeGlobalVideoProvider(provider) {
-		h.handleMiniMaxVideoCreate(w, r, body, action, provider, info.Model, preferred)
-		return
 	}
 
 	var exclude []string
