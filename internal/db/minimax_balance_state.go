@@ -64,9 +64,6 @@ func (r *Repo) UpdateMiniMaxBalance(connectionID, provider string, balance int64
 	if strings.TrimSpace(provider) == "" {
 		return fmt.Errorf("update minimax balance: empty provider")
 	}
-	if err := r.EnsureMiniMaxBalanceStateTable(); err != nil {
-		return err
-	}
 	_, err := r.Exec(`INSERT INTO minimaxBalanceState (connectionId, provider, balance, plan, updatedAt)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(connectionId) DO UPDATE SET
@@ -91,9 +88,6 @@ func (r *Repo) MiniMaxBalanceSnapshots(provider string, maxAge time.Duration) ([
 	}
 	if strings.TrimSpace(provider) == "" {
 		return nil, fmt.Errorf("minimax balance snapshots: empty provider")
-	}
-	if err := r.EnsureMiniMaxBalanceStateTable(); err != nil {
-		return nil, err
 	}
 	query := `SELECT b.connectionId, b.provider, b.balance, b.plan, b.updatedAt
 		FROM minimaxBalanceState b

@@ -27,3 +27,6 @@
   task store, so the media panel Poll button works on the same account without
   a manual connection pin; a pinned MiniMax connection is accepted on the query
   path too.
+- Balance snapshot writes no longer repeat DDL on every 402 attempt; the
+  table and index are ensured once at startup, so a full fleet sweep pays one
+  upsert per account instead of two extra schema statements.
