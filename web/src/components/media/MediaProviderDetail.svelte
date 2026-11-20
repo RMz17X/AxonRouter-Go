@@ -261,6 +261,8 @@
   let isTestingExample = $state(false)
   let exampleResponse = $state<string | null>(null)
   let exampleLatency = $state<number | null>(null)
+  let videoConnectionId = $state('')
+  let pollStates = $state<Record<string, { loading: boolean; status: string; url: string; error: string }>>({})
 
 
   type MediaPreview = { kind: 'image' | 'video'; url: string }
@@ -308,6 +310,100 @@
     walk(value)
     return out
   }
+  type VideoTask = {
+    taskId: string
+    status: string
+    model: string
+    duration: number | null
+    resolution: string
+    nextStep: string
+    key: string
+  }
+
+  function firstString(source: Record<string, any>, keys: string[]): string {
+    for (const key of keys) {
+      const value = source[key]
+      if (typeof value === 'string' && value.trim()) return value
+    }
+    return ''
+  }
+
+  function extractVideoTask(value: unknown): VideoTask | null {
+    const root = value && typeof value === 'object' ? (value as Record<string, any>) : null
+    if (!root) return null
+    const nested = root.task && typeof root.task === 'object' ? (root.task as Record<string, any>) : null
+    const merged = nested ? { ...root, ...nested } : root
+    const taskId = firstString(merged, ['task_id', 'request_id'])
+    if (!taskId) return null
+    const rawDuration = merged.duration
+    const duration = typeof rawDuration === 'number'
+      ? rawDuration
+      : typeof rawDuration === 'string' && rawDuration.trim() && Number.isFinite(Number(rawDuration))
+        ? Number(rawDuration)
+        : null
+    return {
+      taskId,
+      status: firstString(merged, ['status', 'state']),
+      model: firstString(merged, ['model']),
+      duration,
+      resolution: firstString(merged, ['resolution']),
+      nextStep: firstString(merged, ['next_step']),
+      key: taskId,
+    }
+  }
+
+  let videoTasks = $derived.by<VideoTask[]>(() => {
+    if (!exampleResponse || !/^[[{]/.test(exampleResponse.trim())) return []
+    try {
+      const task = extractVideoTask(JSON.parse(exampleResponse))
+      return task ? [task] : []
+    } catch {
+      return []
+    }
+  })
+
+  async function pollVideoTask(task: VideoTask) {
+    pollStates = {
+      ...pollStates,
+      [task.taskId]: { loading: true, status: task.status, url: '', error: '' },
+    }
+    try {
+      const headers: Record<string, string> = {}
+      if (activeApiKey) headers['Authorization'] = `Bearer ${activeApiKey}`
+      const connection = videoConnectionId || selectedConnId
+      if (connection) headers['x-connection-id'] = connection
+      const res = await fetch(`/v1/videos/${encodeURIComponent(task.taskId)}`, { headers })
+      const text = await res.text()
+      let json: any = null
+      try {
+        json = JSON.parse(text)
+      } catch {
+        json = null
+      }
+      const pollUrl = json?.video_url || json?.content?.url || json?.task?.video_url || json?.task?.content?.url || ''
+      const status = json?.status || json?.task?.status || String(res.status)
+      pollStates = {
+        ...pollStates,
+        [task.taskId]: {
+          loading: false,
+          status,
+          url: typeof pollUrl === 'string' ? pollUrl : '',
+          error: res.ok ? '' : text || `HTTP ${res.status}`,
+        },
+      }
+    } catch (err) {
+      pollStates = {
+        ...pollStates,
+        [task.taskId]: {
+          loading: false,
+          status: task.status,
+          url: '',
+          error: err instanceof Error ? err.message : String(err),
+        },
+      }
+    }
+  }
+
 
   let mediaPreviews = $derived.by<MediaPreview[]>(() => {
     if (!exampleResponse || !/^[[{]/.test(exampleResponse.trim())) return []
@@ -445,6 +541,7 @@
   async function handleTestExample() {
     isTestingExample = true
     exampleResponse = null
+    pollStates = {}
     const start = performance.now()
     try {
       const defaultModel = selectedModelId || mediaModels[0]?.id || ''
@@ -455,6 +552,10 @@
       if (selectedConnId) {
         headers['x-connection-id'] = selectedConnId
         headers['x-provider-connection-id'] = selectedConnId
+      }
+      if (kind === 'video' && videoConnectionId) {
+        headers['x-connection-id'] = videoConnectionId
+        headers['x-provider-connection-id'] = videoConnectionId
       }
 
       let res: Response
@@ -762,6 +863,19 @@
         </div>
       </div>
 
+      {#if kind === 'video'}
+        <div class="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+          <span class="w-full text-xs font-medium text-text-muted sm:w-20 sm:shrink-0">Video Conn</span>
+          <div class="w-full min-w-0 flex-1">
+            <input
+              bind:value={videoConnectionId}
+              placeholder="Optional · override for create + poll"
+              class="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary text-text-main font-mono"
+            />
+          </div>
+        </div>
+      {/if}
+
       <!-- Kind-specific inputs -->
       {#if kind === 'video' || kind === 'image'}
         <div class="flex min-w-0 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
@@ -947,6 +1061,61 @@
           </span>
         </div>
         <pre class="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-70">{exampleResponse || defaultResponse}</pre>
+
+      {#if kind === 'video' && videoTasks.length > 0}
+        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+          {#each videoTasks as task (task.key)}
+            {@const poll = pollStates[task.taskId]}
+            <div class="rounded-brand border border-border-subtle bg-bg-alt p-3 flex flex-col gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="material-symbols-outlined text-base text-primary shrink-0 {poll?.loading ? 'animate-spin' : ''}">
+                  {poll?.loading ? 'progress_activity' : 'movie'}
+                </span>
+                <div class="min-w-0 flex-1">
+                  <code class="block text-[11px] text-text-main font-mono truncate" title={task.taskId}>{task.taskId}</code>
+                  <span class="text-[10px] text-text-muted uppercase tracking-wider">{poll?.status || task.status || 'queued'}</span>
+                </div>
+                <button
+                  type="button"
+                  onclick={() => pollVideoTask(task)}
+                  disabled={poll?.loading}
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary text-white text-[11px] font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <span class="material-symbols-outlined text-[14px] {poll?.loading ? 'animate-spin' : ''}">
+                    {poll?.loading ? 'progress_activity' : 'refresh'}
+                  </span>
+                  {poll?.loading ? 'Polling...' : 'Poll'}
+                </button>
+              </div>
+
+              <dl class="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]">
+                {#if task.model}
+                  <div class="min-w-0"><dt class="text-text-muted">Model</dt><dd class="text-text-main truncate">{task.model}</dd></div>
+                {/if}
+                {#if task.duration !== null}
+                  <div><dt class="text-text-muted">Duration</dt><dd class="text-text-main">{task.duration}s</dd></div>
+                {/if}
+                {#if task.resolution}
+                  <div><dt class="text-text-muted">Resolution</dt><dd class="text-text-main">{task.resolution}</dd></div>
+                {/if}
+                {#if task.nextStep}
+                  <div><dt class="text-text-muted">Next</dt><dd class="text-text-main">{task.nextStep}</dd></div>
+                {/if}
+                {#if poll?.url}
+                  <div class="col-span-2 min-w-0">
+                    <dt class="text-text-muted">URL</dt>
+                    <dd class="text-primary"><a href={poll.url} target="_blank" rel="noopener noreferrer" class="underline break-all">{poll.url}</a></dd>
+                  </div>
+                {/if}
+              </dl>
+              {#if poll?.error}
+                <p class="text-[10px] text-red-500 break-all">{poll.error}</p>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+
       {#if mediaPreviews.length > 0}
         <div class="mt-3 grid gap-3 sm:grid-cols-2">
           {#each mediaPreviews as preview, i (preview.url + i)}

@@ -212,7 +212,7 @@ func isClassifiedOpencodeRefusal(provider string, ue *upstreamError) bool {
 	if ue == nil {
 		return false
 	}
-	switch provider {
+	switch providers.ResolveAlias(provider) {
 	case "opencode", "opencode-zen", "opencode-go":
 	default:
 		return false

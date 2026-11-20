@@ -438,7 +438,7 @@ func (h *MediaHandler) forwardSystemoneRequest(w http.ResponseWriter, r *http.Re
 			req.Header.Set(k, v)
 		}
 	}
-	if modelInfo.Provider == "opencode" || modelInfo.Provider == "opencode-zen" {
+	if canonical := providers.ResolveAlias(modelInfo.Provider); canonical == "opencode" || canonical == "opencode-zen" {
 		// One stable session per provider+connection, like the chat lanes:
 		// minting a fresh session per request drains the egress budget at
 		// mint time and surfaces as 429 FreeUsageLimitError. A separate

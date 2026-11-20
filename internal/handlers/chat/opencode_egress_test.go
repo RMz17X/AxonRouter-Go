@@ -52,6 +52,28 @@ func TestOpencodeEgressParkLadder(t *testing.T) {
 	}
 }
 
+func TestOpencodeEgressParkAliasSharesLedger(t *testing.T) {
+	t.Setenv("OPENCODE_EGRESS_PARK_SEC", "")
+	pool := "test-" + t.Name()
+	t.Cleanup(func() {
+		opencodeEgressMu.Lock()
+		delete(opencodeEgressEntries, opencodeEgressKey("opencode", pool))
+		opencodeEgressMu.Unlock()
+	})
+
+	if !isOpencodeEgressRefusal("oc", freeTier429()) {
+		t.Fatal("isOpencodeEgressRefusal(oc) = false, want true")
+	}
+	strike, parked := parkOpenCodeEgress("opencode", pool, freeTier429())
+	if strike != 1 || parked != 60*time.Second {
+		t.Fatalf("opencode first strike = %d/%v, want 1/60s", strike, parked)
+	}
+	strike, parked = parkOpenCodeEgress("oc", pool, freeTier429())
+	if strike != 2 || parked != 600*time.Second {
+		t.Fatalf("oc second strike = %d/%v, want 2/600s", strike, parked)
+	}
+}
+
 func TestOpencodeEgressParkEnvOverrideOnlyFirstStrike(t *testing.T) {
 	t.Setenv("OPENCODE_EGRESS_PARK_SEC", "30")
 	pool := "test-" + t.Name()
@@ -103,6 +125,13 @@ func TestPublishOpenCodeGateVerdict(t *testing.T) {
 			provider: "opencode",
 			err: &upstreamError{StatusCode: http.StatusTooManyRequests,
 				Body: []byte(`{"error":{"message":"Free usage limit reached. Subscribe to OpenCode Go to keep going","type":"FreeUsageLimitError","code":429}}`)},
+			want: "ip-throttled",
+		},
+		{
+			name:     "raw 429 usage limit on oc alias",
+			provider: "oc",
+			err: &upstreamError{StatusCode: http.StatusTooManyRequests,
+				Body: []byte(`{"error":{"message":"Free usage limit reached","type":"FreeUsageLimitError","code":429}}`)},
 			want: "ip-throttled",
 		},
 		{

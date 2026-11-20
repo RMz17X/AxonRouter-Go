@@ -127,7 +127,7 @@ func newOpencodeClientProfile() profiles.ClientProfile {
 	return profiles.NewClientProfile(
 		tls.ClientHelloID{
 			Client:      "bun",
-			Version:     "1.4.2",
+			Version:     "1.4.3",
 			SpecFactory: bunBoringSSLSpec,
 		},
 		map[http2.SettingID]uint32{

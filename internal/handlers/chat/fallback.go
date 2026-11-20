@@ -110,6 +110,15 @@ func (h *ChatHandler) handleAccountFallback(
 				// penalized no matter which lane exposed it. There is no retry:
 				// pinned means pinned.
 				h.classifyPoolFailure(ctx, provider, model, connObj.ID, connData, fwdErr)
+				var ue *upstreamError
+				if errors.As(fwdErr, &ue) && isOpencodeEgressRefusal(provider, ue) {
+					if poolID := attemptPoolID(connData); poolID != "" {
+						strike, parked := parkOpenCodeEgress(provider, poolID, ue)
+						log.WarnCtx(ctx, "fallback", "pinned opencode egress parked",
+							"provider", provider, "model", model, "pool", poolID,
+							"strike", strike, "parkedSec", int(parked.Seconds()))
+					}
+				}
 			}
 			return fwdErr
 		}
@@ -142,22 +151,87 @@ func (h *ChatHandler) handleAccountFallback(
 			}
 		}
 		if cfg, ok := providers.KnownProviders[provider]; ok && (cfg.NoAuth || cfg.DefaultAPIKey != "") {
-			apiKey := cfg.DefaultAPIKey
-			if apiKey == "" {
-				apiKey = "public"
+
+			if !cfg.NoAuth {
+				// A keyed provider with a configured default key keeps the
+				// original single attempt: there is no NoAuth virtual
+				// connection to re-bind through the pool resolver.
+				proxyPoolID := h.ResolveProviderProxyPoolID(provider)
+				if err := h.tryForwardWithConnection(forwardRequestParams{
+					Ctx: ctx, W: w, Provider: provider, Model: model,
+					ConnectionID: "default", ConnData: &ConnectionData{APIKey: cfg.DefaultAPIKey, ProxyPoolID: proxyPoolID}, Body: body, Attempts: 1,
+					IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
+				}); err != nil {
+					return opencodeClosureError(provider, model, err)
+				}
+				return nil
 			}
-			proxyPoolID := h.ResolveProviderProxyPoolID(provider)
-			if err := h.tryForwardWithConnection(forwardRequestParams{
-				Ctx: ctx, W: w, Provider: provider, Model: model,
-				ConnectionID: "default", ConnData: &ConnectionData{APIKey: apiKey, ProxyPoolID: proxyPoolID}, Body: body, Attempts: 1,
-				IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
-			}); err != nil {
-				// Same contract as the multi-connection loop's return: a
-				// free-tier refusal leaves this path as the classified
-				// answer, not the upstream body verbatim.
-				return opencodeClosureError(provider, model, err)
+			// The free lane is NoAuth, so this branch is its normal path.
+			// A 429 refusal is an egress verdict, not an account fault: park
+			// the pool that answered and retry the next one, bounded by the
+			// same rotation cap as the account loop.
+			excludedPools := map[string]bool{}
+			rotations := 0
+			var lastErr error
+			for {
+				if rotations >= opencodeEgressRotateMax() {
+					log.WarnCtx(ctx, "fallback", "noauth egress rotation cap reached",
+						"provider", provider, "model", model, "rotations", rotations)
+					break
+				}
+				connObj, connData, err := h.getBestConnectionWithContext(ctx, provider, "", nil, model, excludedPools)
+				if err != nil || connObj == nil {
+					if lastErr == nil {
+						if err != nil {
+							lastErr = fmt.Errorf("no usable connection for provider %s: %w", provider, err)
+						} else {
+							lastErr = fmt.Errorf("no usable connection for provider %s", provider)
+						}
+					}
+					break
+				}
+				fwdErr := h.tryForwardWithConnection(forwardRequestParams{
+					Ctx: ctx, W: w, Provider: provider, Model: model,
+					ConnectionID: connObj.ID, ConnName: connObjName(connObj), ConnEmail: connObjEmail(connObj),
+					ConnData: connData, Body: body, Attempts: 1,
+					IsStream: isStream, TranslateResponse: translateResponse, Endpoint: endpoint,
+				})
+				if fwdErr == nil {
+					return nil
+				}
+				lastErr = fwdErr
+				var ue *upstreamError
+				if !errors.As(fwdErr, &ue) {
+					break
+				}
+				poolID := attemptPoolID(connData)
+				if isOpencodeEgressRefusal(provider, ue) {
+					if poolID == "" {
+						break
+					}
+					strike, parked := parkOpenCodeEgress(provider, poolID, ue)
+					log.WarnCtx(ctx, "fallback", "noauth opencode egress parked, rotating pool",
+						"provider", provider, "model", model, "pool", poolID,
+						"strike", strike, "parkedSec", int(parked.Seconds()))
+					excludedPools[poolID] = true
+					rotations++
+					continue
+				}
+				if isOpencodeFreeTierRefusal(provider, ue) {
+					// A 403 is a shape verdict: rotate once without a strike.
+					if poolID == "" {
+						break
+					}
+					excludedPools[poolID] = true
+					rotations++
+					continue
+				}
+				break
 			}
-			return nil
+			// Same contract as the multi-connection loop's return: a
+			// free-tier refusal leaves this path as the classified answer,
+			// not the upstream body verbatim.
+			return opencodeClosureError(provider, model, lastErr)
 		}
 		observ.IncFallback(provider, model, observ.FallbackReasonNoConnection)
 		return fmt.Errorf("no active connections for provider: %s", provider)
@@ -2444,7 +2518,9 @@ func mentionsGate(lower string) bool {
 // and the body check keeps a genuine OpenCode auth or billing error on the
 // normal path.
 func isOpencodeFreeTierRefusal(provider string, ue *upstreamError) bool {
-	switch provider {
+	// Callers pass the wire provider ("oc") and the canonical id ("opencode")
+	// interchangeably; the gate's verdict is the same for the alias.
+	switch providers.ResolveAlias(provider) {
 	case "opencode", "opencode-zen", "opencode-go":
 	default:
 		return false

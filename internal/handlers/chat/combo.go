@@ -1235,7 +1235,7 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 							if modelInfo.Provider == "dahl" {
 								RecordDahlModelConcurrencyBlocked(modelInfo.Model, 10*time.Second)
 							}
-							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, ue)
+							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, attemptPoolID(connData), ue)
 							retry.note(ue)
 							lastErr = ue
 							break
@@ -1248,7 +1248,7 @@ func (h *ChatHandler) handleComboFallbackWithVisited(ctx context.Context, cw *co
 							break
 						}
 						if providers.RetryableStatusCodes[ue.StatusCode] {
-							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, ue)
+							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, attemptPoolID(connData), ue)
 						}
 						if ue.StatusCode == http.StatusServiceUnavailable || ue.StatusCode == http.StatusBadGateway || ue.StatusCode == http.StatusGatewayTimeout {
 							// In combo loops, fail over immediately to the next connection/model without blocking the client turn
@@ -1821,7 +1821,7 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 							if modelInfo.Provider == "dahl" {
 								RecordDahlModelConcurrencyBlocked(modelInfo.Model, 10*time.Second)
 							}
-							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, ue)
+							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, attemptPoolID(connData), ue)
 							retry.note(ue)
 							lastErr = ue
 							break
@@ -1834,7 +1834,7 @@ func (h *ChatHandler) handleMessagesComboFallbackWithVisited(ctx context.Context
 							break
 						}
 						if providers.RetryableStatusCodes[ue.StatusCode] {
-							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, ue)
+							h.comboLockRetryable(ctx, &excludeIDs, connID, modelInfo.Provider, modelInfo.Model, attemptPoolID(connData), ue)
 						}
 						if ue.StatusCode == http.StatusServiceUnavailable || ue.StatusCode == http.StatusBadGateway || ue.StatusCode == http.StatusGatewayTimeout {
 							// In combo loops, fail over immediately to the next connection/model without blocking the client turn
@@ -2014,7 +2014,7 @@ func comboMemberAttemptCap(provider string) int {
 	return 10
 }
 
-func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]string, connID, provider, model string, ue *upstreamError) {
+func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]string, connID, provider, model, poolID string, ue *upstreamError) {
 	if handlerutil.IsProbeContext(ctx) {
 		*excludeIDs = append(*excludeIDs, connID)
 		return
@@ -2028,6 +2028,12 @@ func (h *ChatHandler) comboLockRetryable(ctx context.Context, excludeIDs *[]stri
 	// hide it behind a quota it does not own), so the connection is only
 	// excluded for the rest of this pass and the next combo entry is tried.
 	if isOpencodeFreeTierRefusal(provider, ue) {
+		if poolID != "" && isOpencodeEgressRefusal(provider, ue) {
+			strike, parked := parkOpenCodeEgress(provider, poolID, ue)
+			log.Warn("combo", "opencode egress parked, next member",
+				"provider", provider, "model", model, "pool", poolID,
+				"strike", strike, "parkedSec", int(parked.Seconds()))
+		}
 		*excludeIDs = append(*excludeIDs, connID)
 		log.Warn("combo", "opencode free-tier refusal, not locking the account",
 			"provider", provider, "model", model, "conn", connID, "status", ue.StatusCode)

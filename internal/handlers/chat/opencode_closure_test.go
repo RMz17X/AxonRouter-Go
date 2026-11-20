@@ -172,6 +172,13 @@ func TestOpencodeFreeTierRefusal_ClassifiesGateShapes(t *testing.T) {
 			want:     true,
 		},
 		{
+			name:     "429 free usage limit on oc alias",
+			provider: "oc",
+			status:   http.StatusTooManyRequests,
+			body:     `{"error":{"type":"FreeUsageLimitError","message":"Free usage limit reached."}}`,
+			want:     true,
+		},
+		{
 			name:     "429 without the usage-limit token is a real rate limit",
 			provider: "opencode",
 			status:   http.StatusTooManyRequests,
