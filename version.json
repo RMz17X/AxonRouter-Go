@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.10.77",
-  "releaseNotes": "v1.10.77: Production rollout of the v1.10.76 first-byte deadline and compatible-catalog negative-cache fixes; no behavior change from v1.10.76."
+  "latestVersion": "1.10.78",
+  "releaseNotes": "v1.10.78: Add MiniMax H3 image generation on mmg (H3-Image / -Highspeed with validated parameters and a 10-minute response-header timeout) and H3 video generation, restore minimax-image-01 upstream parity, publish the OpenCode gate verdict with bounded egress rotation, and register explicit model names, params, and kinds in the catalogs and docs."
 }
