@@ -153,6 +153,7 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 			writeVideoResult(w, res, conn.ID)
 			return
 		}
+		log.Debug("media", "minimax video attempt refused", "attempt", attempt, "conn", conn.ID, "status", lastStatus, "error", lastError)
 		// A 402 means the account never accepted the job, so it is safe to
 		// walk on; 401/403 keep the original single rotation. A 5xx is never
 		// replayed: the job may already exist upstream.
