@@ -12,3 +12,6 @@
   header, and the OpenCode stealth ClientHello is pinned to Bun 1.4.3.
 - The video example card shows a task card (id, status, model, duration,
   resolution, next step) with a Poll button and the returned video URL.
+- A MiniMax H3 `payment_required` / HTTP 402 balance refusal now rotates to the
+  next MiniMax connection (up to 10 attempts) instead of returning immediately;
+  401/403 keep the single rotation and 5xx is never replayed.

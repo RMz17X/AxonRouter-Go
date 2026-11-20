@@ -15,6 +15,31 @@ import (
 
 const miniMaxVideoMaxAttempts = 2 // one core token refresh + one account rotation
 
+// A balance refusal means the account never accepted the job, so it is safe
+// to walk further down the connection list than an auth failure: there is no
+// upstream job to orphan. Bounded so a fleet of empty accounts cannot turn
+// one request into an unbounded sweep.
+const miniMaxVideoBillingMaxAttempts = 10
+
+// miniMaxVideoShouldRotate reports whether a refusal is account-scoped and
+// safe to retry on another connection. A 5xx is absent on purpose: the job may
+// already exist upstream and a replay could bill it twice.
+func miniMaxVideoShouldRotate(status int) bool {
+	return status == http.StatusUnauthorized ||
+		status == http.StatusForbidden ||
+		status == http.StatusPaymentRequired
+}
+
+// miniMaxVideoAttemptLimit bounds the loop for the refusal class that just
+// answered. Billing refusals get the wider cap; everything else keeps the
+// original single rotation.
+func miniMaxVideoAttemptLimit(lastStatus int) int {
+	if lastStatus == http.StatusPaymentRequired {
+		return miniMaxVideoBillingMaxAttempts
+	}
+	return miniMaxVideoMaxAttempts
+}
+
 func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.Request, body []byte, action, provider, model, preferred string) {
 	if action != "generations" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest,
@@ -33,7 +58,10 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 
 	var exclude []string
 	lastStatus, lastError := 0, ""
-	for attempt := 0; attempt < miniMaxVideoMaxAttempts; attempt++ {
+	for attempt := 0; ; attempt++ {
+		if attempt >= miniMaxVideoAttemptLimit(lastStatus) {
+			break
+		}
 		conn, connData, err := h.ChatH.GetBestConnectionWithContext(r.Context(), provider, preferred, exclude, model)
 		if err != nil || conn == nil || connData == nil {
 			if attempt == 0 {
@@ -58,11 +86,10 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 		})
 		h.logVideoUsage(r, provider, model, conn, connData, time.Since(start))
 		if status, msg, ok := miniMaxMatrixBizError(res.Body); ok {
-			writeVideoUpstreamError(w, &videoUpstreamResponse{Status: status,
-				ErrText: fmt.Sprintf("[%s] %s", provider, msg)})
-			return
-		}
-		if res.ErrText == "" {
+			lastStatus, lastError = status, fmt.Sprintf("[%s] %s", provider, msg)
+		} else if res.ErrText != "" {
+			lastStatus, lastError = res.Status, res.ErrText
+		} else {
 			h.Repo.UpdateConnectionLastUsed(conn.ID)
 			if taskID := miniMaxMatrixTaskID(res.Body); taskID != "" {
 				if err := h.rememberMiniMaxVideoTask(taskID, model); err != nil {
@@ -72,15 +99,16 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 			writeVideoResult(w, res, conn.ID)
 			return
 		}
-		lastStatus, lastError = res.Status, res.ErrText
-		// The core already refreshed the token once. Rotate the account once
-		// on auth failure, never on 429 or a server-side error.
-		if attempt+1 < miniMaxVideoMaxAttempts &&
-			(res.Status == http.StatusUnauthorized || res.Status == http.StatusForbidden) {
+		// A 402 means the account never accepted the job, so it is safe to
+		// walk on; 401/403 keep the original single rotation. A 5xx is never
+		// replayed: the job may already exist upstream.
+		if miniMaxVideoShouldRotate(lastStatus) {
 			exclude = append(exclude, conn.ID)
 			continue
 		}
-		writeVideoUpstreamError(w, res)
+		writeVideoUpstreamError(w, &videoUpstreamResponse{
+			Status: lastStatus, ErrText: lastError, RetryAfter: res.RetryAfter,
+		})
 		return
 	}
 	writeVideoFinalError(w, lastStatus, lastError)

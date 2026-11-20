@@ -236,6 +236,44 @@ func TestMiniMaxVideoCreatePollContent(t *testing.T) {
 	}
 }
 
+func TestMiniMaxVideoRotationPolicy(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		wantRotate bool
+		wantLimit  int
+	}{
+		{name: "402 billing refusal rotates widely", status: http.StatusPaymentRequired, wantRotate: true, wantLimit: miniMaxVideoBillingMaxAttempts},
+		{name: "401 rotates once", status: http.StatusUnauthorized, wantRotate: true, wantLimit: miniMaxVideoMaxAttempts},
+		{name: "403 rotates once", status: http.StatusForbidden, wantRotate: true, wantLimit: miniMaxVideoMaxAttempts},
+		{name: "429 does not rotate", status: http.StatusTooManyRequests, wantRotate: false, wantLimit: miniMaxVideoMaxAttempts},
+		{name: "5xx is never replayed", status: http.StatusBadGateway, wantRotate: false, wantLimit: miniMaxVideoMaxAttempts},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := miniMaxVideoShouldRotate(tt.status); got != tt.wantRotate {
+				t.Errorf("miniMaxVideoShouldRotate(%d) = %v, want %v", tt.status, got, tt.wantRotate)
+			}
+			if got := miniMaxVideoAttemptLimit(tt.status); got != tt.wantLimit {
+				t.Errorf("miniMaxVideoAttemptLimit(%d) = %d, want %d", tt.status, got, tt.wantLimit)
+			}
+		})
+	}
+}
+
+func TestMiniMaxMatrixBizErrorBillingRefusal(t *testing.T) {
+	status, msg, ok := miniMaxMatrixBizError([]byte(`{"code":402,"message":"the remaining M Plan weekly limit and account credits cannot cover this MiniMax-H3 video generation"}`))
+	if !ok {
+		t.Fatal("billing envelope not classified")
+	}
+	if status != http.StatusPaymentRequired {
+		t.Errorf("status = %d, want 402", status)
+	}
+	if !strings.Contains(msg, "M Plan") {
+		t.Errorf("message = %q", msg)
+	}
+}
+
 func TestWriteVideoUpstreamErrorForwardsRetryAfter(t *testing.T) {
 	w := httptest.NewRecorder()
 	writeVideoUpstreamError(w, &videoUpstreamResponse{Status: 429, ErrText: "quota", RetryAfter: "60"})
