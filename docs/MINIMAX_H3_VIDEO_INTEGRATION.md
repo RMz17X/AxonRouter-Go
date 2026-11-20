@@ -188,6 +188,9 @@ therefore deliberately different from section 4:
 - `VideoURL` was added to the `minimax-code-global` registry entry; H3 models
   and `kind: "video"` rows were added to `registry_models.go` and
   `web/src/lib/models.ts`. No new provider ID, alias, or executor was created.
+- `ServiceKinds` on `minimax-code-global` now includes `video` alongside `llm`;
+  model-level filters still drive `/v1/models/{kind}`, so this is a dashboard
+  metadata correction, not a routing change.
 - `internal/handlers/media/minimax_code_global_video.go` owns payload
   translation, resolution/duration limits, and task-state parsing;
   `minimax_code_global_video_handler.go` wires create/poll/content into the
