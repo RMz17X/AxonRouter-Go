@@ -99,13 +99,17 @@ func (h *MediaHandler) handleVideoGet(w http.ResponseWriter, r *http.Request, co
 	}
 
 	cfg := h.videoRegistryConfig(provider, connData)
+	if isMiniMaxCodeGlobalVideoProvider(provider) {
+		h.handleMiniMaxVideoGet(w, r, provider, conn, connData, cfg, id, content)
+		return
+	}
 	start := time.Now()
 	res := h.videoProxy(r.Context(), provider, cfg, conn, connData, videoProxyParams{
 		RequestID: id, Content: content,
 	})
 	h.logVideoUsage(r, provider, "video", conn, connData, time.Since(start))
 	if res.ErrText != "" {
-		handlerutil.WriteJSONError(w, res.Status, res.ErrText)
+		writeVideoUpstreamError(w, res)
 		return
 	}
 	h.Repo.UpdateConnectionLastUsed(conn.ID)
@@ -179,6 +183,10 @@ func (h *MediaHandler) handleVideoCreate(w http.ResponseWriter, r *http.Request,
 	if preferred == "" {
 		preferred = info.ConnectionID
 	}
+	if isMiniMaxCodeGlobalVideoProvider(provider) {
+		h.handleMiniMaxVideoCreate(w, r, body, action, provider, info.Model, preferred)
+		return
+	}
 
 	var exclude []string
 	lastStatus, lastError := 0, ""
@@ -209,7 +217,7 @@ func (h *MediaHandler) handleVideoCreate(w http.ResponseWriter, r *http.Request,
 			continue
 		}
 		// A 5xx (or any other failure) is returned, never re-sent.
-		handlerutil.WriteJSONError(w, res.Status, res.ErrText)
+		writeVideoUpstreamError(w, res)
 		return
 	}
 	if lastStatus == 0 {
@@ -272,6 +280,16 @@ func writeVideoResult(w http.ResponseWriter, res *videoUpstreamResponse, connect
 	w.Header().Set("Content-Type", res.ContentType)
 	w.WriteHeader(res.Status)
 	_, _ = w.Write(res.Body)
+}
+
+// writeVideoUpstreamError forwards a streaming provider's Retry-After when it
+// supplied one. The generic handler only ever saw 429/503 text errors; H3's
+// asynchronous queue and quota responses need the header to reach the client.
+func writeVideoUpstreamError(w http.ResponseWriter, res *videoUpstreamResponse) {
+	if res.RetryAfter != "" {
+		w.Header().Set("Retry-After", res.RetryAfter)
+	}
+	handlerutil.WriteJSONError(w, res.Status, res.ErrText)
 }
 
 // extractVideoModel reads the model field of a create body —
