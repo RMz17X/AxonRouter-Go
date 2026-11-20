@@ -880,9 +880,13 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthScheme: "bearer",
 	},
 	"minimax": {
-		BaseURL:               "https://api.minimax.io/v1/chat/completions",
-		AuthHeader:            "Authorization",
-		AuthScheme:            "bearer",
+		BaseURL:    "https://api.minimax.io/v1/chat/completions",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+		// Upstream parity: the legacy `minimax-image-01` model uses the
+		// OpenAI-compatible endpoint on api.minimaxi.com (decolua/9router
+		// open-sse/providers/registry/minimax.js:75).
+		ImageURL:              "https://api.minimaxi.com/v1/images/generations",
 		RequireClaudeToolType: true,
 	},
 	"kimi": {
@@ -976,6 +980,10 @@ var KnownProviders = map[string]ProviderConfig{
 		// The agent host serves chat; H3 lives on the platform API. Keeping
 		// both endpoints in this one entry lets mmg/ credentials reach video
 		// without aliasing mmg to any other provider (AGENTS.md §3).
+		// H3-Image is synchronous and OpenAI-shaped; its response can take up
+		// to 600 s, so the media lane uses a longer header timeout for these
+		// models (see minimax_image.go).
+		ImageURL:              "https://api.minimax.io/v1/images/generations",
 		VideoURL:              "https://api.minimax.io/v2/video_generation",
 		ThinkingFormat:        "claude-adaptive",
 		Format:                "claude",

@@ -3772,7 +3772,7 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
     },
     {
       "id": "minimax-image-01",
-      "name": "MiniMax Image 01",
+      "name": "MiniMax Image 01 (Legacy)",
       "params": [
         "n",
         "size",
@@ -3907,6 +3907,18 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "MiniMax H3 Max",
       "params": ["prompt", "duration", "resolution", "aspect_ratio"],
       "kind": "video"
+    },
+    {
+      "id": "MiniMax-H3-Image",
+      "name": "MiniMax H3 Image",
+      "params": ["prompt", "n", "size", "aspect_ratio", "area", "output_format", "response_format", "disable_prompt_enhanced"],
+      "kind": "image"
+    },
+    {
+      "id": "MiniMax-H3-Image-Highspeed",
+      "name": "MiniMax H3 Image Highspeed",
+      "params": ["prompt", "n", "size", "aspect_ratio", "area", "output_format", "response_format", "disable_prompt_enhanced"],
+      "kind": "image"
     }
   ],
   "mistral": [

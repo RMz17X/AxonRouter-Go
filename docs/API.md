@@ -70,16 +70,27 @@ flowchart LR
 
 | Method | Path | Description |
 |---|---|---|
+| `POST` | `/v1/images/generations` | Generate images (MiniMax H3-Image or legacy image-01) |
 | `POST` | `/v1/videos/generations` | Create an asynchronous video job |
 | `GET` | `/v1/videos/{id}` | Poll job status |
 | `GET` | `/v1/videos/{id}/content` | Stream the finished video from the provider CDN |
 
-`mmg/MiniMax-H3`, `mmg/MiniMax-H3-Highspeed`, `mmg/MiniMax-H3-Lite`, and
-`mmg/MiniMax-H3-Max` use the global MiniMax Code credential on MiniMax's
-H3 platform API. Create requests accept an OpenAI-style `prompt` or a `content`
-array; `duration`, `resolution`, and optional `ratio`/`generate_audio` map to
-the H3 contract. Polling returns the provider task shape; `/content` streams
-the finished asset without forwarding the provider credential to the CDN.
+### MiniMax model map
+
+| Wire model | Provider / alias | Kind | Upstream | Limits |
+|---|---|---|---|---|
+| `MiniMax-H3-Image` | `minimax-code-global` / `mmg` | image | `POST https://api.minimax.io/v1/images/generations` | prompt ≤ 32,000 chars; `n` 1–10; `size` = `WIDTHxHEIGHT` (area 655,360–20,000,000 px, ratio 1:3–3:1) or `auto` with `aspect_ratio` (1:3–3:1) / `area` (`1K`,`2K`,`4K`); `output_format` `png`/`jpeg`/`jpg`/`webp`; `response_format` `url`/`b64_json`. |
+| `MiniMax-H3-Image-Highspeed` | `mmg` | image | same as H3-Image | Same parameters and limits as `MiniMax-H3-Image`. |
+| `minimax-image-01` | `minimax` / `mm` | image (legacy) | `POST https://api.minimaxi.com/v1/images/generations` | Upstream parity: OpenAI-shaped `{model,prompt,n,size,response_format}` body, response passed through unchanged. |
+| `MiniMax-H3`, `MiniMax-H3-Highspeed`, `MiniMax-H3-Lite`, `MiniMax-H3-Max` | `mmg` | video | `POST https://api.minimax.io/v2/video_generation` | H3: `768P`/`2K`, 4–15 s; Highspeed/Lite: `480P`/`768P`, 4–15 s; Max: `480P`/`768P`, 5–15 s. |
+
+H3-Image is synchronous but the upstream can hold the response for up to
+600 seconds, so the media lane uses a 10-minute response-header timeout only
+for those two models. The endpoint is not idempotent — a timed-out request may
+still be billed upstream, so the gateway does not replay it. Video create
+requests accept an OpenAI-style `prompt` or a `content` array; polling returns
+the provider task shape; `/content` streams the finished asset without
+forwarding the provider credential to the CDN.
 
 ---
 

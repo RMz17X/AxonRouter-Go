@@ -1304,10 +1304,19 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 			log.Warn("media", "multipart model rewrite skipped", "endpoint", endpoint, "error", err)
 		}
 	}
+	if isMiniMaxH3ImageRequest(modelInfo.Provider, modelInfo.Model, endpoint) {
+		if err := validateMiniMaxImageBody(finalBody, modelInfo.Model); err != nil {
+			handlerutil.WriteJSONError(w, http.StatusBadRequest, "[minimax-h3-image] "+err.Error())
+			return
+		}
+	}
 	client, clientErr := h.ChatH.GetClientForConnection(connData)
 	if clientErr != nil {
 		handlerutil.WriteJSONError(w, http.StatusBadGateway, clientErr.Error())
 		return
+	}
+	if isMiniMaxH3ImageRequest(modelInfo.Provider, modelInfo.Model, endpoint) {
+		client = proxy.ClientWithResponseHeaderTimeout(client, miniMaxImageHeaderTimeout)
 	}
 
 	connID := ""
