@@ -66,6 +66,21 @@ flowchart LR
 | `GET` | `/v1/batches/{batch_id}` | Retrieve batch progress metrics |
 | `POST` | `/v1/batches/{batch_id}/cancel` | Abort in-flight batch job |
 
+### 2.4 Media Generation Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/v1/videos/generations` | Create an asynchronous video job |
+| `GET` | `/v1/videos/{id}` | Poll job status |
+| `GET` | `/v1/videos/{id}/content` | Stream the finished video from the provider CDN |
+
+`mmg/MiniMax-H3`, `mmg/MiniMax-H3-Highspeed`, `mmg/MiniMax-H3-Lite`, and
+`mmg/MiniMax-H3-Max` use the global MiniMax Code credential on MiniMax's
+H3 platform API. Create requests accept an OpenAI-style `prompt` or a `content`
+array; `duration`, `resolution`, and optional `ratio`/`generate_audio` map to
+the H3 contract. Polling returns the provider task shape; `/content` streams
+the finished asset without forwarding the provider credential to the CDN.
+
 ---
 
 ## 3. Streaming (Server-Sent Events)

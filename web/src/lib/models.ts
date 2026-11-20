@@ -3883,6 +3883,30 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "name": "MiniMax M2.7 Highspeed",
       "targetFormat": "claude",
       "supportedFormats": ["claude"]
+    },
+    {
+      "id": "MiniMax-H3",
+      "name": "MiniMax H3",
+      "params": ["prompt", "duration", "resolution", "aspect_ratio"],
+      "kind": "video"
+    },
+    {
+      "id": "MiniMax-H3-Highspeed",
+      "name": "MiniMax H3 Highspeed",
+      "params": ["prompt", "duration", "resolution", "aspect_ratio"],
+      "kind": "video"
+    },
+    {
+      "id": "MiniMax-H3-Lite",
+      "name": "MiniMax H3 Lite",
+      "params": ["prompt", "duration", "resolution", "aspect_ratio"],
+      "kind": "video"
+    },
+    {
+      "id": "MiniMax-H3-Max",
+      "name": "MiniMax H3 Max",
+      "params": ["prompt", "duration", "resolution", "aspect_ratio"],
+      "kind": "video"
     }
   ],
   "mistral": [

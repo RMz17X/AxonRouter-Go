@@ -193,7 +193,7 @@ var modelsListURL = map[string]string{
 	"sumopod": "https://ai.sumopod.com/v1/models",
 	// Clixad exposes an OpenAI-compatible /v1/models catalogue (unauthenticated or with bearer token).
 	"clixad": "https://clixad.onrender.com/v1/models",
-	"nous":    "https://inference-api.nousresearch.com/v1/models",
+	"nous":   "https://inference-api.nousresearch.com/v1/models",
 	// Command Code publishes its whole Provider API catalogue on the standard
 	// OpenAI /v1/models shape, keyless: every id it sells, the free tiers
 	// included (reflection/beam:free, stealth/glyph-cluster:free,
@@ -969,9 +969,14 @@ var KnownProviders = map[string]ProviderConfig{
 		},
 	},
 	"minimax-code-global": {
-		BaseURL:               "https://agent.minimax.io/mavis/api/v1/llm/v1/messages",
-		AuthHeader:            "Authorization",
-		AuthScheme:            "bearer",
+		BaseURL:    "https://agent.minimax.io/mavis/api/v1/llm/v1/messages",
+		AuthHeader: "Authorization",
+		AuthScheme: "bearer",
+		// Operator-directed video capability on the global MiniMax Code lane.
+		// The agent host serves chat; H3 lives on the platform API. Keeping
+		// both endpoints in this one entry lets mmg/ credentials reach video
+		// without aliasing mmg to any other provider (AGENTS.md §3).
+		VideoURL:              "https://api.minimax.io/v2/video_generation",
 		ThinkingFormat:        "claude-adaptive",
 		Format:                "claude",
 		RequireClaudeToolType: true,

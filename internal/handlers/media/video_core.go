@@ -121,6 +121,7 @@ type videoUpstreamResponse struct {
 	ContentLength      int64
 	ContentDisposition string
 	ErrText            string
+	RetryAfter         string
 }
 
 // videoProxyParams describes one proxied video call.
@@ -131,6 +132,8 @@ type videoProxyParams struct {
 	Body           []byte // final create body (model already stripped)
 	ContentType    string // incoming content type (create)
 	IdempotencyKey string
+	TargetOverride string // provider-specific URL; empty uses the generic builder
+	SkipAuth       bool   // CDN downloads must not receive the provider credential
 }
 
 // videoProxy performs ONE upstream attempt for a video call
@@ -147,8 +150,11 @@ func (h *MediaHandler) videoProxy(ctx context.Context, provider string, cfg prov
 	if token == "" {
 		token = cfg.DefaultAPIKey
 	}
-	base := videoBaseURL(cfg, connData)
-	target := buildVideoUpstreamURL(provider, base, p.Action, p.RequestID, p.Content)
+	target := p.TargetOverride
+	if target == "" {
+		base := videoBaseURL(cfg, connData)
+		target = buildVideoUpstreamURL(provider, base, p.Action, p.RequestID, p.Content)
+	}
 
 	client, err := h.ChatH.GetClientForConnection(connData)
 	if err != nil {
@@ -213,7 +219,7 @@ func (h *MediaHandler) videoFetch(ctx context.Context, client *http.Client, prov
 	} else {
 		req.Header.Set("Accept", "application/json")
 	}
-	if token != "" {
+	if token != "" && !p.SkipAuth {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	for k, v := range cfg.StaticHeaders {
@@ -264,7 +270,8 @@ func (h *MediaHandler) videoFetch(ctx context.Context, client *http.Client, prov
 			msg = fmt.Sprintf("video upstream error (HTTP %d)", resp.StatusCode)
 		}
 		return &videoUpstreamResponse{Status: resp.StatusCode,
-			ErrText: fmt.Sprintf("[%s] %s", provider, msg)}
+			ErrText:    fmt.Sprintf("[%s] %s", provider, msg),
+			RetryAfter: resp.Header.Get("Retry-After")}
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
