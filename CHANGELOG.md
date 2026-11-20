@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.10.81] - 2026-11-21
+
+### Inline CDN media previews
+
+- Render image and video CDN URLs returned in provider example responses as inline previews instead of requiring the link to be opened.
+
 ## [v1.10.80] - 2026-11-21
 
 ### Video request defaults and dashboard curl example

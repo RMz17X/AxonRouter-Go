@@ -263,6 +263,61 @@
   let exampleLatency = $state<number | null>(null)
 
 
+  type MediaPreview = { kind: 'image' | 'video'; url: string }
+
+  // Provider responses point at CDN objects with wildly different key names.
+  // Only media-looking URLs are rendered, so host links and next-step strings
+  // never turn into broken previews.
+  function collectMediaPreviews(value: unknown): MediaPreview[] {
+    const out: MediaPreview[] = []
+    const seen = new Set<string>()
+    const add = (preview: MediaPreview) => {
+      if (seen.has(preview.url)) return
+      if (out.length >= 8) return
+      seen.add(preview.url)
+      out.push(preview)
+    }
+    const walk = (node: unknown) => {
+      if (node === null || typeof node !== 'object') return
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item)
+        return
+      }
+      for (const [childKey, child] of Object.entries(node)) {
+        if (typeof child === 'string') {
+          const lower = childKey.toLowerCase()
+          if (/^data:image\/[a-z0-9+.-]+;base64,/i.test(child) && lower === 'b64_json') {
+            add({ kind: 'image', url: child })
+            continue
+          }
+          if (/^https?:\/\//i.test(child)) {
+            const imageExt = /\.(png|jpe?g|gif|webp|bmp|avif)(\?|$)/i.test(child)
+            const videoExt = /\.(mp4|webm|mov|m4v|avi)(\?|$)/i.test(child)
+            const blocked = ['callback', 'webhook', 'api', 'docs', 'base', 'token', 'auth', 'next']
+            const genericUrl = lower.endsWith('url') && !blocked.some((part) => lower.includes(part))
+            const isVideo = videoExt || lower.includes('video') || lower.includes('movie')
+            const isImage = imageExt || lower.includes('image') || lower.includes('photo') || genericUrl
+            if (isVideo) add({ kind: 'video', url: child })
+            else if (isImage) add({ kind: 'image', url: child })
+          }
+          continue
+        }
+        walk(child)
+      }
+    }
+    walk(value)
+    return out
+  }
+
+  let mediaPreviews = $derived.by<MediaPreview[]>(() => {
+    if (!exampleResponse || !/^[[{]/.test(exampleResponse.trim())) return []
+    try {
+      return collectMediaPreviews(JSON.parse(exampleResponse))
+    } catch {
+      return []
+    }
+  })
+
   $effect(() => {
     if (kind === 'video') {
       exampleInput = 'A serene lake at sunset'
@@ -307,13 +362,17 @@
     return `${origin}/v1/web/fetch`
   })
 
-  let videoExamplePayload = $derived.by(() => {
+  let videoExampleBody = $derived.by(() => {
     const model = selectedModelId || mediaModels[0]?.id || ''
-    const duration = model === 'MiniMax-H3-Max' ? 5 : 6
-    const resolution = model === 'MiniMax-H3' ? '2K' : '768P'
-    const prompt = exampleInput || 'A serene lake at sunset'
-    return `{"model":"${resolveQualifiedModel(model)}","prompt":"${prompt}","duration":${duration},"resolution":"${resolution}","ratio":"16:9"}`
+    return {
+      model: resolveQualifiedModel(model),
+      prompt: exampleInput || 'A serene lake at sunset',
+      duration: model === 'MiniMax-H3-Max' ? 5 : 6,
+      resolution: model === 'MiniMax-H3' ? '2K' : '768P',
+      ratio: '16:9'
+    }
   })
+  let videoExamplePayload = $derived(JSON.stringify(videoExampleBody))
 
   let exampleCurl = $derived.by(() => {
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3177'
@@ -404,7 +463,7 @@
         res = await fetch('/v1/videos/generations', {
           method: 'POST',
           headers,
-          body: JSON.stringify({ model: qualifiedModel, prompt: exampleInput })
+          body: videoExamplePayload
         })
       } else if (kind === 'image') {
         headers['Content-Type'] = 'application/json'
@@ -888,6 +947,29 @@
           </span>
         </div>
         <pre class="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-70">{exampleResponse || defaultResponse}</pre>
+      {#if mediaPreviews.length > 0}
+        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+          {#each mediaPreviews as preview, i (preview.url + i)}
+            {#if preview.kind === 'image'}
+              <img
+                src={preview.url}
+                alt="Generated image result"
+                loading="lazy"
+                class="w-full max-h-80 rounded-brand border border-border-subtle bg-bg-alt object-contain"
+              />
+            {:else}
+              <video
+                src={preview.url}
+                controls
+                playsinline
+                preload="metadata"
+                aria-label="Generated video result"
+                class="w-full max-h-80 rounded-brand border border-border-subtle bg-bg-alt"
+              ></video>
+            {/if}
+          {/each}
+        </div>
+      {/if}
       </div>
     </div>
     </div>
