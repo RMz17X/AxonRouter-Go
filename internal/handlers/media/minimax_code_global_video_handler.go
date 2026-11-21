@@ -23,6 +23,11 @@ const miniMaxVideoMaxAttempts = 2 // one core token refresh + one account rotati
 // single egress.
 const miniMaxVideoBillingMaxAttempts = 8
 
+// miniMaxVideoBalanceReserve is the credits one paid generation is expected
+// to cost. Accounts below it are skipped while any account can cover it, so a
+// sweep does not spend attempts on a refusal that is already predictable.
+const miniMaxVideoBalanceReserve = 800
+
 // miniMaxBalanceInsufficient marks a connection that answered a paid-video
 // 402. It is not a real balance, but it sinks the account below every known
 // balance so the next create tries the accounts that can still pay first.
@@ -47,17 +52,17 @@ func miniMaxVideoAttemptLimit(lastStatus int) int {
 	return miniMaxVideoMaxAttempts
 }
 
-// miniMaxVideoCandidates keeps the richest accounts that are known to be
-// solvent. A snapshot at or below zero is an account the upstream already
-// refused to pay; trying it again is the expensive part of a sweep, so it is
-// skipped while any positive balance is known.
+// miniMaxVideoCandidates keeps the richest accounts that can cover one paid
+// generation. A snapshot below miniMaxVideoBalanceReserve is an account a
+// single generate would exhaust or refuse; trying it is the expensive part of
+// a sweep, so it is skipped while any sufficient account is known.
 func miniMaxVideoCandidates(snaps []db.MiniMaxBalanceState, max int) []string {
 	if max <= 0 {
 		return nil
 	}
 	out := make([]string, 0, max)
 	for _, s := range snaps {
-		if s.Balance <= 0 || s.ConnectionID == "" {
+		if s.Balance < miniMaxVideoBalanceReserve || s.ConnectionID == "" {
 			continue
 		}
 		out = append(out, s.ConnectionID)

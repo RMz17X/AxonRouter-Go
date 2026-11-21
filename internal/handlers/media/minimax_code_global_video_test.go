@@ -287,22 +287,23 @@ func TestMiniMaxVideoAttemptPreference(t *testing.T) {
 
 func TestMiniMaxVideoCandidates(t *testing.T) {
 	snaps := []db.MiniMaxBalanceState{
-		{ConnectionID: "rich", Balance: 100},
-		{ConnectionID: "empty", Balance: 0},
+		{ConnectionID: "rich", Balance: 3974},
+		{ConnectionID: "solvent", Balance: 1200},
+		{ConnectionID: "edge", Balance: miniMaxVideoBalanceReserve},
+		{ConnectionID: "poor", Balance: miniMaxVideoBalanceReserve - 1},
 		{ConnectionID: "refused", Balance: miniMaxBalanceInsufficient},
-		{ConnectionID: "solvent", Balance: 1},
-		{ConnectionID: "", Balance: 50},
+		{ConnectionID: "", Balance: 5000},
 	}
 	got := miniMaxVideoCandidates(snaps, 8)
-	want := []string{"rich", "solvent"}
+	want := []string{"rich", "solvent", "edge"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("miniMaxVideoCandidates() = %v, want %v", got, want)
 	}
-	if again := miniMaxVideoCandidates(snaps, 1); len(again) != 1 || again[0] != "rich" {
-		t.Fatalf("capped candidates = %v, want [rich]", again)
+	if again := miniMaxVideoCandidates(snaps, 2); len(again) != 2 || again[0] != "rich" || again[1] != "solvent" {
+		t.Fatalf("capped candidates = %v, want [rich solvent]", again)
 	}
-	if none := miniMaxVideoCandidates([]db.MiniMaxBalanceState{{ConnectionID: "empty", Balance: 0}}, 8); len(none) != 0 {
-		t.Fatalf("insolvent-only candidates = %v, want empty", none)
+	if none := miniMaxVideoCandidates([]db.MiniMaxBalanceState{{ConnectionID: "poor", Balance: miniMaxVideoBalanceReserve - 1}}, 8); len(none) != 0 {
+		t.Fatalf("below-reserve candidates = %v, want empty", none)
 	}
 }
 
