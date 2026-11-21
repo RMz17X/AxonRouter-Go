@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.10.84] - 2026-11-21
+
+### DeepAI dashboard alias resolution
+
+- `daifree/<model>` and `dai/<model>` now resolve to the canonical `deepai-free` and `deepai` providers, so dashboard test requests reach the no-auth virtual connection instead of failing with `503 no active connections for provider: daifree`.
+
 ## [v1.10.83] - 2026-11-21
 
 ### MiniMax video pinned-connection fallback
