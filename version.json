@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.10.81",
-  "releaseNotes": "v1.10.78: Add MiniMax H3 image generation on mmg (H3-Image / -Highspeed with validated parameters and a 10-minute response-header timeout) and H3 video generation, restore minimax-image-01 upstream parity, publish the OpenCode gate verdict with bounded egress rotation, and register explicit model names, params, and kinds in the catalogs and docs."
+  "latestVersion": "1.10.82",
+  "releaseNotes": "v1.10.82: Bound MiniMax video sweeps to solvent accounts, refresh credits on the auto-claim sweep and after paid video/image requests, and pin OpenCode free-lane egress rotation."
 }
