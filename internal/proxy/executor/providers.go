@@ -789,6 +789,11 @@ func ForwardOpencode(w http.ResponseWriter, req *Request) error {
 		w = NewOpenCodeExecuteBridgeWriter(w)
 	}
 
+	// The upstream session is resolved before the body is built: the same id
+	// must travel in the headers and name the prompt-cache lane, or the gate
+	// caches under a key the request never uses.
+	hint := opencodeSessionHint(req, true)
+
 	// Upstream OpenCode free tier strictly requires stream=true.
 	// Non-streaming calls are blocked with 403 FreeTierError.
 	var reqMap map[string]any
@@ -805,6 +810,8 @@ func ForwardOpencode(w http.ResponseWriter, req *Request) error {
 		if v, ok := reqMap["reasoning_effort"].(string); ok && v == "auto" {
 			delete(reqMap, "reasoning_effort")
 		}
+		applyOpenCodeTokenFloor(reqMap, "opencode", cleanModel)
+		applyOpenCodeCacheFields(reqMap, proxy.TranslateOpenCodeSessionID(hint, ""))
 		// Deterministic marshaling keeps the serialized request prefix
 		// stable across turns, which DeepSeek's prefix prompt cache
 		// requires; json/v2 randomizes map member order by default.
@@ -817,20 +824,22 @@ func ForwardOpencode(w http.ResponseWriter, req *Request) error {
 	cfg := *req.Config
 	cfg.BaseURL = opencodeChatURL(cfg.BaseURL)
 	baseHeaders := cfg.StaticHeaders
-	hint := opencodeSessionHint(req, true)
 	cfg.StaticHeaders = proxy.BuildOpenCodeHeaders(cfg.StaticHeaders, hint, true)
 
 	ctx := req.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	resp, err := forwardOpenCodeRotating(ctx, func() (*http.Response, error) {
-		return forwardOpencodeRequest(ctx, req.Client, &cfg, apiKey, body, true)
-	}, func() (*http.Response, error) {
-		return forwardOpencodeRequestDirect(ctx, &cfg, apiKey, body, true)
-	}, rotateOpencodeStableSession(opencodeStableSessionKey(req, true), hint, func(session string) {
-		cfg.StaticHeaders = proxy.BuildOpenCodeHeaders(baseHeaders, session, true)
-	}))
+	resp, err := forwardOpenCodeWithCacheFields(ctx, body, reqMap,
+		func(b []byte) (*http.Response, error) {
+			return forwardOpencodeRequest(ctx, req.Client, &cfg, apiKey, b, true)
+		},
+		func(b []byte) (*http.Response, error) {
+			return forwardOpencodeRequestDirect(ctx, &cfg, apiKey, b, true)
+		},
+		rotateOpencodeStableSession(opencodeStableSessionKey(req, true), hint, func(session string) {
+			cfg.StaticHeaders = proxy.BuildOpenCodeHeaders(baseHeaders, session, true)
+		}))
 	if err != nil {
 		return fmt.Errorf("ForwardOpencode: %w", err)
 	}
@@ -1738,12 +1747,18 @@ func forwardOpencodeGoFree(w http.ResponseWriter, req *Request, cleanModel strin
 		w = NewOpenCodeExecuteBridgeWriter(w)
 	}
 
+	// Same session-before-body ordering as ForwardOpencode: one id for the
+	// headers and the prompt-cache lane.
+	hint := opencodeSessionHint(req, true)
+
 	var reqMap map[string]any
 	if err := json.Unmarshal(body, &reqMap); err == nil {
 		reqMap["stream"] = true
 		if cleanModel != "" {
 			reqMap["model"] = cleanModel
 		}
+		applyOpenCodeTokenFloor(reqMap, "opencode-go", cleanModel)
+		applyOpenCodeCacheFields(reqMap, proxy.TranslateOpenCodeSessionID(hint, ""))
 		if b, err := marshalStable(reqMap); err == nil {
 			body = b
 		}
@@ -1753,20 +1768,22 @@ func forwardOpencodeGoFree(w http.ResponseWriter, req *Request, cleanModel strin
 	cfg := *req.Config
 	cfg.BaseURL = opencodeGoInferenceBase(cfg.BaseURL) + "/chat/completions"
 	baseHeaders := cfg.StaticHeaders
-	hint := opencodeSessionHint(req, true)
 	cfg.StaticHeaders = proxy.BuildOpenCodeHeaders(cfg.StaticHeaders, hint, true)
 
 	ctx := req.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	resp, err := forwardOpenCodeRotating(ctx, func() (*http.Response, error) {
-		return forwardOpencodeRequest(ctx, req.Client, &cfg, "public", body, true)
-	}, func() (*http.Response, error) {
-		return forwardOpencodeRequestDirect(ctx, &cfg, "public", body, true)
-	}, rotateOpencodeStableSession(opencodeStableSessionKey(req, true), hint, func(session string) {
-		cfg.StaticHeaders = proxy.BuildOpenCodeHeaders(baseHeaders, session, true)
-	}))
+	resp, err := forwardOpenCodeWithCacheFields(ctx, body, reqMap,
+		func(b []byte) (*http.Response, error) {
+			return forwardOpencodeRequest(ctx, req.Client, &cfg, "public", b, true)
+		},
+		func(b []byte) (*http.Response, error) {
+			return forwardOpencodeRequestDirect(ctx, &cfg, "public", b, true)
+		},
+		rotateOpencodeStableSession(opencodeStableSessionKey(req, true), hint, func(session string) {
+			cfg.StaticHeaders = proxy.BuildOpenCodeHeaders(baseHeaders, session, true)
+		}))
 	if err != nil {
 		return fmt.Errorf("ForwardOpencodeGo (free lane): %w", err)
 	}
