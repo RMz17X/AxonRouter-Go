@@ -6,9 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
+	"axonrouter/proxy/internal/db"
 	"axonrouter/proxy/internal/handlers/shared"
 	"axonrouter/proxy/internal/providers"
 )
@@ -280,6 +282,27 @@ func TestMiniMaxVideoAttemptPreference(t *testing.T) {
 				t.Errorf("preference = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestMiniMaxVideoCandidates(t *testing.T) {
+	snaps := []db.MiniMaxBalanceState{
+		{ConnectionID: "rich", Balance: 100},
+		{ConnectionID: "empty", Balance: 0},
+		{ConnectionID: "refused", Balance: miniMaxBalanceInsufficient},
+		{ConnectionID: "solvent", Balance: 1},
+		{ConnectionID: "", Balance: 50},
+	}
+	got := miniMaxVideoCandidates(snaps, 8)
+	want := []string{"rich", "solvent"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("miniMaxVideoCandidates() = %v, want %v", got, want)
+	}
+	if again := miniMaxVideoCandidates(snaps, 1); len(again) != 1 || again[0] != "rich" {
+		t.Fatalf("capped candidates = %v, want [rich]", again)
+	}
+	if none := miniMaxVideoCandidates([]db.MiniMaxBalanceState{{ConnectionID: "empty", Balance: 0}}, 8); len(none) != 0 {
+		t.Fatalf("insolvent-only candidates = %v, want empty", none)
 	}
 }
 

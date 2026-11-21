@@ -13,13 +13,13 @@
 - The video example card shows a task card (id, status, model, duration,
   resolution, next step) with a Poll button and the returned video URL.
 - A MiniMax H3 `payment_required` / HTTP 402 balance refusal now rotates to the
-  next MiniMax connection across the whole active fleet (bounded at 128
-  attempts) instead of returning immediately; 401/403 keep the single rotation
-  and 5xx is never replayed. A 402 also sinks that connection in the snapshot
-  ranking, so the next create tries accounts that can still pay first.
+  next MiniMax connection (bounded at 8 attempts) instead of returning
+  immediately; 401/403 keep the single rotation and 5xx is never replayed. A
+  402 also sinks that connection in the snapshot ranking.
 - MiniMax credits snapshots are stored per connection from dashboard quota
-  reads; video create tries the freshest known highest-balance connections
-  first (24h freshness, top 128) before falling back to error-driven rotation.
+  reads; video create tries the freshest known solvent accounts first (24h
+  freshness, richest first) and never falls back to accounts the snapshot
+  already marked empty.
 - MiniMax Code video creates now dispatch to the Matrix MCP create path before
   the registry `VideoURL` gate, so the dedicated rotation and balance ranking
   are actually reachable instead of falling through to the generic media lane.

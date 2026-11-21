@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"axonrouter/proxy/internal/db"
 	"axonrouter/proxy/internal/handlers/shared"
 	"axonrouter/proxy/internal/handlerutil"
 	"axonrouter/proxy/internal/log"
@@ -16,10 +17,10 @@ import (
 const miniMaxVideoMaxAttempts = 2 // one core token refresh + one account rotation
 
 // A balance refusal means the account never accepted the job, so it is safe
-// to walk the whole connection list rather than stopping after a handful:
-// the upstream only answers 402 when the account cannot pay, so the next
-// account is a fresh chance. Bounded so a request can never loop forever.
-const miniMaxVideoBillingMaxAttempts = 128
+// to try another connection. The sweep stays small: enough to leave a spent
+// account, small enough that one request cannot hammer the upstream from a
+// single egress.
+const miniMaxVideoBillingMaxAttempts = 8
 
 // miniMaxBalanceInsufficient marks a connection that answered a paid-video
 // 402. It is not a real balance, but it sinks the account below every known
@@ -45,6 +46,27 @@ func miniMaxVideoAttemptLimit(lastStatus int) int {
 	return miniMaxVideoMaxAttempts
 }
 
+// miniMaxVideoCandidates keeps the richest accounts that are known to be
+// solvent. A snapshot at or below zero is an account the upstream already
+// refused to pay; trying it again is the expensive part of a sweep, so it is
+// skipped while any positive balance is known.
+func miniMaxVideoCandidates(snaps []db.MiniMaxBalanceState, max int) []string {
+	if max <= 0 {
+		return nil
+	}
+	out := make([]string, 0, max)
+	for _, s := range snaps {
+		if s.Balance <= 0 || s.ConnectionID == "" {
+			continue
+		}
+		out = append(out, s.ConnectionID)
+		if len(out) >= max {
+			break
+		}
+	}
+	return out
+}
+
 // miniMaxVideoBalanceMaxAge bounds how stale a credits snapshot may be before
 // it stops ordering candidates. A snapshot older than this is ignored rather
 // than trusted: credits move with every paid call.
@@ -52,7 +74,8 @@ const miniMaxVideoBalanceMaxAge = 24 * time.Hour
 
 // miniMaxVideoCandidateOrder returns active connection ids richest-first,
 // bounded by the same rotation cap as a billing sweep. An empty result means
-// no fresh snapshot exists, and the caller falls back to the normal strategy.
+// no fresh solvent snapshot exists, and the caller falls back to the normal
+// strategy under the same small bound.
 func (h *MediaHandler) miniMaxVideoCandidateOrder(provider string) []string {
 	if h == nil || h.Repo == nil {
 		return nil
@@ -65,19 +88,12 @@ func (h *MediaHandler) miniMaxVideoCandidateOrder(provider string) []string {
 	if len(snaps) < max {
 		max = len(snaps)
 	}
-	out := make([]string, 0, max)
-	for _, s := range snaps[:max] {
-		if s.ConnectionID != "" {
-			out = append(out, s.ConnectionID)
-		}
-	}
-	return out
+	return miniMaxVideoCandidates(snaps[:max], max)
 }
 
 // miniMaxVideoAttemptPreference picks the pin for one attempt. A client or
 // model pin always wins; otherwise the balance-ordered candidate for this
-// attempt is tried first, and once the list is exhausted the normal strategy
-// resumes.
+// attempt is tried. An empty result means the list is exhausted.
 func miniMaxVideoAttemptPreference(attempt int, pinned string, candidates []string) string {
 	if pinned != "" {
 		return pinned
@@ -113,6 +129,12 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 	lastStatus, lastError := 0, ""
 	for attempt := 0; ; attempt++ {
 		if attempt >= miniMaxVideoAttemptLimit(lastStatus) {
+			break
+		}
+		// A balance-ordered list is the whole sweep: once every known-solvent
+		// account has answered, falling back to the normal strategy would
+		// retry accounts the snapshot already marked empty.
+		if len(candidates) > 0 && attempt >= len(candidates) {
 			break
 		}
 		attemptPreferred := miniMaxVideoAttemptPreference(attempt, pinned, candidates)
