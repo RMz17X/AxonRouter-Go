@@ -54,6 +54,10 @@ func SetupRoutes(r interface {
 	oauthH := oauth.NewOAuthHandler(repo)
 
 	dashH := dashboard.NewDashboardHandler(repo, ts)
+	// The media lane refreshes MiniMax credits after paid video/image requests;
+	// dashboard owns the signed account API, so inject it rather than importing
+	// dashboard from media (which would cycle).
+	mediaH.MiniMaxBalance = dashboard.MiniMaxBalance
 	if chatH != nil {
 		dashH.SemanticCache = chatH.SemanticCache
 		// The resilience layer is owned by the data plane, because that is the

@@ -16,10 +16,10 @@
   next MiniMax connection (bounded at 8 attempts) instead of returning
   immediately; 401/403 keep the single rotation and 5xx is never replayed. A
   402 also sinks that connection in the snapshot ranking.
-- MiniMax credits snapshots are stored per connection from dashboard quota
-  reads; video create tries the freshest known solvent accounts first (24h
-  freshness, richest first) and never falls back to accounts the snapshot
-  already marked empty.
+- MiniMax credits snapshots are refreshed by the auto-claim sweep and after
+  paid video/image requests; video create tries the freshest known solvent
+  accounts first (24h freshness, richest first) and never falls back to
+  accounts the snapshot already marked empty.
 - MiniMax Code video creates now dispatch to the Matrix MCP create path before
   the registry `VideoURL` gate, so the dedicated rotation and balance ranking
   are actually reachable instead of falling through to the generic media lane.

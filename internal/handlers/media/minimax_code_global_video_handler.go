@@ -1,6 +1,7 @@
 package media
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -104,6 +105,46 @@ func miniMaxVideoAttemptPreference(attempt int, pinned string, candidates []stri
 	return ""
 }
 
+// refreshMiniMaxBalance re-reads the credits snapshot for a connection after
+// a paid video or image request. Best-effort: a failed read leaves the previous
+// snapshot in place.
+func (h *MediaHandler) refreshMiniMaxBalance(ctx context.Context, conn *models.ProviderConnection, connData *shared.ConnectionData) {
+	if h == nil || h.Repo == nil || h.MiniMaxBalance == nil || conn == nil || connData == nil {
+		return
+	}
+	if conn.Provider != "minimax-code" && conn.Provider != "minimax-code-global" {
+		return
+	}
+	userID, _ := connData.ProviderSpecificData["realUserID"].(string)
+	balance, plan, ok := h.MiniMaxBalance(ctx, conn.Provider, connData.AccessToken, userID)
+	if !ok {
+		return
+	}
+	if err := h.Repo.UpdateMiniMaxBalance(conn.ID, conn.Provider, balance, plan); err != nil {
+		log.Warn("media", "minimax balance snapshot not stored", "conn", conn.ID, "error", err)
+	}
+}
+
+// noteMiniMaxImageOutcome keeps the credits snapshot in step with a paid
+// image request: a 402 sinks the account, a success re-reads the balance.
+func (h *MediaHandler) noteMiniMaxImageOutcome(ctx context.Context, status int, conn *models.ProviderConnection, connData *shared.ConnectionData) {
+	if conn == nil || connData == nil {
+		return
+	}
+	if conn.Provider != "minimax-code" && conn.Provider != "minimax-code-global" {
+		return
+	}
+	if status == http.StatusPaymentRequired && h.Repo != nil {
+		if err := h.Repo.UpdateMiniMaxBalance(conn.ID, conn.Provider, miniMaxBalanceInsufficient, ""); err != nil {
+			log.Warn("media", "minimax insufficient balance mark failed", "conn", conn.ID, "error", err)
+		}
+		return
+	}
+	if status >= 200 && status < 300 {
+		h.refreshMiniMaxBalance(ctx, conn, connData)
+	}
+}
+
 func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.Request, body []byte, action, provider, model, preferred string) {
 	if action != "generations" {
 		handlerutil.WriteJSONError(w, http.StatusBadRequest,
@@ -173,6 +214,7 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 				}
 			}
 			writeVideoResult(w, res, conn.ID)
+			h.refreshMiniMaxBalance(r.Context(), conn, connData)
 			return
 		}
 		log.Debug("media", "minimax video attempt refused", "attempt", attempt, "conn", conn.ID, "status", lastStatus, "error", lastError)

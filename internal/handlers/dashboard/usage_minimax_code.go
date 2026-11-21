@@ -143,6 +143,19 @@ func fetchMiniMaxCodeUsage(ctx context.Context, provider, accessToken, userID st
 	return result
 }
 
+// MiniMaxBalance reads one connection's credits balance and plan. It is the
+// seam the media lane uses to refresh the snapshot after a paid video or
+// image request. Media cannot import this package (dashboard imports media),
+// so the router injects this function into the media handler.
+func MiniMaxBalance(ctx context.Context, provider, accessToken, userID string) (int64, string, bool) {
+	res := fetchMiniMaxCodeUsage(ctx, provider, accessToken, userID)
+	credits, ok := res.quotas["Credits"].(map[string]any)
+	if !ok {
+		return 0, "", false
+	}
+	return int64(usageNum(credits["total"], 0)), res.plan, true
+}
+
 // creditsQuota renders a credits balance as the dashboard's balance row: the
 // remaining amount is the total, nothing has been spent against it in this
 // reading, and the isCreditBalance flag is what tells the UI to render it as

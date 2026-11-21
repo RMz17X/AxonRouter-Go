@@ -34,6 +34,11 @@ type MediaHandler struct {
 	Client     *http.Client
 	TokenSaver *shared.TokenSaverConfig
 	ChatH      *chat.ChatHandler
+	// MiniMaxBalance refreshes a MiniMax Code credits snapshot after a paid
+	// video or image request. It is injected by the router from the dashboard
+	// package, which owns the signed account API; media cannot import it
+	// without a cycle.
+	MiniMaxBalance func(ctx context.Context, provider, accessToken, userID string) (int64, string, bool)
 }
 
 // NewMediaHandler creates a MediaHandler instance.
@@ -1497,6 +1502,9 @@ func (h *MediaHandler) forwardMediaRequest(w http.ResponseWriter, r *http.Reques
 			Endpoint:     endpoint,
 		}
 		h.ChatH.LogUsage(r.Context(), logInfo, nil, latencyMs, body, nil)
+	}
+	if matrixImage {
+		h.noteMiniMaxImageOutcome(r.Context(), responseStatus, conn, connData)
 	}
 }
 

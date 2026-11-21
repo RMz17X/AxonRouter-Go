@@ -242,6 +242,28 @@ func ClaimMiniMaxForConnection(ctx context.Context, repo *db.Repo, conn *models.
 	return res
 }
 
+// refreshMiniMaxBalance re-reads one connection's credits and stores the
+// snapshot the video lane ranks by. Best-effort: a failure leaves the previous
+// snapshot in place and never fails the claim sweep.
+func refreshMiniMaxBalance(ctx context.Context, repo *db.Repo, conn *models.ProviderConnection) {
+	if repo == nil || conn == nil {
+		return
+	}
+	if conn.Provider != "minimax-code" && conn.Provider != "minimax-code-global" {
+		return
+	}
+	var data map[string]any
+	if conn.Data != "" {
+		_ = json.Unmarshal([]byte(conn.Data), &data)
+	}
+	accessToken, _, psd := usageCreds(data)
+	if accessToken == "" {
+		return
+	}
+	res := fetchMiniMaxCodeUsage(ctx, conn.Provider, accessToken, psdStr(psd, "realUserID"))
+	rememberMiniMaxBalance(repo, conn, res)
+}
+
 // ClaimAllMiniMaxConnections loops over all active MiniMax connections and claims rewards.
 func ClaimAllMiniMaxConnections(ctx context.Context, repo *db.Repo) (MiniMaxClaimSummary, []MiniMaxClaimResult, error) {
 	if repo == nil {
@@ -284,7 +306,7 @@ func ClaimAllMiniMaxConnections(ctx context.Context, repo *db.Repo) (MiniMaxClai
 	results := make([]MiniMaxClaimResult, 0, len(allConns))
 
 	// Fast pre-filter: read today's ledger in one batch query to skip
-	// already-claimed accounts in memory with zero network calls and zero delay.
+	// already-claimed accounts in memory with zero claim calls and zero delay.
 	claimedMap := make(map[string]int)
 	if repo != nil {
 		claimedMap = repo.MinimaxClaimedTodayMap()
@@ -306,7 +328,12 @@ func ClaimAllMiniMaxConnections(ctx context.Context, repo *db.Repo) (MiniMaxClai
 			connName = *conn.Name
 		}
 
-		// Instant fast-path: skip already claimed accounts without dialing MiniMax
+		// Refresh the credits snapshot for every account, including one that
+		// already claimed today: the video lane ranks by this row, and claiming
+		// points changes the balance.
+		refreshMiniMaxBalance(ctx, repo, conn)
+
+		// Instant fast-path: skip the claim call for accounts already claimed today.
 		if dayNo, already := claimedMap[conn.ID]; already {
 			summary.AlreadyClaimed++
 			results = append(results, MiniMaxClaimResult{
