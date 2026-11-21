@@ -267,18 +267,20 @@ func TestMiniMaxVideoAttemptPreference(t *testing.T) {
 	candidates := []string{"rich", "poor"}
 	tests := []struct {
 		name    string
-		attempt int
 		pinned  string
+		exclude []string
 		want    string
 	}{
-		{name: "first candidate", attempt: 0, want: "rich"},
-		{name: "second candidate", attempt: 1, want: "poor"},
-		{name: "exhausted falls back to strategy", attempt: 2, want: ""},
-		{name: "pin wins", attempt: 0, pinned: "client-pin", want: "client-pin"},
+		{name: "first candidate", want: "rich"},
+		{name: "second candidate after first is excluded", exclude: []string{"rich"}, want: "poor"},
+		{name: "exhausted falls back to strategy", exclude: []string{"rich", "poor"}, want: ""},
+		{name: "pin wins", pinned: "client-pin", want: "client-pin"},
+		{name: "excluded pin falls back to candidates", pinned: "client-pin", exclude: []string{"client-pin"}, want: "rich"},
+		{name: "pin wins over the candidate list", pinned: "client-pin", want: "client-pin"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := miniMaxVideoAttemptPreference(tt.attempt, tt.pinned, candidates); got != tt.want {
+			if got := miniMaxVideoAttemptPreference(tt.pinned, candidates, tt.exclude); got != tt.want {
 				t.Errorf("preference = %q, want %q", got, tt.want)
 			}
 		})

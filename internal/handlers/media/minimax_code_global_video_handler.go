@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -98,14 +99,18 @@ func (h *MediaHandler) miniMaxVideoCandidateOrder(provider string) []string {
 }
 
 // miniMaxVideoAttemptPreference picks the pin for one attempt. A client or
-// model pin always wins; otherwise the balance-ordered candidate for this
-// attempt is tried. An empty result means the list is exhausted.
-func miniMaxVideoAttemptPreference(attempt int, pinned string, candidates []string) string {
-	if pinned != "" {
+// model pin wins until it has answered a refusal: once it is in the exclude
+// set, the balance-ordered candidate list takes over so a dead pinned account
+// cannot hold the whole sweep on its own error. An empty result means the
+// list is exhausted.
+func miniMaxVideoAttemptPreference(pinned string, candidates []string, exclude []string) string {
+	if pinned != "" && !slices.Contains(exclude, pinned) {
 		return pinned
 	}
-	if attempt >= 0 && attempt < len(candidates) {
-		return candidates[attempt]
+	for _, candidate := range candidates {
+		if !slices.Contains(exclude, candidate) {
+			return candidate
+		}
 	}
 	return ""
 }
@@ -183,7 +188,7 @@ func (h *MediaHandler) handleMiniMaxVideoCreate(w http.ResponseWriter, r *http.R
 		if len(candidates) > 0 && attempt >= len(candidates) {
 			break
 		}
-		attemptPreferred := miniMaxVideoAttemptPreference(attempt, pinned, candidates)
+		attemptPreferred := miniMaxVideoAttemptPreference(pinned, candidates, exclude)
 		conn, connData, err := h.ChatH.GetBestConnectionWithContext(r.Context(), provider, attemptPreferred, exclude, model)
 		if err != nil || conn == nil || connData == nil {
 			if attempt == 0 {
