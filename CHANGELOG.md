@@ -1,5 +1,11 @@
 # Changelog
 
+## [v1.10.83] - 2026-11-21
+
+### MiniMax video pinned-connection fallback
+
+- A pinned MiniMax video connection that answers 401/403/402 now steps aside after the first refusal, so the balance-ordered solvent accounts are tried instead of the same dead account twice.
+
 ## [v1.10.82] - 2026-11-21
 
 ### OpenCode free lane (`oc` alias)
