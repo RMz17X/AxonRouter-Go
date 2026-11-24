@@ -23,13 +23,25 @@ const maxAntigravityOutputTokens = 64000
 // maxOutputTokens strictly exceeds it (parity across chat and image paths).
 const thinkingHeadroomTokens = 8192
 
+// minReasoningOutputTokens floors maxOutputTokens on reasoning requests
+// whose client cap is too small for the model to emit a visible answer.
+// Gemini's dynamic thinking shares the output budget: measured live on
+// 2026-11-24 on ag/gemini-3.8-flash, a plain request with max_tokens:16 or
+// 512 answered HTTP 200 with empty content and finish_reason "length";
+// 2048 produced a real answer. The floor leaves room for thoughts plus the
+// reply. Whether a model reasons comes from the capability catalog; no
+// model id is inspected here. A request for a non-reasoning model keeps its
+// exact cap (see the tool-call floor below for the tool case).
+const minReasoningOutputTokens = 2048
+
 // minToolCallOutputTokens floors maxOutputTokens on tool-bearing requests.
 // Gemini's dynamic thinking shares the output budget: measured live on
 // 2026-11-10, a one-line tool task drew 200-380 thought tokens, so a client
 // cap of a few hundred tokens is spent entirely on thoughts and the reply
 // ends MAX_TOKENS with zero content — the client sees its tool call vanish.
 // The floor leaves room for the thoughts plus the call itself; requests
-// without tools keep the client's exact cap.
+// without tools keep the client's exact cap. The higher reasoning floor
+// wins when both apply.
 const minToolCallOutputTokens = 1024
 
 // flooredThinkingBudget caps thinking on requests whose output cap had to
@@ -709,7 +721,7 @@ func antigravityBuildRequestID(sessionID, model, requestType string, contentCoun
 // rejects and caps maxOutputTokens at maxAntigravityOutputTokens. It leaves the
 // request byte-for-byte intact when nothing needs changing so thought signatures
 // on functionCall/thought parts are never re-encoded (which would corrupt them).
-func hardenAntigravityRequest(geminiBody []byte) []byte {
+func hardenAntigravityRequest(geminiBody []byte, modelName string) []byte {
 	var m map[string]any
 	if err := json.Unmarshal(geminiBody, &m); err != nil {
 		return geminiBody
@@ -729,7 +741,12 @@ func hardenAntigravityRequest(geminiBody []byte) []byte {
 			gc["maxOutputTokens"] = float64(maxAntigravityOutputTokens)
 			changed = true
 		}
-		// Ensure maxOutputTokens strictly exceeds thinkingBudget to prevent 400 INVALID_ARGUMENT (PR #3981)
+		if floorAntigravityOutput(m, gc, modelName) {
+			changed = true
+		}
+		// Ensure maxOutputTokens strictly exceeds thinkingBudget to prevent 400 INVALID_ARGUMENT (PR #3981).
+		// On a floored request this is a no-op: the pinned 256 already fits
+		// under the 2048 floor. It still covers a missing maxOutputTokens.
 		var thinkingBudget float64
 		if tc, ok := gc["thinkingConfig"].(map[string]any); ok {
 			if tb, ok := tc["thinkingBudget"].(float64); ok {
@@ -747,32 +764,6 @@ func hardenAntigravityRequest(geminiBody []byte) []byte {
 				changed = true
 			}
 		}
-		// Floor the output budget on tool-bearing requests so dynamic
-		// thinking cannot consume it before any tool call is emitted
-		// (see minToolCallOutputTokens), and pin the thinking budget on
-		// those same requests so the raised cap is not spent deliberating
-		// (see flooredThinkingBudget). thinkingLevel and thinkingBudget
-		// are alternative knobs and Google rejects requests carrying
-		// both, so a level config is CONVERTED to the pinned budget:
-		// measured live, the level-driven attempts on floored requests
-		// still thought 300-490 tokens and blew the client's timeout.
-		if tools, ok := m["tools"].([]any); ok && len(tools) > 0 {
-			if v, ok := gc["maxOutputTokens"].(float64); ok && v > 0 && v < minToolCallOutputTokens {
-				gc["maxOutputTokens"] = float64(minToolCallOutputTokens)
-				changed = true
-				tc, _ := gc["thinkingConfig"].(map[string]any)
-				if tc == nil {
-					tc = map[string]any{}
-					gc["thinkingConfig"] = tc
-				}
-				if _, hasLevel := tc["thinkingLevel"]; hasLevel {
-					delete(tc, "thinkingLevel")
-					tc["thinkingBudget"] = float64(flooredThinkingBudget)
-				} else if tb, ok := tc["thinkingBudget"].(float64); !ok || tb > flooredThinkingBudget {
-					tc["thinkingBudget"] = float64(flooredThinkingBudget)
-				}
-			}
-		}
 	}
 
 	if !changed {
@@ -783,6 +774,63 @@ func hardenAntigravityRequest(geminiBody []byte) []byte {
 		return geminiBody
 	}
 	return out
+}
+
+// floorAntigravityOutput raises an explicit small maxOutputTokens so a
+// thinking model still has room for a visible answer (minReasoningOutputTokens)
+// and a tool-bearing request still has room for the call itself
+// (minToolCallOutputTokens). Both floors only correct an explicit cap;
+// an absent cap keeps the upstream default. A thinking config already on
+// the wire is pinned to flooredThinkingBudget so the raised cap is not
+// spent deliberating: thinkingLevel and thinkingBudget are alternative
+// knobs and Google rejects requests carrying both, so a level config is
+// converted to the pinned budget. A capability-only floor leaves the
+// request's thinking config alone; injecting one on a tiered model trips
+// strict thought-signature validation.
+func floorAntigravityOutput(m, gc map[string]any, modelName string) bool {
+	v, ok := gc["maxOutputTokens"].(float64)
+	if !ok || v <= 0 {
+		return false
+	}
+	floor, pin := antigravityOutputFloor(m, gc, modelName)
+	if floor <= 0 || v >= float64(floor) {
+		return false
+	}
+	gc["maxOutputTokens"] = float64(floor)
+	if pin {
+		pinAntigravityThinkingBudget(gc)
+	}
+	return true
+}
+
+func antigravityOutputFloor(m, gc map[string]any, modelName string) (int, bool) {
+	floor, pin := 0, false
+	if _, hasThinking := gc["thinkingConfig"]; hasThinking {
+		floor, pin = minReasoningOutputTokens, true
+	}
+	if tools, ok := m["tools"].([]any); ok && len(tools) > 0 {
+		floor, pin = max(floor, minToolCallOutputTokens), true
+	}
+	if floor == 0 && providers.GetCapabilitiesForModel("antigravity", modelName).Reasoning {
+		floor = minReasoningOutputTokens
+	}
+	return floor, pin
+}
+
+func pinAntigravityThinkingBudget(gc map[string]any) {
+	tc, ok := gc["thinkingConfig"].(map[string]any)
+	if !ok {
+		tc = map[string]any{}
+		gc["thinkingConfig"] = tc
+	}
+	if _, hasLevel := tc["thinkingLevel"]; hasLevel {
+		delete(tc, "thinkingLevel")
+		tc["thinkingBudget"] = float64(flooredThinkingBudget)
+		return
+	}
+	if tb, ok := tc["thinkingBudget"].(float64); !ok || tb > flooredThinkingBudget {
+		tc["thinkingBudget"] = float64(flooredThinkingBudget)
+	}
 }
 
 // StripThoughtSignatures removes all thoughtSignature / thought_signature keys
@@ -955,7 +1003,7 @@ func WrapForAntigravity(geminiBody []byte, projectID, modelName, userAgent strin
 			geminiBody = cloakedBytes
 		}
 	}
-	geminiBody = hardenAntigravityRequest(geminiBody)
+	geminiBody = hardenAntigravityRequest(geminiBody, modelName)
 
 	wrapper := AntigravityRequest{
 		Project:   projectID,

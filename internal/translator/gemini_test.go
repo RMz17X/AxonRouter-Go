@@ -633,7 +633,7 @@ func TestHardenAntigravityRequest_GuardsThinkingBudget(t *testing.T) {
 		}
 	}`)
 
-	hardened := hardenAntigravityRequest(reqBody)
+	hardened := hardenAntigravityRequest(reqBody, "gemini-2.5-flash")
 	var m map[string]any
 	if err := json.Unmarshal(hardened, &m); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -643,6 +643,89 @@ func TestHardenAntigravityRequest_GuardsThinkingBudget(t *testing.T) {
 	maxTokens := gc["maxOutputTokens"].(float64)
 	if maxTokens <= 4096 {
 		t.Errorf("expected maxOutputTokens (%v) > 4096", maxTokens)
+	}
+}
+
+// A reasoning request that asks for a tiny output budget used to return an
+// empty answer: the model spent the whole cap on thoughts and ended with
+// MAX_TOKENS. hardenAntigravityRequest now floors the cap while pinning the
+// thinking budget so the raised cap goes to the visible answer. A model whose
+// catalog entry says it reasons is floored even when the client sent no
+// thinking config; a non-reasoning plain request keeps its exact cap.
+func TestHardenAntigravityRequest_FloorsTinyReasoningBudget(t *testing.T) {
+	tests := []struct {
+		name       string
+		body       string
+		model      string
+		wantMax    float64
+		wantPinned bool
+	}{
+		{
+			name:       "tiny cap with thinkingLevel floors and pins budget",
+			body:       `{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":16,"thinkingConfig":{"thinkingLevel":"low","includeThoughts":true}}}`,
+			wantMax:    2048,
+			wantPinned: true,
+		},
+		{
+			name:       "tiny cap with thinkingBudget floors and pins budget",
+			body:       `{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":512,"thinkingConfig":{"thinkingBudget":4096,"includeThoughts":true}}}`,
+			wantMax:    2048,
+			wantPinned: true,
+		},
+		{
+			name:       "tiny cap on catalogued reasoning model floors without injecting a thinking config",
+			body:       `{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":16}}`,
+			model:      "gemini-3.8-flash",
+			wantMax:    2048,
+			wantPinned: false,
+		},
+		{
+			name:       "tiny cap on plain request is unchanged",
+			body:       `{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":16}}`,
+			wantMax:    16,
+			wantPinned: false,
+		},
+		{
+			name:       "generous cap on reasoning request is unchanged",
+			body:       `{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":8192,"thinkingConfig":{"thinkingLevel":"low","includeThoughts":true}}}`,
+			wantMax:    8192,
+			wantPinned: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hardened := hardenAntigravityRequest([]byte(tt.body), tt.model)
+			var m map[string]any
+			if err := json.Unmarshal(hardened, &m); err != nil {
+				t.Fatalf("unmarshal hardened request: %v", err)
+			}
+			gc, ok := m["generationConfig"].(map[string]any)
+			if !ok {
+				t.Fatalf("generationConfig missing in %s", hardened)
+			}
+			if got, _ := gc["maxOutputTokens"].(float64); got != tt.wantMax {
+				t.Errorf("maxOutputTokens = %v, want %v", got, tt.wantMax)
+			}
+			tc, _ := gc["thinkingConfig"].(map[string]any)
+			if tt.wantPinned {
+				if got, _ := tc["thinkingBudget"].(float64); got != 256 {
+					t.Errorf("thinkingBudget = %v, want 256", got)
+				}
+				if _, hasLevel := tc["thinkingLevel"]; hasLevel {
+					t.Errorf("thinkingLevel must be removed when pinning budget, got %v", tc["thinkingLevel"])
+				}
+			} else if tc != nil {
+				if got, _ := tc["thinkingBudget"].(float64); got == 256 {
+					t.Errorf("thinkingBudget pinned to 256 on unfloored request")
+				}
+			}
+			if !tt.wantPinned {
+				if _, ok := gc["thinkingConfig"]; ok && !strings.Contains(tt.body, "thinkingConfig") {
+					t.Errorf("floor injected a thinkingConfig on a capability-only request")
+				}
+			}
+		})
 	}
 }
 
@@ -794,4 +877,3 @@ func TestTranslateOpenAIToGemini_ResponseFormat(t *testing.T) {
 		}
 	})
 }
-
