@@ -13,6 +13,8 @@ import (
 	"axonrouter/proxy/internal/providers"
 )
 
+var tokenharborHedgeCursor atomic.Uint64
+
 // hedgedResponseWriter wraps http.ResponseWriter to buffer response headers and initial chunks
 // until a candidate claims victory (first HTTP 200). Once claimed, it commits headers and
 // flushes streaming data directly to the underlying client writer.
@@ -269,10 +271,22 @@ func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay 
 }
 
 // pickHedgeCandidates filters active, non-locked connections for hedging.
+// TokenHarbor's free tier is one global GPU queue per model across tens of
+// thousands of accounts. Picking the first eight active rows every time
+// hammers the same tickets while the rest of the fleet sits idle; sweep the
+// active list with a rotating offset so each wave draws a fresh slice.
+// The pool is walked once per call, so the cost stays O(len(allConns)).
 func (h *ChatHandler) pickHedgeCandidates(allConns []*ProviderConnection, provider, model string, max int) []*ProviderConnection {
 	var candidates []*ProviderConnection
 	lockKey := canonicalLockModel(provider, model)
-	for _, c := range allConns {
+	start := 0
+	if providers.ResolveAlias(provider) == "tokenharbor" && len(allConns) > max {
+		// A process-local cursor spreads concurrent requests over the pool
+		// without a shared map or a lock on the hot path.
+		start = int(tokenharborHedgeCursor.Add(1) % uint64(len(allConns)))
+	}
+	for i := 0; i < len(allConns) && len(candidates) < max; i++ {
+		c := allConns[(start+i)%len(allConns)]
 		if c == nil || c.IsActive != 1 {
 			continue
 		}
