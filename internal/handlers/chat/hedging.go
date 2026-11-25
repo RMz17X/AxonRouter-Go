@@ -17,9 +17,10 @@ var tokenharborHedgeCursor atomic.Uint64
 
 // tokenharborWaveBudget bounds one hedge wave. A wave that has not committed
 // within this window is abandoned and a fresh set of accounts is tried; the
-// 45s provider budget still bounds the whole request. This turns the 30K
-// account pool into repeated admission tickets instead of one long wait.
-const tokenharborWaveBudget = 6 * time.Second
+// 45s provider budget still bounds the whole request. With 1,324 accounts in
+// the copied pool, a dense ticket ladder is the only way to walk enough of
+// the pool inside the client's stall budget.
+const tokenharborWaveBudget = 4 * time.Second
 
 func tokenharborWaveTimeout(provider string) time.Duration {
 	if providers.ResolveAlias(provider) == "tokenharbor" {
@@ -254,14 +255,14 @@ func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay 
 	// TokenHarbor free models sit behind one global GPU queue per model: a
 	// single ticket waits silently for tens of seconds and often never lands,
 	// while a ladder of tickets across keys puts one of them near the front
-	// sooner. With ~30K accounts the tickets are ammunition: 16 candidates
-	// staggered 250ms apart, rotated across the pool, with a short per-wave
+	// sooner. With 1,324 copied accounts the tickets are ammunition: 64 candidates
+	// staggered 100ms apart, rotated across the pool, with a short per-wave
 	// budget and a 45s overall stall budget so dead waves give way to fresh
 	// tickets. Owner directive: client feel is the only metric; backend 429s are free collateral.
 	if providers.ResolveAlias(provider) == "tokenharbor" {
 		enabled = true
-		delay = 250 * time.Millisecond
-		maxAttempts = 16
+		delay = 100 * time.Millisecond
+		maxAttempts = 64
 	}
 
 	if h.Repo != nil {
@@ -643,7 +644,11 @@ func (h *ChatHandler) recordHedgeCandidateFailure(ctx context.Context, provider,
 				// body. Hedged candidates bypass the sequential retry loop,
 				// so without this lock the next request spends another
 				// ticket on the same account while it is still throttled.
-				if dur, ok := extractResetDuration(ue.Body); ok && dur > 0 {
+				dur, ok := parseRetryAfterHeader(ue.Header.Get("Retry-After"))
+				if !ok || dur <= 0 {
+					dur, ok = extractResetDuration(ue.Body)
+				}
+				if dur > 0 {
 					cooldownSec := ceilSeconds(dur)
 					lockKey := canonicalLockModel(provider, model)
 					_ = h.Repo.LockConnectionModel(connID, lockKey, cooldownSec, 1)

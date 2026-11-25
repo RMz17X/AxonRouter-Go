@@ -5,8 +5,21 @@ import (
 	"testing"
 	"time"
 
+	"axonrouter/proxy/internal/providers"
 	"axonrouter/proxy/internal/proxy"
 )
+
+func TestTokenHarborRetryAfterHeaderWins(t *testing.T) {
+	ue := &proxy.UpstreamError{
+		StatusCode: http.StatusTooManyRequests,
+		Header:     http.Header{"Retry-After": []string{"37"}},
+		Body:       []byte(`{"error":{"message":"Rate limit reached. You can send your next request in 59 min 1 s."}}`),
+	}
+	got := cooldownSecForClassification(http.StatusTooManyRequests, providers.ErrorClassification{CooldownMs: 2000}, ue, "tokenharbor")
+	if got != 37 {
+		t.Fatalf("cooldown = %d, want 37 from Retry-After header", got)
+	}
+}
 
 func TestProviderBreakerTokenHarbor429DoesNotCount(t *testing.T) {
 	err := &proxy.UpstreamError{StatusCode: http.StatusTooManyRequests, Body: []byte(`{"error":{"message":"Rate limit reached. You can send your next request in 59 min 1 s."}}`)}

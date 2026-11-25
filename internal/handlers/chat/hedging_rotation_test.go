@@ -21,14 +21,14 @@ func TestRecordHedgeCandidateFailureTokenHarbor429NoRepo(t *testing.T) {
 func TestTokenHarborHedgePolicy(t *testing.T) {
 	h := &ChatHandler{}
 	enabled, delay, maxAttempts := h.shouldHedgeProvider("tokenharbor")
-	if !enabled || delay != 250*time.Millisecond || maxAttempts != 16 {
-		t.Fatalf("hedge policy = (%v, %v, %d), want (true, 250ms, 16)", enabled, delay, maxAttempts)
+	if !enabled || delay != 100*time.Millisecond || maxAttempts != 64 {
+		t.Fatalf("hedge policy = (%v, %v, %d), want (true, 100ms, 64)", enabled, delay, maxAttempts)
 	}
 	if budget := h.hedgeAdmissionTimeout("tokenharbor"); budget != 45*time.Second {
 		t.Fatalf("admission budget = %v, want 45s", budget)
 	}
-	if wt := tokenharborWaveTimeout("tokenharbor"); wt != 6*time.Second {
-		t.Fatalf("wave budget = %v, want 6s", wt)
+	if wt := tokenharborWaveTimeout("tokenharbor"); wt != 4*time.Second {
+		t.Fatalf("wave budget = %v, want 4s", wt)
 	}
 	if wt := tokenharborWaveTimeout("mmg"); wt != 0 {
 		t.Fatalf("non-tokenharbor wave budget = %v, want 0", wt)
