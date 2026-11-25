@@ -41,6 +41,11 @@ const (
 	providerBreakerFailureThreshold = 30
 	providerBreakerWindow           = 5 * time.Minute
 	providerBreakerCooldown         = 10 * time.Minute
+	// providerBreakerProbeWindow is how long a half-open probe may run before
+	// another caller may claim a slot. It is deliberately generous: an
+	// admitted TokenHarbor free-tier request may sit in the GPU queue for a
+	// while, and a second ticket while the first is pending buys nothing.
+	providerBreakerProbeWindow = 60 * time.Second
 )
 
 type providerBreakerState struct {
@@ -48,6 +53,10 @@ type providerBreakerState struct {
 	successes    int
 	windowStart  time.Time
 	blockedUntil time.Time
+	// probeInFlight is set while a half-open probe is allowed through an open
+	// circuit. Only one probe per (provider, model) may exist: a free-tier
+	// queue must not be stampeded by every waiting client at once.
+	probeInFlight bool
 }
 
 var (
@@ -106,11 +115,12 @@ func RecordProviderModelFailure(provider, model string) {
 	tripped := false
 	providerBreakerMu.Lock()
 	st := providerBreakerStateFor(key, now)
-	if now.Before(st.blockedUntil) {
-		// Still failing while open (a pinned lane reached the upstream
-		// anyway): push the verdict out instead of letting it lapse
-		// mid-outage.
+	if st.probeInFlight || now.Before(st.blockedUntil) {
+		// The probe failed (or an attempt reached the upstream while the
+		// circuit was still open): push the verdict out instead of
+		// letting it lapse mid-outage.
 		st.blockedUntil = now.Add(providerBreakerCooldown)
+		st.probeInFlight = false
 	} else {
 		st.failures++
 		if st.failures >= providerBreakerFailureThreshold && st.successes*10 <= st.failures {
@@ -118,6 +128,7 @@ func RecordProviderModelFailure(provider, model string) {
 			st.failures = 0
 			st.successes = 0
 			st.windowStart = now
+			st.probeInFlight = false
 			tripped = true
 		}
 	}
@@ -145,7 +156,9 @@ func RecordProviderModelSuccess(provider, model string) {
 		delete(providerBreaker, key)
 		closed = true
 	} else {
-		providerBreakerStateFor(key, now).successes++
+		st := providerBreakerStateFor(key, now)
+		st.successes++
+		st.probeInFlight = false
 	}
 	providerBreakerMu.Unlock()
 	if closed {
@@ -155,6 +168,10 @@ func RecordProviderModelSuccess(provider, model string) {
 }
 
 // IsProviderModelBroken reports whether the pair's circuit is open.
+// When the open circuit's cooldown has elapsed, the first caller claims a
+// single half-open probe and is allowed through; every other caller is still
+// rejected until that probe reports a result. A concurrent probe therefore
+// tests the queue without turning recovery into a fleet-wide retry storm.
 func IsProviderModelBroken(provider, model string) bool {
 	if provider == "" || model == "" {
 		return false
@@ -163,7 +180,27 @@ func IsProviderModelBroken(provider, model string) bool {
 	providerBreakerMu.Lock()
 	defer providerBreakerMu.Unlock()
 	st, ok := providerBreaker[key]
-	return ok && time.Now().Before(st.blockedUntil)
+	if !ok {
+		return false
+	}
+	now := time.Now()
+	if now.Before(st.blockedUntil) {
+		return true
+	}
+	if now.Before(st.blockedUntil.Add(providerBreakerProbeWindow)) {
+		if st.probeInFlight {
+			return true
+		}
+		// One half-open probe is allowed after cooldown. Its success
+		// closes the circuit; its failure re-opens it for a full
+		// cooldown. Other callers wait until that result is known.
+		st.probeInFlight = true
+		return false
+	}
+	// Probe window elapsed with no result: allow a fresh attempt and
+	// let its own outcome rebuild the state.
+	delete(providerBreaker, key)
+	return false
 }
 
 // ResetProviderBreaker clears all breaker state (used in tests).
