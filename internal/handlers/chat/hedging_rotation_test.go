@@ -3,9 +3,25 @@ package chat
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"axonrouter/proxy/internal/models"
 )
+
+func TestTokenHarborHedgePolicy(t *testing.T) {
+	h := &ChatHandler{}
+	enabled, delay, maxAttempts := h.shouldHedgeProvider("tokenharbor")
+	if !enabled || delay != time.Second || maxAttempts != 16 {
+		t.Fatalf("hedge policy = (%v, %v, %d), want (true, 1s, 16)", enabled, delay, maxAttempts)
+	}
+	if budget := h.hedgeAdmissionTimeout("tokenharbor"); budget != 45*time.Second {
+		t.Fatalf("admission budget = %v, want 45s", budget)
+	}
+	enabled, _, maxAttempts = h.shouldHedgeProvider("mmg")
+	if enabled || maxAttempts != 2 {
+		t.Fatalf("non-tokenharbor hedge policy = (%v, %d), want (false, 2)", enabled, maxAttempts)
+	}
+}
 
 func TestPickHedgeCandidatesTokenHarborRotates(t *testing.T) {
 	conns := make([]*models.ProviderConnection, 20)

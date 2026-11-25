@@ -220,7 +220,7 @@ func isAdmissionTimeout(err error) bool {
 // a winner commits; a flowing stream runs to completion.
 func (h *ChatHandler) hedgeAdmissionTimeout(provider string) time.Duration {
 	if providers.ResolveAlias(provider) == "tokenharbor" {
-		return 60 * time.Second
+		return 45 * time.Second
 	}
 	return 0
 }
@@ -238,18 +238,17 @@ func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay 
 		delay = 80 * time.Millisecond
 	}
 
-	// TokenHarbor free models sit behind one global GPU queue per model:
-	// a single ticket waits silently for tens of seconds and often never
-	// lands, while a ladder of tickets across keys puts one of them at
-	// the front far sooner (measured 2026-11-09: hedged TTFT 6–35s, 3/3,
-	// vs the sequential path's 2/5 with a >150s hang). The pool is ~30K
-	// accounts, so tickets are ammunition, not a scarce resource: 8
-	// candidates staggered 2s apart, first commit wins. Owner directive:
+	// TokenHarbor free models sit behind one global GPU queue per model: a
+	// single ticket waits silently for tens of seconds and often never lands,
+	// while a ladder of tickets across keys puts one of them near the front
+	// sooner. With ~30K accounts the tickets are ammunition: 16 candidates
+	// staggered 1s apart, rotating across the pool, with a 45s stall budget
+	// so a dead queue becomes a retryable verdict sooner. Owner directive:
 	// client feel is the only metric; backend 429s are free collateral.
 	if providers.ResolveAlias(provider) == "tokenharbor" {
 		enabled = true
-		delay = 2 * time.Second
-		maxAttempts = 8
+		delay = 1 * time.Second
+		maxAttempts = 16
 	}
 
 	if h.Repo != nil {
