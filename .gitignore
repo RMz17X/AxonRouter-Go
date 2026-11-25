@@ -101,3 +101,6 @@ screenshots/modal_verification/
 scripts/harvest_*.py
 scripts/perch_auto_refresh.py
 dist/
+
+# Local agent staging: DB copies, notes, compose overrides. Never commit.
+/.local/
