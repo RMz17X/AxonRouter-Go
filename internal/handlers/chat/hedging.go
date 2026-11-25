@@ -22,6 +22,12 @@ var tokenharborHedgeCursor atomic.Uint64
 // the pool inside the client's stall budget.
 const tokenharborWaveBudget = 4 * time.Second
 
+// tokenharborRollingWindow is the free-tier allowance window TokenHarbor
+// quotes in its 429 body. An account that spent the period's allowance is
+// useless until the next rolling day; retrying it on an Hourly reset only
+// burns proxy reputation and model-limit tickets.
+const tokenharborRollingWindow = 7 * 24 * time.Hour
+
 func tokenharborWaveTimeout(provider string) time.Duration {
 	if providers.ResolveAlias(provider) == "tokenharbor" {
 		return tokenharborWaveBudget
@@ -624,7 +630,35 @@ func (h *ChatHandler) recordHedgeCandidateFailure(ctx context.Context, provider,
 	}
 	var ue *upstreamError
 	if errors.As(err, &ue) {
-		if providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
+		if providers.IsTokenHarborEmailVerificationRequired(extractErrorText(ue.Body)) {
+			if h.Repo != nil {
+				_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, "Disabled by provider error policy: "+extractErrorText(ue.Body))
+			}
+			log.WarnCtx(ctx, "hedging", "candidate email unverified, disabling connection",
+				"conn", connID, "provider", provider, "model", model)
+			return
+		}
+		if providers.IsTokenHarborEmailVerificationRequired(extractErrorText(ue.Body)) {
+			if h.Repo != nil {
+				_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, "Disabled by provider error policy: "+extractErrorText(ue.Body))
+			}
+			log.WarnCtx(ctx, "hedging", "candidate email unverified, disabling connection",
+				"conn", connID, "provider", provider, "model", model)
+			return
+		}
+		if providers.ResolveAlias(provider) == "tokenharbor" && providers.IsTokenHarborModelGone(ue.StatusCode, ue.Body) {
+			h.recordModelDeprecation(ctx, provider, model, connID, ue)
+			return
+		}
+		if providers.IsTokenHarborEmailVerificationRequired(extractErrorText(ue.Body)) {
+			if h.Repo != nil {
+				_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, "Disabled by provider error policy: "+extractErrorText(ue.Body))
+			}
+			log.WarnCtx(ctx, "hedging", "candidate email unverified, disabling connection",
+				"conn", connID, "provider", provider, "model", model)
+			return
+		}
+		if providers.ResolveAlias(provider) == "tokenharbor" && providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
 			cooldownSec := 30
 			lockKey := canonicalLockModel(provider, model)
 			if h.Repo != nil {
@@ -644,7 +678,13 @@ func (h *ChatHandler) recordHedgeCandidateFailure(ctx context.Context, provider,
 				// body. Hedged candidates bypass the sequential retry loop,
 				// so without this lock the next request spends another
 				// ticket on the same account while it is still throttled.
-				dur, ok := parseRetryAfterHeader(ue.Header.Get("Retry-After"))
+				var dur time.Duration
+				var ok bool
+				if providers.IsTokenHarborFreeAllowanceExhausted(extractErrorText(ue.Body)) {
+					dur, ok = tokenharborRollingWindow, true
+				} else {
+					dur, ok = parseRetryAfterHeader(ue.Header.Get("Retry-After"))
+				}
 				if !ok || dur <= 0 {
 					dur, ok = extractResetDuration(ue.Body)
 				}

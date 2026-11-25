@@ -21,6 +21,18 @@ func TestTokenHarborRetryAfterHeaderWins(t *testing.T) {
 	}
 }
 
+func TestTokenHarborRollingAllowanceCooldown(t *testing.T) {
+	ue := &proxy.UpstreamError{
+		StatusCode: http.StatusTooManyRequests,
+		Header:     http.Header{"Retry-After": []string{"37"}},
+		Body:       []byte(`{"error":{"message":"You've used this period's free allowance. Your next rolling 7-day period starts on 2026-12-01."}}`),
+	}
+	got := cooldownSecForClassification(http.StatusTooManyRequests, providers.ErrorClassification{}, ue, "tokenharbor")
+	if got != 7*24*60*60 {
+		t.Fatalf("rolling cooldown = %d, want %d", got, 7*24*60*60)
+	}
+}
+
 func TestProviderBreakerTokenHarbor429DoesNotCount(t *testing.T) {
 	err := &proxy.UpstreamError{StatusCode: http.StatusTooManyRequests, Body: []byte(`{"error":{"message":"Rate limit reached. You can send your next request in 59 min 1 s."}}`)}
 	if providerBreakerShouldCount("tokenharbor", err) {

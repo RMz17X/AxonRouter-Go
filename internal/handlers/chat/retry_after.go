@@ -130,7 +130,10 @@ func comboPassRetryWait(earliest time.Duration, rateLimited bool) time.Duration 
 // loops (fallback.go, combo.go) use to turn a classification into parked
 // seconds, so the two cannot drift back into disagreeing halves.
 func cooldownSecForClassification(statusCode int, cls providers.ErrorClassification, ue *upstreamError, provider string) int {
-	if provider == "tokenharbor" && ue != nil {
+	if providers.ResolveAlias(provider) == "tokenharbor" && ue != nil {
+		if providers.IsTokenHarborFreeAllowanceExhausted(extractErrorText(ue.Body)) {
+			return ceilSeconds(tokenharborRollingWindow)
+		}
 		// TokenHarbor's body may quote the long account-level window while
 		// Retry-After names the actual per-request wait. The gate is the
 		// header when present so a 37s account is not parked for 59 min.

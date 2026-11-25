@@ -234,3 +234,24 @@ func TestIsTokenHarborEmailVerificationRequired(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenHarborFreeAllowanceAndDeadModel(t *testing.T) {
+	allowance := []string{
+		`{"error":{"message":"You've used this period's free allowance. Your next rolling 7-day period starts on 2026-12-01.","type":"rate_limit_exceeded"}}`,
+		`Rate limit reached. Next rolling 7-day period starts on 2026-12-01.`,
+	}
+	for _, body := range allowance {
+		if !IsTokenHarborFreeAllowanceExhausted(body) {
+			t.Errorf("free allowance not detected in %q", body)
+		}
+	}
+	if IsTokenHarborFreeAllowanceExhausted(`{"error":{"message":"Rate limit reached. You can send your next request in 37 s."}}`) {
+		t.Error("short retry window must not be treated as the rolling allowance")
+	}
+	if !IsTokenHarborModelGone(http.StatusNotFound, []byte(`{"error":{"code":"campaign_ended"}}`)) {
+		t.Error("404 campaign_ended must be a dead model")
+	}
+	if IsTokenHarborModelGone(http.StatusTooManyRequests, []byte(`{"error":{"code":"campaign_ended"}}`)) {
+		t.Error("campaign_ended on 429 must not be a dead model verdict")
+	}
+}

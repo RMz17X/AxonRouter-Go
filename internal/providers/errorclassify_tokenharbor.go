@@ -16,8 +16,29 @@ var (
 	tokenharborRetryAboutRe     = regexp.MustCompile(`(?i)retry\s+in\s+about\s+(\d+)\s*sec`)
 	tokenharborEgressIpRegex    = regexp.MustCompile(`(?i)(?:sharing\s+this\s+network\s+address|many\s+free\s+accounts|too\s+many\s+requests\s+from\s+(?:this|your)\s+(?:ip|network))`)
 	tokenharborServerBusyRegex  = regexp.MustCompile(`(?i)(?:under\s+heavy\s+load|server_busy|service_busy|slowed\s+down\s+for\s+a\s+few\s+minutes)`)
-	tokenharborEmailVerifyRe   = regexp.MustCompile(`(?i)(?:email_verification_required|verify\s+your\s+email\s+address)`)
+	tokenharborFreeAllowanceRe  = regexp.MustCompile(`(?i)(free allowance|rolling\s*7[- ]day|next rolling.*period starts)`)
+	tokenharborEmailVerifyRe    = regexp.MustCompile(`(?i)(?:email_verification_required|verify\s+your\s+email\s+address)`)
 )
+
+// IsTokenHarborFreeAllowanceExhausted reports whether a 429 came from the
+// rolling 7-day free allowance rather than a short per-minute throttle.
+// TokenHarbor spells it "You've used this period's free allowance. Your next
+// rolling 7-day period starts on ..."; retrying that account sooner only
+// burns proxy reputation. Park it for the full window and re-probe daily.
+func IsTokenHarborFreeAllowanceExhausted(text string) bool {
+	return tokenharborFreeAllowanceRe.MatchString(strings.ToLower(text))
+}
+
+// IsTokenHarborModelGone reports a dead model verdict. TokenHarbor answers a
+// retired free model with 404 campaign_ended instead of the 410 the generic
+// deprecation path expects; a 404 means the model no longer exists.
+func IsTokenHarborModelGone(statusCode int, body []byte) bool {
+	if statusCode != http.StatusNotFound {
+		return false
+	}
+	lower := strings.ToLower(string(body))
+	return strings.Contains(lower, "campaign_ended") || strings.Contains(lower, "campaign ended")
+}
 
 // IsTokenHarborEmailVerificationRequired reports whether the error is the
 // "confirm your email address" refusal: the account exists and its key is
@@ -60,9 +81,9 @@ func ParseTokenHarborRetryDuration(text string) (time.Duration, bool) {
 }
 
 // TokenHarborAdjustedCooldown applies policy-based padding to TokenHarbor rate limit delays:
-// 1. Hourly/quota resets (>= 5 min) get a minimum floor of 70 minutes (4200s).
-// 2. Short burst/per-minute resets (< 5 min) get a 5-second buffer (e.g. 32s -> 37s, 1s -> 6s)
-//    to prevent boundary collision retries.
+//  1. Hourly/quota resets (>= 5 min) get a minimum floor of 70 minutes (4200s).
+//  2. Short burst/per-minute resets (< 5 min) get a 5-second buffer (e.g. 32s -> 37s, 1s -> 6s)
+//     to prevent boundary collision retries.
 func TokenHarborAdjustedCooldown(dur time.Duration) time.Duration {
 	const (
 		hourlyThreshold = 5 * time.Minute

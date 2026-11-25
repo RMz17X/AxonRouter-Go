@@ -34,7 +34,9 @@ func (h *ChatHandler) recordModelDeprecation(ctx context.Context, provider, mode
 	if h.Repo == nil || provider == "" || model == "" {
 		return
 	}
-	if !providers.IsModelDeprecation(ue.StatusCode, ue.Body) {
+	dead := providers.IsModelDeprecation(ue.StatusCode, ue.Body) ||
+		(providers.ResolveAlias(provider) == "tokenharbor" && providers.IsTokenHarborModelGone(ue.StatusCode, ue.Body))
+	if !dead {
 		return
 	}
 	detail := providers.ParseModelDeprecation(ue.Body)
