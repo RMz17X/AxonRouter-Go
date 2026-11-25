@@ -17,10 +17,9 @@ var tokenharborHedgeCursor atomic.Uint64
 
 // tokenharborWaveBudget bounds one hedge wave. A wave that has not committed
 // within this window is abandoned and a fresh set of accounts is tried; the
-// 45s provider budget still bounds the whole request. With 1,324 accounts in
-// the copied pool, a dense ticket ladder is the only way to walk enough of
-// the pool inside the client's stall budget.
-const tokenharborWaveBudget = 4 * time.Second
+// short provider budget still bounds the whole request so exhausted free
+// quota returns a client verdict in seconds instead of a 45s stall.
+const tokenharborWaveBudget = 1 * time.Second
 
 // tokenharborRollingWindow is the free-tier allowance window TokenHarbor
 // quotes in its 429 body. An account that spent the period's allowance is
@@ -240,7 +239,7 @@ func isAdmissionTimeout(err error) bool {
 // a winner commits; a flowing stream runs to completion.
 func (h *ChatHandler) hedgeAdmissionTimeout(provider string) time.Duration {
 	if providers.ResolveAlias(provider) == "tokenharbor" {
-		return 45 * time.Second
+		return 4 * time.Second
 	}
 	return 0
 }
@@ -261,14 +260,15 @@ func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay 
 	// TokenHarbor free models sit behind one global GPU queue per model: a
 	// single ticket waits silently for tens of seconds and often never lands,
 	// while a ladder of tickets across keys puts one of them near the front
-	// sooner. With 1,324 copied accounts the tickets are ammunition: 64 candidates
-	// staggered 100ms apart, rotated across the pool, with a short per-wave
-	// budget and a 45s overall stall budget so dead waves give way to fresh
-	// tickets. Owner directive: client feel is the only metric; backend 429s are free collateral.
+	// sooner. With a spent rolling allowance the client must not wait 45s for a
+	// verdict every account already gave in milliseconds: 16 candidates
+	// staggered 50ms apart, rotated across the pool, with a 1s wave and a
+	// 4s overall stall budget. Owner directive: client feel is the only metric;
+	// backend 429s are free collateral.
 	if providers.ResolveAlias(provider) == "tokenharbor" {
 		enabled = true
-		delay = 100 * time.Millisecond
-		maxAttempts = 64
+		delay = 50 * time.Millisecond
+		maxAttempts = 16
 	}
 
 	if h.Repo != nil {
