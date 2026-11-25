@@ -17,9 +17,15 @@ var tokenharborHedgeCursor atomic.Uint64
 
 // tokenharborWaveBudget bounds one hedge wave. A wave that has not committed
 // within this window is abandoned and a fresh set of accounts is tried; the
-// short provider budget still bounds the whole request so exhausted free
-// quota returns a client verdict in seconds instead of a 45s stall.
-const tokenharborWaveBudget = 1 * time.Second
+// 90s provider budget still bounds the whole request. Short retry windows
+// need time to elapse, so exhausted tickets are revisited after cooldown.
+const tokenharborWaveBudget = 6 * time.Second
+
+// tokenharborRevisitAfter lets a hedge wheel come back to an account once its
+// short retry lock has expired. Without it a 15s retry account is spent once
+// and never re-tried inside the 90s budget, which is why long hedges used to
+// die after walking the same pool a single time.
+const tokenharborRevisitAfter = 20 * time.Second
 
 // tokenharborRollingWindow is the free-tier allowance window TokenHarbor
 // quotes in its 429 body. An account that spent the period's allowance is
@@ -239,7 +245,7 @@ func isAdmissionTimeout(err error) bool {
 // a winner commits; a flowing stream runs to completion.
 func (h *ChatHandler) hedgeAdmissionTimeout(provider string) time.Duration {
 	if providers.ResolveAlias(provider) == "tokenharbor" {
-		return 4 * time.Second
+		return 90 * time.Second
 	}
 	return 0
 }
@@ -260,15 +266,14 @@ func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay 
 	// TokenHarbor free models sit behind one global GPU queue per model: a
 	// single ticket waits silently for tens of seconds and often never lands,
 	// while a ladder of tickets across keys puts one of them near the front
-	// sooner. With a spent rolling allowance the client must not wait 45s for a
-	// verdict every account already gave in milliseconds: 16 candidates
-	// staggered 50ms apart, rotated across the pool, with a 1s wave and a
-	// 4s overall stall budget. Owner directive: client feel is the only metric;
-	// backend 429s are free collateral.
+	// sooner. Short retry windows (5-15s) mean a fresh ticket can land while
+	// older ones are cooling down, so the pool is walked aggressively: 32
+	// candidates staggered 75ms apart, 6s waves, 90s total. Owner directive:
+	// backend 429s are free collateral; one 200 wins the whole request.
 	if providers.ResolveAlias(provider) == "tokenharbor" {
 		enabled = true
-		delay = 50 * time.Millisecond
-		maxAttempts = 16
+		delay = 75 * time.Millisecond
+		maxAttempts = 32
 	}
 
 	if h.Repo != nil {
@@ -548,7 +553,7 @@ func (h *ChatHandler) executeHedgedWaves(
 	if budget > 0 {
 		deadline = time.Now().Add(budget)
 	}
-	tried := make(map[string]bool, len(allConns))
+	tried := make(map[string]time.Time, len(allConns))
 	var lastErr error
 	for wave := 0; ; wave++ {
 		if err := ctx.Err(); err != nil {
@@ -556,12 +561,31 @@ func (h *ChatHandler) executeHedgedWaves(
 		}
 		remaining := make([]*ProviderConnection, 0, len(allConns))
 		for _, c := range allConns {
-			if c != nil && !tried[c.ID] {
-				remaining = append(remaining, c)
+			if c == nil || time.Since(tried[c.ID]) < tokenharborRevisitAfter {
+				continue
 			}
+			remaining = append(remaining, c)
 		}
 		candidates := h.pickHedgeCandidates(remaining, provider, model, maxAttempts)
 		if len(candidates) == 0 {
+			if budget > 0 && len(tried) > 0 && time.Now().Before(deadline) {
+				wait := time.Duration(0)
+				for _, at := range tried {
+					if d := tokenharborRevisitAfter - time.Since(at); d > wait {
+						wait = d
+					}
+				}
+				if wait > 0 {
+					timer := time.NewTimer(wait)
+					select {
+					case <-timer.C:
+					case <-ctx.Done():
+						timer.Stop()
+						return ctx.Err()
+					}
+					continue
+				}
+			}
 			if lastErr != nil {
 				return lastErr
 			}
@@ -575,7 +599,7 @@ func (h *ChatHandler) executeHedgedWaves(
 			}
 		}
 		for _, c := range candidates {
-			tried[c.ID] = true
+			tried[c.ID] = time.Now()
 		}
 		var waveTimeout time.Duration
 		if budget > 0 {
