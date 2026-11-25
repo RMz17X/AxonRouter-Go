@@ -1922,7 +1922,7 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 
 	if !errors.As(fwdErr, &zc) {
 		observ.IncUpstreamError(provider, model, statusCode)
-		if !handlerutil.IsProbeContext(ctx) && !isClientCanceled(ctx, fwdErr) && providerBreakerShouldCount(fwdErr) {
+		if !handlerutil.IsProbeContext(ctx) && !isClientCanceled(ctx, fwdErr) && providerBreakerShouldCount(provider, fwdErr) {
 			RecordProviderModelFailure(provider, model)
 		}
 	}

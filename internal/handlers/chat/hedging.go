@@ -15,6 +15,19 @@ import (
 
 var tokenharborHedgeCursor atomic.Uint64
 
+// tokenharborWaveBudget bounds one hedge wave. A wave that has not committed
+// within this window is abandoned and a fresh set of accounts is tried; the
+// 45s provider budget still bounds the whole request. This turns the 30K
+// account pool into repeated admission tickets instead of one long wait.
+const tokenharborWaveBudget = 6 * time.Second
+
+func tokenharborWaveTimeout(provider string) time.Duration {
+	if providers.ResolveAlias(provider) == "tokenharbor" {
+		return tokenharborWaveBudget
+	}
+	return 0
+}
+
 // hedgedResponseWriter wraps http.ResponseWriter to buffer response headers and initial chunks
 // until a candidate claims victory (first HTTP 200). Once claimed, it commits headers and
 // flushes streaming data directly to the underlying client writer.
@@ -242,12 +255,12 @@ func (h *ChatHandler) shouldHedgeProvider(provider string) (enabled bool, delay 
 	// single ticket waits silently for tens of seconds and often never lands,
 	// while a ladder of tickets across keys puts one of them near the front
 	// sooner. With ~30K accounts the tickets are ammunition: 16 candidates
-	// staggered 1s apart, rotating across the pool, with a 45s stall budget
-	// so a dead queue becomes a retryable verdict sooner. Owner directive:
-	// client feel is the only metric; backend 429s are free collateral.
+	// staggered 250ms apart, rotated across the pool, with a short per-wave
+	// budget and a 45s overall stall budget so dead waves give way to fresh
+	// tickets. Owner directive: client feel is the only metric; backend 429s are free collateral.
 	if providers.ResolveAlias(provider) == "tokenharbor" {
 		enabled = true
-		delay = 1 * time.Second
+		delay = 250 * time.Millisecond
 		maxAttempts = 16
 	}
 
@@ -560,6 +573,9 @@ func (h *ChatHandler) executeHedgedWaves(
 		var waveTimeout time.Duration
 		if budget > 0 {
 			waveTimeout = time.Until(deadline)
+			if wt := tokenharborWaveTimeout(provider); wt > 0 && waveTimeout > wt {
+				waveTimeout = wt
+			}
 			if waveTimeout <= 0 {
 				return &admissionTimeoutError{ue: &upstreamError{
 					StatusCode: http.StatusTooManyRequests,
@@ -574,6 +590,13 @@ func (h *ChatHandler) executeHedgedWaves(
 			return nil
 		}
 		if isAdmissionTimeout(err) {
+			if tokenharborWaveTimeout(provider) > 0 && time.Now().Before(deadline) {
+				// This wave's tickets never got admitted. Keep the provider
+				// verdict as a fallback but spend the remaining budget on a
+				// fresh slice of the very large account pool.
+				lastErr = err
+				continue
+			}
 			return err
 		}
 		// Identical-failure classes: every remaining candidate would
@@ -614,6 +637,23 @@ func (h *ChatHandler) recordHedgeCandidateFailure(ctx context.Context, provider,
 		if ue.StatusCode == http.StatusTooManyRequests {
 			if h.Repo != nil {
 				_ = h.Repo.RecordConnectionScopedError(connID, model, "chat", ue.StatusCode, extractErrorText(ue.Body), 1)
+			}
+			if providers.ResolveAlias(provider) == "tokenharbor" && h.Repo != nil {
+				// TokenHarbor returns a concrete retry window in the 429
+				// body. Hedged candidates bypass the sequential retry loop,
+				// so without this lock the next request spends another
+				// ticket on the same account while it is still throttled.
+				if dur, ok := extractResetDuration(ue.Body); ok && dur > 0 {
+					cooldownSec := ceilSeconds(dur)
+					lockKey := canonicalLockModel(provider, model)
+					_ = h.Repo.LockConnectionModel(connID, lockKey, cooldownSec, 1)
+					if lockKey != model {
+						_ = h.Repo.LockConnectionModel(connID, model, cooldownSec, 1)
+					}
+					log.WarnCtx(ctx, "hedging", "candidate rate limited, locking retry window",
+						"conn", connID, "provider", provider, "model", model,
+						"cooldownSec", cooldownSec)
+				}
 			}
 		}
 	}

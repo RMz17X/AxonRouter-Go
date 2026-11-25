@@ -2,6 +2,7 @@ package chat
 
 import (
 	"errors"
+	"net/http"
 	"sync"
 	"time"
 
@@ -76,7 +77,7 @@ func providerBreakerKey(provider, model string) string {
 // evidence about the provider (vs about the request): retryable
 // upstream statuses, 5xx, and transport/executor errors count;
 // request-level refusals and model-behaviour mismatches do not.
-func providerBreakerShouldCount(err error) bool {
+func providerBreakerShouldCount(provider string, err error) bool {
 	if err == nil {
 		return false
 	}
@@ -85,6 +86,14 @@ func providerBreakerShouldCount(err error) bool {
 	}
 	var ue *upstreamError
 	if errors.As(err, &ue) {
+		// TokenHarbor 429 carries an account-level retry window and the
+		// hedge path now locks that exact window on the candidate. It is
+		// evidence about the account, not about the provider/model, so it
+		// must not open the model-wide breaker while thousands of other
+		// accounts are still available.
+		if providers.ResolveAlias(provider) == "tokenharbor" && ue.StatusCode == http.StatusTooManyRequests {
+			return false
+		}
 		return providers.RetryableStatusCodes[ue.StatusCode] || ue.StatusCode >= 500
 	}
 	return true

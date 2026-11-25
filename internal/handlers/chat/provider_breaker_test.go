@@ -1,9 +1,23 @@
 package chat
 
 import (
+	"net/http"
 	"testing"
 	"time"
+
+	"axonrouter/proxy/internal/proxy"
 )
+
+func TestProviderBreakerTokenHarbor429DoesNotCount(t *testing.T) {
+	err := &proxy.UpstreamError{StatusCode: http.StatusTooManyRequests, Body: []byte(`{"error":{"message":"Rate limit reached. You can send your next request in 59 min 1 s."}}`)}
+	if providerBreakerShouldCount("tokenharbor", err) {
+		t.Fatal("tokenharbor account 429 must not open model-wide breaker")
+	}
+	serverErr := &proxy.UpstreamError{StatusCode: http.StatusInternalServerError, Body: []byte(`{"error":"boom"}`)}
+	if !providerBreakerShouldCount("tokenharbor", serverErr) {
+		t.Fatal("tokenharbor 5xx must still count toward the breaker")
+	}
+}
 
 func TestProviderBreakerHalfOpenProbe(t *testing.T) {
 	ResetProviderBreaker()
