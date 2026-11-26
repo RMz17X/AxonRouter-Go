@@ -122,7 +122,9 @@ func (h *DashboardHandler) HandleGetProviderNodes(w http.ResponseWriter, r *http
 // Mirrors upstream src/app/api/provider-nodes/route.js, with one addition:
 // the id tail is the caller's `urlSuffix` when supplied, so the provider id is
 // "openai-compatible-chat-<suffix>" instead of "openai-compatible-chat-<uuid>".
-// An empty suffix keeps the random id upstream generates.
+// When the suffix is omitted, the node's prefix (the alias clients use in
+// "alias/model") becomes the suffix whenever that alias is free; only a prefix
+// that cannot serve as an alias falls back to the random id upstream generates.
 func (h *DashboardHandler) HandleCreateProviderNode(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -210,7 +212,11 @@ func (h *DashboardHandler) HandleCreateProviderNode(w http.ResponseWriter, r *ht
 			return
 		}
 	}
-	id, suffix, ok := h.resolveProviderNodeID(w, nodeType, apiType, req.URLSuffix, "")
+	requestedSuffix := req.URLSuffix
+	if strings.TrimSpace(requestedSuffix) == "" {
+		requestedSuffix = h.preferredNodeSuffix(nodeType, apiType, req.Prefix)
+	}
+	id, suffix, ok := h.resolveProviderNodeID(w, nodeType, apiType, requestedSuffix, "")
 	if !ok {
 		return
 	}

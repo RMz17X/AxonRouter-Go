@@ -115,29 +115,44 @@ func TestHandleCreateProviderNode_CustomSuffixReplacesUUID(t *testing.T) {
 	}
 }
 
-// Omitting the suffix keeps upstream's random id, and the response marks the
-// tail as generated so the dashboard does not present a uuid as editable text.
-func TestHandleCreateProviderNode_EmptySuffixStaysGenerated(t *testing.T) {
+// Omitting the suffix uses the node prefix (the alias clients use in
+// "alias/model") when it is a usable id tail. Only a prefix that cannot be a
+// suffix falls back to upstream's random id.
+func TestHandleCreateProviderNode_EmptySuffixUsesPrefixAlias(t *testing.T) {
 	repo, cleanup := setupNodeTestDB(t)
 	defer cleanup()
 	router := setupTestRouter(repo)
 
-	rec := postNode(t, router, `{"name":"N","prefix":"n","baseUrl":"https://a.example/v1"}`)
+	rec := postNode(t, router, `{"name":"N","prefix":"nara","baseUrl":"https://a.example/v1"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
 	}
 	node := decodeNode(t, rec)
+	if node.ID != "openai-compatible-chat-nara" {
+		t.Fatalf("id = %q, want alias-derived openai-compatible-chat-nara", node.ID)
+	}
+	if !node.URLSuffixGenerated {
+		t.Error("urlSuffixGenerated must be false when the alias was used as the tail")
+	}
+	if node.URLSuffix != "nara" {
+		t.Errorf("urlSuffix = %q, want the alias nara", node.URLSuffix)
+	}
+
+	// A prefix that cannot be an id suffix still creates a usable node with a
+	// generated uuid.
+	rec = postNode(t, router, `{"name":"N2","prefix":"team/x","baseUrl":"https://a.example/v1"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for an unusable alias, got %d: %s", rec.Code, rec.Body.String())
+	}
+	node = decodeNode(t, rec)
 	if !strings.HasPrefix(node.ID, "openai-compatible-chat-") {
 		t.Fatalf("id = %q, want the openai-compatible-chat- literal", node.ID)
 	}
-	if !node.URLSuffixGenerated {
-		t.Error("urlSuffixGenerated must be true when the id tail was generated")
-	}
-	if node.URLSuffix != "" {
-		t.Errorf("urlSuffix = %q, want empty for a generated id", node.URLSuffix)
-	}
 	if !isGeneratedNodeSuffix(strings.TrimPrefix(node.ID, "openai-compatible-chat-")) {
 		t.Errorf("id tail %q is not a uuid", node.ID)
+	}
+	if !node.URLSuffixGenerated {
+		t.Error("urlSuffixGenerated must be true when the alias could not be used")
 	}
 }
 

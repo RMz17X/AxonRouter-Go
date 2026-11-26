@@ -45,15 +45,51 @@ const maxProviderNodeIDLength = 96
 var nodeIDPrefixes = []string{"openai-compatible", "anthropic-compatible", "custom-embedding"}
 
 // composeProviderNodeID builds the storage id for a node of nodeType/apiType
-// with the given custom suffix. An empty suffix falls back to the random id
-// upstream generates, which is what every node created before this field
-// existed carries.
+// with the given suffix. An empty suffix falls back to the random id upstream
+// generates. New nodes normally arrive with a resolved suffix from the create
+// handler, which prefers the operator's alias (node prefix) when it is free.
 func composeProviderNodeID(nodeType, apiType, suffix string) string {
 	literal, _ := providerNodeLiterals(nodeType, apiType)
 	if suffix == "" {
 		suffix = randomNodeSuffix()
 	}
 	return literal + "-" + suffix
+}
+
+// preferredNodeSuffix picks the suffix a new node should carry when the
+// operator did not type one. The node prefix is the alias clients use in
+// "alias/model", so reusing it as the id tail keeps the dashboard URL readable
+// and stable across restarts. A prefix that cannot serve as an id suffix (or
+// that collides with a registry alias/id or another node) falls back to the
+// random upstream-style uuid instead of defeating the prefix conflict check.
+func (h *DashboardHandler) preferredNodeSuffix(nodeType, apiType, prefix string) string {
+	candidate, ok := usableAliasSuffix(nodeType, apiType, prefix)
+	if !ok {
+		return ""
+	}
+	if h.providerNodePrefixConflict(candidate, "") != "" {
+		return ""
+	}
+	id := composeProviderNodeID(nodeType, apiType, candidate)
+	existing, _, err := h.Repo.GetProviderNodeByID(id)
+	if err != nil || existing != nil {
+		return ""
+	}
+	return candidate
+}
+
+// usableAliasSuffix reports whether a node prefix can serve as the tail of a
+// provider id. It is kept separate from the DB conflict check so the shape and
+// length rules can be pinned without a database fixture.
+func usableAliasSuffix(nodeType, apiType, prefix string) (string, bool) {
+	candidate, err := validateNodeIDSuffix(prefix)
+	if err != nil || candidate == "" {
+		return "", false
+	}
+	if len(composeProviderNodeID(nodeType, apiType, candidate)) > maxProviderNodeIDLength {
+		return "", false
+	}
+	return candidate, true
 }
 
 // randomNodeSuffix is the fallback tail for a node created without one: a

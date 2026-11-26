@@ -128,7 +128,11 @@
         ? 'custom-embedding'
         : `openai-compatible-${formApiType}`
   )
-  let composedID = $derived(formUrlSuffix.trim() ? `${idLiteral}-${formUrlSuffix.trim()}` : '')
+  // The backend uses the suffix, or the prefix when the suffix is blank and the
+  // alias is still free. Show that same alias in the preview so the operator
+  // sees the readable id they are about to create instead of a bare literal.
+  let effectiveSuffix = $derived(formUrlSuffix.trim() || formPrefix.trim())
+  let composedID = $derived(effectiveSuffix ? `${idLiteral}-${effectiveSuffix}` : '')
 
   // Reset the form when the modal opens.
   $effect(() => {
@@ -249,8 +253,8 @@
       bind:value={formUrlSuffix}
       placeholder="e.g. bai"
       hint={composedID
-        ? `Optional. Replaces the random suffix of this provider id: ${composedID}`
-        : `Optional. Leave blank to keep a randomized suffix for '${idLiteral}-<this_is_user_custom_suffix>'.`}
+        ? `Optional. Blank uses your prefix as the alias when available: ${composedID}`
+        : `Optional. Leave blank and the prefix becomes the alias once typed.`}
       inputClass="font-mono"
     />
 
