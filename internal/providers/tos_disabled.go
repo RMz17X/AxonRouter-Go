@@ -35,6 +35,15 @@ func LooksLikeToSDisabled(statusCode int, text string) bool {
 		return false
 	}
 	lower := strings.ToLower(text)
+	// TokenHarbor's free-model consent refusal can read "free models are
+	// disabled ... this account", which would otherwise satisfy the
+	// "disabled in this account" arm and disable an account that is one
+	// dashboard click from healthy. It has its own classifier
+	// (IsTokenHarborFreeModelsConsentRequired) that parks it instead, so
+	// veto it here before the signature is even considered.
+	if IsTokenHarborFreeModelsConsentRequired(lower) {
+		return false
+	}
 	return strings.Contains(lower, "tos_violation") ||
 		strings.Contains(lower, "disabled in this account") ||
 		strings.Contains(lower, "violation of terms of service") ||
