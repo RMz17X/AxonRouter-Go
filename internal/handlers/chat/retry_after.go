@@ -131,6 +131,12 @@ func comboPassRetryWait(earliest time.Duration, rateLimited bool) time.Duration 
 // seconds, so the two cannot drift back into disagreeing halves.
 func cooldownSecForClassification(statusCode int, cls providers.ErrorClassification, ue *upstreamError, provider string) int {
 	if providers.ResolveAlias(provider) == "tokenharbor" && ue != nil {
+		// The consent refusal is a human-gated state, not a rate window:
+		// Retry-After or a reset string in the body would only park it for
+		// seconds and let the next sweep spend another 403 ticket.
+		if providers.IsTokenHarborFreeModelsConsentRequired(extractErrorText(ue.Body)) {
+			return ceilSeconds(providers.TokenHarborFreeModelsConsentCooldown)
+		}
 		if providers.IsTokenHarborFreeAllowanceExhausted(extractErrorText(ue.Body)) {
 			return ceilSeconds(tokenharborRollingWindow)
 		}
@@ -147,7 +153,7 @@ func cooldownSecForClassification(statusCode int, cls providers.ErrorClassificat
 	if cls.ModelScoped {
 		return ceilSeconds(time.Duration(cls.CooldownMs) * time.Millisecond)
 	}
-	if provider == "tokenharbor" && cls.CooldownMs > 0 {
+	if providers.ResolveAlias(provider) == "tokenharbor" && cls.CooldownMs > 0 {
 		return ceilSeconds(time.Duration(cls.CooldownMs) * time.Millisecond)
 	}
 	return retryableCooldownSec(statusCode, time.Duration(cls.CooldownMs)*time.Millisecond, ue, provider)

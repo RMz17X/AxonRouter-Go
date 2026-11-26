@@ -99,3 +99,23 @@ func TestProviderBreakerFailedProbeExtendsCooldown(t *testing.T) {
 		t.Fatal("failed probe should keep circuit open")
 	}
 }
+
+func TestTokenHarborFreeModelsConsentCooldownWins(t *testing.T) {
+	ue := &proxy.UpstreamError{
+		StatusCode: http.StatusForbidden,
+		Header:     http.Header{"Retry-After": []string{"37"}},
+		Body:       []byte(`{"error":{"code":"free_models_disabled","message":"Confirm free-model data sharing in your dashboard to use free models."}}`),
+	}
+	cls := providers.ClassifyErrorForProvider(http.StatusForbidden, extractErrorText(ue.Body), 0, "tokenharbor")
+	want := int(providers.TokenHarborFreeModelsConsentCooldown / time.Second)
+	if cls.DeactivateKey {
+		t.Fatal("consent refusal must not deactivate the key")
+	}
+	// Retry-After names a per-request wait, but this refusal only clears when
+	// a human clicks consent, so the header must not shorten the park.
+	for _, provider := range []string{"tokenharbor", "th", "thh"} {
+		if got := cooldownSecForClassification(http.StatusForbidden, cls, ue, provider); got != want {
+			t.Errorf("cooldown(%q) = %ds, want %ds", provider, got, want)
+		}
+	}
+}

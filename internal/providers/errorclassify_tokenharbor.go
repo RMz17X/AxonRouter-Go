@@ -18,7 +18,15 @@ var (
 	tokenharborServerBusyRegex  = regexp.MustCompile(`(?i)(?:under\s+heavy\s+load|server_busy|service_busy|slowed\s+down\s+for\s+a\s+few\s+minutes)`)
 	tokenharborFreeAllowanceRe  = regexp.MustCompile(`(?i)(free allowance|rolling\s*7[- ]day|next rolling.*period starts)`)
 	tokenharborEmailVerifyRe    = regexp.MustCompile(`(?i)(?:email_verification_required|verify\s+your\s+email\s+address)`)
+	tokenharborFreeModelsDisRe  = regexp.MustCompile(`(?i)(?:free_models_disabled|confirm\s+free[- ]model\s+data\s+sharing)`)
 )
+
+// TokenHarborFreeModelsConsentCooldown parks an account that never confirmed
+// free-model data sharing. The refusal only clears when the operator clicks
+// consent in the dashboard, so re-probing every sweep just burns a 403
+// ticket. Six hours is short enough to resume on its own after consent and
+// long enough to keep the account out of the rotation in the meantime.
+const TokenHarborFreeModelsConsentCooldown = 6 * time.Hour
 
 // IsTokenHarborFreeAllowanceExhausted reports whether a 429 came from the
 // rolling 7-day free allowance rather than a short per-minute throttle.
@@ -52,6 +60,23 @@ func IsTokenHarborEmailVerificationRequired(text string) bool {
 		return false
 	}
 	return tokenharborEmailVerifyRe.MatchString(text)
+}
+
+// IsTokenHarborFreeModelsConsentRequired reports whether the error is the
+// free-model data-sharing refusal: the account and its key are valid, but the
+// operator never confirmed free-model data sharing in the TokenHarbor
+// dashboard, so every free-model call answers 403 (code free_models_disabled).
+// Unlike the email-verification refusal, the account is not dead — one click
+// in the vendor dashboard restores it — so it is parked for
+// TokenHarborFreeModelsConsentCooldown rather than disabled. Matched on the
+// signature alone for the same reason as the verification refusal: the
+// gateway's empty-turn check rewrites TokenHarbor's empty 403 into a 502
+// before the classifier sees it.
+func IsTokenHarborFreeModelsConsentRequired(text string) bool {
+	if text == "" {
+		return false
+	}
+	return tokenharborFreeModelsDisRe.MatchString(text)
 }
 
 // ParseTokenHarborRetryDuration extracts cooldown duration from TokenHarbor error messages.
@@ -197,6 +222,25 @@ func classifyTokenHarbor(statusCode int, rawError string, backoffLevel int, prov
 			ShouldFallback:  true,
 			DeactivateKey:   true, // terminal: the account leaves routing
 			CooldownMs:      0,
+			NewBackoffLevel: backoffLevel,
+			ModelScoped:     false,
+			Exhausted:       false,
+		}, true
+	}
+
+	// 5b. Free-model data-sharing consent required (code free_models_disabled)
+	// The account and its key are healthy; the operator never clicked the
+	// free-model data-sharing consent in the vendor dashboard, so the free
+	// route answers 403 for every free model. Re-probing on every sweep just
+	// burns a ticket, and the generic 403 fallthrough parks the account for
+	// the 2s transient window — long enough to be picked again immediately.
+	// Park it for TokenHarborFreeModelsConsentCooldown instead. Account-scoped:
+	// the refusal covers every free model on the account, so a model lock
+	// would let the next free model burn another 403.
+	if IsTokenHarborFreeModelsConsentRequired(lowerError) {
+		return ErrorClassification{
+			ShouldFallback:  true,
+			CooldownMs:      int(TokenHarborFreeModelsConsentCooldown.Milliseconds()),
 			NewBackoffLevel: backoffLevel,
 			ModelScoped:     false,
 			Exhausted:       false,
