@@ -342,6 +342,12 @@ func (h *ChatHandler) handleAccountFallback(
 	if providers.ResolveAlias(provider) == "tokenharbor" {
 		maxAccountAttempts = 2
 	}
+	// A deactivated account is removed from the pool for good, so it is not
+	// evidence that the pool is exhausted: keep rotating through the next
+	// accounts instead of surfacing the first ten dead keys to the client.
+	// The wider ceiling still bounds the walk when every account is dead.
+	const maxAccountAttemptsAfterDeactivation = 64
+	deadRotations := 0
 	for _, c := range allConns {
 		if isClientCanceled(ctx, lastErr) {
 			return clientClosedError()
@@ -452,7 +458,11 @@ func (h *ChatHandler) handleAccountFallback(
 			}
 		}
 		attemptsSent++
-		if attemptsSent >= maxAccountAttempts {
+		attemptLimit := maxAccountAttempts
+		if deadRotations > 0 {
+			attemptLimit = maxAccountAttemptsAfterDeactivation
+		}
+		if attemptsSent >= attemptLimit {
 			log.WarnCtx(attemptCtx, "fallback", "max account attempts reached for provider",
 				"provider", provider, "model", model, "attempts", attemptsSent)
 			break
@@ -644,6 +654,7 @@ func (h *ChatHandler) handleAccountFallback(
 				if h.Repo != nil {
 					_ = h.Repo.DisableConnectionWithReason(connObj.ID, ue.StatusCode, "Disabled by provider error policy: "+errorText)
 				}
+				deadRotations++
 				h.getSessionAffinity().EvictConnection(connObj.ID)
 			} else if strings.Contains(errLower, "validation_required") || strings.Contains(errLower, "verify your account") {
 				if h.Repo != nil {

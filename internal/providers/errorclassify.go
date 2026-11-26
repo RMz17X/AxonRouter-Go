@@ -379,6 +379,8 @@ var permanentFailurePatterns = []string{
 	"authentication_error",
 	"authentication failed",
 	"auth failed",
+	"auth_required",
+	"auth required",
 	"permission denied",
 	"access denied",
 	"not authorized",
@@ -739,6 +741,9 @@ func ClassifyErrorForProvider(statusCode int, errorText string, backoffLevel int
 	}
 
 	if cls, ok := classifyMinimaxCode(statusCode, lowerError, backoffLevel, provider); ok {
+		return cls
+	}
+	if cls, ok := classifyDeepAIAuth(statusCode, lowerError, provider); ok {
 		return cls
 	}
 
