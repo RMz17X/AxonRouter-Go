@@ -653,76 +653,78 @@ func (h *ChatHandler) recordHedgeCandidateFailure(ctx context.Context, provider,
 		return
 	}
 	var ue *upstreamError
-	if errors.As(err, &ue) {
-		if providers.IsTokenHarborEmailVerificationRequired(extractErrorText(ue.Body)) {
-			if h.Repo != nil {
-				_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, "Disabled by provider error policy: "+extractErrorText(ue.Body))
+	if !errors.As(err, &ue) {
+		return
+	}
+	// One parse for every branch below: extractErrorText unmarshals the whole
+	// body, and the old chain re-parsed it once per predicate.
+	errText := extractErrorText(ue.Body)
+	if providers.IsTokenHarborEmailVerificationRequired(errText) {
+		if h.Repo != nil {
+			_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, "Disabled by provider error policy: "+errText)
+		}
+		log.WarnCtx(ctx, "hedging", "candidate email unverified, disabling connection",
+			"conn", connID, "provider", provider, "model", model)
+		return
+	}
+	if providers.IsTokenHarborFreeModelsConsentRequired(errText) {
+		// The account is healthy but the operator never confirmed free-model
+		// data sharing, so every free model answers 403 until that click.
+		// Park the account for the consent cooldown instead of letting each
+		// hedged wave spend another ticket on it.
+		if h.Repo != nil {
+			until := time.Now().UTC().Add(providers.TokenHarborFreeModelsConsentCooldown)
+			_ = h.Repo.LockConnectionRateLimit(connID, until, 0, ue.StatusCode, errText)
+		}
+		log.WarnCtx(ctx, "hedging", "candidate free-model consent missing, parking account",
+			"conn", connID, "provider", provider, "model", model,
+			"cooldown", providers.TokenHarborFreeModelsConsentCooldown.String())
+		return
+	}
+	if providers.ResolveAlias(provider) == "tokenharbor" && providers.IsTokenHarborModelGone(ue.StatusCode, ue.Body) {
+		h.recordModelDeprecation(ctx, provider, model, connID, ue)
+		return
+	}
+	if providers.ResolveAlias(provider) == "tokenharbor" && providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
+		cooldownSec := 30
+		lockKey := canonicalLockModel(provider, model)
+		if h.Repo != nil {
+			_ = h.Repo.LockConnectionModel(connID, lockKey, cooldownSec, 1)
+			_ = h.Repo.RecordConnectionScopedError(connID, model, "chat", ue.StatusCode, errText, 1)
+		}
+		log.WarnCtx(ctx, "hedging", "candidate concurrency saturated, locking model on connection",
+			"conn", connID, "provider", provider, "model", model, "cooldownSec", cooldownSec)
+		return
+	}
+	if ue.StatusCode == http.StatusTooManyRequests {
+		if h.Repo != nil {
+			_ = h.Repo.RecordConnectionScopedError(connID, model, "chat", ue.StatusCode, errText, 1)
+		}
+		if providers.ResolveAlias(provider) == "tokenharbor" && h.Repo != nil {
+			// TokenHarbor returns a concrete retry window in the 429
+			// body. Hedged candidates bypass the sequential retry loop,
+			// so without this lock the next request spends another
+			// ticket on the same account while it is still throttled.
+			var dur time.Duration
+			var ok bool
+			if providers.IsTokenHarborFreeAllowanceExhausted(errText) {
+				dur, ok = tokenharborRollingWindow, true
+			} else {
+				dur, ok = parseRetryAfterHeader(ue.Header.Get("Retry-After"))
 			}
-			log.WarnCtx(ctx, "hedging", "candidate email unverified, disabling connection",
-				"conn", connID, "provider", provider, "model", model)
-			return
-		}
-		if providers.IsTokenHarborEmailVerificationRequired(extractErrorText(ue.Body)) {
-			if h.Repo != nil {
-				_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, "Disabled by provider error policy: "+extractErrorText(ue.Body))
+			if !ok || dur <= 0 {
+				dur, ok = extractResetDuration(ue.Body)
 			}
-			log.WarnCtx(ctx, "hedging", "candidate email unverified, disabling connection",
-				"conn", connID, "provider", provider, "model", model)
-			return
-		}
-		if providers.ResolveAlias(provider) == "tokenharbor" && providers.IsTokenHarborModelGone(ue.StatusCode, ue.Body) {
-			h.recordModelDeprecation(ctx, provider, model, connID, ue)
-			return
-		}
-		if providers.IsTokenHarborEmailVerificationRequired(extractErrorText(ue.Body)) {
-			if h.Repo != nil {
-				_ = h.Repo.DisableConnectionWithReason(connID, ue.StatusCode, "Disabled by provider error policy: "+extractErrorText(ue.Body))
-			}
-			log.WarnCtx(ctx, "hedging", "candidate email unverified, disabling connection",
-				"conn", connID, "provider", provider, "model", model)
-			return
-		}
-		if providers.ResolveAlias(provider) == "tokenharbor" && providers.IsModelConcurrencyError(ue.StatusCode, ue.Body) {
-			cooldownSec := 30
-			lockKey := canonicalLockModel(provider, model)
-			if h.Repo != nil {
+			if dur > 0 {
+				cooldownSec := ceilSeconds(dur)
+				lockKey := canonicalLockModel(provider, model)
 				_ = h.Repo.LockConnectionModel(connID, lockKey, cooldownSec, 1)
-				_ = h.Repo.RecordConnectionScopedError(connID, model, "chat", ue.StatusCode, extractErrorText(ue.Body), 1)
-			}
-			log.WarnCtx(ctx, "hedging", "candidate concurrency saturated, locking model on connection",
-				"conn", connID, "provider", provider, "model", model, "cooldownSec", cooldownSec)
-			return
-		}
-		if ue.StatusCode == http.StatusTooManyRequests {
-			if h.Repo != nil {
-				_ = h.Repo.RecordConnectionScopedError(connID, model, "chat", ue.StatusCode, extractErrorText(ue.Body), 1)
-			}
-			if providers.ResolveAlias(provider) == "tokenharbor" && h.Repo != nil {
-				// TokenHarbor returns a concrete retry window in the 429
-				// body. Hedged candidates bypass the sequential retry loop,
-				// so without this lock the next request spends another
-				// ticket on the same account while it is still throttled.
-				var dur time.Duration
-				var ok bool
-				if providers.IsTokenHarborFreeAllowanceExhausted(extractErrorText(ue.Body)) {
-					dur, ok = tokenharborRollingWindow, true
-				} else {
-					dur, ok = parseRetryAfterHeader(ue.Header.Get("Retry-After"))
+				if lockKey != model {
+					_ = h.Repo.LockConnectionModel(connID, model, cooldownSec, 1)
 				}
-				if !ok || dur <= 0 {
-					dur, ok = extractResetDuration(ue.Body)
-				}
-				if dur > 0 {
-					cooldownSec := ceilSeconds(dur)
-					lockKey := canonicalLockModel(provider, model)
-					_ = h.Repo.LockConnectionModel(connID, lockKey, cooldownSec, 1)
-					if lockKey != model {
-						_ = h.Repo.LockConnectionModel(connID, model, cooldownSec, 1)
-					}
-					log.WarnCtx(ctx, "hedging", "candidate rate limited, locking retry window",
-						"conn", connID, "provider", provider, "model", model,
-						"cooldownSec", cooldownSec)
-				}
+				log.WarnCtx(ctx, "hedging", "candidate rate limited, locking retry window",
+					"conn", connID, "provider", provider, "model", model,
+					"cooldownSec", cooldownSec)
 			}
 		}
 	}

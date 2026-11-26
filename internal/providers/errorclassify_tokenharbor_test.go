@@ -255,3 +255,85 @@ func TestTokenHarborFreeAllowanceAndDeadModel(t *testing.T) {
 		t.Error("campaign_ended on 429 must not be a dead model verdict")
 	}
 }
+
+func TestIsTokenHarborFreeModelsConsentRequired(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{`{"error":{"code":"free_models_disabled","message":"Free models are disabled for this account."}}`, true},
+		{"(code free_models_disabled)", true},
+		{"Confirm free-model data sharing in your dashboard to use free models.", true},
+		{"Please confirm free model data sharing to continue", true},
+		{"CONFIRM FREE-MODEL DATA SHARING", true},
+		{"(code email_verification_required)", false},
+		{"Rate limit reached. You can send your next request in 37 s.", false},
+		{"forbidden: key not allowed", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := IsTokenHarborFreeModelsConsentRequired(c.in); got != c.want {
+			t.Errorf("IsTokenHarborFreeModelsConsentRequired(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+func TestClassifyTokenHarbor_FreeModelsConsentRequired(t *testing.T) {
+	body := `{"content":"","error":"Confirm free-model data sharing in your TokenHarbor dashboard to use free models. (code free_models_disabled)","status":403}`
+	wantCooldown := int(TokenHarborFreeModelsConsentCooldown.Milliseconds())
+
+	t.Run("signature parks the account without disabling it", func(t *testing.T) {
+		cls, ok := classifyTokenHarbor(http.StatusForbidden, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if cls.DeactivateKey {
+			t.Error("consent refusal is recoverable, must not deactivate the key")
+		}
+		if cls.CooldownMs != wantCooldown {
+			t.Errorf("cooldown = %dms, want %dms", cls.CooldownMs, wantCooldown)
+		}
+		if !cls.ShouldFallback {
+			t.Error("expected ShouldFallback TRUE so the request rotates to another account")
+		}
+		if cls.ModelScoped {
+			t.Error("refusal covers every free model, must be account-scoped")
+		}
+		if cls.Exhausted {
+			t.Error("consent refusal is not an exhausted quota")
+		}
+	})
+
+	t.Run("still parks when the gateway rewrote 403 into 502", func(t *testing.T) {
+		cls, ok := classifyTokenHarbor(http.StatusBadGateway, body, 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if cls.CooldownMs != wantCooldown {
+			t.Errorf("cooldown = %dms, want %dms", cls.CooldownMs, wantCooldown)
+		}
+	})
+
+	t.Run("bare code also matches", func(t *testing.T) {
+		cls, ok := classifyTokenHarbor(http.StatusForbidden, "free_models_disabled", 0, "tokenharbor")
+		if !ok {
+			t.Fatal("expected classification to match")
+		}
+		if cls.CooldownMs != wantCooldown {
+			t.Errorf("cooldown = %dms, want %dms", cls.CooldownMs, wantCooldown)
+		}
+	})
+
+	t.Run("unrelated 403 is not parked for the consent window", func(t *testing.T) {
+		cls, ok := classifyTokenHarbor(http.StatusForbidden, "forbidden: key not allowed", 0, "tokenharbor")
+		if ok && cls.CooldownMs == wantCooldown {
+			t.Error("unrelated 403 must not take the consent cooldown")
+		}
+	})
+
+	t.Run("other providers are untouched", func(t *testing.T) {
+		if _, ok := classifyTokenHarbor(http.StatusForbidden, body, 0, "openai"); ok {
+			t.Error("expected no match for non-tokenharbor provider")
+		}
+	})
+}
