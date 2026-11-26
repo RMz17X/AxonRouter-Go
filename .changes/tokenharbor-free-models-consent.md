@@ -12,6 +12,10 @@
 - `cooldownSecForClassification` now resolves the provider alias before the
   TokenHarbor branch, so `th`/`thh` connections take the same cooldown path as
   the canonical id.
+- The shared ToS-disable signature no longer claims the refusal: a consent
+  message that reads "free models are disabled in this account" would
+  otherwise match the "disabled in this account" arm and disable an account
+  that is one dashboard click from healthy.
 - The hedged-candidate recorder parses the upstream body once instead of once
   per predicate, and the triplicated email-verification branch is a single
   check.
