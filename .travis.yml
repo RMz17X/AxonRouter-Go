@@ -61,6 +61,12 @@
 #
 # Secrets (GHCR_USERNAME, GHCR_TOKEN, GITHUB_TOKEN) are private Travis
 # repo env vars, set through the Travis API — never in this file.
+#
+# SHELL DISCIPLINE: every multi-line block below is wrapped in a
+# subshell ( ... ). Travis evals script commands in its own shell, so
+# a bare `set -u` leaks into travis-build's internals and kills the
+# job with "secure: unbound variable" (proven by build #5). Keep the
+# parentheses.
 
 os: linux
 dist: jammy
@@ -91,6 +97,7 @@ cache:
 script:
   # -- 1. Changelog fragment (PR builds only; AGENTS.md §7.6) --------
   - |
+    (
     if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then
       set -euo pipefail
       # Travis does not expose the PR title; fetch it from the API.
@@ -138,6 +145,7 @@ script:
           ;;
       esac
     fi
+    )
 
   # -- 2-3. Web build, web tests, svelte ratchet ----------------------
   - (cd web && bun install --frozen-lockfile && bun run build)
@@ -151,6 +159,7 @@ script:
   # -- 5. Release binary + PGO assertion -------------------------------
   - go build -ldflags="-s -w" -o /tmp/axonrouter-go ./cmd/axonrouter-go/
   - |
+    (
     go version -m /tmp/axonrouter-go | grep -q -- '-pgo=' || {
       echo "error: PGO profile not applied to the release binary."
       echo "Check that cmd/axonrouter-go/default.pgo is committed and that"
@@ -158,9 +167,11 @@ script:
       exit 1
     }
     go version -m /tmp/axonrouter-go | grep -- '-pgo='
+    )
 
   # -- 6. Dashboard E2E (only when a scratch database is configured) ---
   - |
+    (
     if [ -n "${E2E_DATABASE_URL:-}" ]; then
       set -euo pipefail
       go build -o axonrouter-go ./cmd/axonrouter-go/
@@ -169,9 +180,11 @@ script:
     else
       echo "E2E skipped: E2E_DATABASE_URL is not configured"
     fi
+    )
 
   # -- 7. Publish leg — release tags only ------------------------------
   - |
+    (
     if [ -n "${TRAVIS_TAG:-}" ]; then
       set -euo pipefail
       export DOCKER_BUILDKIT=1
@@ -226,3 +239,4 @@ script:
     else
       echo "not a tag build — publish leg skipped"
     fi
+    )
