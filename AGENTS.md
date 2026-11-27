@@ -534,7 +534,7 @@ When tasked with syncing a feature, bugfix, or provider from upstream:
 6. **Commit & Versioning Discipline**:
    - Commits follow standard conventional commit messages (`feat:`, `fix:`, `refactor:`, `perf:`).
    - Versioning is sequential PATCH+1. `VERSION`, `version.json`, and git tags are aligned on release.
-   - Releases trigger the unified GitHub Actions release workflow to build binaries and push Docker images to GHCR.
+   - Releases trigger the unified Travis CI release job in `.travis.yml` to build binaries and push Docker images to GHCR. All CI for this repo — verification, release publishing, and the site deploy — runs on Travis CI; there are no GitHub Actions workflows.
 
 7. **Branch & PR Targeting (`main` ONLY — MANDATORY)**:
    - **Every pull request in this repository targets `main`.** Never open a PR
