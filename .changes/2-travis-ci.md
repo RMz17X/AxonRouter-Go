@@ -1,12 +1,15 @@
-### CI moved to Travis CI
+### CI moved to Travis CI — one lean job, PRs and release tags only
 
-- All continuous integration for this repo — the lint, changelog-fragment,
-  test, Windows service, race, integration, Docker-verify and cross-compile
-  jobs, the project-site build and deploy, and the release pipeline that
-  publishes `ghcr.io/rmz17x/axonrouter-go` and the GitHub Release — now runs
-  on Travis CI from a single `.travis.yml`. The GitHub Actions workflows are
-  removed; there is no Actions fallback in this repo.
-- Release behaviour is unchanged for consumers: main pushes publish the
-  `latest`, `main` and `sha-<short>` image tags, and a `v*` tag publishes
-  the tag image plus a GitHub Release carrying the five binaries and
+- All continuous integration for this repo now runs on Travis CI from a
+  single `.travis.yml`: one Linux job that checks the changelog fragment
+  (PRs only), builds the web SPA, runs the web tests and the svelte
+  ratchet, then `go vet` and `go test`, builds the release binary with
+  its PGO assertion, and — on release tags only — publishes
+  `ghcr.io/rmz17x/axonrouter-go` and the GitHub Release. The GitHub
+  Actions workflows are removed; there is no Actions fallback.
+- Builds fire only on pull requests and release tags. Branch pushes
+  never build (Travis repo setting), so CI stops costing per commit.
+- The `latest` image tag now moves at release tags (previously it moved
+  on main pushes); a tag publishes `<tag>`, `sha-<short>` and `latest`,
+  and the GitHub Release still carries the five binaries and
   `SHA256SUMS.txt`.
