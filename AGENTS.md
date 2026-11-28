@@ -700,3 +700,46 @@ Rules:
 - Run from the release worktree, whose `.env` sets
   `COMPOSE_PROJECT_NAME=axonrouter-go`, so the stack keeps the same network
   and `appdata` volume as the running staging container.
+
+## 10. Pull Requests & Releases — the AxonGate Law (owner's order, 2026-11-28)
+
+This repository follows the same pull-request and release law as AxonGate.
+Where this section and an older habit disagree, this section wins.
+
+1. **Everything lands through a PR.** Work happens on a branch named
+   `pr/<slug>`, cut from the newest `origin/main`, in a dedicated worktree
+   inside this repo's `.worktree/` directory. The agent who did the work
+   merges its own PR (merge commit; the branch is deleted automatically on
+   merge). Merging into a local `main` checkout and pushing that is
+   forbidden — local main checkouts in this fleet habitually carry other
+   streams' uncommitted work.
+2. **Small-edit exception.** Documentation, text, typos and copy with no
+   behavior, code-path or configuration effect may be pushed directly
+   without a PR.
+3. **No initiative PRs.** An agent never opens a PR on its own initiative;
+   the owner's word is the confirmation, and owner-ordered work counts as
+   confirmed. A change touching fewer than 3 files, or a very small change
+   regardless of file count, never becomes an initiative PR. A release PR
+   is not an initiative PR: the owner's "rilis" is its confirmation.
+4. **Batched releases.** Ordinary PRs never move a version: `VERSION`, the
+   `latestVersion` in `version.json`, and `CurrentVersion` in
+   `internal/updater/updater.go` stay untouched, and `CHANGELOG.md` is
+   never edited (§7.6) — changes are announced with a `.changes/` fragment
+   instead. `scripts/check-version-bump.sh` runs in the Travis PR build
+   and fails any ordinary PR that moves a version. A release PR (branch
+   `release/vX.Y.Z`), cut when the owner says "rilis" or the queue has
+   drained, is the only place versions move: `VERSION` rises by exactly
+   one patch, `version.json` and `CurrentVersion` are set to the same
+   value, the pending `.changes/` fragments are folded into ONE
+   `CHANGELOG.md` entry covering everything since the previous tag and
+   then removed, and after the merge the merger pushes the annotated tag
+   `v<version>` on the release merge commit. A hotfix is an ordinary PR
+   folded into the next batch unless the owner orders an immediate cut.
+5. **Enforcement — GitHub rulesets on `main`, identical to AxonGate.**
+   `pr-and-checks`: a pull request is required (0 approvals) and the
+   `Travis CI - Pull Request` check must pass with the branch up to date
+   with `main`. `no-force-no-delete`: deleting `main` and force-pushing it
+   are blocked for everyone, the owner included. The owner identity
+   (RMz17X) holds an `always` bypass on `pr-and-checks` for the owner's
+   own direct work and recoveries — it is never an agent's shortcut around
+   a PR.

@@ -12,10 +12,11 @@
 #   builds_only_with_travis_yml = true
 #
 # ONE job, one Linux machine, in order:
-#   1. Changelog-fragment check (PR builds only). Kept beyond
-#      build/test/vet on purpose: it is repo law (AGENTS.md §7.6), the
-#      fragments feed the release notes and the dashboard changelog,
-#      and it costs seconds.
+#   1. Changelog-fragment check + version guard (PR builds only). Kept
+#      beyond build/test/vet on purpose: they are repo law (AGENTS.md
+#      §7.6 fragments; §10 batched releases — ordinary PRs never move a
+#      version), the fragments feed the release notes and the dashboard
+#      changelog, and they cost seconds.
 #   2. Web build (bun install + bun run build) — the Go build embeds
 #      web/dist, so nothing compiles without it.
 #   3. Web tests (bun test src scripts) + the svelte-check ratchet.
@@ -152,6 +153,17 @@ script:
           fi
           ;;
       esac
+    fi
+    )
+
+  # -- 1b. Version guard (PR builds only; AGENTS.md §10) ---------------
+  - |
+    (
+    if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then
+      set -euo pipefail
+      git fetch --no-tags origin "$TRAVIS_BRANCH"
+      BASE="$(git rev-parse --verify 'FETCH_HEAD^{commit}')"
+      VERSION_BASE_SHA="$BASE" VERSION_HEAD_REF="$TRAVIS_PULL_REQUEST_BRANCH" bash scripts/check-version-bump.sh
     fi
     )
 
