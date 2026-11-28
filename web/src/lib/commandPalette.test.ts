@@ -74,4 +74,11 @@ describe('command palette index', () => {
     const result = searchPalette({ text: 'currency' })
     expect(result.rows.some((row) => row.group === 'settings')).toBe(true)
   })
+
+  it('routes a provider row straight to its detail page', () => {
+    const result = searchPalette({ text: 'openai' })
+    const row = result.rows.find((r) => r.group === 'provider' && r.id === 'provider:openai')
+    expect(row).toBeDefined()
+    expect(row?.route).toBe('/dashboard/providers/openai')
+  })
 })

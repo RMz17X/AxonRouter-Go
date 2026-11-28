@@ -13,7 +13,7 @@
 import { PROVIDER_ID_TO_ALIAS, PROVIDER_MODELS, type ProviderModel } from './models'
 import { PROVIDER_CATALOG, type ProviderCatalogItem } from './providers'
 import { NAV_GROUPS, type NavEntry, type NavLink } from './nav'
-import { TAB_ROUTES, type ActiveTab } from './router'
+import { providerPath, TAB_ROUTES, type ActiveTab } from './router'
 
 export type PaletteGroup = 'nav' | 'provider' | 'model' | 'settings'
 
@@ -59,7 +59,7 @@ function providerRows(): PaletteRow[] {
       group: 'provider' as const,
       label: provider.name,
       hint: `Provider · ${provider.alias}`,
-      route: '/dashboard/providers',
+      route: providerPath(provider.id),
       icon: 'dns',
       search: `${provider.name} provider ${provider.id} ${provider.alias}`.toLowerCase(),
     })
