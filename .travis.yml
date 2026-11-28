@@ -1,0 +1,250 @@
+# Travis CI — the only CI for this repo (owner orders 2026-11-27:
+# full Travis, no per-commit CI, one lean job, Linux only).
+#
+# TRIGGERS — enforced in the Travis repo settings, not here, because
+# .travis.yml cannot refuse a build type without also refusing tags:
+#   build_pushes = false            branch pushes NEVER build ("boros":
+#                                   per-commit CI burned the owner's
+#                                   GitHub quota before; it ends here)
+#   build_pull_requests = true      PRs build
+#   build_releases = true           release tags build
+#   auto_cancel_pull_requests = true  a new PR commit cancels the old run
+#   builds_only_with_travis_yml = true
+#
+# ONE job, one Linux machine, in order:
+#   1. Changelog-fragment check (PR builds only). Kept beyond
+#      build/test/vet on purpose: it is repo law (AGENTS.md §7.6), the
+#      fragments feed the release notes and the dashboard changelog,
+#      and it costs seconds.
+#   2. Web build (bun install + bun run build) — the Go build embeds
+#      web/dist, so nothing compiles without it.
+#   3. Web tests (bun test src scripts) + the svelte-check ratchet.
+#   4. go vet ./... and go test ./...
+#   5. Release binary build + the PGO assertion (release-critical: the
+#      profile drops silently if the file is renamed or a flag creeps
+#      in; nothing else would notice).
+#   6. Dashboard E2E — only when E2E_DATABASE_URL is set as a Travis
+#      repo env var (owner rule 2026-11-06, unchanged from Actions).
+#   7. Publish leg, TAG BUILDS ONLY (see below).
+#
+# DROPPED from the old Actions workflows (owner consolidation order —
+# these no longer run anywhere in CI):
+#   - lint job: golangci-lint ratchet, govulncheck, oxlint, actionlint.
+#   - race-detector job (go test -race ./...).
+#   - integration-tests job (vet + go test -tags=integration).
+#   - Docker verify job (main Dockerfile build + in-image PGO assert);
+#     the tag leg below builds the release image for real.
+#   - cross-compile verify job (file/SHA256SUMS assertions on PRs).
+#   - Windows service-tests job (Linux-only order).
+#   - the project-site pipeline (pages.yml: sitegen build, assertions,
+#     Pages deploy) — the site no longer auto-deploys and stays on its
+#     last published state until a separate decision.
+#   - release image publishing on main pushes (no push builds exist).
+#
+# PUBLISH LEG (step 7, only when $TRAVIS_TAG is set):
+#   make cross -> binfmt -> GHCR login -> buildx push of
+#   Dockerfile.release (linux/amd64 + linux/arm64) -> GitHub Release
+#   with generated notes (prerelease iff the tag contains a dash)
+#   carrying the five binaries + SHA256SUMS.txt.
+#   Image: ghcr.io/rmz17x/axonrouter-go, tags: <$TRAVIS_TAG>,
+#   sha-<short>, and latest. DEVIATION from the Actions semantics,
+#   forced by the no-push-builds rule: metadata-action only ever put
+#   `latest` on main pushes; with push builds gone, latest would never
+#   move again while the compose stacks pull :latest — so the tag leg
+#   publishes it, and latest now means "newest release".
+#
+# EXCEPTION the owner is asked to judge: `make cross` cross-compiles
+# the darwin and windows binaries the GitHub Release genuinely ships.
+# It runs ON this Linux job — there are no Windows or macOS machines
+# anywhere in this config — but the shipped artifacts are
+# cross-platform, exactly as they were under Actions.
+#
+# Secrets (GHCR_USERNAME, GHCR_TOKEN, GITHUB_TOKEN) are private Travis
+# repo env vars, set through the Travis API — never in this file.
+#
+# SHELL DISCIPLINE: every multi-line block below is wrapped in a
+# subshell ( ... ). Travis evals script commands in its own shell, so
+# a bare `set -u` leaks into travis-build's internals and kills the
+# job with "secure: unbound variable" (proven by build #5). Keep the
+# parentheses.
+
+os: linux
+dist: jammy
+language: go
+go: "1.27"
+
+# Full history: the fragment check diffs against the PR merge base.
+git:
+  depth: false
+
+notifications:
+  email: false
+
+services:
+  - docker
+
+# Node 24 first: the jammy image ships Node 18, whose node:util lacks
+# styleText - rolldown (Vite 8) dies on it, web/dist never builds, and
+# every Go step behind the embed fails with it (build #6). Official
+# tarball into $HOME, PATH-first, same pattern as the Bun install below.
+# Bun is pinned to the version Actions used (setup-bun 1.4.2).
+before_install:
+  - curl -fsSL https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.gz -o /tmp/node24.tar.gz
+  - mkdir -p "$HOME/.node24" && tar -xzf /tmp/node24.tar.gz -C "$HOME/.node24" --strip-components=1
+  - export PATH="$HOME/.node24/bin:$PATH"
+  - node --version
+  - curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.2"
+  - export BUN_INSTALL="$HOME/.bun"
+  - export PATH="$BUN_INSTALL/bin:$PATH"
+
+cache:
+  directories:
+    - $HOME/.cache/go-build
+    - $HOME/.bun/install/cache
+
+script:
+  # -- 1. Changelog fragment (PR builds only; AGENTS.md §7.6) --------
+  - |
+    (
+    if [ "$TRAVIS_PULL_REQUEST" != "false" ]; then
+      set -euo pipefail
+      # Travis does not expose the PR title; fetch it from the API.
+      # Without the repo token (fork PRs) the title stays empty and the
+      # exemption below simply never matches — the strict direction.
+      PR_TITLE=""
+      if [ -n "${GITHUB_TOKEN:-}" ]; then
+        PR_TITLE="$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          "https://api.github.com/repos/RMz17X/AxonRouter-Go/pulls/$TRAVIS_PULL_REQUEST" \
+          | jq -r '.title // ""' || true)"
+      fi
+      git fetch --no-tags origin "$TRAVIS_BRANCH"
+      BASE="$(git rev-parse --verify 'FETCH_HEAD^{commit}')" || {
+        echo "error: cannot resolve the merge base for the diff."
+        exit 1
+      }
+      CHANGED="$(git diff --name-only "${BASE}...HEAD")"
+      echo "changed files:"
+      printf '%s\n' "${CHANGED}"
+      if printf '%s\n' "${CHANGED}" | grep -qx 'CHANGELOG.md'; then
+        echo "error: this PR edits CHANGELOG.md — fragments only (.changes/<pr>-<slug>.md)."
+        exit 1
+      fi
+      case "${PR_TITLE}" in
+        chore:*|\[ImgBot\]*)
+          echo "exempt title, no fragment required: ${PR_TITLE}"
+          ;;
+        *)
+          DOCS_ONLY=true
+          while IFS= read -r f; do
+            [ -z "${f}" ] && continue
+            case "${f}" in
+              docs/*|*.md) ;;
+              *) DOCS_ONLY=false; break ;;
+            esac
+          done <<< "${CHANGED}"
+          if [ "${DOCS_ONLY}" = true ]; then
+            echo "documentation-only change, no fragment required"
+          elif printf '%s\n' "${CHANGED}" | grep -qE '^\.changes/[^/]+\.md$'; then
+            echo "changelog fragment present."
+          else
+            echo "error: no changelog fragment in .changes/ (see .changes/README.md, AGENTS.md §7.6)."
+            exit 1
+          fi
+          ;;
+      esac
+    fi
+    )
+
+  # -- 2-3. Web build, web tests, svelte ratchet ----------------------
+  - (cd web && bun install --frozen-lockfile && bun run build)
+  - (cd web && bun test src scripts)
+  - (cd web && bun run ratchet:svelte)
+
+  # -- 4. Vet + full Go test suite ------------------------------------
+  - go vet ./...
+  - go test ./...
+
+  # -- 5. Release binary + PGO assertion -------------------------------
+  - go build -ldflags="-s -w" -o /tmp/axonrouter-go ./cmd/axonrouter-go/
+  - |
+    (
+    go version -m /tmp/axonrouter-go | grep -q -- '-pgo=' || {
+      echo "error: PGO profile not applied to the release binary."
+      echo "Check that cmd/axonrouter-go/default.pgo is committed and that"
+      echo "no build step passes -pgo=off."
+      exit 1
+    }
+    go version -m /tmp/axonrouter-go | grep -- '-pgo='
+    )
+
+  # -- 6. Dashboard E2E (only when a scratch database is configured) ---
+  - |
+    (
+    if [ -n "${E2E_DATABASE_URL:-}" ]; then
+      set -euo pipefail
+      go build -o axonrouter-go ./cmd/axonrouter-go/
+      (cd web && bunx playwright install --with-deps chromium)
+      (cd web && DATABASE_URL="$E2E_DATABASE_URL" bun run e2e)
+    else
+      echo "E2E skipped: E2E_DATABASE_URL is not configured"
+    fi
+    )
+
+  # -- 7. Publish leg — release tags only ------------------------------
+  - |
+    (
+    if [ -n "${TRAVIS_TAG:-}" ]; then
+      set -euo pipefail
+      export DOCKER_BUILDKIT=1
+      # Warm the module cache first (retried): the five cross builds
+      # that follow then never touch the network individually.
+      ok=""
+      for attempt in 1 2 3; do
+        if go mod download all; then ok=1; break; fi
+        echo "attempt ${attempt} failed; retrying in 5s"
+        sleep 5
+      done
+      [ -n "$ok" ] || { echo "error: go mod download failed 3 times"; exit 1; }
+      make cross
+      docker run --privileged --rm tonistiigi/binfmt --install all
+      echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+      IMAGE="ghcr.io/rmz17x/axonrouter-go"
+      SHORT="$(git rev-parse --short HEAD)"
+      docker buildx create --use
+      docker buildx build --platform linux/amd64,linux/arm64 \
+        -f Dockerfile.release --push \
+        -t "$IMAGE:$TRAVIS_TAG" -t "$IMAGE:sha-$SHORT" -t "$IMAGE:latest" \
+        --label org.opencontainers.image.source=https://github.com/RMz17X/AxonRouter-Go \
+        --label org.opencontainers.image.description="AxonRouter-Go unified container image" \
+        --label org.opencontainers.image.licenses=MIT \
+        .
+      # GitHub Release with generated notes; prerelease iff the tag
+      # contains a dash — the old action-gh-release semantics.
+      API="https://api.github.com/repos/RMz17X/AxonRouter-Go"
+      PRERELEASE=false
+      case "$TRAVIS_TAG" in *-*) PRERELEASE=true ;; esac
+      RESP="$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
+        -H 'Content-Type: application/json' \
+        -d "{\"tag_name\":\"$TRAVIS_TAG\",\"name\":\"$TRAVIS_TAG\",\"generate_release_notes\":true,\"prerelease\":$PRERELEASE}" \
+        "$API/releases")"
+      UPLOAD="$(printf '%s' "$RESP" | jq -r '.upload_url // empty' | sed 's/{.*}//')"
+      if [ -z "$UPLOAD" ]; then
+        ID="$(curl -s -H "Authorization: token $GITHUB_TOKEN" "$API/releases/tags/$TRAVIS_TAG" | jq -r '.id // empty')"
+        if [ -z "$ID" ]; then
+          echo "error: GitHub Release creation failed:"
+          printf '%s' "$RESP" | head -c 400
+          exit 1
+        fi
+        UPLOAD="$API/releases/$ID/assets"
+      fi
+      for f in axonrouter-go-linux-amd64 axonrouter-go-linux-arm64 \
+               axonrouter-go-darwin-amd64 axonrouter-go-darwin-arm64 \
+               axonrouter-go-windows-amd64.exe SHA256SUMS.txt; do
+        curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
+          -H 'Content-Type: application/octet-stream' \
+          --data-binary @"$f" "$UPLOAD?name=$f" | jq -r '"uploaded: \(.name // .message)"'
+      done
+    else
+      echo "not a tag build — publish leg skipped"
+    fi
+    )

@@ -75,6 +75,12 @@ export const ICON_ALIASES: Record<string, string> = {
   'daifree': 'deepai',
   'openai-compatible-chat-liquid': 'liquid',
   'openai-compatible-liquid': 'liquid',
+  // Mistral Vibe is Mistral's own product and wears the Mistral mark. An
+  // alias rather than a committed copy of `mistral.png`, for the same
+  // reason as zcode/deepai-free above. The provider landed on main in
+  // v1.10.85 without artwork or an alias, which is what turned this PR's
+  // Travis build red (providers.test.ts artwork assertion).
+  'mistral-vibe': 'mistral',
 }
 
 export function getIconPath(id?: string | null, apiType?: string): string {
