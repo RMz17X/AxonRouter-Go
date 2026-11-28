@@ -708,9 +708,12 @@ Where this section and an older habit disagree, this section wins.
 
 1. **Everything lands through a PR.** Work happens on a branch named
    `pr/<slug>`, cut from the newest `origin/main`, in a dedicated worktree
-   inside this repo's `.worktree/` directory. The agent who did the work
-   merges its own PR (merge commit; the branch is deleted automatically on
-   merge). Merging into a local `main` checkout and pushing that is
+   inside this repo's `.worktree/` directory. NO agent merges any PR — not its own, not a
+   handed-over one (owner ruling 2026-11-28, replacing the previous
+   author-merges rule). The merge decision is the owner's, made manually:
+   the agent opens the PR (merge commit is the merge method), presents
+   its gate evidence, and waits. Branches are deleted automatically on
+   merge. Merging into a local `main` checkout and pushing that is
    forbidden — local main checkouts in this fleet habitually carry other
    streams' uncommitted work.
 2. **Small-edit exception.** Documentation, text, typos and copy with no
@@ -732,8 +735,9 @@ Where this section and an older habit disagree, this section wins.
    one patch, `version.json` and `CurrentVersion` are set to the same
    value, the pending `.changes/` fragments are folded into ONE
    `CHANGELOG.md` entry covering everything since the previous tag and
-   then removed, and after the merge the merger pushes the annotated tag
-   `v<version>` on the release merge commit. A hotfix is an ordinary PR
+   then removed, and after the owner merges it, the annotated tag
+   `v<version>` is pushed on the release merge commit (by an agent, on
+   the owner's instruction). A hotfix is an ordinary PR
    folded into the next batch unless the owner orders an immediate cut.
 5. **Enforcement — GitHub rulesets on `main`, identical to AxonGate.**
    `pr-and-checks`: a pull request is required (0 approvals); no status
