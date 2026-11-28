@@ -1,5 +1,34 @@
 # Changelog
 
+## [v1.10.85] - 2026-11-28
+
+### TokenHarbor free-model consent refusal
+
+- A TokenHarbor `403` carrying `free_models_disabled` (or the "confirm
+  free-model data sharing" wording) is now its own classification instead of
+  falling through to the generic transient cooldown. The account and its key
+  are valid — only the operator's dashboard consent is missing — so the
+  account is parked for six hours rather than disabled, and every free model
+  on it stops spending a 403 ticket per sweep.
+- The consent cooldown wins over `Retry-After` and over any reset string in
+  the body, because the refusal only clears when a human clicks consent; the
+  hedged-candidate path parks the account the same way.
+- `cooldownSecForClassification` now resolves the provider alias before the
+  TokenHarbor branch, so `th`/`thh` connections take the same cooldown path as
+  the canonical id.
+- The shared ToS-disable signature no longer claims the refusal: a consent
+  message that reads "free models are disabled in this account" would
+  otherwise match the "disabled in this account" arm and disable an account
+  that is one dashboard click from healthy.
+- The hedged-candidate recorder parses the upstream body once instead of once
+  per predicate, and the triplicated email-verification branch is a single
+  check.
+
+### feat(providers): add Mistral Vibe provider and fix replayed reasoning 422
+
+- **New `mistral-vibe` provider**: a distinct Mistral Vibe Code lane for keys issued at chat.mistral.ai/code/extensions. It is isolated from `mistral` (no shared alias or model hijacking) and carries the Vibe-hosted coding catalog (`mistral-large-4-0`, `mistral-medium-latest`, Devstral, `zai-glm-5-3`, `zai-glm-5-2`, `deepseek-v4-1-flash-1017`). Registered in the provider registry, OpenAI-compatible config/executor, alias and model catalogs, capability table, and dashboard frontend.
+- **422 fix for Mistral-hosted DeepSeek/GLM**: strip replayed `reasoning_content`/`reasoning`/`reasoning_details` from assistant history on `mistral-vibe` before the request goes upstream. Mistral's strict validator rejects those fields with 422 on the second turn. Native `deepseek`/`glm` lanes are untouched because their own API requires the field back on assistant turns. Port of upstream PR #4220.
+
 ## [v1.10.84] - 2026-11-21
 
 ### DeepAI dashboard alias resolution

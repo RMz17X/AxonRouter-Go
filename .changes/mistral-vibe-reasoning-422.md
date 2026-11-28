@@ -1,4 +1,0 @@
-### feat(providers): add Mistral Vibe provider and fix replayed reasoning 422
-
-- **New `mistral-vibe` provider**: a distinct Mistral Vibe Code lane for keys issued at chat.mistral.ai/code/extensions. It is isolated from `mistral` (no shared alias or model hijacking) and carries the Vibe-hosted coding catalog (`mistral-large-4-0`, `mistral-medium-latest`, Devstral, `zai-glm-5-3`, `zai-glm-5-2`, `deepseek-v4-1-flash-1017`). Registered in the provider registry, OpenAI-compatible config/executor, alias and model catalogs, capability table, and dashboard frontend.
-- **422 fix for Mistral-hosted DeepSeek/GLM**: strip replayed `reasoning_content`/`reasoning`/`reasoning_details` from assistant history on `mistral-vibe` before the request goes upstream. Mistral's strict validator rejects those fields with 422 on the second turn. Native `deepseek`/`glm` lanes are untouched because their own API requires the field back on assistant turns. Port of upstream PR #4220.
