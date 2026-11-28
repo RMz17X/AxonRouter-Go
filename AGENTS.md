@@ -729,7 +729,11 @@ Where this section and an older habit disagree, this section wins.
    without a PR.
 3. **No initiative PRs.** An agent never opens a PR on its own initiative;
    the owner's word is the confirmation, and owner-ordered work counts as
-   confirmed. A change touching fewer than 3 files, or a very small change
+   confirmed. This cuts both ways (owner, 2026-11-28): creating a PR
+   AND pushing commits to an existing PR branch both require the owner's
+   confirmation — no silent PR pushes. An explicit owner order for a piece
+   of work or a release is the confirmation for the PRs/pushes inside that
+   order's scope only. A change touching fewer than 3 files, or a very small change
    regardless of file count, never becomes an initiative PR. A release PR
    is not an initiative PR: the owner's "rilis" is its confirmation.
 4. **Batched releases.** Ordinary PRs never move a version: `VERSION`, the
