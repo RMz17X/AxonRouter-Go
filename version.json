@@ -1,5 +1,5 @@
 {
   "downloadUrl": "https://github.com/RMz17X/AxonRouter-Go/releases/latest",
-  "latestVersion": "1.10.85",
-  "releaseNotes": "v1.10.85: Add distinct mistral-vibe provider with the Vibe-hosted coding catalog, and strip replayed reasoning fields to prevent HTTP 422 on multi-turn DeepSeek/GLM requests."
+  "latestVersion": "1.10.86",
+  "releaseNotes": "v1.10.86: Selecting a provider from the global search palette now opens its detail page directly instead of the provider overview."
 }
