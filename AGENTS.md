@@ -714,7 +714,14 @@ Where this section and an older habit disagree, this section wins.
    the agent opens the PR (merge commit is the merge method), presents
    its gate evidence, and waits. Branches are deleted automatically on
    merge. AGENTS.md changes never go through a PR — they are committed
-   directly to `main` (owner ruling 2026-11-28). Merging into a local `main` checkout and pushing that is
+   directly to `main` (owner ruling 2026-11-28). The designated
+   reviewer is Bebi (Copilot review was switched off on 2026-11-28):
+   Bebi reviews other agents' PRs and Bebi's approval satisfies the
+   ruleset's 1-approval requirement; PRs authored by Bebi are reviewed
+   by the owner. Release-order exception: when the owner orders a new
+   release and the merging of all PRs that passed review, Bebi merges
+   that batch directly without further confirmation — the owner's
+   release order IS the confirmation. Merging into a local `main` checkout and pushing that is
    forbidden — local main checkouts in this fleet habitually carry other
    streams' uncommitted work.
 2. **Small-edit exception.** Documentation, text, typos and copy with no
