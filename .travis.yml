@@ -83,8 +83,16 @@ notifications:
 services:
   - docker
 
+# Node 24 first: the jammy image ships Node 18, whose node:util lacks
+# styleText - rolldown (Vite 8) dies on it, web/dist never builds, and
+# every Go step behind the embed fails with it (build #6). Official
+# tarball into $HOME, PATH-first, same pattern as the Bun install below.
 # Bun is pinned to the version Actions used (setup-bun 1.4.2).
 before_install:
+  - curl -fsSL https://nodejs.org/dist/v24.22.3/node-v24.22.3-linux-x64.tar.gz -o /tmp/node24.tar.gz
+  - mkdir -p "$HOME/.node24" && tar -xzf /tmp/node24.tar.gz -C "$HOME/.node24" --strip-components=1
+  - export PATH="$HOME/.node24/bin:$PATH"
+  - node --version
   - curl -fsSL https://bun.sh/install | bash -s "bun-v1.4.2"
   - export BUN_INSTALL="$HOME/.bun"
   - export PATH="$BUN_INSTALL/bin:$PATH"
