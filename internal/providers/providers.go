@@ -589,6 +589,16 @@ var KnownProviders = map[string]ProviderConfig{
 		AuthHeader: "Authorization",
 		AuthScheme: "bearer",
 	},
+	// mistral-vibe is a distinct Mistral Vibe Code lane for keys issued from
+	// chat.mistral.ai/code/extensions, billed against the Vibe subscription
+	// instead of a standard PAYG Mistral API key. Distinct id: no shared alias
+	// or model hijacking with `mistral` (§3).
+	"mistral-vibe": {
+		BaseURL:        "https://api.mistral.ai/v1/chat/completions",
+		AuthHeader:     "Authorization",
+		AuthScheme:     "bearer",
+		ThinkingFormat: "openai",
+	},
 	"perplexity": {
 		BaseURL:    "https://api.perplexity.ai/chat/completions",
 		AuthHeader: "Authorization",

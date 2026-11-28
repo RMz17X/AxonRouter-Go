@@ -217,6 +217,7 @@ var ProviderModels = map[string][]string{
 	"minimax-code":        {"MiniMax-M3.1-Flash", "MiniMax-M3.1-Flash-Preview", "MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed"},
 	"minimax-code-global": {"MiniMax-M3.1-Flash", "MiniMax-M3.1-Flash-Preview", "MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-H3", "MiniMax-H3-Highspeed", "MiniMax-H3-Lite", "MiniMax-H3-Max", "MiniMax-Hailuo-2.3", "MiniMax-H3-Image", "MiniMax-H3-Image-Highspeed"},
 	"mistral":             {"mistral-large-latest", "codestral-latest", "mistral-medium-latest", "mistral-embed"},
+	"mistral-vibe":        {"mistral-large-4-0", "mistral-medium-latest", "devstral-latest", "devstral-2512", "labs-devstral-small-2512", "zai-glm-5-3", "zai-glm-5-3-flash", "zai-glm-5-2", "deepseek-v4-1-flash-1017"},
 	"muse":                {"muse-spark-1.3", "muse-spark-1.2", "muse-spark-1.1", "muse-spark-1.3-contributor", "muse-spark-1.2-contributor"},
 	"morph":               {"morph-v3-large", "morph-v3-fast", "morph-qwen35-397b", "morph-minimax27-230b", "morph-qwen36-27b", "morph-dsv4flash"},
 	"nan":                 {"deepseek-v4-flash", "mimo-v2.5", "mimo-v2.6-flash", "qwen3.8-flash", "qwen3.6", "glm5.3", "glm5.3-flash", "gemma4"},

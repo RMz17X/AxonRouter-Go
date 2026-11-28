@@ -1442,6 +1442,16 @@ func (h *ChatHandler) tryForwardWithConnection(f forwardRequestParams) error {
 		pipedBody = sanitizeOutboundToolSchemas(pipedBody, provider)
 	}
 
+	// Strict OpenAI-compatible upstreams (Mistral-hosted DeepSeek/GLM lanes,
+	// Mistral Vibe) reject a replayed reasoning trace in assistant history with
+	// 422 extra_forbidden. Strip it from the wire body after every rewrite
+	// above — including InjectReasoningContent and the thinking pass — so no
+	// later stage can put the field back. Provider-scoped quirk; other lanes
+	// keep their reasoning verbatim. Port of upstream #4220 dropMessageFields.
+	if !claudeNative && !upstreamClaude {
+		pipedBody = executor.StripReasoningContentFromHistory(pipedBody, provider)
+	}
+
 	start := time.Now()
 	metrics := &streamMetrics{}
 	var fwdErr error

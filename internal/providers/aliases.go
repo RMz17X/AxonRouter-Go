@@ -78,6 +78,7 @@ var ProviderAliasMap = map[string]string{
 	"kr":         "kiro",
 	"mimo":       "xiaomi-mimo",
 	"mm":         "minimax",
+	"mvibe":      "mistral-vibe",
 	// MiniMax Code (mcode). Upstream publishes the China entry as "mm", which
 	// this table already carries for the API-key `minimax` provider and which
 	// therefore keeps resolving there; `mmc` is the unambiguous prefix for the

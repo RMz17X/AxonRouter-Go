@@ -1438,6 +1438,18 @@ var ProviderRegistry = map[string]ProviderMeta{
 		Website:      "https://mistral.ai",
 		Notice:       &Notice{APIKeyURL: "https://console.mistral.ai/api-keys"},
 	},
+	"mistral-vibe": {
+		ID:           "mistral-vibe",
+		Name:         "Mistral Vibe",
+		Alias:        "mistral-vibe",
+		Category:     CategoryAPIKey,
+		AuthType:     "apikey",
+		Color:        "#7C3AED",
+		Icon:         "terminal",
+		ServiceKinds: []string{"llm"},
+		Website:      "https://mistral.ai/products/vibe/code/",
+		Notice:       &Notice{Text: "Mistral Vibe Code plan key. Create the key at Code > Vibe CLI (Advanced) and use it with the Mistral-hosted coding models.", APIKeyURL: "https://chat.mistral.ai/code/extensions"},
+	},
 	"morph": {
 		ID:           "morph",
 		Name:         "Morph",

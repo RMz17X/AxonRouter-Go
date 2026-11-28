@@ -97,6 +97,7 @@ export const PROVIDER_ID_TO_ALIAS: Record<string, string> = {
   "minimax-code": "mmc",
   "minimax-code-global": "mmg",
   "mistral": "mistral",
+  "mistral-vibe": "mistral-vibe",
   "mmf": "mmf",
   "muse": "muse",
   "nan": "nan",
@@ -3944,6 +3945,44 @@ export const BUILTIN_MODELS_BY_PROVIDER: Record<string, ProviderModel[]> = {
       "id": "mistral-embed",
       "name": "Mistral Embed",
       "kind": "embedding"
+    }
+  ],
+  "mistral-vibe": [
+    {
+      "id": "mistral-large-4-0",
+      "name": "Mistral Large 4"
+    },
+    {
+      "id": "mistral-medium-latest",
+      "name": "Mistral Medium 3.5"
+    },
+    {
+      "id": "devstral-latest",
+      "name": "Devstral"
+    },
+    {
+      "id": "devstral-2512",
+      "name": "Devstral 2512"
+    },
+    {
+      "id": "labs-devstral-small-2512",
+      "name": "Devstral Small 2512"
+    },
+    {
+      "id": "zai-glm-5-3",
+      "name": "GLM 5.3 (Mistral Hosted)"
+    },
+    {
+      "id": "zai-glm-5-3-flash",
+      "name": "GLM 5.3 Flash (Mistral Hosted)"
+    },
+    {
+      "id": "zai-glm-5-2",
+      "name": "GLM 5.2 (Mistral Hosted)"
+    },
+    {
+      "id": "deepseek-v4-1-flash-1017",
+      "name": "DeepSeek V4.1 Flash (Mistral Hosted)"
     }
   ],
   "nanobanana": [
