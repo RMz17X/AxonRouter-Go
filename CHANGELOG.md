@@ -1,5 +1,15 @@
 # Changelog
 
+## [v1.10.86] - 2026-11-28
+
+### fix(dashboard): open provider details from search results
+
+- A provider hit in the global search palette (Ctrl+K) now routes straight to
+  `/dashboard/providers/<id>` instead of the provider overview grid. Selecting
+  a provider from search used to drop the operator on the list they had just
+  searched past, forcing a second click to reach the detail page.
+- Added a regression test pinning the provider row's route.
+
 ## [v1.10.85] - 2026-11-28
 
 ### TokenHarbor free-model consent refusal
