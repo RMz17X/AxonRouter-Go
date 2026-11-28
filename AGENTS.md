@@ -725,8 +725,8 @@ Where this section and an older habit disagree, this section wins.
    `latestVersion` in `version.json`, and `CurrentVersion` in
    `internal/updater/updater.go` stay untouched, and `CHANGELOG.md` is
    never edited (§7.6) — changes are announced with a `.changes/` fragment
-   instead. `scripts/check-version-bump.sh` runs in the Travis PR build
-   and fails any ordinary PR that moves a version. A release PR (branch
+   instead. `scripts/check-version-bump.sh` runs in the Travis release
+   (tag) build and fails any ordinary change that moves a version. A release PR (branch
    `release/vX.Y.Z`), cut when the owner says "rilis" or the queue has
    drained, is the only place versions move: `VERSION` rises by exactly
    one patch, `version.json` and `CurrentVersion` are set to the same
@@ -736,9 +736,11 @@ Where this section and an older habit disagree, this section wins.
    `v<version>` on the release merge commit. A hotfix is an ordinary PR
    folded into the next batch unless the owner orders an immediate cut.
 5. **Enforcement — GitHub rulesets on `main`, identical to AxonGate.**
-   `pr-and-checks`: a pull request is required (0 approvals) and the
-   `Travis CI - Pull Request` check must pass with the branch up to date
-   with `main`. `no-force-no-delete`: deleting `main` and force-pushing it
+   `pr-and-checks`: a pull request is required (0 approvals); no status
+   check is required — CI runs only on release tags (owner ruling
+   2026-11-28: Travis PR builds are OFF for this repo and AxonGate;
+   verification and the version guard run in the tag build, before the
+   publish leg). `no-force-no-delete`: deleting `main` and force-pushing it
    are blocked for everyone, the owner included. The owner identity
    (RMz17X) holds an `always` bypass on `pr-and-checks` for the owner's
    own direct work and recoveries — it is never an agent's shortcut around
